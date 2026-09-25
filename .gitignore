@@ -1,0 +1,46 @@
+# Generated frontend and desktop outputs
+node_modules/
+frontend/dist/
+frontend/wailsjs/
+frontend/package.json.md5
+frontend/test-results/
+frontend/playwright-report/
+frontend/.playwright/
+# Keep Wails source assets; ignore generated outputs and local release packaging.
+/build/*
+!/build/README.md
+!/build/appicon.png
+!/build/darwin/
+/build/darwin/*
+!/build/darwin/Info.plist
+!/build/darwin/Info.dev.plist
+!/build/darwin/entitlements.plist
+!/build/windows/
+/build/windows/*
+!/build/windows/icon.ico
+!/build/windows/info.json
+!/build/windows/wails.exe.manifest
+/scripts/
+*.tsbuildinfo
+*.exe
+*.pfx
+*.p12
+*.test
+*.log
+.DS_Store
+Thumbs.db
+.idea/
+.env
+.env.*
+!.env.example
+
+# Local development notes and editor configuration
+/AGENTS.md
+/CLAUDE.md
+/.cursor/
+/.codex/
+/.agents/
+/docs/product-spec.md
+/docs/reviews/
+/docs/v1-feature-review.md
+/docs/v1-fix-progress.md

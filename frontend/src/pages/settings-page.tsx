@@ -1,0 +1,41 @@
+import { useEffect, useState } from "react"
+import { FolderOpen, Monitor, Moon, Save, Sun } from "lucide-react"
+import { Link } from "react-router"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { useTheme } from "@/components/theme-provider"
+import { useDictation } from "@/components/dictation-provider"
+import { backend, isDesktop } from "@/lib/backend"
+const themes = [{ value: "light", label: "Light", icon: Sun }, { value: "dark", label: "Dark", icon: Moon }, { value: "system", label: "System", icon: Monitor }] as const
+export function SettingsPage() {
+  const { theme, setTheme } = useTheme()
+  const { snapshot, run } = useDictation()
+  const [settings, setSettings] = useState(snapshot.settings)
+  const [saving, setSaving] = useState(false)
+  const busy = ["recording", "transcribing", "downloading"].includes(snapshot.status.phase)
+  const dirty = JSON.stringify(settings) !== JSON.stringify(snapshot.settings)
+  useEffect(() => setSettings(snapshot.settings), [snapshot.settings])
+  async function browse(kind: "model" | "runtime") {
+    await run(async () => { const path = await backend.selectFile(kind); if (path) setSettings(old => ({ ...old, [kind === "model" ? "modelPath" : "whisperPath"]: path })) }, false)
+  }
+  async function save() { setSaving(true); await run(() => backend.settings(settings)); setSaving(false) }
+  return <div className="space-y-7">
+    <header><h1 className="text-2xl font-semibold tracking-tight">Settings</h1></header>
+    <fieldset disabled={!isDesktop || busy || saving} className="space-y-6 disabled:opacity-60">
+      <section className="settings-section"><h2 className="font-semibold">Keyboard & delivery</h2>
+        <div className="mt-6 grid gap-5 sm:grid-cols-2"><div className="space-y-2"><Label htmlFor="shortcut">Global shortcut</Label><Input id="shortcut" value={settings.shortcut} onChange={event => setSettings({ ...settings, shortcut: event.target.value })} /><p className="text-xs text-muted-foreground">Ctrl, Alt, Shift + Space, A–Z, or F1–F12.</p></div><div className="space-y-2"><Label htmlFor="interaction">Recording mode</Label><select id="interaction" className="form-select" value={settings.interaction} onChange={event => setSettings({ ...settings, interaction: event.target.value })}><option value="hold">Hold to talk</option><option value="toggle">Press to start / press to stop</option></select></div></div>
+        <label className="mt-6 flex cursor-pointer items-start gap-3"><input type="checkbox" className="mt-1 accent-[var(--primary)]" checked={settings.autoPaste} onChange={event => setSettings({ ...settings, autoPaste: event.target.checked })} /><span className="text-sm">Paste automatically<span className="mt-1 block text-xs text-muted-foreground">Paste into the focused app after shortcut dictation. Otherwise, copy only.</span></span></label>
+        {snapshot.status.shortcutError && <p role="alert" className="mt-4 text-xs text-destructive">{snapshot.status.shortcutError}</p>}
+      </section>
+      <section className="settings-section"><h2 className="font-semibold">Speech recognition</h2><p className="mt-1 text-xs text-muted-foreground">Manage downloads in <Link to="/models" className="text-primary underline">Models</Link>, or select local files below.</p>
+        <div className="mt-6 space-y-5">{([{ key: "whisperPath", kind: "runtime", title: "Whisper executable", placeholder: "Select whisper-cli" }, { key: "modelPath", kind: "model", title: "Speech model", placeholder: "Select a ggml Whisper .bin model" }] as const).map(field => <div key={field.key} className="space-y-2"><Label htmlFor={field.key}>{field.title}</Label><div className="flex gap-2"><Input id={field.key} placeholder={field.placeholder} value={settings[field.key]} onChange={event => setSettings({ ...settings, [field.key]: event.target.value })} /><Button variant="outline" aria-label={`Browse ${field.title}`} onClick={() => void browse(field.kind)}><FolderOpen className="size-4" /></Button></div></div>)}
+          <div className="max-w-sm space-y-2"><Label htmlFor="language">Spoken language</Label><select id="language" className="form-select" value={settings.language} onChange={event => setSettings({ ...settings, language: event.target.value })}>{[{ id: "auto", label: "Detect automatically" }, { id: "en", label: "English" }, { id: "de", label: "German" }, { id: "fr", label: "French" }, { id: "es", label: "Spanish" }, { id: "it", label: "Italian" }, { id: "pt", label: "Portuguese" }, { id: "nl", label: "Dutch" }, { id: "pl", label: "Polish" }, { id: "ja", label: "Japanese" }, { id: "zh", label: "Chinese" }, { id: "uk", label: "Ukrainian" }].map(language => <option key={language.id} value={language.id}>{language.label}</option>)}</select></div>
+        </div>
+      </section>
+      <section className="settings-section"><h2 className="font-semibold">History & storage</h2><label className="mt-5 flex cursor-pointer items-start gap-3"><input type="checkbox" className="mt-1 accent-[var(--primary)]" checked={settings.saveAudio} onChange={event => setSettings({ ...settings, saveAudio: event.target.checked })} /><span className="text-sm">Keep recordings<span className="mt-1 block text-xs text-muted-foreground">Save audio for playback in History. Otherwise, delete it after processing.</span></span></label>{snapshot.dataDir && <p className="mt-5 break-all text-xs leading-5 text-muted-foreground">Data folder: <span className="font-mono">{snapshot.dataDir}</span></p>}</section>
+      <div className="flex items-center gap-4"><Button disabled={!dirty || saving} className="rounded-lg" onClick={() => void save()}><Save className="size-4" />{saving ? "Saving…" : "Save settings"}</Button>{dirty && <span className="text-xs text-muted-foreground">Unsaved changes</span>}</div>
+    </fieldset>
+    <section className="settings-section"><h2 className="mb-4 font-semibold">Appearance</h2><div className="flex gap-3" role="group" aria-label="Color theme">{themes.map(({ value, label, icon: Icon }) => <Button key={value} variant={theme === value ? "default" : "outline"} onClick={() => setTheme(value)} aria-pressed={theme === value}><Icon className="size-4" />{label}</Button>)}</div></section>
+  </div>
+}

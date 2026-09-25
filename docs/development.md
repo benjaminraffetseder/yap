@@ -1,0 +1,71 @@
+# Development
+
+Yap has a Go backend and a React 19/TypeScript frontend, connected by Wails v2.
+The UI uses Tailwind v4 and shadcn/ui components.
+
+## Running locally
+
+See the [README](../README.md#build-from-source) for tool versions. From the repo
+root, run `wails dev` and leave the terminal open. It rebuilds Go changes and
+serves the frontend with Vite. Ctrl+C stops the watcher.
+
+For frontend work in a browser, first run `wails build` to generate bindings:
+
+```powershell
+cd frontend
+npm ci
+npm run dev
+```
+
+The browser preview can't use the microphone, clipboard, file dialogs, or global
+shortcuts through Wails. Use the desktop app to test those.
+
+## Where things live
+
+| Path | Purpose |
+| --- | --- |
+| `main.go` | Window setup and app entry point |
+| `app*.go` | Recording state and methods exposed to the frontend |
+| `internal/audio` | Capture, decoding, and WAV import |
+| `internal/platform` | Global shortcuts and text insertion |
+| `internal/inference` | Whisper CLI client |
+| `internal/models` | Model/runtime downloads and verification |
+| `internal/storage` | SQLite and history |
+| `frontend/src` | Pages, components, and bridge helpers |
+| `build` | Wails icons, native manifests, and version metadata |
+
+Keep platform-specific code in the existing `_windows`, `_darwin`, and `_other`
+files with matching build tags. Bound Go structs use camelCase JSON fields.
+Wails generates `frontend/wailsjs`; don't edit it by hand.
+
+## Build files
+
+The tracked files in `build/` provide the icons, Windows manifest,
+and version metadata used directly by Wails.
+
+Generated output under `build/bin`, Wails-generated installer files, and local
+release tooling are ignored. `scripts/` contains only local release helpers and
+isn't needed for `wails dev` or `wails build`. No installer or signing tools are
+needed to build the app.
+
+The landing site is maintained separately. It isn't needed to build or run Yap.
+
+## Tests
+
+```powershell
+go test ./...
+go vet ./...
+cd frontend
+npm run typecheck
+npm run build
+```
+
+Native and download tests are opt-in. Run them from the repo root on Windows:
+
+| Environment variable | Command | What it exercises |
+| --- | --- | --- |
+| `YAP_INTEGRATION=1` | `go test ./internal/models -run TestRealWhisper -v -count=1` | Downloads Whisper and Tiny, then transcribes a sample |
+
+In PowerShell, set the variable with `$env:YAP_INTEGRATION = '1'` and remove it
+afterward with `Remove-Item Env:YAP_INTEGRATION` (substitute the variable you need).
+Leave these unset for normal unit tests.
