@@ -47,6 +47,7 @@ type App struct {
 	status           Status
 	shortcut         *platform.Shortcut
 	recorder         audio.Capture
+	microphones      func() ([]audio.Device, error)
 	engine           speech.Engine
 	id, path, target string
 	recordSettings   storage.Settings
@@ -62,7 +63,7 @@ type App struct {
 }
 
 func NewApp() *App {
-	return &App{settings: storage.Defaults(), status: Status{Phase: "idle", Message: "Ready when you are"}, recorder: audio.New(), engine: speech.Whisper{}}
+	return &App{settings: storage.Defaults(), status: Status{Phase: "idle", Message: "Ready when you are"}, recorder: audio.New(), microphones: audio.Devices, engine: speech.Whisper{}}
 }
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
@@ -203,6 +204,15 @@ func (a *App) GetSnapshot() (Snapshot, error) {
 	ready := speech.Validate(speech.Options{Executable: a.settings.WhisperPath, Model: a.settings.ModelPath}) == nil
 	return Snapshot{Settings: a.settings, Status: a.status, History: history, Models: models.List(a.store.Dir), DataDir: a.store.Dir, Ready: ready, FloatingIndicator: a.indicator != nil}, nil
 }
+func (a *App) GetMicrophones() ([]audio.Device, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if err := a.available(); err != nil {
+		return nil, err
+	}
+	return a.microphones()
+}
+
 func (a *App) StartRecording() error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -229,7 +239,7 @@ func (a *App) start(external bool) error {
 	if external && a.settings.AutoPaste {
 		a.target = platform.Target()
 	}
-	if err := a.recorder.Start(a.path, func(level float64) {
+	if err := a.recorder.Start(a.path, a.settings.MicrophoneID, func(level float64) {
 		a.event("dictation:level", level)
 		if a.indicator != nil {
 			a.indicator.SetLevel(level)
@@ -377,6 +387,22 @@ func (a *App) SaveSettings(settings storage.Settings) error {
 	}
 	if _, _, err := platform.ParseShortcut(settings.Shortcut); err != nil {
 		return err
+	}
+	if settings.MicrophoneID != "" && settings.MicrophoneID != a.settings.MicrophoneID {
+		devices, err := a.microphones()
+		if err != nil {
+			return err
+		}
+		found := false
+		for _, device := range devices {
+			if device.ID == settings.MicrophoneID {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return errors.New("selected microphone is unavailable; refresh microphones in Settings and choose a connected device")
+		}
 	}
 	old := a.settings
 	if old.Shortcut != settings.Shortcut {

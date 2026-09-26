@@ -15,6 +15,7 @@ func TestPersistenceAndAudioDeletion(t *testing.T) {
 	settings := Defaults()
 	settings.Language = "de"
 	settings.SaveAudio = true
+	settings.MicrophoneID = "persistent-usb-device"
 	if err = s.SaveSettings(settings); err != nil {
 		t.Fatal(err)
 	}
@@ -49,6 +50,26 @@ func TestPersistenceAndAudioDeletion(t *testing.T) {
 	entries, err = s.History()
 	if err != nil || len(entries) != 0 {
 		t.Fatalf("deleted transcript still exists: %v", err)
+	}
+}
+
+func TestExistingSettingsKeepSystemDefaultMicrophone(t *testing.T) {
+	s, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	// A database written before microphone selection must retain its preferences.
+	_, err = s.db.Exec(`INSERT INTO settings (id, value) VALUES (1, ?)`, `{"language":"de","shortcut":"Ctrl+Alt+Space","interaction":"toggle","autoPaste":false,"saveAudio":true}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	settings, err := s.Settings()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if settings.MicrophoneID != "" || settings.Language != "de" || settings.Interaction != "toggle" || settings.AutoPaste || !settings.SaveAudio {
+		t.Fatalf("existing settings were changed: %+v", settings)
 	}
 }
 func TestDeletionDoesNotRemoveExternalFile(t *testing.T) {

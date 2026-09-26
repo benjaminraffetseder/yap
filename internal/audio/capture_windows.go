@@ -52,9 +52,13 @@ func mmCall(proc *windows.LazyProc, args ...uintptr) error {
 	}
 	return nil
 }
-func (r *Recorder) Start(path string, level func(float64)) error {
+func (r *Recorder) Start(path, microphoneID string, level func(float64)) error {
 	if r.handle != 0 {
 		return fmt.Errorf("already recording")
+	}
+	device, err := waveDeviceIndex(microphoneID)
+	if err != nil {
+		return err
 	}
 	f, err := os.Create(path)
 	if err != nil {
@@ -68,7 +72,7 @@ func (r *Recorder) Start(path string, level func(float64)) error {
 		return err
 	}
 	fmtPCM := waveFormat{FormatTag: 1, Channels: 1, SamplesPerSec: 16000, BytesPerSec: 32000, BlockAlign: 2, BitsPerSample: 16}
-	if err = mmCall(waveOpen, uintptr(unsafe.Pointer(&r.handle)), 0xFFFFFFFF, uintptr(unsafe.Pointer(&fmtPCM)), 0, 0, 0); err != nil {
+	if err = mmCall(waveOpen, uintptr(unsafe.Pointer(&r.handle)), device, uintptr(unsafe.Pointer(&fmtPCM)), 0, 0, 0); err != nil {
 		f.Close()
 		return err
 	}

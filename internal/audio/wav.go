@@ -8,8 +8,15 @@ import (
 )
 
 type Capture interface {
-	Start(string, func(float64)) error
+	Start(path, microphoneID string, level func(float64)) error
 	Stop() (int64, error)
+}
+
+// An empty microphone ID selects the system default. IDs identify devices, not
+// enumeration positions, so reconnecting another input cannot change the choice.
+type Device struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
 }
 
 func Header(w io.Writer, n uint32) error {

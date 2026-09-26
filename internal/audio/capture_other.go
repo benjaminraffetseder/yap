@@ -4,10 +4,13 @@ package audio
 
 import (
 	"bytes"
+	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
+	"strings"
 	"time"
 )
 
@@ -21,9 +24,50 @@ type Recorder struct {
 }
 
 func New() Capture { return &Recorder{} }
-func (r *Recorder) Start(path string, level func(float64)) error {
+func Devices() ([]Device, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	raw, err := exec.CommandContext(ctx, "pactl", "-f", "json", "list", "sources").Output()
+	if err != nil {
+		return nil, fmt.Errorf("listing microphones requires PulseAudio's pactl: %w", err)
+	}
+	var sources []struct {
+		Name        string
+		Description string
+	}
+	if err := json.Unmarshal(raw, &sources); err != nil {
+		return nil, err
+	}
+	devices := make([]Device, 0, len(sources))
+	for _, source := range sources {
+		if !strings.HasSuffix(source.Name, ".monitor") {
+			devices = append(devices, Device{ID: source.Name, Name: source.Description})
+		}
+	}
+	return devices, nil
+}
+
+func (r *Recorder) Start(path, microphoneID string, level func(float64)) error {
+	source := "default"
+	if microphoneID != "" {
+		devices, err := Devices()
+		if err != nil {
+			return err
+		}
+		found := false
+		for _, device := range devices {
+			if device.ID == microphoneID {
+				source = device.ID
+				found = true
+				break
+			}
+		}
+		if !found {
+			return fmt.Errorf("selected microphone is disconnected; choose another microphone in Settings")
+		}
+	}
 	args := []string{"-y", "-hide_banner", "-loglevel", "error"}
-	args = append(args, "-f", "pulse", "-i", "default")
+	args = append(args, "-f", "pulse", "-i", source)
 	args = append(args, "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le", path)
 	r.log.Reset()
 	r.cmd = exec.Command("ffmpeg", args...)

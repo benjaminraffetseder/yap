@@ -4,15 +4,17 @@ package audio
 
 /*
 #cgo CFLAGS: -x objective-c -fobjc-arc
-#cgo LDFLAGS: -framework AVFoundation -framework AVFAudio -framework Foundation
+#cgo LDFLAGS: -framework AVFoundation -framework AVFAudio -framework CoreMedia -framework Foundation
 #include <stdlib.h>
-void *yap_capture_start(const char *path, char **error);
+char *yap_capture_devices(char **error);
+void *yap_capture_start(const char *path, const char *deviceID, char **error);
 double yap_capture_level(void *capture);
 double yap_capture_stop(void *capture, char **error);
 */
 import "C"
 
 import (
+	"encoding/json"
 	"errors"
 	"os"
 	"time"
@@ -27,14 +29,32 @@ type Recorder struct {
 
 func New() Capture { return &Recorder{} }
 
-func (r *Recorder) Start(path string, level func(float64)) error {
+func Devices() ([]Device, error) {
+	var failure *C.char
+	raw := C.yap_capture_devices(&failure)
+	if failure != nil {
+		defer C.free(unsafe.Pointer(failure))
+		return nil, errors.New(C.GoString(failure))
+	}
+	if raw == nil {
+		return nil, errors.New("microphones could not be listed")
+	}
+	defer C.free(unsafe.Pointer(raw))
+	devices := make([]Device, 0)
+	err := json.Unmarshal([]byte(C.GoString(raw)), &devices)
+	return devices, err
+}
+
+func (r *Recorder) Start(path, microphoneID string, level func(float64)) error {
 	if r.capture != nil {
 		return errors.New("already recording")
 	}
 	name := C.CString(path)
 	defer C.free(unsafe.Pointer(name))
+	device := C.CString(microphoneID)
+	defer C.free(unsafe.Pointer(device))
 	var failure *C.char
-	r.capture = C.yap_capture_start(name, &failure)
+	r.capture = C.yap_capture_start(name, device, &failure)
 	if failure != nil {
 		defer C.free(unsafe.Pointer(failure))
 		return errors.New(C.GoString(failure))

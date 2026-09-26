@@ -2,11 +2,13 @@ package main
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"sync"
 	"testing"
 	"time"
+	"yap/internal/audio"
 	"yap/internal/indicator"
 	"yap/internal/inference/speech"
 	"yap/internal/storage"
@@ -14,7 +16,7 @@ import (
 
 type fakeCapture struct{}
 
-func (fakeCapture) Start(path string, level func(float64)) error {
+func (fakeCapture) Start(path, microphoneID string, level func(float64)) error {
 	level(0.5)
 	return os.WriteFile(path, []byte("audio"), 0600)
 }
@@ -108,6 +110,92 @@ func TestIndicatorShowsFailedStartAndCancellation(t *testing.T) {
 	}
 }
 func (fakeCapture) Stop() (int64, error) { return 2000, nil }
+
+type selectedCapture struct {
+	fakeCapture
+	devices []string
+	failure error
+}
+
+func (f *selectedCapture) Start(path, microphoneID string, level func(float64)) error {
+	f.devices = append(f.devices, microphoneID)
+	if f.failure != nil {
+		return f.failure
+	}
+	return f.fakeCapture.Start(path, microphoneID, level)
+}
+
+func TestMicrophoneChoiceReachesButtonAndHotkeyCapture(t *testing.T) {
+	a := testApp(t)
+	f := &selectedCapture{}
+	a.recorder = f
+	a.settings.MicrophoneID = "chosen-device"
+	if err := a.StartRecording(); err != nil {
+		t.Fatal(err)
+	}
+	if a.recordSettings.MicrophoneID != "chosen-device" {
+		t.Fatal("record settings lost the microphone choice")
+	}
+	if err := a.Cancel(); err != nil {
+		t.Fatal(err)
+	}
+	a.hotkeyDown()
+	if a.status.Phase != "recording" {
+		t.Fatal("hotkey did not start recording")
+	}
+	if err := a.Cancel(); err != nil {
+		t.Fatal(err)
+	}
+	a.settings.MicrophoneID = ""
+	if err := a.StartRecording(); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.Cancel(); err != nil {
+		t.Fatal(err)
+	}
+	if len(f.devices) != 3 || f.devices[0] != "chosen-device" || f.devices[1] != "chosen-device" || f.devices[2] != "" {
+		t.Fatalf("wrong microphone reached capture: %v", f.devices)
+	}
+}
+
+func TestDisconnectedMicrophoneStartCleansUp(t *testing.T) {
+	a := testApp(t)
+	a.settings.MicrophoneID = "disconnected"
+	a.recorder = &selectedCapture{failure: errors.New("selected microphone is disconnected")}
+	if err := a.StartRecording(); err == nil {
+		t.Fatal("recorded with a missing microphone")
+	}
+	if a.status.Phase != "error" || a.timer != nil {
+		t.Fatal("failed input selection left a recording active")
+	}
+	entries, err := os.ReadDir(filepath.Join(a.store.Dir, "recordings"))
+	if err != nil || len(entries) != 0 {
+		t.Fatalf("failed start leaked audio: %v %v", entries, err)
+	}
+}
+
+func TestUnavailableMicrophoneRejectedBeforeSettingsChange(t *testing.T) {
+	a := testApp(t)
+	a.microphones = func() ([]audio.Device, error) { return []audio.Device{{ID: "connected", Name: "USB mic"}}, nil }
+	old := a.settings
+	next := old
+	next.MicrophoneID = "disconnected"
+	if err := a.SaveSettings(next); err == nil {
+		t.Fatal("saved a disconnected new microphone")
+	}
+	if a.settings != old {
+		t.Fatal("invalid microphone changed settings")
+	}
+	devices, err := a.GetMicrophones()
+	if err != nil || len(devices) != 1 || devices[0].ID != "connected" {
+		t.Fatalf("incorrect devices returned to UI: %v %v", devices, err)
+	}
+	a.microphones = func() ([]audio.Device, error) { return nil, errors.New("enumeration failed") }
+	next.MicrophoneID = "connected"
+	if err := a.SaveSettings(next); err == nil || err.Error() != "enumeration failed" {
+		t.Fatalf("enumeration failure ignored: %v", err)
+	}
+}
 
 type fakeSpeech struct {
 	wait    bool
