@@ -128,6 +128,12 @@ func RuntimePath(dir string) string {
 	return found
 }
 func InstallRuntime(ctx context.Context, dir string, report func(int64, int64)) (string, error) {
+	if runtime.GOOS == "darwin" {
+		if path := PreferredRuntime(""); path != "" {
+			return path, nil
+		}
+		return "", fmt.Errorf("this Mac build is missing its bundled Whisper runtime; select a local whisper-cli executable in Settings")
+	}
 	if runtime.GOOS != "windows" || runtime.GOARCH != "amd64" {
 		return "", fmt.Errorf("select your platform's whisper-cli executable in Settings; automatic runtime installation supports Windows x64")
 	}

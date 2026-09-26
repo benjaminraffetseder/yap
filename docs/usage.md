@@ -26,8 +26,9 @@ Deleting a transcript also removes its retained audio.
 
 ## Storage
 
-Yap stores its database, models, runtimes, and recordings in `%APPDATA%\yap`
-on Windows.
+Yap stores its database, models, runtimes, and recordings in the OS user
+configuration folder: `%APPDATA%\yap` on Windows or
+`~/Library/Application Support/yap` on macOS.
 
 Audio retention is off by default. Transcripts stay in History until you delete them.
 
@@ -35,4 +36,4 @@ Audio retention is off by default. Transcripts stay in History until you delete 
 
 - **No microphone input:** check OS permission and the input device.
 - **Paste doesn't work:** check History and the clipboard. Yap won't switch
-  focus back to another app to paste.
+  focus back to another app to paste. On a Mac, check Accessibility permission.

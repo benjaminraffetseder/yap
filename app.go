@@ -54,6 +54,7 @@ type App struct {
 	cancel           context.CancelFunc
 	wg               sync.WaitGroup
 	closing          bool
+	shutdownOnce     sync.Once
 	notify           func(string, ...interface{})
 	copyText         func(string) error
 	indicator        indicator.Controller
@@ -82,6 +83,7 @@ func (a *App) startup(ctx context.Context) {
 		a.status = Status{Phase: "error", Message: err.Error()}
 		return
 	}
+	a.settings.WhisperPath = models.PreferredRuntime(a.settings.WhisperPath)
 	a.indicator, err = indicator.New(indicator.Actions{
 		Stop:   func() { _ = a.StopRecording() },
 		Cancel: func() { _ = a.Cancel() },
@@ -93,31 +95,33 @@ func (a *App) startup(ctx context.Context) {
 	a.registerShortcut()
 }
 func (a *App) shutdown(ctx context.Context) {
-	a.mu.Lock()
-	a.closing = true
-	if a.timer != nil {
-		a.timer.Stop()
-	}
-	if a.cancel != nil {
-		a.cancel()
-	}
-	if a.status.Phase == "recording" {
-		a.recorder.Stop()
-		os.Remove(a.path)
-	}
-	s := a.shortcut
-	a.shortcut = nil
-	a.mu.Unlock()
-	if s != nil {
-		s.Close()
-	}
-	a.wg.Wait()
-	if a.indicator != nil {
-		a.indicator.Close()
-	}
-	if a.store != nil {
-		a.store.Close()
-	}
+	a.shutdownOnce.Do(func() {
+		a.mu.Lock()
+		a.closing = true
+		if a.timer != nil {
+			a.timer.Stop()
+		}
+		if a.cancel != nil {
+			a.cancel()
+		}
+		if a.status.Phase == "recording" {
+			a.recorder.Stop()
+			os.Remove(a.path)
+		}
+		s := a.shortcut
+		a.shortcut = nil
+		a.mu.Unlock()
+		if s != nil {
+			s.Close()
+		}
+		a.wg.Wait()
+		if a.indicator != nil {
+			a.indicator.Close()
+		}
+		if a.store != nil {
+			a.store.Close()
+		}
+	})
 }
 func (a *App) emit() {
 	if a.ctx != nil && !a.closing {

@@ -1,4 +1,4 @@
-//go:build !windows
+//go:build !windows && !darwin
 
 package audio
 
@@ -8,11 +8,10 @@ import (
 	"io"
 	"os"
 	"os/exec"
-	"runtime"
 	"time"
 )
 
-// Unix builds use the local FFmpeg input backend. Windows uses native waveIn.
+// Linux builds use the local FFmpeg input backend.
 type Recorder struct {
 	cmd     *exec.Cmd
 	input   io.WriteCloser
@@ -24,11 +23,7 @@ type Recorder struct {
 func New() Capture { return &Recorder{} }
 func (r *Recorder) Start(path string, level func(float64)) error {
 	args := []string{"-y", "-hide_banner", "-loglevel", "error"}
-	if runtime.GOOS == "darwin" {
-		args = append(args, "-f", "avfoundation", "-i", ":0")
-	} else {
-		args = append(args, "-f", "pulse", "-i", "default")
-	}
+	args = append(args, "-f", "pulse", "-i", "default")
 	args = append(args, "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le", path)
 	r.log.Reset()
 	r.cmd = exec.Command("ffmpeg", args...)

@@ -7,8 +7,9 @@ Yap uses whisper.cpp for speech recognition and keeps recordings and transcripts
 on your computer. No account or cloud transcription service needed. The desktop
 app is built with Go, Wails, React, and TypeScript.
 
-This is a personal project, with Windows as the main target.
-macOS and Linux adapters are work in progress.
+This is a personal project, with Windows as the main target. It's still early:
+macOS has native code but hasn't been tested on a Mac yet.
+Linux support is incomplete.
 
 ## What it does
 
@@ -60,10 +61,14 @@ files, or manual asset copying are needed. Make sure Go's binary directory is on
 PATH so the `wails` command is available.
 
 For development, run `wails dev` from the same directory and leave the terminal
-open. The repository includes the native manifests, version metadata, and icons used by Wails. Generated files, installers, signing
+open. The repository includes the native manifests, permission descriptions,
+version metadata, and icons used by Wails. Generated files, installers, signing
 helpers, and the separate website aren't part of the source build.
 
 ### Other platforms
+
+See the [macOS notes](docs/macos.md) for native Wails build instructions.
+Native compilation and desktop testing are still pending.
 
 Linux has X11 adapters using FFmpeg/PulseAudio and xdotool, but no native tray
 or floating indicator yet. It needs a manually configured Whisper runtime.

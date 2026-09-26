@@ -20,10 +20,11 @@ func (fakeCapture) Start(path string, level func(float64)) error {
 }
 
 type fakeIndicator struct {
-	mu     sync.Mutex
-	states []indicator.State
-	levels []float64
-	closed bool
+	mu         sync.Mutex
+	states     []indicator.State
+	levels     []float64
+	closed     bool
+	closeCount int
 }
 
 func (f *fakeIndicator) Update(s indicator.State) {
@@ -36,7 +37,25 @@ func (f *fakeIndicator) SetLevel(level float64) {
 	defer f.mu.Unlock()
 	f.levels = append(f.levels, level)
 }
-func (f *fakeIndicator) Close() { f.closed = true }
+func (f *fakeIndicator) Close() { f.closed = true; f.closeCount++ }
+
+func TestShutdownOnceAcrossCloseHooks(t *testing.T) {
+	a := testApp(t)
+	f := &fakeIndicator{}
+	a.indicator = f
+	var workers sync.WaitGroup
+	for i := 0; i < 2; i++ {
+		workers.Add(1)
+		go func() { defer workers.Done(); a.shutdown(a.ctx) }()
+	}
+	workers.Wait()
+	if f.closeCount != 1 {
+		t.Fatalf("closed native indicator %d times", f.closeCount)
+	}
+	if err := a.StartRecording(); err == nil {
+		t.Fatal("recorded after shutdown")
+	}
+}
 
 func TestIndicatorFollowsDictationWithoutFrontend(t *testing.T) {
 	a := testApp(t)

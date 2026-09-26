@@ -41,8 +41,10 @@ Wails generates `frontend/wailsjs`; don't edit it by hand.
 
 ## Build files
 
-The tracked files in `build/` provide the icons, Windows manifest,
-and version metadata used directly by Wails.
+The tracked files in `build/` are inputs to Wails: the icons, Windows manifest
+and version metadata, and macOS plists and entitlements. Keep them in the repo;
+`wails build` uses them directly. The Mac plists include the microphone permission
+description and minimum OS version.
 
 Generated output under `build/bin`, Wails-generated installer files, and local
 release tooling are ignored. `scripts/` contains only local release helpers and
@@ -71,3 +73,6 @@ Native and download tests are opt-in. Run them from the repo root on Windows:
 In PowerShell, set the variable with `$env:YAP_INTEGRATION = '1'` and remove it
 afterward with `Remove-Item Env:YAP_INTEGRATION` (substitute the variable you need).
 Leave these unset for normal unit tests.
+
+The [Mac notes](macos.md#testing-on-a-mac) list the checks that still need a Mac.
+Installer packaging belongs to the separate release setup and is not included here.
