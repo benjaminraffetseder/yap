@@ -1,7 +1,7 @@
 # Development
 
 Yap has a Go backend and a React 19/TypeScript frontend, connected by Wails v2.
-The UI uses Tailwind v4 and shadcn/ui components.
+The UI uses Tailwind v4 and shadcn/ui with Base UI components.
 
 ## Running locally
 
@@ -38,6 +38,10 @@ shortcuts through Wails. Use the desktop app to test those.
 Keep platform-specific code in the existing `_windows`, `_darwin`, and `_other`
 files with matching build tags. Bound Go structs use camelCase JSON fields.
 Wails generates `frontend/wailsjs`; don't edit it by hand.
+
+To add a UI component, run `npm run ui:add -- <component>` from `frontend`.
+Use the existing Base UI components and theme rather than introducing another
+component library.
 
 ## Build files
 

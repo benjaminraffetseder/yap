@@ -33,7 +33,7 @@ export function AppLayout() {
   }
 
   return (
-    <TooltipProvider delayDuration={250}>
+    <TooltipProvider delay={250}>
       <div className="flex min-h-screen" style={{ "--sidebar-width": collapsed ? "4.5rem" : "13.75rem" } as CSSProperties}>
         <aside id="app-sidebar" className="sticky top-0 flex h-screen w-[var(--sidebar-width)] shrink-0 flex-col border-r bg-sidebar px-3 py-4 transition-[width] duration-200 ease-out motion-reduce:transition-none">
           <div className="mb-6 flex h-11 items-center justify-between">
@@ -42,25 +42,21 @@ export function AppLayout() {
               <span className="text-xl font-semibold tracking-tight">yap.</span>
             </NavLink>}
             <Tooltip>
-              <TooltipTrigger asChild>
-                <Button variant="ghost" size="icon" className="size-11 shrink-0 rounded-lg" onClick={toggleSidebar} aria-label={toggleLabel} aria-expanded={!collapsed} aria-controls="app-sidebar">
-                  {collapsed ? <PanelLeftOpen aria-hidden="true" /> : <PanelLeftClose aria-hidden="true" />}
-                </Button>
+              <TooltipTrigger render={<Button variant="ghost" size="icon" className="size-11 shrink-0 rounded-lg" />} onClick={toggleSidebar} aria-label={toggleLabel} aria-expanded={!collapsed} aria-controls="app-sidebar">
+                {collapsed ? <PanelLeftOpen aria-hidden="true" /> : <PanelLeftClose aria-hidden="true" />}
               </TooltipTrigger>
               <TooltipContent side="right">{toggleLabel}</TooltipContent>
             </Tooltip>
           </div>
           <nav aria-label="Main navigation" className="flex flex-1 flex-col gap-1">
             {navigation.map(({ to, label, icon: Icon }) => (
-              <Tooltip key={`${to}-${collapsed}`} open={collapsed ? undefined : false}>
-                <TooltipTrigger asChild>
-                  <NavLink to={to} end className={cn(
+              <Tooltip key={`${to}-${collapsed}`} disabled={!collapsed}>
+                <TooltipTrigger render={<NavLink to={to} end />} className={cn(
                     "flex h-11 shrink-0 items-center gap-3 rounded-lg px-3 text-sm text-muted-foreground outline-none transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring aria-[current=page]:bg-primary/10 aria-[current=page]:font-medium aria-[current=page]:text-primary",
                     to === "/settings" && "mt-auto",
                   )}>
                     <Icon className="size-5 shrink-0" aria-hidden="true" />
                     <span className={collapsed ? "sr-only" : "truncate"}>{label}</span>
-                  </NavLink>
                 </TooltipTrigger>
                 <TooltipContent side="right">{label}</TooltipContent>
               </Tooltip>

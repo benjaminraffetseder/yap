@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react"
 import { ArrowRight, Check, Copy, Download, Keyboard, Loader2, Mic, Square } from "lucide-react"
 import { Link } from "react-router"
-import { Button } from "@/components/ui/button"
+import { Button, buttonVariants } from "@/components/ui/button"
 import { useDictation } from "@/components/dictation-provider"
 import { backend, duration, isDesktop } from "@/lib/backend"
 export function HomePage() {
@@ -21,7 +21,7 @@ export function HomePage() {
         {recording && <span className="absolute inset-[-10px] rounded-full border-2 border-primary/25" style={{ transform: `scale(${1 + level * .15})` }} />}{working || pending ? <Loader2 className="size-8 animate-spin" /> : recording ? <Square className="size-7 fill-current" /> : <Mic className="size-9" />}
       </button></div>
       <h2 className="text-lg font-medium">{loading ? "Connecting…" : recording ? "Recording" : working ? status.message : ready ? "Ready to record" : "Install a speech model"}</h2>
-      {recording ? <div className="mt-4 font-mono text-primary">{duration(Math.max(0, now - status.startedAt))}</div> : !ready && !working && !loading ? <Button asChild className="mt-5 rounded-lg"><Link to="/models"><Download className="size-4" />Download model</Link></Button> : ready && !working && !loading && <div className="mt-4 flex items-center justify-center gap-2 text-xs text-muted-foreground"><Keyboard className="size-4" aria-hidden="true" />{settings.interaction === "hold" ? "Hold" : "Press"}{settings.shortcut.split("+").map(key => <kbd key={key} className="rounded-md border bg-background px-2 py-1 font-mono text-[11px]">{key}</kbd>)}</div>}
+      {recording ? <div className="mt-4 font-mono text-primary">{duration(Math.max(0, now - status.startedAt))}</div> : !ready && !working && !loading ? <Link to="/models" className={buttonVariants({ className: "mt-5 rounded-lg" })}><Download className="size-4" />Download model</Link> : ready && !working && !loading && <div className="mt-4 flex items-center justify-center gap-2 text-xs text-muted-foreground"><Keyboard className="size-4" aria-hidden="true" />{settings.interaction === "hold" ? "Hold" : "Press"}{settings.shortcut.split("+").map(key => <kbd key={key} className="rounded-md border bg-background px-2 py-1 font-mono text-[11px]">{key}</kbd>)}</div>}
       {ready && !recording && !working && <Link to="/models" className="mt-5 inline-block text-xs text-muted-foreground hover:text-primary">{modelName}</Link>}
     </section>
     {status.shortcutError && <p role="alert" className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-4 text-sm">Global shortcut unavailable: {status.shortcutError} <Link to="/settings" className="underline">Change shortcut</Link></p>}
