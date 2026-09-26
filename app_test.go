@@ -4,8 +4,10 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
+	"yap/internal/indicator"
 	"yap/internal/inference/speech"
 	"yap/internal/storage"
 )
@@ -13,7 +15,78 @@ import (
 type fakeCapture struct{}
 
 func (fakeCapture) Start(path string, level func(float64)) error {
+	level(0.5)
 	return os.WriteFile(path, []byte("audio"), 0600)
+}
+
+type fakeIndicator struct {
+	mu     sync.Mutex
+	states []indicator.State
+	levels []float64
+	closed bool
+}
+
+func (f *fakeIndicator) Update(s indicator.State) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.states = append(f.states, s)
+}
+func (f *fakeIndicator) SetLevel(level float64) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.levels = append(f.levels, level)
+}
+func (f *fakeIndicator) Close() { f.closed = true }
+
+func TestIndicatorFollowsDictationWithoutFrontend(t *testing.T) {
+	a := testApp(t)
+	f := &fakeIndicator{}
+	a.indicator = f
+	if err := a.StartRecording(); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.StopRecording(); err != nil {
+		t.Fatal(err)
+	}
+	a.wg.Wait()
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if len(f.states) != 3 || f.states[0].Phase != "recording" || f.states[1].Phase != "transcribing" || f.states[2].Phase != "done" || f.states[2].Message != "Copied to clipboard" {
+		t.Fatalf("indicator missed state updates: %+v", f.states)
+	}
+	if len(f.levels) != 1 || f.levels[0] != 0.5 {
+		t.Fatalf("audio activity missing: %v", f.levels)
+	}
+	// Model/download and settings events must not reopen a dictation indicator.
+	a.mu.Lock()
+	a.status = Status{Phase: "error", Message: "model download failed"}
+	a.emit()
+	a.mu.Unlock()
+	if len(f.states) != 3 {
+		t.Fatal("unrelated operation displayed indicator")
+	}
+}
+
+func TestIndicatorShowsFailedStartAndCancellation(t *testing.T) {
+	a := testApp(t)
+	f := &fakeIndicator{}
+	a.indicator = f
+	model := a.settings.ModelPath
+	a.settings.ModelPath = ""
+	a.hotkeyDown()
+	if len(f.states) != 1 || f.states[0].Phase != "error" {
+		t.Fatal("hotkey failure invisible while minimized")
+	}
+	a.settings.ModelPath = model
+	if err := a.StartRecording(); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.Cancel(); err != nil {
+		t.Fatal(err)
+	}
+	if len(f.states) != 3 || f.states[2].Phase != "idle" || f.states[2].Message != "Recording discarded" {
+		t.Fatalf("cancel status missing: %+v", f.states)
+	}
 }
 func (fakeCapture) Stop() (int64, error) { return 2000, nil }
 

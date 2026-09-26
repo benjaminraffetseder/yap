@@ -13,6 +13,7 @@ macOS and Linux adapters are work in progress.
 ## What it does
 
 - Hold-to-talk or toggle recording with a global shortcut.
+- See recording progress in a floating indicator.
 - Search, copy, and export past transcripts.
 
 ## Getting started

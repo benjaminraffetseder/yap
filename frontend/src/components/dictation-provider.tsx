@@ -3,12 +3,12 @@ import { EventsOn } from "@wails/runtime/runtime"
 import { backend, isDesktop, message, type Snapshot, type Status } from "@/lib/backend"
 const empty: Snapshot = {
   settings: { whisperPath: "", modelPath: "", language: "auto", shortcut: "Ctrl+Alt+Space", interaction: "hold", autoPaste: true, saveAudio: false },
-  status: { phase: "idle", message: "Ready when you are", startedAt: 0, transcript: "", progress: 0, shortcutError: "" },
+  status: { phase: "idle", message: "Ready when you are", startedAt: 0, transcript: "", progress: 0, shortcutError: "", indicatorError: "" },
   models: [
     { id: "tiny", name: "Whisper Tiny", size: 77691713, description: "Fastest · short dictation", installed: false, path: "" },
     { id: "base", name: "Whisper Base", size: 147951465, description: "Lightweight · everyday dictation", installed: false, path: "" },
     { id: "small", name: "Whisper Small", size: 487601967, description: "Balanced · better accuracy", installed: false, path: "" },
-  ], history: [], dataDir: "", ready: false,
+  ], history: [], dataDir: "", ready: false, floatingIndicator: false,
 }
 type Context = { snapshot: Snapshot; level: number; error: string; loading: boolean; refresh: () => Promise<void>; run: (action: () => Promise<unknown>, reload?: boolean) => Promise<void>; clearError: () => void }
 const DictationContext = createContext<Context | null>(null)

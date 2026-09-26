@@ -28,6 +28,7 @@ shortcuts through Wails. Use the desktop app to test those.
 | `app*.go` | Recording state and methods exposed to the frontend |
 | `internal/audio` | Capture, decoding, and WAV import |
 | `internal/platform` | Global shortcuts and text insertion |
+| `internal/indicator` | Floating recording indicator |
 | `internal/inference` | Whisper CLI client |
 | `internal/models` | Model/runtime downloads and verification |
 | `internal/storage` | SQLite and history |
@@ -64,6 +65,7 @@ Native and download tests are opt-in. Run them from the repo root on Windows:
 
 | Environment variable | Command | What it exercises |
 | --- | --- | --- |
+| `YAP_INDICATOR_SMOKE=1` | `go test ./internal/indicator -run '^TestNativeIndicator' -v -count=1` | Real floating windows, focus, and dragging |
 | `YAP_INTEGRATION=1` | `go test ./internal/models -run TestRealWhisper -v -count=1` | Downloads Whisper and Tiny, then transcribes a sample |
 
 In PowerShell, set the variable with `$env:YAP_INTEGRATION = '1'` and remove it

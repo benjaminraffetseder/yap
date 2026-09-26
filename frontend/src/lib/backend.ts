@@ -2,9 +2,9 @@ import { Cancel, CopyText, DeleteSession, ExportSession, GetAudio, GetSnapshot, 
 export const isDesktop = typeof window !== "undefined" && "go" in window
 export type Settings = { whisperPath: string; modelPath: string; language: string; shortcut: string; interaction: string; autoPaste: boolean; saveAudio: boolean }
 export type Session = { id: string; createdAt: string; durationMs: number; rawTranscript: string; speechModel: string; language: string; audioPath: string }
-export type Status = { phase: string; message: string; startedAt: number; transcript: string; progress: number; shortcutError: string }
+export type Status = { phase: string; message: string; startedAt: number; transcript: string; progress: number; shortcutError: string; indicatorError: string }
 export type Model = { id: string; name: string; description: string; size: number; installed: boolean; path: string }
-export type Snapshot = { settings: Settings; status: Status; history: Session[]; models: Model[]; dataDir: string; ready: boolean }
+export type Snapshot = { settings: Settings; status: Status; history: Session[]; models: Model[]; dataDir: string; ready: boolean; floatingIndicator: boolean }
 export const backend = {
   snapshot: async (): Promise<Snapshot> => GetSnapshot(), start: StartRecording, stop: StopRecording, cancel: Cancel,
   settings: SaveSettings, selectFile: SelectFile, install: InstallModel,

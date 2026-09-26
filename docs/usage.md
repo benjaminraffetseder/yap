@@ -10,6 +10,8 @@ Shortcut recordings paste into the original app if it still has focus. If focus
 has moved or paste is blocked, the text stays in History and on the clipboard.
 Recording from Yap's microphone button copies without pasting.
 
+The floating indicator appears while you're recording in another app. Stop and Cancel are available there.
+
 ### Microphone and shortcut
 
 Enter a shortcut in Settings and save it.

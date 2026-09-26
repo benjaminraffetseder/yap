@@ -14,6 +14,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 	"yap/internal/audio"
+	"yap/internal/indicator"
 	"yap/internal/inference/speech"
 	"yap/internal/models"
 	"yap/internal/platform"
@@ -21,20 +22,22 @@ import (
 )
 
 type Status struct {
-	Phase         string  `json:"phase"`
-	Message       string  `json:"message"`
-	StartedAt     int64   `json:"startedAt"`
-	Transcript    string  `json:"transcript"`
-	Progress      float64 `json:"progress"`
-	ShortcutError string  `json:"shortcutError"`
+	Phase          string  `json:"phase"`
+	Message        string  `json:"message"`
+	StartedAt      int64   `json:"startedAt"`
+	Transcript     string  `json:"transcript"`
+	Progress       float64 `json:"progress"`
+	ShortcutError  string  `json:"shortcutError"`
+	IndicatorError string  `json:"indicatorError"`
 }
 type Snapshot struct {
-	Settings storage.Settings  `json:"settings"`
-	Status   Status            `json:"status"`
-	History  []storage.Session `json:"history"`
-	Models   []models.Model    `json:"models"`
-	DataDir  string            `json:"dataDir"`
-	Ready    bool              `json:"ready"`
+	Settings          storage.Settings  `json:"settings"`
+	Status            Status            `json:"status"`
+	History           []storage.Session `json:"history"`
+	Models            []models.Model    `json:"models"`
+	DataDir           string            `json:"dataDir"`
+	Ready             bool              `json:"ready"`
+	FloatingIndicator bool              `json:"floatingIndicator"`
 }
 type App struct {
 	ctx              context.Context
@@ -53,6 +56,8 @@ type App struct {
 	closing          bool
 	notify           func(string, ...interface{})
 	copyText         func(string) error
+	indicator        indicator.Controller
+	indicatorActive  bool
 }
 
 func NewApp() *App {
@@ -77,6 +82,14 @@ func (a *App) startup(ctx context.Context) {
 		a.status = Status{Phase: "error", Message: err.Error()}
 		return
 	}
+	a.indicator, err = indicator.New(indicator.Actions{
+		Stop:   func() { _ = a.StopRecording() },
+		Cancel: func() { _ = a.Cancel() },
+		Show:   func() { runtime.WindowUnminimise(ctx); runtime.WindowShow(ctx) },
+	})
+	if err != nil {
+		a.status.IndicatorError = "Floating indicator unavailable: " + err.Error()
+	}
 	a.registerShortcut()
 }
 func (a *App) shutdown(ctx context.Context) {
@@ -99,12 +112,21 @@ func (a *App) shutdown(ctx context.Context) {
 		s.Close()
 	}
 	a.wg.Wait()
+	if a.indicator != nil {
+		a.indicator.Close()
+	}
 	if a.store != nil {
 		a.store.Close()
 	}
 }
 func (a *App) emit() {
 	if a.ctx != nil && !a.closing {
+		if a.indicator != nil && a.indicatorActive {
+			a.indicator.Update(indicator.State{Phase: a.status.Phase, Message: a.status.Message, StartedAt: a.status.StartedAt})
+			if a.status.Phase != "recording" && a.status.Phase != "transcribing" {
+				a.indicatorActive = false
+			}
+		}
 		a.event("dictation:status", a.status)
 	}
 }
@@ -175,9 +197,17 @@ func (a *App) GetSnapshot() (Snapshot, error) {
 		return Snapshot{}, err
 	}
 	ready := speech.Validate(speech.Options{Executable: a.settings.WhisperPath, Model: a.settings.ModelPath}) == nil
-	return Snapshot{Settings: a.settings, Status: a.status, History: history, Models: models.List(a.store.Dir), DataDir: a.store.Dir, Ready: ready}, nil
+	return Snapshot{Settings: a.settings, Status: a.status, History: history, Models: models.List(a.store.Dir), DataDir: a.store.Dir, Ready: ready, FloatingIndicator: a.indicator != nil}, nil
 }
-func (a *App) StartRecording() error { a.mu.Lock(); defer a.mu.Unlock(); return a.start(false) }
+func (a *App) StartRecording() error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	err := a.start(false)
+	if err != nil && a.indicatorActive && !a.busy() {
+		a.fail(err)
+	}
+	return err
+}
 func (a *App) start(external bool) error {
 	if err := a.available(); err != nil {
 		return err
@@ -185,6 +215,7 @@ func (a *App) start(external bool) error {
 	if a.busy() {
 		return errors.New("finish the current operation first")
 	}
+	a.indicatorActive = true
 	if err := speech.Validate(speech.Options{Executable: a.settings.WhisperPath, Model: a.settings.ModelPath}); err != nil {
 		return err
 	}
@@ -194,7 +225,12 @@ func (a *App) start(external bool) error {
 	if external && a.settings.AutoPaste {
 		a.target = platform.Target()
 	}
-	if err := a.recorder.Start(a.path, func(level float64) { a.event("dictation:level", level) }); err != nil {
+	if err := a.recorder.Start(a.path, func(level float64) {
+		a.event("dictation:level", level)
+		if a.indicator != nil {
+			a.indicator.SetLevel(level)
+		}
+	}); err != nil {
 		os.Remove(a.path)
 		return err
 	}
