@@ -67,7 +67,7 @@ The desktop behavior still needs testing, particularly:
 - Microphone permission on first launch, denial, and retry.
 - Shortcut hold/release and toggle mode.
 - Paste into another app, and clipboard fallback after switching windows.
-- The floating panel and keyboard focus while another app is active.
+- The floating panel's focus, dragging, and position after disconnecting a display.
 - Closing to the menu bar, reopening, and quitting during recording.
 - Launch at login, including after moving the app.
 - History, Settings, and both themes on the system WebKit.

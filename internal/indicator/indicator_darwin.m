@@ -6,6 +6,8 @@
 
 extern void yapIndicatorAction(uintptr_t handle, int action);
 
+static NSString *const YapIndicatorFrameName = @"YapDictationIndicator";
+
 static void onIndicatorMain(dispatch_block_t block) {
     if (NSThread.isMainThread) { block(); }
     else { dispatch_sync(dispatch_get_main_queue(), block); }
@@ -63,7 +65,7 @@ static void onIndicatorMain(dispatch_block_t block) {
 }
 @end
 
-@interface YapStatusController : NSObject
+@interface YapStatusController : NSObject <NSWindowDelegate>
 @property(nonatomic) uintptr_t callback;
 @property(nonatomic, strong) YapStatusPanel *panel;
 @property(nonatomic, strong) NSTextField *label;
@@ -73,6 +75,9 @@ static void onIndicatorMain(dispatch_block_t block) {
 @end
 
 @implementation YapStatusController
+- (void)windowDidMove:(NSNotification *)notification {
+    if (self.panel.positioned) { [self.panel saveFrameUsingName:YapIndicatorFrameName]; }
+}
 - (void)action:(NSButton *)sender {
     if (self.callback) { yapIndicatorAction(self.callback, (int)sender.tag); }
 }
@@ -110,6 +115,10 @@ void *yap_indicator_new(uintptr_t callback) {
         controller.panel.backgroundColor = NSColor.clearColor;
         controller.panel.hasShadow = YES;
         controller.panel.appearance = [NSAppearance appearanceNamed:NSAppearanceNameDarkAqua];
+        controller.panel.positioned = [controller.panel setFrameUsingName:YapIndicatorFrameName force:YES];
+        // Restore only location; the indicator retains its fixed control layout.
+        [controller.panel setContentSize:NSMakeSize(376, 64)];
+        controller.panel.delegate = controller;
         NSView *content = [[YapStatusContent alloc] initWithFrame:NSMakeRect(0, 0, 376, 64)];
         controller.panel.contentView = content;
         content.wantsLayer = YES;
@@ -168,6 +177,8 @@ void yap_indicator_close(void *pointer) {
         controller.callback = 0;
         controller.stop.target = nil;
         controller.cancel.target = nil;
+        if (controller.panel.positioned) { [controller.panel saveFrameUsingName:YapIndicatorFrameName]; }
+        controller.panel.delegate = nil;
         [controller.panel orderOut:nil];
         [controller.panel close];
         controller.panel = nil;

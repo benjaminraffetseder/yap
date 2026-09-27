@@ -147,7 +147,7 @@ func (a *App) startup(ctx context.Context) {
 		Stop:   func() { _ = a.StopRecording() },
 		Cancel: func() { _ = a.Cancel() },
 		Show:   a.show,
-	})
+	}, a.store.Dir)
 	if err != nil {
 		a.status.IndicatorError = "Floating indicator unavailable: " + err.Error()
 	}

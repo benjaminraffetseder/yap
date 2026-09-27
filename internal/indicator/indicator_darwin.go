@@ -35,7 +35,8 @@ type darwinIndicator struct {
 	stop, done        chan struct{}
 }
 
-func New(actions Actions) (Controller, error) {
+// AppKit stores frame geometry in the app's user defaults.
+func New(actions Actions, _ string) (Controller, error) {
 	n := &darwinIndicator{actions: actions, stop: make(chan struct{}), done: make(chan struct{})}
 	n.handle = cgo.NewHandle(n)
 	n.panel = C.yap_indicator_new(C.uintptr_t(n.handle))

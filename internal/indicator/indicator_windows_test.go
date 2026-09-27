@@ -2,6 +2,7 @@ package indicator
 
 import (
 	"os"
+	"path/filepath"
 	"runtime"
 	"testing"
 	"time"
@@ -39,7 +40,7 @@ func TestNativeIndicator(t *testing.T) {
 		Stop:   func() { stop <- struct{}{} },
 		Cancel: func() { cancel <- struct{}{} },
 		Show:   func() { open <- struct{}{} },
-	})
+	}, t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -212,4 +213,87 @@ func TestNativeIndicator(t *testing.T) {
 		t.Fatal("window leaked on shutdown")
 	}
 	controller.Update(State{Phase: "recording"}) // harmless after close
+}
+
+func TestNativeIndicatorRestoresPosition(t *testing.T) {
+	if os.Getenv("YAP_INDICATOR_SMOKE") != "1" {
+		t.Skip("set YAP_INDICATOR_SMOKE=1 on an unlocked Windows desktop")
+	}
+	user.NewProc("SetProcessDpiAwarenessContext").Call(signed(-4))
+	dir := t.TempDir()
+	foreground, _, _ := getForeground.Call()
+	open := func() (*native, rect) {
+		t.Helper()
+		controller, err := New(Actions{}, dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(controller.Close)
+		n := controller.(*native)
+		hwnd := n.handle.Load()
+		if visible, _, _ := user.NewProc("IsWindowVisible").Call(hwnd); visible != 0 {
+			t.Fatal("restored indicator became visible before recording")
+		}
+		n.Update(State{Phase: "recording", StartedAt: time.Now().UnixMilli()})
+		until := time.Now().Add(3 * time.Second)
+		for {
+			if visible, _, _ := user.NewProc("IsWindowVisible").Call(hwnd); visible != 0 {
+				break
+			}
+			if time.Now().After(until) {
+				t.Fatal("indicator did not appear")
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+		// Synchronous UI message ensures that placement (including DPI resize)
+		// completed before reading the window rectangle from another thread.
+		sendMessage.Call(hwnd, 0x0000, 0, 0) // WM_NULL
+		var bounds rect
+		getWindowRect.Call(hwnd, uintptr(unsafe.Pointer(&bounds)))
+		return n, bounds
+	}
+	n, before := open()
+	hwnd := n.handle.Load()
+	mousePoint := func(x, y int) uintptr { return uintptr(uint16(x)) | uintptr(uint16(y))<<16 }
+	sendMessage.Call(hwnd, 0x0201, 1, 10|(10<<16))
+	sendMessage.Call(hwnd, 0x0200, 1, mousePoint(60, -70))
+	sendMessage.Call(hwnd, 0x0202, 0, 10|(10<<16))
+	var dragged rect
+	getWindowRect.Call(hwnd, uintptr(unsafe.Pointer(&dragged)))
+	if dragged.Left != before.Left+50 || dragged.Top != before.Top-80 {
+		t.Fatal("test drag did not move indicator")
+	}
+	path := filepath.Join(dir, "indicator-position.json")
+	if position, exists, err := loadPosition(path); err != nil || !exists || position != (point{dragged.Left, dragged.Top}) {
+		t.Fatalf("drag did not immediately save position: %+v, %v", position, err)
+	}
+	n.Close()
+	n, restored := open()
+	if restored != dragged {
+		t.Fatalf("restart lost position: saved %+v, restored %+v", dragged, restored)
+	}
+	n.Close()
+	// An unplugged display can leave saved coordinates far outside today's
+	// desktop. The recreated indicator must fit an available monitor instead.
+	if err := savePosition(path, point{-1_000_000, -1_000_000}); err != nil {
+		t.Fatal(err)
+	}
+	n, restored = open()
+	monitor, _, _ := monitorFromWindow.Call(n.handle.Load(), 2)
+	info := monitorInfo{Size: uint32(unsafe.Sizeof(monitorInfo{}))}
+	if ok, _, _ := getMonitorInfo.Call(monitor, uintptr(unsafe.Pointer(&info))); ok == 0 {
+		t.Fatal("monitor lookup failed")
+	}
+	if restored.Left < info.Work.Left || restored.Top < info.Work.Top || restored.Right > info.Work.Right || restored.Bottom > info.Work.Bottom {
+		t.Fatalf("restored window is unreachable: %+v, work area %+v", restored, info.Work)
+	}
+	n.Close()
+	if err := os.WriteFile(path, []byte(`{"x":"broken"}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	n, _ = open() // Damaged geometry must not prevent a working indicator.
+	n.Close()
+	if current, _, _ := getForeground.Call(); current != foreground {
+		t.Fatal("restoring position stole foreground focus")
+	}
 }

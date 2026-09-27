@@ -10,7 +10,8 @@ Shortcut recordings paste into the original app if it still has focus. If focus
 has moved or paste is blocked, the text stays in History and on the clipboard.
 Recording from Yap's microphone button or tray menu copies without pasting.
 
-The floating indicator appears while you're recording in another app. Stop and Cancel are available there and in the tray menu.
+The floating indicator appears while you're recording in another app. Drag its
+status area to move it; Yap remembers the position. Stop and Cancel are available there and in the tray menu.
 
 ### Microphone and shortcut
 

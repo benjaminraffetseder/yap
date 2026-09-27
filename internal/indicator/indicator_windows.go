@@ -2,7 +2,9 @@ package indicator
 
 import (
 	"fmt"
+	"log"
 	"math"
+	"path/filepath"
 	"runtime"
 	"sync"
 	"sync/atomic"
@@ -111,14 +113,15 @@ type drawItem struct {
 }
 
 type native struct {
-	mu      sync.Mutex
-	state   State
-	changed bool
-	level   float64
-	actions Actions
-	handle  atomic.Uintptr
-	closed  atomic.Bool
-	done    chan struct{}
+	mu           sync.Mutex
+	state        State
+	changed      bool
+	level        float64
+	actions      Actions
+	positionPath string
+	handle       atomic.Uintptr
+	closed       atomic.Bool
+	done         chan struct{}
 	// The remaining fields are used only by the window's OS thread.
 	label, stop, cancel      uintptr
 	background, accent, font uintptr
@@ -129,6 +132,7 @@ type native struct {
 	looping                  bool
 	dismissed                bool
 	dragging, positioned     bool
+	dragMoved                bool
 	dragOffset               point
 	dragCursor               uintptr
 	expires                  time.Time
@@ -144,8 +148,11 @@ func windowLongProc(name string) *windows.LazyProc {
 	return user.NewProc(name + "W")
 }
 
-func New(actions Actions) (Controller, error) {
+func New(actions Actions, dataDir string) (Controller, error) {
 	n := &native{actions: actions, done: make(chan struct{}), dpi: 96}
+	if dataDir != "" {
+		n.positionPath = filepath.Join(dataDir, "indicator-position.json")
+	}
 	ready := make(chan error, 1)
 	go n.run(ready)
 	if err := <-ready; err != nil {
@@ -236,6 +243,15 @@ func (n *native) run(ready chan<- error) {
 	n.preventActivation(n.stop, stopID)
 	n.preventActivation(n.cancel, cancelID)
 	n.layout()
+	if position, exists, err := loadPosition(n.positionPath); err != nil {
+		log.Printf("read indicator position: %v", err)
+	} else if exists {
+		// Restore while hidden; place() chooses the nearest available monitor and
+		// clamps the window before it is shown. Moving can also update its DPI.
+		if ok, _, _ := setWindowPos.Call(hwnd, 0, signed(int(position.X)), signed(int(position.Y)), 0, 0, 0x0015); ok != 0 {
+			n.positioned = true
+		}
+	}
 	if timer, _, err := setTimer.Call(hwnd, 1, 100, 0); timer == 0 {
 		ready <- fmt.Errorf("start indicator timer: %w", err)
 		deleteObject.Call(n.font)
@@ -397,6 +413,20 @@ func (n *native) endDrag() {
 	if n.dragging {
 		n.dragging = false
 		releaseCapture.Call()
+		n.persistPosition()
+	}
+}
+
+func (n *native) persistPosition() {
+	if !n.dragMoved {
+		return
+	}
+	n.dragMoved = false
+	var bounds rect
+	if ok, _, _ := getWindowRect.Call(n.handle.Load(), uintptr(unsafe.Pointer(&bounds))); ok != 0 {
+		if err := savePosition(n.positionPath, point{bounds.Left, bounds.Top}); err != nil {
+			log.Printf("save indicator position: %v", err)
+		}
 	}
 }
 
@@ -415,6 +445,7 @@ func (n *native) windowProc(hwnd uintptr, msg uint32, w uintptr, l unsafe.Pointe
 	case 0x0201: // WM_LBUTTONDOWN: only the background/status area reaches here.
 		n.dragOffset = point{int32(int16(uintptr(l))), int32(int16(uintptr(l) >> 16))}
 		n.dragging = true
+		n.dragMoved = false
 		setCapture.Call(hwnd)
 		return 0
 	case 0x0200: // WM_MOUSEMOVE: capture continues beyond the window's bounds.
@@ -425,10 +456,11 @@ func (n *native) windowProc(hwnd uintptr, msg uint32, w uintptr, l unsafe.Pointe
 				dy := int32(int16(uintptr(l)>>16)) - n.dragOffset.Y
 				if dx != 0 || dy != 0 {
 					previousDPI := n.dpi
-					n.positioned = true
 					n.placing = true
 					// SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE preserves focus.
-					setWindowPos.Call(hwnd, 0, signed(int(bounds.Left+dx)), signed(int(bounds.Top+dy)), 0, 0, 0x0015)
+					if ok, _, _ := setWindowPos.Call(hwnd, 0, signed(int(bounds.Left+dx)), signed(int(bounds.Top+dy)), 0, 0, 0x0015); ok != 0 {
+						n.positioned, n.dragMoved = true, true
+					}
 					n.placing = false
 					if previousDPI != n.dpi {
 						n.dragOffset.X = n.dragOffset.X * int32(n.dpi) / int32(previousDPI)
@@ -444,6 +476,7 @@ func (n *native) windowProc(hwnd uintptr, msg uint32, w uintptr, l unsafe.Pointe
 		return 0
 	case 0x0215: // WM_CAPTURECHANGED: do not release another window's capture.
 		n.dragging = false
+		n.persistPosition()
 		return 0
 	case 0x0014:
 		return 1 // WM_ERASEBKGND: paint the background once
