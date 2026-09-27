@@ -3,7 +3,7 @@ import { EventsOn } from "@wails/runtime/runtime"
 import { backend, isDesktop, message, type Snapshot, type Status } from "@/lib/backend"
 const empty: Snapshot = {
   settings: { microphoneId: "", whisperPath: "", modelPath: "", language: "auto", shortcut: "Ctrl+Alt+Space", interaction: "hold", autoPaste: true, saveAudio: false },
-  status: { phase: "idle", message: "Ready when you are", startedAt: 0, transcript: "", progress: 0, shortcutError: "", indicatorError: "" },
+  status: { phase: "idle", message: "Ready when you are", startedAt: 0, transcript: "", progress: 0, shortcutError: "", indicatorError: "", trayError: "" },
   models: [
     { id: "tiny", name: "Whisper Tiny", size: 77691713, description: "Fastest · short dictation", installed: false, path: "" },
     { id: "base", name: "Whisper Base", size: 147951465, description: "Lightweight · everyday dictation", installed: false, path: "" },

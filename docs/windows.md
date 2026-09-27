@@ -38,8 +38,9 @@ Run `wails dev` from the repository root and leave the terminal open. Changes to
 the frontend reload through Vite; Go changes rebuild the app. Use Ctrl+C to stop
 the watcher.
 
-Close any running copy before replacing the executable, or use
-`wails build -o yap-dev.exe` to build another file.
+Closing the app window hides it to the tray. Choose **Quit Yap** before replacing
+a running executable, or use `wails build -o yap-dev.exe` to build another file.
+Avoid running multiple copies that try to register the same global shortcut.
 
 ## Local data and distribution
 

@@ -12,10 +12,32 @@ static void onIndicatorMain(dispatch_block_t block) {
 }
 
 @interface YapStatusPanel : NSPanel
+@property(nonatomic) BOOL positioned;
 @end
 @implementation YapStatusPanel
 - (BOOL)canBecomeKeyWindow { return NO; }
 - (BOOL)canBecomeMainWindow { return NO; }
+@end
+
+@interface YapStatusContent : NSView
+@end
+@implementation YapStatusContent
+- (BOOL)acceptsFirstMouse:(NSEvent *)event { return YES; }
+- (void)mouseDown:(NSEvent *)event {
+    ((YapStatusPanel *)self.window).positioned = YES;
+    [self.window performWindowDragWithEvent:event];
+}
+- (void)resetCursorRects {
+    [self addCursorRect:NSMakeRect(0, 0, 216, NSHeight(self.bounds)) cursor:NSCursor.openHandCursor];
+}
+@end
+
+// Noninteractive status views pass pointer events through to the drag surface.
+// They remain in the accessibility tree; buttons keep their own mouse handling.
+@interface YapStatusLabel : NSTextField
+@end
+@implementation YapStatusLabel
+- (NSView *)hitTest:(NSPoint)point { return nil; }
 @end
 
 @interface YapStatusButton : NSButton
@@ -31,6 +53,7 @@ static void onIndicatorMain(dispatch_block_t block) {
 @property(nonatomic) BOOL working;
 @end
 @implementation YapStatusMeter
+- (NSView *)hitTest:(NSPoint)point { return nil; }
 - (void)drawRect:(NSRect)dirty {
     [[NSColor colorWithCalibratedRed:0.36 green:0.77 blue:0.57 alpha:1] setFill];
     for (int i = 0; i < 4; i++) {
@@ -76,6 +99,7 @@ void *yap_indicator_new(uintptr_t callback) {
             styleMask:NSWindowStyleMaskBorderless | NSWindowStyleMaskNonactivatingPanel
             backing:NSBackingStoreBuffered defer:NO];
         controller.panel.title = @"Yap — Dictation status";
+        controller.panel.movable = YES;
         controller.panel.level = NSStatusWindowLevel;
         controller.panel.floatingPanel = YES;
         controller.panel.becomesKeyOnlyIfNeeded = YES;
@@ -86,11 +110,12 @@ void *yap_indicator_new(uintptr_t callback) {
         controller.panel.backgroundColor = NSColor.clearColor;
         controller.panel.hasShadow = YES;
         controller.panel.appearance = [NSAppearance appearanceNamed:NSAppearanceNameDarkAqua];
-        NSView *content = controller.panel.contentView;
+        NSView *content = [[YapStatusContent alloc] initWithFrame:NSMakeRect(0, 0, 376, 64)];
+        controller.panel.contentView = content;
         content.wantsLayer = YES;
         content.layer.backgroundColor = [NSColor colorWithCalibratedWhite:0.13 alpha:1].CGColor;
         content.layer.cornerRadius = 12;
-        controller.label = [NSTextField labelWithString:@""];
+        controller.label = [YapStatusLabel labelWithString:@""];
         controller.label.frame = NSMakeRect(40, 22, 168, 20);
         controller.label.font = [NSFont systemFontOfSize:14];
         controller.label.textColor = NSColor.whiteColor;
@@ -114,14 +139,22 @@ void yap_indicator_update(void *pointer, const char *label, const char *stop, co
         controller.meter.level = level;
         controller.meter.working = working;
         controller.meter.needsDisplay = YES;
-        if (!controller.panel.visible || move) {
-            NSPoint mouse = NSEvent.mouseLocation;
-            NSScreen *screen = NSScreen.mainScreen;
-            for (NSScreen *candidate in NSScreen.screens) {
-                if (NSPointInRect(mouse, candidate.frame)) { screen = candidate; break; }
+        if (!controller.panel.visible || (move && !controller.panel.positioned)) {
+            NSScreen *screen = controller.panel.screen ?: NSScreen.mainScreen;
+            if (!controller.panel.positioned) {
+                NSPoint mouse = NSEvent.mouseLocation;
+                for (NSScreen *candidate in NSScreen.screens) {
+                    if (NSPointInRect(mouse, candidate.frame)) { screen = candidate; break; }
+                }
             }
             NSRect area = screen.visibleFrame;
-            [controller.panel setFrameOrigin:NSMakePoint(NSMidX(area)-188, NSMinY(area)+24)];
+            NSPoint origin = NSMakePoint(NSMidX(area)-188, NSMinY(area)+24);
+            if (controller.panel.positioned) {
+                NSRect frame = controller.panel.frame;
+                origin.x = MAX(NSMinX(area), MIN(NSMinX(frame), NSMaxX(area)-NSWidth(frame)));
+                origin.y = MAX(NSMinY(area), MIN(NSMinY(frame), NSMaxY(area)-NSHeight(frame)));
+            }
+            [controller.panel setFrameOrigin:origin];
             [controller.panel orderFrontRegardless]; // Preserve the insertion target's focus.
         }
     });

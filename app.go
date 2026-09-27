@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	goruntime "runtime"
 	"sync"
 	"time"
 
@@ -19,6 +20,7 @@ import (
 	"yap/internal/models"
 	"yap/internal/platform"
 	"yap/internal/storage"
+	"yap/internal/tray"
 )
 
 type Status struct {
@@ -29,6 +31,7 @@ type Status struct {
 	Progress       float64 `json:"progress"`
 	ShortcutError  string  `json:"shortcutError"`
 	IndicatorError string  `json:"indicatorError"`
+	TrayError      string  `json:"trayError"`
 }
 type Snapshot struct {
 	Settings          storage.Settings  `json:"settings"`
@@ -60,45 +63,132 @@ type App struct {
 	copyText         func(string) error
 	indicator        indicator.Controller
 	indicatorActive  bool
+	tray             tray.Controller
+	closeToTray      bool
+	quitRequested    bool
+	showWindow       func()
+	hideWindow       func()
+	quitApplication  func()
 }
 
 func NewApp() *App {
 	return &App{settings: storage.Defaults(), status: Status{Phase: "idle", Message: "Ready when you are"}, recorder: audio.New(), microphones: audio.Devices, engine: speech.Whisper{}}
 }
 func (a *App) startup(ctx context.Context) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.closing {
+		return
+	}
 	a.ctx = ctx
 	a.notify = func(topic string, data ...interface{}) { runtime.EventsEmit(ctx, topic, data...) }
 	a.copyText = func(text string) error { return runtime.ClipboardSetText(ctx, text) }
+	a.showWindow = func() { runtime.Show(ctx); runtime.WindowUnminimise(ctx); runtime.WindowShow(ctx) }
+	a.hideWindow = func() { runtime.WindowHide(ctx) }
+	a.quitApplication = func() { runtime.Quit(ctx) }
+	var err error
+	a.tray, err = tray.New(tray.Actions{Show: a.show, Record: a.trayRecord, Cancel: func() { _ = a.Cancel() }, Quit: a.quit}, trayIcon)
+	if err != nil {
+		a.status.TrayError = "Background controls unavailable: " + err.Error()
+	}
+	// AppKit intercepts only the window close button; Cmd+Q and Dock Quit still
+	// take the normal quit path. Windows closes enter Wails' OnBeforeClose hook.
+	a.closeToTray = goruntime.GOOS == "windows" && a.tray != nil
+	defer a.updateTray()
 	root, err := os.UserConfigDir()
 	if err != nil {
-		a.status = Status{Phase: "error", Message: err.Error()}
+		a.fail(err)
 		return
 	}
 	a.store, err = storage.Open(filepath.Join(root, "yap"))
 	if err != nil {
-		a.status = Status{Phase: "error", Message: err.Error()}
+		a.fail(err)
 		return
 	}
 	a.settings, err = a.store.Settings()
 	if err != nil {
-		a.status = Status{Phase: "error", Message: err.Error()}
+		a.fail(err)
 		return
 	}
 	a.settings.WhisperPath = models.PreferredRuntime(a.settings.WhisperPath)
 	a.indicator, err = indicator.New(indicator.Actions{
 		Stop:   func() { _ = a.StopRecording() },
 		Cancel: func() { _ = a.Cancel() },
-		Show:   func() { runtime.WindowUnminimise(ctx); runtime.WindowShow(ctx) },
+		Show:   a.show,
 	})
 	if err != nil {
 		a.status.IndicatorError = "Floating indicator unavailable: " + err.Error()
 	}
 	a.registerShortcut()
 }
+
+func (a *App) show() {
+	a.mu.Lock()
+	show, closing := a.showWindow, a.closing
+	a.mu.Unlock()
+	if !closing && show != nil {
+		show()
+	}
+}
+
+func (a *App) trayRecord() {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.closing {
+		return
+	}
+	if a.status.Phase == "recording" {
+		a.stop()
+	} else if !a.busy() {
+		// Clicking native menus changes focus. Copy only instead of guessing
+		// which application should receive an automatic paste.
+		if err := a.start(false); err != nil {
+			a.fail(err)
+		}
+	}
+}
+
+func (a *App) quit() {
+	a.mu.Lock()
+	if a.closing || a.quitRequested {
+		a.mu.Unlock()
+		return
+	}
+	a.quitRequested = true
+	quit := a.quitApplication
+	a.mu.Unlock()
+	if quit != nil {
+		quit()
+	}
+}
+
+func (a *App) beforeClose(ctx context.Context) bool {
+	a.mu.Lock()
+	hide := a.hideWindow
+	background := a.closeToTray && a.tray != nil && !a.quitRequested && !a.closing && hide != nil
+	a.mu.Unlock()
+	if background {
+		hide()
+		return true
+	}
+	// AppKit callbacks must be cleaned up while its main event loop still runs.
+	a.shutdown(ctx)
+	return false
+}
+
+func (a *App) updateTray() {
+	if a.tray != nil {
+		ready := a.store != nil && speech.Validate(speech.Options{Executable: a.settings.WhisperPath, Model: a.settings.ModelPath}) == nil
+		a.tray.Update(tray.State{Phase: a.status.Phase, Ready: ready})
+	}
+}
 func (a *App) shutdown(ctx context.Context) {
 	a.shutdownOnce.Do(func() {
 		a.mu.Lock()
 		a.closing = true
+		if a.tray != nil {
+			a.tray.Update(tray.State{Phase: "closing"})
+		}
 		if a.timer != nil {
 			a.timer.Stop()
 		}
@@ -119,6 +209,9 @@ func (a *App) shutdown(ctx context.Context) {
 		if a.indicator != nil {
 			a.indicator.Close()
 		}
+		if a.tray != nil {
+			a.tray.Close()
+		}
 		if a.store != nil {
 			a.store.Close()
 		}
@@ -126,6 +219,7 @@ func (a *App) shutdown(ctx context.Context) {
 }
 func (a *App) emit() {
 	if a.ctx != nil && !a.closing {
+		a.updateTray()
 		if a.indicator != nil && a.indicatorActive {
 			a.indicator.Update(indicator.State{Phase: a.status.Phase, Message: a.status.Message, StartedAt: a.status.StartedAt})
 			if a.status.Phase != "recording" && a.status.Phase != "transcribing" {

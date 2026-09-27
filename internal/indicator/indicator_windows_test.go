@@ -103,6 +103,55 @@ func TestNativeIndicator(t *testing.T) {
 	if bounds.Right-bounds.Left != int32(348*int(dpi)/96) || bounds.Bottom-bounds.Top != int32(64*int(dpi)/96) {
 		t.Fatalf("window dimensions do not match display scale: %+v, DPI %d", bounds, dpi)
 	}
+	windowBounds := func() rect {
+		t.Helper()
+		var r rect
+		if ok, _, err := user.NewProc("GetWindowRect").Call(hwnd, uintptr(unsafe.Pointer(&r))); ok == 0 {
+			t.Fatal(err)
+		}
+		return r
+	}
+	mousePoint := func(x, y int) uintptr { return uintptr(uint16(x)) | uintptr(uint16(y))<<16 }
+	var labelBounds rect
+	user.NewProc("GetWindowRect").Call(n.label, uintptr(unsafe.Pointer(&labelBounds)))
+	if hit, _, _ := sendMessage.Call(n.label, 0x0084, 0, mousePoint(int(labelBounds.Left+5), int(labelBounds.Top+5))); int32(hit) != -1 {
+		t.Fatal("label does not pass pointer hit testing to the drag surface")
+	}
+	// Drag the status area beyond its left edge without moving the user's cursor.
+	// Signed client coordinates must work when the captured pointer leaves it.
+	sendMessage.Call(hwnd, 0x0201, 1, mousePoint(40, 32))
+	sendMessage.Call(hwnd, 0x0200, 1, mousePoint(-20, -48))
+	sendMessage.Call(hwnd, 0x0202, 0, mousePoint(40, 32))
+	dragged := windowBounds()
+	if dragged.Left != bounds.Left-60 || dragged.Top != bounds.Top-80 || dragged.Right-dragged.Left != bounds.Right-bounds.Left {
+		t.Fatalf("status area did not drag correctly: before %+v, after %+v", bounds, dragged)
+	}
+	assertFocus()
+	// Mouse-up and interrupted capture must stop movement.
+	sendMessage.Call(hwnd, 0x0200, 0, mousePoint(90, 32))
+	if got := windowBounds(); got != dragged {
+		t.Fatalf("indicator moved after mouse-up: %+v", got)
+	}
+	sendMessage.Call(hwnd, 0x0201, 1, mousePoint(40, 32))
+	sendMessage.Call(hwnd, 0x001F, 0, 0) // WM_CANCELMODE
+	sendMessage.Call(hwnd, 0x0200, 1, mousePoint(90, 32))
+	if got := windowBounds(); got != dragged {
+		t.Fatalf("indicator moved after drag cancellation: %+v", got)
+	}
+	sendMessage.Call(hwnd, 0x0201, 1, mousePoint(40, 32))
+	sendMessage.Call(n.stop, 0x0201, 1, mousePoint(5, 5)) // Transfers capture to a button.
+	sendMessage.Call(hwnd, 0x0200, 1, mousePoint(90, 32))
+	sendMessage.Call(n.stop, 0x0202, 0, mousePoint(-1, -1)) // Outside: no button action.
+	if got := windowBounds(); got != dragged {
+		t.Fatalf("indicator moved after losing capture: %+v", got)
+	}
+	select {
+	case <-stop:
+		t.Fatal("drag triggered Stop")
+	case <-cancel:
+		t.Fatal("drag triggered Cancel")
+	default:
+	}
 	if os.Getenv("YAP_INDICATOR_PREVIEW") == "1" {
 		// Desktop inspectors commonly omit tool windows. Expose this test-only
 		// preview in their window list without changing its non-activation policy.
@@ -114,8 +163,14 @@ func TestNativeIndicator(t *testing.T) {
 	callback("stop action missing", stop)
 	click(n.cancel)
 	callback("recording cancel action missing", cancel)
+	if got := windowBounds(); got != dragged {
+		t.Fatalf("button clicks moved the indicator: %+v", got)
+	}
 	controller.Update(State{Phase: "transcribing"})
 	wait("transcription status missing", func() bool { return visible() && text() == "Transcribing…" })
+	if got := windowBounds(); got != dragged {
+		t.Fatalf("transcription reset the chosen position: %+v", got)
+	}
 	if shown, _, _ := user.NewProc("IsWindowVisible").Call(n.stop); shown != 0 {
 		t.Fatal("stop still visible during transcription")
 	}
@@ -134,7 +189,20 @@ func TestNativeIndicator(t *testing.T) {
 	controller.Update(failure)
 	wait("repeated error did not reappear after expiry", visible)
 	controller.Update(State{Phase: "recording", StartedAt: time.Now().UnixMilli()})
-	wait("new recording did not reappear", visible)
+	wait("new recording did not reappear", func() bool { return visible() && text() == "Recording  0:00" })
+	if got := windowBounds(); got != dragged {
+		t.Fatalf("new recording reset the chosen position: %+v", got)
+	}
+	// Model a work-area change without changing the user's displays. The retained
+	// position must be clamped so controls do not remain outside the usable area.
+	monitor, _, _ := monitorFromWindow.Call(hwnd, 2)
+	info := monitorInfo{Size: uint32(unsafe.Sizeof(monitorInfo{}))}
+	getMonitorInfo.Call(monitor, uintptr(unsafe.Pointer(&info)))
+	setWindowPos.Call(hwnd, 0, signed(int(info.Work.Left)-10), signed(int(info.Work.Top)-10), 0, 0, 0x0015)
+	sendMessage.Call(hwnd, 0x001A, 0, 0) // WM_SETTINGCHANGE
+	if got := windowBounds(); got.Left != info.Work.Left || got.Top != info.Work.Top {
+		t.Fatalf("display change left the indicator outside the work area: %+v", got)
+	}
 	controller.Update(State{Phase: "done", Message: "Copied to clipboard"})
 	wait("completion missing", func() bool { return visible() && text() == "Copied to clipboard" })
 	wait("completion did not auto-hide", func() bool { return !visible() })

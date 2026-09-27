@@ -40,8 +40,10 @@ var endPaint = user.NewProc("EndPaint")
 var fillRect = user.NewProc("FillRect")
 var setWindowRgn = user.NewProc("SetWindowRgn")
 var getClientRect = user.NewProc("GetClientRect")
+var getWindowRect = user.NewProc("GetWindowRect")
 var setCapture = user.NewProc("SetCapture")
 var releaseCapture = user.NewProc("ReleaseCapture")
+var setCursor = user.NewProc("SetCursor")
 var callWindowProc = user.NewProc("CallWindowProcW")
 var setWindowLong = windowLongProc("SetWindowLong")
 var createBrush = gdi.NewProc("CreateSolidBrush")
@@ -126,6 +128,9 @@ type native struct {
 	placing                  bool
 	looping                  bool
 	dismissed                bool
+	dragging, positioned     bool
+	dragOffset               point
+	dragCursor               uintptr
 	expires                  time.Time
 	labelText                string
 }
@@ -193,7 +198,8 @@ func (n *native) run(ready chan<- error) {
 	}
 	className := utf16(fmt.Sprintf("YapIndicator%d", classSequence.Add(1)))
 	wc := windowClass{Size: uint32(unsafe.Sizeof(windowClass{})), Procedure: windows.NewCallback(n.windowProc), Instance: uintptr(module), ClassName: className}
-	wc.Cursor, _, _ = loadCursor.Call(0, 32512) // IDC_ARROW
+	wc.Cursor, _, _ = loadCursor.Call(0, 32512)    // IDC_ARROW
+	n.dragCursor, _, _ = loadCursor.Call(0, 32646) // IDC_SIZEALL
 	if result, _, err := registerClass.Call(uintptr(unsafe.Pointer(&wc))); result == 0 {
 		ready <- fmt.Errorf("register indicator window: %w", err)
 		return
@@ -218,6 +224,7 @@ func (n *native) run(ready chan<- error) {
 			destroyWindow.Call(remaining)
 		}
 	}()
+	// Without SS_NOTIFY, the static label passes mouse hit testing to its parent.
 	n.label = n.child("STATIC", "", 0x50000000, 0, uintptr(module))
 	n.stop = n.child("BUTTON", "Stop", 0x5000000B, stopID, uintptr(module)) // BS_OWNERDRAW
 	n.cancel = n.child("BUTTON", "Cancel", 0x5000000B, cancelID, uintptr(module))
@@ -314,6 +321,11 @@ func (n *native) layout() {
 
 func (n *native) place() {
 	foreground, _, _ := getForeground.Call()
+	var current rect
+	if n.positioned {
+		foreground = n.handle.Load()
+		getWindowRect.Call(foreground, uintptr(unsafe.Pointer(&current)))
+	}
 	monitor, _, _ := monitorFromWindow.Call(foreground, 2)
 	info := monitorInfo{Size: uint32(unsafe.Sizeof(monitorInfo{}))}
 	if ok, _, _ := getMonitorInfo.Call(monitor, uintptr(unsafe.Pointer(&info))); ok == 0 {
@@ -323,6 +335,11 @@ func (n *native) place() {
 	previousDPI := n.dpi
 	x := int(info.Work.Left) + (int(info.Work.Right-info.Work.Left)-w)/2
 	y := int(info.Work.Bottom) - h - n.px(24)
+	if n.positioned {
+		// Retain the user's position, keeping it reachable after display changes.
+		x = max(int(info.Work.Left), min(int(current.Left), int(info.Work.Right)-w))
+		y = max(int(info.Work.Top), min(int(current.Top), int(info.Work.Bottom)-h))
+	}
 	// HWND_TOPMOST and SWP_NOACTIVATE keep the insertion target focused.
 	n.placing = true
 	setWindowPos.Call(n.handle.Load(), ^uintptr(0), signed(x), signed(y), uintptr(w), uintptr(h), 0x0050)
@@ -349,12 +366,13 @@ func (n *native) refresh() {
 		if v.dismissAfter > 0 {
 			n.expires = now.Add(v.dismissAfter)
 		}
-		if v.visible && (!n.visible || s.Phase == "recording") {
+		if v.visible && !n.dragging && (!n.visible || s.Phase == "recording") {
 			n.place()
 		}
 	}
 	if !v.visible || n.dismissed || !n.expires.IsZero() && !now.Before(n.expires) {
 		if n.visible {
+			n.endDrag()
 			showWindow.Call(n.handle.Load(), 0)
 			n.visible = false
 		}
@@ -375,6 +393,13 @@ func (n *native) refresh() {
 	invalidate.Call(n.handle.Load(), 0, 0)
 }
 
+func (n *native) endDrag() {
+	if n.dragging {
+		n.dragging = false
+		releaseCapture.Call()
+	}
+}
+
 func (n *native) windowProc(hwnd uintptr, msg uint32, w uintptr, l unsafe.Pointer) uintptr {
 	switch msg {
 	case wmUpdate, 0x0113:
@@ -382,6 +407,44 @@ func (n *native) windowProc(hwnd uintptr, msg uint32, w uintptr, l unsafe.Pointe
 		return 0 // WM_TIMER
 	case 0x0021:
 		return 3 // MA_NOACTIVATE
+	case 0x0020: // WM_SETCURSOR: buttons keep their normal cursor.
+		if (w == hwnd || w == n.label) && uintptr(l)&0xffff == 1 {
+			setCursor.Call(n.dragCursor)
+			return 1
+		}
+	case 0x0201: // WM_LBUTTONDOWN: only the background/status area reaches here.
+		n.dragOffset = point{int32(int16(uintptr(l))), int32(int16(uintptr(l) >> 16))}
+		n.dragging = true
+		setCapture.Call(hwnd)
+		return 0
+	case 0x0200: // WM_MOUSEMOVE: capture continues beyond the window's bounds.
+		if n.dragging {
+			var bounds rect
+			if ok, _, _ := getWindowRect.Call(hwnd, uintptr(unsafe.Pointer(&bounds))); ok != 0 {
+				dx := int32(int16(uintptr(l))) - n.dragOffset.X
+				dy := int32(int16(uintptr(l)>>16)) - n.dragOffset.Y
+				if dx != 0 || dy != 0 {
+					previousDPI := n.dpi
+					n.positioned = true
+					n.placing = true
+					// SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE preserves focus.
+					setWindowPos.Call(hwnd, 0, signed(int(bounds.Left+dx)), signed(int(bounds.Top+dy)), 0, 0, 0x0015)
+					n.placing = false
+					if previousDPI != n.dpi {
+						n.dragOffset.X = n.dragOffset.X * int32(n.dpi) / int32(previousDPI)
+						n.dragOffset.Y = n.dragOffset.Y * int32(n.dpi) / int32(previousDPI)
+						n.place()
+					}
+				}
+			}
+		}
+		return 0
+	case 0x0202, 0x001F: // WM_LBUTTONUP / WM_CANCELMODE
+		n.endDrag()
+		return 0
+	case 0x0215: // WM_CAPTURECHANGED: do not release another window's capture.
+		n.dragging = false
+		return 0
 	case 0x0014:
 		return 1 // WM_ERASEBKGND: paint the background once
 	case 0x0138: // WM_CTLCOLORSTATIC
@@ -426,6 +489,7 @@ func (n *native) windowProc(hwnd uintptr, msg uint32, w uintptr, l unsafe.Pointe
 		}
 		return 0
 	case wmClose:
+		n.endDrag()
 		killTimer.Call(hwnd, 1)
 		destroyWindow.Call(hwnd)
 		return 0

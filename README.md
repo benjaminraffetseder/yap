@@ -14,7 +14,7 @@ Linux support is incomplete.
 ## What it does
 
 - Hold-to-talk or toggle recording with a global shortcut.
-- See recording progress in a floating indicator.
+- Dictate in the background, with tray controls and a floating indicator.
 - Search, copy, and export past transcripts.
 
 ## Getting started
@@ -29,6 +29,10 @@ On Windows 10/11 x64, [build from source](#build-from-source) and open
 The first model download needs internet. Dictation works offline after that.
 You can also record with the microphone button in Yap; this copies the result
 without pasting into another app.
+
+Closing the window leaves Yap running in the tray. Choose **Quit Yap** from the
+tray menu to exit. Settings lets you change the shortcut, microphone, recording
+mode, and startup behavior.
 
 See [Using Yap](docs/usage.md) for settings, history, and troubleshooting.
 [Windows build notes](docs/windows.md) cover prerequisites and troubleshooting.

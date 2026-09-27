@@ -8,9 +8,9 @@ again to stop. Recordings are limited to ten minutes.
 
 Shortcut recordings paste into the original app if it still has focus. If focus
 has moved or paste is blocked, the text stays in History and on the clipboard.
-Recording from Yap's microphone button copies without pasting.
+Recording from Yap's microphone button or tray menu copies without pasting.
 
-The floating indicator appears while you're recording in another app. Stop and Cancel are available there.
+The floating indicator appears while you're recording in another app. Stop and Cancel are available there and in the tray menu.
 
 ### Microphone and shortcut
 
@@ -22,6 +22,11 @@ Enter a shortcut in Settings and save it.
 Supported combinations use Ctrl, Alt, or Shift with Space, A–Z, or F1–F12.
 Windows/Command and AltGr aren't supported. If another app has claimed the
 shortcut, choose another; the microphone button still works.
+
+### Running in the background
+
+Closing the window hides Yap to the tray or Mac menu bar. Use **Open Yap** to
+bring it back and **Quit Yap** to exit.
 
 ## History
 

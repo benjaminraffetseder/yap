@@ -1,10 +1,8 @@
 package main
 
 import (
-	"context"
 	"embed"
 	"log"
-	"runtime"
 
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
@@ -13,6 +11,9 @@ import (
 
 //go:embed all:frontend/dist
 var assets embed.FS
+
+//go:embed build/windows/icon.ico
+var trayIcon []byte
 
 func main() {
 	app := NewApp()
@@ -26,12 +27,12 @@ func main() {
 		AssetServer:      &assetserver.Options{Assets: assets},
 		OnStartup:        app.startup,
 		OnShutdown:       app.shutdown,
-		Bind:             []interface{}{app},
-	}
-	if runtime.GOOS == "darwin" {
-		// CGO hotkeys and the status panel use AppKit's main queue. Clean up
-		// while the event loop is still running, before Wails calls OnShutdown.
-		config.OnBeforeClose = func(ctx context.Context) bool { app.shutdown(ctx); return false }
+		OnBeforeClose:    app.beforeClose,
+		SingleInstanceLock: &options.SingleInstanceLock{
+			UniqueId:               "com.yap.desktop",
+			OnSecondInstanceLaunch: func(options.SecondInstanceData) { app.show() },
+		},
+		Bind: []interface{}{app},
 	}
 	if err := wails.Run(config); err != nil {
 		log.Fatal(err)

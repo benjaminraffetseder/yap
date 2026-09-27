@@ -20,7 +20,7 @@ test.beforeEach(async ({ page }) => {
     const state: Window["dictationTest"] = {
       snapshot: {
         settings: { microphoneId: "", whisperPath: "/whisper", modelPath: "/model", language: "auto", shortcut: "Ctrl+Alt+Space", interaction: "hold", autoPaste: true, saveAudio: false },
-        status: { phase: "idle", message: "Ready", startedAt: 0, transcript: "", progress: 0, shortcutError: "", indicatorError: "" },
+        status: { phase: "idle", message: "Ready", startedAt: 0, transcript: "", progress: 0, shortcutError: "", indicatorError: "", trayError: "" },
         models: [], history: [], ready: true, dataDir: "", floatingIndicator: true,
       },
       callbacks: {}, deferSnapshots: false, pendingSnapshots: [], failSave: false,

@@ -4,7 +4,8 @@ The Mac code was prepared on Windows. I haven't verified a native Mac build yet,
 so treat this as work in progress. Build reports and fixes from Apple Silicon
 or Intel Macs would be helpful.
 
-The source includes native microphone capture, shortcuts, paste, and a floating recording panel. The target is macOS 12.0 or newer, including its
+The source includes native microphone capture, shortcuts, paste, a menu-bar item,
+and a floating recording panel. The target is macOS 12.0 or newer, including its
 system WebKit. Installing a newer standalone browser doesn't update Yap's webview.
 
 ## Build with Wails
@@ -54,6 +55,9 @@ If paste isn't possible, look in History or use the clipboard. Yap won't move
 focus back to the target window. Data is stored in
 `~/Library/Application Support/yap`.
 
+Closing the window keeps Yap in the menu bar. Reopen it from there or the Dock;
+**Quit Yap**, Cmd+Q, and Dock Quit exit.
+
 ## Testing on a Mac
 
 The desktop behavior still needs testing, particularly:
@@ -62,6 +66,7 @@ The desktop behavior still needs testing, particularly:
 - Shortcut hold/release and toggle mode.
 - Paste into another app, and clipboard fallback after switching windows.
 - The floating panel and keyboard focus while another app is active.
+- Closing to the menu bar, reopening, and quitting during recording.
 - History, Settings, and both themes on the system WebKit.
 
 Test on both Apple Silicon and Intel before calling a release universal. A

@@ -7,7 +7,8 @@ The UI uses Tailwind v4 and shadcn/ui with Base UI components.
 
 See the [README](../README.md#build-from-source) for tool versions. From the repo
 root, run `wails dev` and leave the terminal open. It rebuilds Go changes and
-serves the frontend with Vite. Ctrl+C stops the watcher.
+serves the frontend with Vite. Ctrl+C stops the watcher; closing the app window
+only hides it to the tray.
 
 For frontend work in a browser, first run `wails build` to generate bindings:
 
@@ -28,7 +29,7 @@ shortcuts through Wails. Use the desktop app to test those.
 | `app*.go` | Recording state and methods exposed to the frontend |
 | `internal/audio` | Capture, decoding, and WAV import |
 | `internal/platform` | Global shortcuts and text insertion |
-| `internal/indicator` | Floating recording indicator |
+| `internal/indicator`, `internal/tray` | Native desktop controls |
 | `internal/inference` | Whisper CLI client |
 | `internal/models` | Model/runtime downloads and verification |
 | `internal/storage` | SQLite and history |
@@ -77,10 +78,11 @@ Native and download tests are opt-in. Run them from the repo root on Windows:
 | Environment variable | Command | What it exercises |
 | --- | --- | --- |
 | `YAP_INDICATOR_SMOKE=1` | `go test ./internal/indicator -run '^TestNativeIndicator' -v -count=1` | Real floating windows, focus, and dragging |
+| `YAP_TRAY_SMOKE=1` | `go test ./internal/tray -run TestNativeTray -v -count=1` | Real tray controls |
 | `YAP_INTEGRATION=1` | `go test ./internal/models -run TestRealWhisper -v -count=1` | Downloads Whisper and Tiny, then transcribes a sample |
 
-In PowerShell, set the variable with `$env:YAP_INTEGRATION = '1'` and remove it
-afterward with `Remove-Item Env:YAP_INTEGRATION` (substitute the variable you need).
+In PowerShell, set the variable with `$env:YAP_TRAY_SMOKE = '1'` and remove it
+afterward with `Remove-Item Env:YAP_TRAY_SMOKE` (substitute the variable you need).
 Leave these unset for normal unit tests.
 
 The [Mac notes](macos.md#testing-on-a-mac) list the checks that still need a Mac.
