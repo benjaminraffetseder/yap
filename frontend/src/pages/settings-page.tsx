@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import { FolderOpen, Monitor, Moon, RefreshCw, Save, Sun } from "lucide-react"
-import { Link } from "react-router"
+import { Link, useNavigate } from "react-router"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -10,6 +10,7 @@ import { useDictation } from "@/components/dictation-provider"
 import { backend, isDesktop, message, type Microphone } from "@/lib/backend"
 const themes = [{ value: "light", label: "Light", icon: Sun }, { value: "dark", label: "Dark", icon: Moon }, { value: "system", label: "System", icon: Monitor }] as const
 export function SettingsPage() {
+  const navigate = useNavigate()
   const { theme, setTheme } = useTheme()
   const { snapshot, run } = useDictation()
   const [settings, setSettings] = useState(snapshot.settings)
@@ -20,7 +21,7 @@ export function SettingsPage() {
   const [microphoneError, setMicrophoneError] = useState("")
   const [microphonesLoaded, setMicrophonesLoaded] = useState(false)
   const microphoneRequest = useRef(0)
-  const busy = ["recording", "transcribing", "downloading"].includes(snapshot.status.phase)
+  const busy = ["recording", "transcribing", "downloading", "mic-test"].includes(snapshot.status.phase)
   const dirty = JSON.stringify(settings) !== JSON.stringify(snapshot.settings)
   const selectedMicrophoneMissing = microphonesLoaded && !microphoneError && !!settings.microphoneId && !microphones.some(mic => mic.id === settings.microphoneId)
   const microphoneOptions = [
@@ -61,6 +62,7 @@ export function SettingsPage() {
   return <div className="space-y-7">
     <header><h1 className="text-2xl font-semibold tracking-tight">Settings</h1></header>
     <fieldset disabled={!isDesktop || busy || saving} className="space-y-6 disabled:opacity-60">
+      <section className="settings-section"><h2 className="font-semibold">Text processing</h2><label className="mt-5 flex cursor-pointer items-start gap-3"><input type="checkbox" className="mt-1 accent-[var(--primary)]" checked={settings.cleanText} onChange={event => setSettings({ ...settings, cleanText: event.target.checked })} /><span className="text-sm">Light cleanup<span className="mt-1 block text-xs text-muted-foreground">Apply local spacing, capitalization, and punctuation rules; remove common English/German filler words. Original transcripts stay in History.</span></span></label></section>
       <section className="settings-section"><h2 className="font-semibold">Startup</h2>
         <label className={`mt-5 flex items-start gap-3 ${snapshot.launchAtLoginAvailable ? "cursor-pointer" : "opacity-60"}`}><input type="checkbox" className="mt-1 accent-[var(--primary)]" disabled={!snapshot.launchAtLoginAvailable} checked={settings.launchAtLogin} onChange={event => setSettings({ ...settings, launchAtLogin: event.target.checked })} /><span className="text-sm">Launch at login</span></label>
         <label className={`mt-5 flex items-start gap-3 ${snapshot.startInTrayAvailable || settings.startInTray ? "cursor-pointer" : "opacity-60"}`}><input type="checkbox" className="mt-1 accent-[var(--primary)]" disabled={!snapshot.startInTrayAvailable && !settings.startInTray} checked={settings.startInTray} onChange={event => setSettings({ ...settings, startInTray: event.target.checked })} /><span className="text-sm">Start in tray / menu bar<span className="mt-1 block text-xs text-muted-foreground">Keep the main window hidden on the next launch.</span></span></label>
@@ -93,6 +95,7 @@ export function SettingsPage() {
       <section className="settings-section"><h2 className="font-semibold">History & storage</h2><label className="mt-5 flex cursor-pointer items-start gap-3"><input type="checkbox" className="mt-1 accent-[var(--primary)]" checked={settings.saveAudio} onChange={event => setSettings({ ...settings, saveAudio: event.target.checked })} /><span className="text-sm">Keep recordings<span className="mt-1 block text-xs text-muted-foreground">Save audio for playback in History. Otherwise, delete it after processing.</span></span></label>{snapshot.dataDir && <p className="mt-5 break-all text-xs leading-5 text-muted-foreground">Data folder: <span className="font-mono">{snapshot.dataDir}</span></p>}</section>
       <div className="flex items-center gap-4"><Button disabled={!dirty || saving || selectedMicrophoneMissing} className="rounded-lg" onClick={() => void save()}><Save className="size-4" />{saving ? "Saving…" : "Save settings"}</Button>{dirty && <span className="text-xs text-muted-foreground">Unsaved changes</span>}</div>
     </fieldset>
+    <section className="settings-section"><h2 className="mb-4 font-semibold">Setup</h2><Button variant="outline" disabled={!isDesktop || busy || saving || dirty} onClick={() => void run(async () => { await backend.restartSetup(); navigate("/") })}>Run setup</Button>{dirty && <p className="mt-2 text-xs text-muted-foreground">Save settings before running setup.</p>}</section>
     <section className="settings-section"><h2 className="mb-4 font-semibold">Appearance</h2><div className="flex gap-3" role="group" aria-label="Color theme">{themes.map(({ value, label, icon: Icon }) => <Button key={value} variant={theme === value ? "default" : "outline"} onClick={() => setTheme(value)} aria-pressed={theme === value}><Icon className="size-4" />{label}</Button>)}</div></section>
   </div>
 }

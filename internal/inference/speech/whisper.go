@@ -11,7 +11,7 @@ import (
 	"yap/internal/process"
 )
 
-type Options struct{ Executable, Model, Language string }
+type Options struct{ Executable, Model, Language, Prompt string }
 type Engine interface {
 	Transcribe(context.Context, string, Options) (string, error)
 }
@@ -40,7 +40,11 @@ func (Whisper) Transcribe(ctx context.Context, audio string, opts Options) (stri
 	}
 	defer os.RemoveAll(dir)
 	out := filepath.Join(dir, "transcript")
-	cmd := exec.CommandContext(ctx, opts.Executable, "-m", opts.Model, "-f", audio, "-l", opts.Language, "-otxt", "-of", out, "-nt", "-np")
+	args := []string{"-m", opts.Model, "-f", audio, "-l", opts.Language, "-otxt", "-of", out, "-nt", "-np"}
+	if opts.Prompt != "" {
+		args = append(args, "--prompt", opts.Prompt)
+	}
+	cmd := exec.CommandContext(ctx, opts.Executable, args...)
 	process.Hide(cmd)
 	log, err := cmd.CombinedOutput()
 	if err != nil {

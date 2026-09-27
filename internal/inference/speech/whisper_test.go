@@ -16,11 +16,17 @@ func TestMain(m *testing.M) {
 			time.Sleep(10 * time.Second)
 			os.Exit(0)
 		}
-		var out string
+		var out, prompt string
 		for i, arg := range os.Args {
 			if arg == "-of" && i+1 < len(os.Args) {
 				out = os.Args[i+1]
 			}
+			if arg == "--prompt" && i+1 < len(os.Args) {
+				prompt = os.Args[i+1]
+			}
+		}
+		if mode == "prompt" && prompt != os.Getenv("YAP_EXPECT_PROMPT") {
+			os.Exit(3)
 		}
 		if mode == "empty" {
 			os.WriteFile(out+".txt", nil, 0600)
@@ -53,6 +59,15 @@ func TestTranscriptAndEmptyOutput(t *testing.T) {
 	t.Setenv("YAP_TEST_WHISPER", "empty")
 	if _, err = (Whisper{}).Transcribe(context.Background(), "audio.wav", opts); err == nil {
 		t.Fatal("accepted empty transcription")
+	}
+}
+func TestVocabularyPromptIsOneLiteralArgument(t *testing.T) {
+	opts := testOptions(t)
+	opts.Prompt = "PostgreSQL, C++, O'Reilly, \"Yap\", $(literal)"
+	t.Setenv("YAP_TEST_WHISPER", "prompt")
+	t.Setenv("YAP_EXPECT_PROMPT", opts.Prompt)
+	if _, err := (Whisper{}).Transcribe(context.Background(), "audio.wav", opts); err != nil {
+		t.Fatal(err)
 	}
 }
 func TestCancellationTerminatesProcess(t *testing.T) {

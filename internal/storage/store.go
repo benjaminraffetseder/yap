@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+	"yap/internal/vocabulary"
 
 	_ "modernc.org/sqlite"
 )
@@ -22,6 +23,8 @@ type Settings struct {
 	SaveAudio     bool   `json:"saveAudio"`
 	LaunchAtLogin bool   `json:"launchAtLogin"`
 	StartInTray   bool   `json:"startInTray"`
+	CleanText     bool   `json:"cleanText"`
+	SetupComplete bool   `json:"setupComplete"`
 }
 
 func Defaults() Settings {
@@ -29,13 +32,14 @@ func Defaults() Settings {
 }
 
 type Session struct {
-	ID            string `json:"id"`
-	CreatedAt     string `json:"createdAt"`
-	DurationMS    int64  `json:"durationMs"`
-	RawTranscript string `json:"rawTranscript"`
-	SpeechModel   string `json:"speechModel"`
-	Language      string `json:"language"`
-	AudioPath     string `json:"audioPath"`
+	ID              string `json:"id"`
+	CreatedAt       string `json:"createdAt"`
+	DurationMS      int64  `json:"durationMs"`
+	RawTranscript   string `json:"rawTranscript"`
+	FinalTranscript string `json:"finalTranscript"`
+	SpeechModel     string `json:"speechModel"`
+	Language        string `json:"language"`
+	AudioPath       string `json:"audioPath"`
 }
 
 type Store struct {
@@ -61,6 +65,15 @@ func Open(dir string) (*Store, error) {
 		db.Close()
 		return nil, err
 	}
+	// Expand storage without changing the original table's columns. Older builds
+	// still insert/read recordings normally; their deletes also run this trigger.
+	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS vocabulary (id INTEGER PRIMARY KEY CHECK(id=1), value TEXT NOT NULL);
+	CREATE TABLE IF NOT EXISTS recording_outputs (id TEXT PRIMARY KEY, transcript TEXT NOT NULL);
+	CREATE TRIGGER IF NOT EXISTS delete_recording_output AFTER DELETE ON recordings BEGIN DELETE FROM recording_outputs WHERE id=OLD.id; END;`)
+	if err != nil {
+		db.Close()
+		return nil, err
+	}
 	return &Store{db: db, Dir: dir}, nil
 }
 func (s *Store) Close() error { return s.db.Close() }
@@ -75,6 +88,13 @@ func (s *Store) Settings() (Settings, error) {
 		return out, err
 	}
 	err = json.Unmarshal([]byte(raw), &out)
+	if err == nil {
+		var fields map[string]json.RawMessage
+		_ = json.Unmarshal([]byte(raw), &fields)
+		if _, exists := fields["setupComplete"]; !exists {
+			out.SetupComplete = out.WhisperPath != "" && out.ModelPath != ""
+		}
+	}
 	return out, err
 }
 func (s *Store) SaveSettings(v Settings) error {
@@ -86,11 +106,24 @@ func (s *Store) SaveSettings(v Settings) error {
 	return err
 }
 func (s *Store) Add(v Session) error {
-	_, err := s.db.Exec("INSERT INTO recordings VALUES(?,?,?,?,?,?,?)", v.ID, v.CreatedAt, v.DurationMS, v.RawTranscript, v.SpeechModel, v.Language, v.AudioPath)
-	return err
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	_, err = tx.Exec("INSERT INTO recordings VALUES(?,?,?,?,?,?,?)", v.ID, v.CreatedAt, v.DurationMS, v.RawTranscript, v.SpeechModel, v.Language, v.AudioPath)
+	if err != nil {
+		return err
+	}
+	if v.FinalTranscript != "" && v.FinalTranscript != v.RawTranscript {
+		if _, err := tx.Exec("INSERT INTO recording_outputs VALUES(?,?)", v.ID, v.FinalTranscript); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
 }
 func (s *Store) History() ([]Session, error) {
-	rows, err := s.db.Query("SELECT id,created_at,duration_ms,transcript,model,language,audio_path FROM recordings ORDER BY created_at DESC LIMIT 500")
+	rows, err := s.db.Query("SELECT r.id,r.created_at,r.duration_ms,r.transcript,r.model,r.language,r.audio_path,COALESCE(o.transcript,r.transcript) FROM recordings r LEFT JOIN recording_outputs o ON r.id=o.id ORDER BY r.created_at DESC LIMIT 500")
 	if err != nil {
 		return nil, err
 	}
@@ -98,7 +131,7 @@ func (s *Store) History() ([]Session, error) {
 	out := []Session{}
 	for rows.Next() {
 		var v Session
-		if err = rows.Scan(&v.ID, &v.CreatedAt, &v.DurationMS, &v.RawTranscript, &v.SpeechModel, &v.Language, &v.AudioPath); err != nil {
+		if err = rows.Scan(&v.ID, &v.CreatedAt, &v.DurationMS, &v.RawTranscript, &v.SpeechModel, &v.Language, &v.AudioPath, &v.FinalTranscript); err != nil {
 			return nil, err
 		}
 		out = append(out, v)
@@ -107,7 +140,7 @@ func (s *Store) History() ([]Session, error) {
 }
 func (s *Store) Session(id string) (Session, error) {
 	var v Session
-	err := s.db.QueryRow("SELECT id,created_at,duration_ms,transcript,model,language,audio_path FROM recordings WHERE id=?", id).Scan(&v.ID, &v.CreatedAt, &v.DurationMS, &v.RawTranscript, &v.SpeechModel, &v.Language, &v.AudioPath)
+	err := s.db.QueryRow("SELECT r.id,r.created_at,r.duration_ms,r.transcript,r.model,r.language,r.audio_path,COALESCE(o.transcript,r.transcript) FROM recordings r LEFT JOIN recording_outputs o ON r.id=o.id WHERE r.id=?", id).Scan(&v.ID, &v.CreatedAt, &v.DurationMS, &v.RawTranscript, &v.SpeechModel, &v.Language, &v.AudioPath, &v.FinalTranscript)
 	return v, err
 }
 func (s *Store) Delete(id string) error {
@@ -125,5 +158,30 @@ func (s *Store) Delete(id string) error {
 	return err
 }
 func NewSession(id string, duration int64, text, model, language, path string) Session {
-	return Session{ID: id, CreatedAt: time.Now().UTC().Format(time.RFC3339Nano), DurationMS: duration, RawTranscript: text, SpeechModel: model, Language: language, AudioPath: path}
+	return Session{ID: id, CreatedAt: time.Now().UTC().Format(time.RFC3339Nano), DurationMS: duration, RawTranscript: text, FinalTranscript: text, SpeechModel: model, Language: language, AudioPath: path}
+}
+
+func (s *Store) Vocabulary() ([]vocabulary.Entry, error) {
+	out := []vocabulary.Entry{}
+	var raw string
+	err := s.db.QueryRow("SELECT value FROM vocabulary WHERE id=1").Scan(&raw)
+	if errors.Is(err, sql.ErrNoRows) {
+		return out, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	err = json.Unmarshal([]byte(raw), &out)
+	if out == nil {
+		out = []vocabulary.Entry{}
+	}
+	return out, err
+}
+func (s *Store) SaveVocabulary(entries []vocabulary.Entry) error {
+	data, err := json.Marshal(entries)
+	if err != nil {
+		return err
+	}
+	_, err = s.db.Exec("INSERT INTO vocabulary VALUES(1,?) ON CONFLICT(id) DO UPDATE SET value=excluded.value", string(data))
+	return err
 }

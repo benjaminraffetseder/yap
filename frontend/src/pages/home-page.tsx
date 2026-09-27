@@ -4,16 +4,18 @@ import { Link } from "react-router"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { useDictation } from "@/components/dictation-provider"
 import { backend, duration, isDesktop } from "@/lib/backend"
+import { SetupPage } from "@/pages/setup-page"
 export function HomePage() {
   const { snapshot, loading, level, run } = useDictation()
   const { status, settings, history, ready } = snapshot
   const [now, setNow] = useState(Date.now())
   const [pending, setPending] = useState(false)
   const recording = status.phase === "recording"
-  const working = status.phase === "transcribing" || status.phase === "downloading"
+  const working = ["transcribing", "downloading", "mic-test"].includes(status.phase)
   const modelName = snapshot.models.find(model => model.path === settings.modelPath && model.installed)?.name ?? settings.modelPath.split(/[\\/]/).pop()
   useEffect(() => { if (!recording) return; const timer = setInterval(() => setNow(Date.now()), 200); return () => clearInterval(timer) }, [recording])
   async function record() { setPending(true); await run(recording ? backend.stop : backend.start); setPending(false) }
+  if (isDesktop && !loading && !settings.setupComplete) return <SetupPage />
   return <div className="space-y-8">
     <header><h1 className="text-2xl font-semibold tracking-tight">Dictate</h1></header>
     <section className="rounded-2xl border bg-card px-6 py-6 text-center">
@@ -28,6 +30,6 @@ export function HomePage() {
     {status.indicatorError && <p role="alert" className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-4 text-sm">{status.indicatorError}</p>}
     {status.trayError && <p role="alert" className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-4 text-sm">{status.trayError}</p>}
     {(status.phase === "done" || status.phase === "error") && <section aria-live="polite" className="rounded-2xl border bg-card p-5"><p className={`flex items-center gap-2 text-sm ${status.phase === "error" ? "text-destructive" : "text-primary"}`}>{status.phase === "done" && <Check className="size-4" />}{status.message}</p>{status.transcript && <><p className="mt-4 whitespace-pre-wrap text-sm leading-7">{status.transcript}</p><Button variant="outline" size="sm" className="mt-4" onClick={() => void run(() => backend.copy(status.transcript), false)}><Copy className="size-3" />Copy</Button></>}</section>}
-    <section><div className="mb-4 flex items-center justify-between"><h2 className="text-sm font-semibold">Recent dictations</h2><Link to="/history" className="flex items-center gap-1 text-xs text-muted-foreground hover:text-primary">View all<ArrowRight className="size-3" /></Link></div>{history.length ? <div className="divide-y rounded-2xl border bg-card">{history.slice(0, 3).map(entry => <Link to="/history" key={entry.id} className="block px-5 py-4 hover:bg-accent/50"><p className="truncate text-sm">{entry.rawTranscript}</p><p className="mt-2 text-xs text-muted-foreground">{new Date(entry.createdAt).toLocaleString()} · {duration(entry.durationMs)}</p></Link>)}</div> : <div className="rounded-xl border border-dashed px-6 py-7 text-center text-sm text-muted-foreground">No dictations yet.</div>}</section>
+    <section><div className="mb-4 flex items-center justify-between"><h2 className="text-sm font-semibold">Recent dictations</h2><Link to="/history" className="flex items-center gap-1 text-xs text-muted-foreground hover:text-primary">View all<ArrowRight className="size-3" /></Link></div>{history.length ? <div className="divide-y rounded-2xl border bg-card">{history.slice(0, 3).map(entry => <Link to="/history" key={entry.id} className="block px-5 py-4 hover:bg-accent/50"><p className="truncate text-sm">{entry.finalTranscript ?? entry.rawTranscript}</p><p className="mt-2 text-xs text-muted-foreground">{new Date(entry.createdAt).toLocaleString()} · {duration(entry.durationMs)}</p></Link>)}</div> : <div className="rounded-xl border border-dashed px-6 py-7 text-center text-sm text-muted-foreground">No dictations yet.</div>}</section>
   </div>
 }

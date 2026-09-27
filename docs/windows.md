@@ -29,7 +29,7 @@ Make sure Go's binary directory (usually `%USERPROFILE%\go\bin`) is on PATH.
 frontend dependencies and generates bindings and frontend assets automatically.
 The icons, manifest, and version metadata are already in the repository.
 
-On first launch, download a speech model from Models.
+On first launch, follow setup to download a speech model and test your microphone.
 Those downloads need internet; dictation after setup works offline.
 
 ## Development

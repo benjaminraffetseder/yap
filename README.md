@@ -16,13 +16,15 @@ Linux support is incomplete.
 - Hold-to-talk or toggle recording with a global shortcut.
 - Dictate in the background, with tray controls and a floating indicator.
 - Search, copy, and export past transcripts.
+- Add names and preferred spellings to a custom vocabulary.
 
 ## Getting started
 
 On Windows 10/11 x64, [build from source](#build-from-source) and open
 `build/bin/yap.exe`. WebView2 is required.
 
-1. Open Models and choose a speech model to download. Small balances speed and accuracy; Base and Tiny are smaller options.
+1. Open Yap and follow the setup guide to download a speech model and test your
+   microphone. Small balances speed and accuracy; Base and Tiny are smaller options.
 2. Put the cursor in a text field in another app.
 3. Hold **Ctrl+Alt+Space**, speak, then release **Space**.
 

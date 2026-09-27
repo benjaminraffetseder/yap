@@ -7,6 +7,7 @@ import { NotFoundPage } from "@/pages/not-found-page"
 import { DictationProvider } from "@/components/dictation-provider"
 import { HistoryPage } from "@/pages/history-page"
 import { ModelsPage } from "@/pages/models-page"
+import { VocabularyPage } from "@/pages/vocabulary-page"
 
 export function App() {
   return (
@@ -19,6 +20,7 @@ export function App() {
             <Route path="settings" element={<SettingsPage />} />
             <Route path="history" element={<HistoryPage />} />
             <Route path="models" element={<ModelsPage />} />
+            <Route path="vocabulary" element={<VocabularyPage />} />
             <Route path="*" element={<NotFoundPage />} />
           </Route>
         </Routes>

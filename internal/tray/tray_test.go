@@ -17,6 +17,7 @@ func TestMenuFollowsRecordingState(t *testing.T) {
 		{"recording", State{Phase: "recording"}, "Stop recording", true, true},
 		{"transcribing", State{Phase: "transcribing", Ready: true}, "Start recording", false, true},
 		{"downloading", State{Phase: "downloading", Ready: true}, "Start recording", false, true},
+		{"mic-test", State{Phase: "mic-test", Ready: true}, "Start recording", false, true},
 		{"error", State{Phase: "error", Ready: true}, "Start recording", true, false},
 		{"closing", State{Phase: "closing", Ready: true}, "Start recording", false, false},
 	} {

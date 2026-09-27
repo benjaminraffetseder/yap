@@ -33,6 +33,7 @@ func TestInitialWindowDecision(t *testing.T) {
 		{"default", func(a *App) { a.settings.StartInTray = false }, 1},
 		{"tray failed", func(a *App) { a.tray = nil }, 1},
 		{"setup needed", func(a *App) { a.settings.ModelPath = "" }, 1},
+		{"unfinished setup", func(a *App) { a.settings.SetupComplete = false }, 1},
 		{"shortcut failed", func(a *App) { a.status.ShortcutError = "occupied" }, 1},
 		{"login failed", func(a *App) { a.status.StartupError = "registration unavailable" }, 1},
 		{"startup failed", func(a *App) { a.status.Phase = "error" }, 1},

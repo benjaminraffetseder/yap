@@ -3,13 +3,13 @@ import { Link } from "react-router"
 import { Button } from "@/components/ui/button"
 import { useDictation } from "@/components/dictation-provider"
 import { backend, isDesktop } from "@/lib/backend"
-export function ModelsPage() {
+export function ModelsPage({ embedded = false }: { embedded?: boolean }) {
   const { snapshot, run } = useDictation()
   const { status, settings, models } = snapshot
   const downloading = status.phase === "downloading"
-  const busy = downloading || status.phase === "recording" || status.phase === "transcribing"
+  const busy = downloading || status.phase === "recording" || status.phase === "transcribing" || status.phase === "mic-test"
   return <div className="space-y-8">
-    <header><h1 className="text-2xl font-semibold tracking-tight">Models</h1></header>
+    {!embedded && <header><h1 className="text-2xl font-semibold tracking-tight">Models</h1></header>}
     {downloading && <section aria-live="polite" className="rounded-2xl border bg-card p-5"><div className="flex items-center justify-between"><span className="flex items-center gap-2 text-sm"><Loader2 className="size-4 animate-spin text-primary" />{status.message}</span><Button size="sm" variant="ghost" onClick={() => void run(backend.cancel)}><X className="size-3" />Cancel</Button></div><progress className="mt-4 h-2 w-full accent-[var(--primary)]" max={1} value={status.progress} /><p className="mt-2 text-xs text-muted-foreground">{Math.round(status.progress * 100)}%</p></section>}
     {status.phase === "error" && <p role="alert" className="rounded-xl border border-destructive/30 bg-destructive/5 p-4 text-sm whitespace-pre-wrap text-destructive">{status.message}</p>}
     <div className="grid gap-4 lg:grid-cols-3">{models.map(model => {

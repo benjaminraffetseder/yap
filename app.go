@@ -10,11 +10,13 @@ import (
 	"regexp"
 	goruntime "runtime"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 	"yap/internal/audio"
+	"yap/internal/cleanup"
 	"yap/internal/indicator"
 	"yap/internal/inference/speech"
 	"yap/internal/models"
@@ -22,6 +24,7 @@ import (
 	"yap/internal/startup"
 	"yap/internal/storage"
 	"yap/internal/tray"
+	"yap/internal/vocabulary"
 )
 
 type Status struct {
@@ -36,49 +39,56 @@ type Status struct {
 	StartupError   string  `json:"startupError"`
 }
 type Snapshot struct {
-	Settings               storage.Settings  `json:"settings"`
-	Status                 Status            `json:"status"`
-	History                []storage.Session `json:"history"`
-	Models                 []models.Model    `json:"models"`
-	DataDir                string            `json:"dataDir"`
-	Ready                  bool              `json:"ready"`
-	FloatingIndicator      bool              `json:"floatingIndicator"`
-	LaunchAtLoginAvailable bool              `json:"launchAtLoginAvailable"`
-	StartInTrayAvailable   bool              `json:"startInTrayAvailable"`
+	Vocabulary             []vocabulary.Entry `json:"vocabulary"`
+	MicrophoneTested       bool               `json:"microphoneTested"`
+	ShortcutTested         bool               `json:"shortcutTested"`
+	Settings               storage.Settings   `json:"settings"`
+	Status                 Status             `json:"status"`
+	History                []storage.Session  `json:"history"`
+	Models                 []models.Model     `json:"models"`
+	DataDir                string             `json:"dataDir"`
+	Ready                  bool               `json:"ready"`
+	FloatingIndicator      bool               `json:"floatingIndicator"`
+	LaunchAtLoginAvailable bool               `json:"launchAtLoginAvailable"`
+	StartInTrayAvailable   bool               `json:"startInTrayAvailable"`
 }
 type App struct {
-	ctx                  context.Context
-	mu                   sync.Mutex
-	store                *storage.Store
-	settings             storage.Settings
-	status               Status
-	shortcut             *platform.Shortcut
-	recorder             audio.Capture
-	microphones          func() ([]audio.Device, error)
-	engine               speech.Engine
-	id, path, target     string
-	recordSettings       storage.Settings
-	timer                *time.Timer
-	cancel               context.CancelFunc
-	wg                   sync.WaitGroup
-	closing              bool
-	shutdownOnce         sync.Once
-	notify               func(string, ...interface{})
-	copyText             func(string) error
-	indicator            indicator.Controller
-	indicatorActive      bool
-	tray                 tray.Controller
-	closeToTray          bool
-	quitRequested        bool
-	showWindow           func()
-	hideWindow           func()
-	quitApplication      func()
-	loginStart           startup.Controller
-	development          bool
-	startupComplete      bool
-	domReady             bool
-	initialWindowApplied bool
-	windowRequested      bool
+	vocabulary                       []vocabulary.Entry
+	recordVocabulary                 []vocabulary.Entry
+	microphoneTested, shortcutTested bool
+	micSignal                        atomic.Bool
+	ctx                              context.Context
+	mu                               sync.Mutex
+	store                            *storage.Store
+	settings                         storage.Settings
+	status                           Status
+	shortcut                         *platform.Shortcut
+	recorder                         audio.Capture
+	microphones                      func() ([]audio.Device, error)
+	engine                           speech.Engine
+	id, path, target                 string
+	recordSettings                   storage.Settings
+	timer                            *time.Timer
+	cancel                           context.CancelFunc
+	wg                               sync.WaitGroup
+	closing                          bool
+	shutdownOnce                     sync.Once
+	notify                           func(string, ...interface{})
+	copyText                         func(string) error
+	indicator                        indicator.Controller
+	indicatorActive                  bool
+	tray                             tray.Controller
+	closeToTray                      bool
+	quitRequested                    bool
+	showWindow                       func()
+	hideWindow                       func()
+	quitApplication                  func()
+	loginStart                       startup.Controller
+	development                      bool
+	startupComplete                  bool
+	domReady                         bool
+	initialWindowApplied             bool
+	windowRequested                  bool
 }
 
 func NewApp() *App {
@@ -129,6 +139,16 @@ func (a *App) startup(ctx context.Context) {
 		return
 	}
 	a.settings.WhisperPath = models.PreferredRuntime(a.settings.WhisperPath)
+	a.vocabulary, err = a.store.Vocabulary()
+	if err != nil {
+		a.fail(err)
+		return
+	}
+	a.vocabulary, err = vocabulary.Normalize(a.vocabulary)
+	if err != nil {
+		a.fail(fmt.Errorf("could not load vocabulary: %w", err))
+		return
+	}
 	if !a.development {
 		a.loginStart, err = startup.New()
 		if err == nil && a.loginStart != nil {
@@ -182,7 +202,7 @@ func (a *App) initialWindowLocked() func() {
 	}
 	a.initialWindowApplied = true
 	ready := a.store != nil && speech.Validate(speech.Options{Executable: a.settings.WhisperPath, Model: a.settings.ModelPath}) == nil
-	background := a.settings.StartInTray && !a.development && a.tray != nil && ready && a.status.Phase != "error" && a.status.ShortcutError == "" && a.status.StartupError == ""
+	background := a.settings.SetupComplete && a.settings.StartInTray && !a.development && a.tray != nil && ready && a.status.Phase != "error" && a.status.ShortcutError == "" && a.status.StartupError == ""
 	if background && !a.windowRequested {
 		return nil
 	}
@@ -253,7 +273,7 @@ func (a *App) shutdown(ctx context.Context) {
 		if a.cancel != nil {
 			a.cancel()
 		}
-		if a.status.Phase == "recording" {
+		if a.status.Phase == "recording" || a.status.Phase == "mic-test" {
 			a.recorder.Stop()
 			os.Remove(a.path)
 		}
@@ -308,7 +328,7 @@ func (a *App) available() error {
 	return nil
 }
 func (a *App) busy() bool {
-	return a.status.Phase == "recording" || a.status.Phase == "transcribing" || a.status.Phase == "downloading"
+	return a.status.Phase == "recording" || a.status.Phase == "transcribing" || a.status.Phase == "downloading" || a.status.Phase == "mic-test"
 }
 func (a *App) registerShortcut() {
 	s, err := platform.Register(a.settings.Shortcut, a.hotkeyDown, a.hotkeyUp)
@@ -323,6 +343,13 @@ func (a *App) hotkeyDown() {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if a.closing {
+		return
+	}
+	if !a.settings.SetupComplete {
+		if !a.busy() {
+			a.shortcutTested = true
+			a.event("setup:changed")
+		}
 		return
 	}
 	if a.settings.Interaction == "toggle" && a.status.Phase == "recording" {
@@ -354,7 +381,8 @@ func (a *App) GetSnapshot() (Snapshot, error) {
 		return Snapshot{}, err
 	}
 	ready := speech.Validate(speech.Options{Executable: a.settings.WhisperPath, Model: a.settings.ModelPath}) == nil
-	return Snapshot{Settings: a.settings, Status: a.status, History: history, Models: models.List(a.store.Dir), DataDir: a.store.Dir, Ready: ready, FloatingIndicator: a.indicator != nil, LaunchAtLoginAvailable: a.loginStart != nil, StartInTrayAvailable: a.tray != nil && !a.development}, nil
+	entries, _ := vocabulary.Normalize(a.vocabulary)
+	return Snapshot{Vocabulary: entries, MicrophoneTested: a.microphoneTested, ShortcutTested: a.shortcutTested, Settings: a.settings, Status: a.status, History: history, Models: models.List(a.store.Dir), DataDir: a.store.Dir, Ready: ready, FloatingIndicator: a.indicator != nil, LaunchAtLoginAvailable: a.loginStart != nil, StartInTrayAvailable: a.tray != nil && !a.development}, nil
 }
 func (a *App) GetMicrophones() ([]audio.Device, error) {
 	a.mu.Lock()
@@ -401,6 +429,7 @@ func (a *App) start(external bool) error {
 		return err
 	}
 	a.recordSettings = a.settings
+	a.recordVocabulary, _ = vocabulary.Normalize(a.vocabulary)
 	a.status.Phase = "recording"
 	a.status.Message = "Listening…"
 	a.status.Transcript = ""
@@ -447,17 +476,22 @@ func (a *App) stop() {
 	ctx, cancel := context.WithTimeout(a.ctx, 15*time.Minute)
 	a.cancel = cancel
 	id, path, target, settings := a.id, a.path, a.target, a.recordSettings
+	entries := a.recordVocabulary
 	a.wg.Add(1)
-	go func() { defer a.wg.Done(); defer cancel(); a.transcribe(ctx, id, path, target, duration, settings) }()
+	go func() {
+		defer a.wg.Done()
+		defer cancel()
+		a.transcribe(ctx, id, path, target, duration, settings, entries)
+	}()
 }
-func (a *App) transcribe(ctx context.Context, id, path, target string, duration int64, settings storage.Settings) {
+func (a *App) transcribe(ctx context.Context, id, path, target string, duration int64, settings storage.Settings, entries []vocabulary.Entry) {
 	persisted := false
 	defer func() {
 		if !persisted || !settings.SaveAudio {
 			os.Remove(path)
 		}
 	}()
-	text, err := a.engine.Transcribe(ctx, path, speech.Options{Executable: settings.WhisperPath, Model: settings.ModelPath, Language: settings.Language})
+	text, err := a.engine.Transcribe(ctx, path, speech.Options{Executable: settings.WhisperPath, Model: settings.ModelPath, Language: settings.Language, Prompt: vocabulary.Prompt(entries)})
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.cancel = nil
@@ -480,6 +514,18 @@ func (a *App) transcribe(ctx context.Context, id, path, target string, duration 
 		audioPath = path
 	}
 	session := storage.NewSession(id, duration, text, filepath.Base(settings.ModelPath), settings.Language, audioPath)
+	if settings.CleanText {
+		protected := []string{}
+		for _, entry := range entries {
+			if entry.Enabled {
+				protected = append(protected, entry.Canonical)
+				protected = append(protected, entry.Aliases...)
+			}
+		}
+		text = cleanup.Apply(text, settings.Language, protected...)
+	}
+	text = vocabulary.Apply(text, entries)
+	session.FinalTranscript = text
 	if err = a.store.Add(session); err != nil {
 		a.fail(fmt.Errorf("could not save transcript: %w", err))
 		return
@@ -505,6 +551,19 @@ func (a *App) Cancel() error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if err := a.available(); err != nil {
+		return err
+	}
+	if a.status.Phase == "mic-test" {
+		if a.timer != nil {
+			a.timer.Stop()
+		}
+		_, err := a.recorder.Stop()
+		os.Remove(a.path)
+		a.microphoneTested = false
+		a.status.Phase, a.status.Message = "idle", "Microphone test cancelled"
+		a.status.StartedAt = 0
+		a.emit()
+		a.event("setup:changed")
 		return err
 	}
 	if a.status.Phase == "recording" {
@@ -557,6 +616,9 @@ func (a *App) SaveSettings(settings storage.Settings) error {
 		}
 	}
 	old := a.settings
+	if settings.SetupComplete != old.SetupComplete {
+		return errors.New("use setup to change its completion state")
+	}
 	if settings.StartInTray && !old.StartInTray && (a.tray == nil || a.development) {
 		return errors.New("start in background requires tray or menu-bar controls in a packaged app")
 	}
@@ -615,6 +677,12 @@ func (a *App) SaveSettings(settings storage.Settings) error {
 		return err
 	}
 	a.settings = settings
+	if old.MicrophoneID != settings.MicrophoneID {
+		a.microphoneTested = false
+	}
+	if old.Shortcut != settings.Shortcut {
+		a.shortcutTested = false
+	}
 	if a.loginStart != nil {
 		a.status.StartupError = ""
 	}
@@ -770,5 +838,5 @@ func (a *App) ExportSession(id string) error {
 	if err != nil || path == "" {
 		return err
 	}
-	return os.WriteFile(path, []byte(v.RawTranscript+"\n"), 0600)
+	return os.WriteFile(path, []byte(v.FinalTranscript+"\n"), 0600)
 }

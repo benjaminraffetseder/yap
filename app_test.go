@@ -223,6 +223,7 @@ func testApp(t *testing.T) *App {
 	}
 	t.Cleanup(func() { a.shutdown(a.ctx) })
 	a.recorder = fakeCapture{}
+	a.settings.SetupComplete = true
 	a.engine = fakeSpeech{}
 	a.settings.WhisperPath, _ = os.Executable()
 	a.settings.ModelPath = filepath.Join(a.store.Dir, "models", "test.bin")

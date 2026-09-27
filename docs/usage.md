@@ -34,10 +34,19 @@ Both are off by default and need a settings save. They apply to packaged builds;
 development builds stay visible and don't register for startup. If you move the
 app, open it from its new location and save the startup setting again.
 
-## History
+## History and vocabulary
 
 History lets you search, copy, export, and delete recent transcripts.
 Deleting a transcript also removes its retained audio.
+
+Vocabulary entries have a preferred spelling and optional aliases. For example,
+`postgres` can map to `PostgreSQL`. Matching uses whole words or phrases, not
+fuzzy matching. Vocabulary also gives Whisper recognition hints, but it won't
+guarantee a particular transcription. The limit is 100 terms, with ten aliases each.
+
+**Light cleanup**, under Settings → Text processing, tidies spacing, capitalization,
+punctuation, and common English/German filler words. It uses local rules and is
+off by default. It doesn't need a text model or change older transcripts.
 
 ## Storage
 
@@ -49,6 +58,7 @@ Audio retention is off by default. Transcripts stay in History until you delete 
 
 ## When something goes wrong
 
-- **No microphone input:** check OS permission and the input device.
+- **No microphone input:** check OS permission and the saved input device.
+  **Settings → Run setup** lets you repeat the microphone and shortcut checks.
 - **Paste doesn't work:** check History and the clipboard. Yap won't switch
   focus back to another app to paste. On a Mac, check Accessibility permission.

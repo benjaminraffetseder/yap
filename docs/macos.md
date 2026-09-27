@@ -70,7 +70,7 @@ The desktop behavior still needs testing, particularly:
 - The floating panel's focus, dragging, and position after disconnecting a display.
 - Closing to the menu bar, reopening, and quitting during recording.
 - Launch at login, including after moving the app.
-- History, Settings, and both themes on the system WebKit.
+- Setup, History, Settings, and both themes on the system WebKit.
 
 Test on both Apple Silicon and Intel before calling a release universal. A
 successful run on one doesn't verify the other.
