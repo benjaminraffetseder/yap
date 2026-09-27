@@ -54,7 +54,7 @@ func TestNativeIndicator(t *testing.T) {
 	}
 	wait := func(label string, condition func() bool) {
 		t.Helper()
-		until := time.Now().Add(4 * time.Second)
+		until := time.Now().Add(8 * time.Second)
 		for !condition() {
 			if time.Now().After(until) {
 				t.Fatal(label)
@@ -121,12 +121,18 @@ func TestNativeIndicator(t *testing.T) {
 	}
 	click(n.cancel)
 	callback("transcription cancel action missing", cancel)
-	controller.Update(State{Phase: "error", Message: "test failure"})
+	failure := State{Phase: "error", Message: "test failure"}
+	controller.Update(failure)
 	wait("error status missing", func() bool { return text() == "Dictation failed" })
 	click(n.stop)
 	callback("open app action missing", open)
 	click(n.cancel)
 	wait("dismiss failed", func() bool { return !visible() })
+	controller.Update(failure)
+	wait("repeated error did not reappear after dismissal", visible)
+	wait("error did not auto-hide", func() bool { return !visible() })
+	controller.Update(failure)
+	wait("repeated error did not reappear after expiry", visible)
 	controller.Update(State{Phase: "recording", StartedAt: time.Now().UnixMilli()})
 	wait("new recording did not reappear", visible)
 	controller.Update(State{Phase: "done", Message: "Copied to clipboard"})

@@ -111,6 +111,7 @@ type drawItem struct {
 type native struct {
 	mu      sync.Mutex
 	state   State
+	changed bool
 	level   float64
 	actions Actions
 	handle  atomic.Uintptr
@@ -121,8 +122,6 @@ type native struct {
 	background, accent, font uintptr
 	button, pressed          uintptr
 	dpi                      int
-	last                     State
-	hasLast                  bool
 	visible                  bool
 	placing                  bool
 	looping                  bool
@@ -157,6 +156,7 @@ func (n *native) Update(s State) {
 	}
 	n.mu.Lock()
 	n.state = s
+	n.changed = true // Repeated failed attempts must show a fresh notification.
 	n.mu.Unlock()
 	if hwnd := n.handle.Load(); hwnd != 0 {
 		postMessage.Call(hwnd, wmUpdate, 0, 0)
@@ -338,12 +338,12 @@ func (n *native) place() {
 func (n *native) refresh() {
 	n.mu.Lock()
 	s := n.state
+	changed := n.changed
+	n.changed = false
 	n.mu.Unlock()
 	now := time.Now()
 	v := presentation(s, now)
-	if !n.hasLast || n.last != s {
-		n.last = s
-		n.hasLast = true
+	if changed {
 		n.dismissed = false
 		n.expires = time.Time{}
 		if v.dismissAfter > 0 {

@@ -65,7 +65,12 @@ go vet ./...
 cd frontend
 npm run typecheck
 npm run build
+npx playwright install chromium
+npm run test:ui
 ```
+
+The browser tests mock the desktop bridge and use a separate Vite cache, so they
+can run alongside `wails dev`.
 
 Native and download tests are opt-in. Run them from the repo root on Windows:
 

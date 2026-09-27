@@ -13,6 +13,7 @@ export function SettingsPage() {
   const { theme, setTheme } = useTheme()
   const { snapshot, run } = useDictation()
   const [settings, setSettings] = useState(snapshot.settings)
+  const savedSettings = useRef(snapshot.settings)
   const [saving, setSaving] = useState(false)
   const [microphones, setMicrophones] = useState<Microphone[]>([])
   const [loadingMicrophones, setLoadingMicrophones] = useState(false)
@@ -47,7 +48,12 @@ export function SettingsPage() {
     window.addEventListener("focus", refresh)
     return () => { microphoneRequest.current++; window.removeEventListener("focus", refresh) }
   }, [refreshMicrophones])
-  useEffect(() => setSettings(snapshot.settings), [snapshot.settings])
+  useEffect(() => {
+    const previous = savedSettings.current
+    savedSettings.current = snapshot.settings
+    // Adopt backend changes only while the draft still matches its saved baseline.
+    setSettings(draft => JSON.stringify(draft) === JSON.stringify(previous) ? snapshot.settings : draft)
+  }, [snapshot.settings])
   async function browse(kind: "model" | "runtime") {
     await run(async () => { const path = await backend.selectFile(kind); if (path) setSettings(old => ({ ...old, [kind === "model" ? "modelPath" : "whisperPath"]: path })) }, false)
   }

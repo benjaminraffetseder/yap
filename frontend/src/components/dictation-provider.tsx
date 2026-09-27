@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from "react"
+import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react"
 import { EventsOn } from "@wails/runtime/runtime"
 import { backend, isDesktop, message, type Snapshot, type Status } from "@/lib/backend"
 const empty: Snapshot = {
@@ -17,19 +17,30 @@ export function DictationProvider({ children }: { children: ReactNode }) {
   const [level, setLevel] = useState(0)
   const [error, setError] = useState("")
   const [loading, setLoading] = useState(isDesktop)
-  async function refresh() { if (isDesktop) setSnapshot(await backend.snapshot()) }
+  const snapshotRequest = useRef(0)
+  const statusRevision = useRef(0)
+  const refresh = useCallback(async () => {
+    if (!isDesktop) return
+    const request = ++snapshotRequest.current
+    const revision = statusRevision.current
+    const value = await backend.snapshot()
+    // Bridge replies may arrive out of order or after a newer status event.
+    setSnapshot(old => request !== snapshotRequest.current ? old : {
+      ...value, status: revision === statusRevision.current ? value.status : old.status,
+    })
+  }, [])
   async function run(action: () => Promise<unknown>, reload = true) {
     setError(""); try { await action(); if (reload) await refresh() } catch (cause) { setError(message(cause)) }
   }
   useEffect(() => {
     if (!isDesktop) return
     let active = true
-    const offStatus = EventsOn("dictation:status", (status: Status) => { if (active) setSnapshot(old => ({ ...old, status })) })
+    const offStatus = EventsOn("dictation:status", (status: Status) => { if (active) { statusRevision.current++; setSnapshot(old => ({ ...old, status })) } })
     const offLevel = EventsOn("dictation:level", (value: number) => { if (active) setLevel(value) })
-    const offHistory = EventsOn("dictation:history", () => { backend.snapshot().then(value => { if (active) setSnapshot(value) }).catch(cause => { if (active) setError(message(cause)) }) })
-    backend.snapshot().then(value => { if (active) setSnapshot(value) }).catch(cause => { if (active) setError(message(cause)) }).finally(() => { if (active) setLoading(false) })
-    return () => { active = false; offStatus(); offLevel(); offHistory() }
-  }, [])
+    const offHistory = EventsOn("dictation:history", () => { void refresh().catch(cause => { if (active) setError(message(cause)) }) })
+    void refresh().catch(cause => { if (active) setError(message(cause)) }).finally(() => { if (active) setLoading(false) })
+    return () => { active = false; snapshotRequest.current++; offStatus(); offLevel(); offHistory() }
+  }, [refresh])
   return <DictationContext.Provider value={{ snapshot, level, error, loading, refresh, run, clearError: () => setError("") }}>{children}</DictationContext.Provider>
 }
 export function useDictation() { const value = useContext(DictationContext); if (!value) throw new Error("DictationProvider is missing"); return value }
