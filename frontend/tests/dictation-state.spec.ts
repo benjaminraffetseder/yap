@@ -19,9 +19,9 @@ test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {
     const state: Window["dictationTest"] = {
       snapshot: {
-        settings: { microphoneId: "", whisperPath: "/whisper", modelPath: "/model", language: "auto", shortcut: "Ctrl+Alt+Space", interaction: "hold", autoPaste: true, saveAudio: false },
-        status: { phase: "idle", message: "Ready", startedAt: 0, transcript: "", progress: 0, shortcutError: "", indicatorError: "", trayError: "" },
-        models: [], history: [], ready: true, dataDir: "", floatingIndicator: true,
+        settings: { microphoneId: "", whisperPath: "/whisper", modelPath: "/model", language: "auto", shortcut: "Ctrl+Alt+Space", interaction: "hold", autoPaste: true, saveAudio: false, launchAtLogin: false, startInTray: false },
+        status: { phase: "idle", message: "Ready", startedAt: 0, transcript: "", progress: 0, shortcutError: "", indicatorError: "", trayError: "", startupError: "" },
+        models: [], history: [], ready: true, dataDir: "", floatingIndicator: true, launchAtLoginAvailable: true, startInTrayAvailable: true,
       },
       callbacks: {}, deferSnapshots: false, pendingSnapshots: [], failSave: false,
       status(phase: string) {
@@ -62,6 +62,50 @@ async function settle(page: Page) {
     await new Promise(requestAnimationFrame)
   })
 }
+
+test("startup options apply only on save and survive refreshes and failed saves", async ({ page }) => {
+  await page.goto("/#/settings")
+  const login = page.getByRole("checkbox", { name: "Launch at login", exact: true })
+  const background = page.getByRole("checkbox", { name: /Start in tray \/ menu bar/ })
+  await expect(login).toBeEnabled()
+  await expect(login).not.toBeChecked()
+  await expect(background).not.toBeChecked()
+  await login.check()
+  await background.check()
+  await expect.poll(() => page.evaluate(() => window.dictationTest.snapshot.settings.launchAtLogin)).toBe(false)
+  await page.evaluate(() => { window.dictationTest.history(); window.dictationTest.failSave = true })
+  await settle(page)
+  await expect(login).toBeChecked()
+  await expect(background).toBeChecked()
+  await page.getByRole("button", { name: "Save settings", exact: true }).click()
+  await expect(page.getByText("Settings save failed", { exact: true })).toBeVisible()
+  await expect(login).toBeChecked()
+  await expect(background).toBeChecked()
+  await expect.poll(() => page.evaluate(() => window.dictationTest.snapshot.settings.launchAtLogin)).toBe(false)
+  await page.evaluate(() => { window.dictationTest.failSave = false })
+  await page.getByRole("button", { name: "Save settings", exact: true }).click()
+  await expect(page.getByText("Unsaved changes", { exact: true })).toHaveCount(0)
+  await expect.poll(() => page.evaluate(() => window.dictationTest.snapshot.settings.startInTray && window.dictationTest.snapshot.settings.launchAtLogin)).toBe(true)
+  await login.uncheck()
+  await background.uncheck()
+  await page.getByRole("button", { name: "Save settings", exact: true }).click()
+  await expect.poll(() => page.evaluate(() => window.dictationTest.snapshot.settings.startInTray || window.dictationTest.snapshot.settings.launchAtLogin)).toBe(false)
+})
+
+test("unsupported startup controls are disabled and registration errors are visible", async ({ page }) => {
+  await page.goto("/#/settings")
+  const login = page.getByRole("checkbox", { name: "Launch at login", exact: true })
+  await expect(login).toBeEnabled()
+  await page.evaluate(() => {
+    window.dictationTest.snapshot.launchAtLoginAvailable = false
+    window.dictationTest.snapshot.startInTrayAvailable = false
+    window.dictationTest.snapshot.status.startupError = "Launch at login unavailable: access denied"
+    window.dictationTest.history()
+  })
+  await expect(login).toBeDisabled()
+  await expect(page.getByRole("checkbox", { name: /Start in tray \/ menu bar/ })).toBeDisabled()
+  await expect(page.getByRole("alert").filter({ hasText: "Launch at login unavailable: access denied" })).toBeVisible()
+})
 
 test("history refresh preserves edits, and saving clears the dirty state", async ({ page }) => {
   await page.goto("/#/settings")

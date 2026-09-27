@@ -56,7 +56,9 @@ focus back to the target window. Data is stored in
 `~/Library/Application Support/yap`.
 
 Closing the window keeps Yap in the menu bar. Reopen it from there or the Dock;
-**Quit Yap**, Cmd+Q, and Dock Quit exit.
+**Quit Yap**, Cmd+Q, and Dock Quit exit. Launch at login uses
+`~/Library/LaunchAgents/com.yap.desktop.login.plist`. If you move the app, open
+the new copy and save the startup setting again.
 
 ## Testing on a Mac
 
@@ -67,6 +69,7 @@ The desktop behavior still needs testing, particularly:
 - Paste into another app, and clipboard fallback after switching windows.
 - The floating panel and keyboard focus while another app is active.
 - Closing to the menu bar, reopening, and quitting during recording.
+- Launch at login, including after moving the app.
 - History, Settings, and both themes on the system WebKit.
 
 Test on both Apple Silicon and Intel before calling a release universal. A

@@ -28,6 +28,11 @@ shortcut, choose another; the microphone button still works.
 Closing the window hides Yap to the tray or Mac menu bar. Use **Open Yap** to
 bring it back and **Quit Yap** to exit.
 
+**Launch at login** and **Start in tray / menu bar** are under Settings → Startup.
+Both are off by default and need a settings save. They apply to packaged builds;
+development builds stay visible and don't register for startup. If you move the
+app, open it from its new location and save the startup setting again.
+
 ## History
 
 History lets you search, copy, export, and delete recent transcripts.

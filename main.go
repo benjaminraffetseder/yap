@@ -26,6 +26,8 @@ func main() {
 		BackgroundColour: &options.RGBA{R: 250, G: 250, B: 250, A: 255},
 		AssetServer:      &assetserver.Options{Assets: assets},
 		OnStartup:        app.startup,
+		StartHidden:      true,
+		OnDomReady:       app.onDomReady,
 		OnShutdown:       app.shutdown,
 		OnBeforeClose:    app.beforeClose,
 		SingleInstanceLock: &options.SingleInstanceLock{

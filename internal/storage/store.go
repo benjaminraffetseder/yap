@@ -12,14 +12,16 @@ import (
 )
 
 type Settings struct {
-	MicrophoneID string `json:"microphoneId"`
-	WhisperPath  string `json:"whisperPath"`
-	ModelPath    string `json:"modelPath"`
-	Language     string `json:"language"`
-	Shortcut     string `json:"shortcut"`
-	Interaction  string `json:"interaction"`
-	AutoPaste    bool   `json:"autoPaste"`
-	SaveAudio    bool   `json:"saveAudio"`
+	MicrophoneID  string `json:"microphoneId"`
+	WhisperPath   string `json:"whisperPath"`
+	ModelPath     string `json:"modelPath"`
+	Language      string `json:"language"`
+	Shortcut      string `json:"shortcut"`
+	Interaction   string `json:"interaction"`
+	AutoPaste     bool   `json:"autoPaste"`
+	SaveAudio     bool   `json:"saveAudio"`
+	LaunchAtLogin bool   `json:"launchAtLogin"`
+	StartInTray   bool   `json:"startInTray"`
 }
 
 func Defaults() Settings {

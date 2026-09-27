@@ -29,7 +29,7 @@ shortcuts through Wails. Use the desktop app to test those.
 | `app*.go` | Recording state and methods exposed to the frontend |
 | `internal/audio` | Capture, decoding, and WAV import |
 | `internal/platform` | Global shortcuts and text insertion |
-| `internal/indicator`, `internal/tray` | Native desktop controls |
+| `internal/indicator`, `internal/tray`, `internal/startup` | Native desktop controls |
 | `internal/inference` | Whisper CLI client |
 | `internal/models` | Model/runtime downloads and verification |
 | `internal/storage` | SQLite and history |

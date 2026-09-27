@@ -61,6 +61,11 @@ export function SettingsPage() {
   return <div className="space-y-7">
     <header><h1 className="text-2xl font-semibold tracking-tight">Settings</h1></header>
     <fieldset disabled={!isDesktop || busy || saving} className="space-y-6 disabled:opacity-60">
+      <section className="settings-section"><h2 className="font-semibold">Startup</h2>
+        <label className={`mt-5 flex items-start gap-3 ${snapshot.launchAtLoginAvailable ? "cursor-pointer" : "opacity-60"}`}><input type="checkbox" className="mt-1 accent-[var(--primary)]" disabled={!snapshot.launchAtLoginAvailable} checked={settings.launchAtLogin} onChange={event => setSettings({ ...settings, launchAtLogin: event.target.checked })} /><span className="text-sm">Launch at login</span></label>
+        <label className={`mt-5 flex items-start gap-3 ${snapshot.startInTrayAvailable || settings.startInTray ? "cursor-pointer" : "opacity-60"}`}><input type="checkbox" className="mt-1 accent-[var(--primary)]" disabled={!snapshot.startInTrayAvailable && !settings.startInTray} checked={settings.startInTray} onChange={event => setSettings({ ...settings, startInTray: event.target.checked })} /><span className="text-sm">Start in tray / menu bar<span className="mt-1 block text-xs text-muted-foreground">Keep the main window hidden on the next launch.</span></span></label>
+        {snapshot.status.startupError ? <p role="alert" className="mt-4 text-xs text-destructive">{snapshot.status.startupError}</p> : !snapshot.launchAtLoginAvailable && !snapshot.startInTrayAvailable && <p className="mt-4 text-xs text-muted-foreground">Startup options require a packaged Windows or macOS app.</p>}
+      </section>
       <section className="settings-section"><h2 className="font-semibold">Audio input</h2>
         <div className="mt-5 max-w-xl space-y-2"><Label htmlFor="microphone">Microphone</Label>
           <div className="flex gap-2">

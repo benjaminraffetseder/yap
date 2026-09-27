@@ -19,6 +19,7 @@ import (
 	"yap/internal/inference/speech"
 	"yap/internal/models"
 	"yap/internal/platform"
+	"yap/internal/startup"
 	"yap/internal/storage"
 	"yap/internal/tray"
 )
@@ -32,43 +33,52 @@ type Status struct {
 	ShortcutError  string  `json:"shortcutError"`
 	IndicatorError string  `json:"indicatorError"`
 	TrayError      string  `json:"trayError"`
+	StartupError   string  `json:"startupError"`
 }
 type Snapshot struct {
-	Settings          storage.Settings  `json:"settings"`
-	Status            Status            `json:"status"`
-	History           []storage.Session `json:"history"`
-	Models            []models.Model    `json:"models"`
-	DataDir           string            `json:"dataDir"`
-	Ready             bool              `json:"ready"`
-	FloatingIndicator bool              `json:"floatingIndicator"`
+	Settings               storage.Settings  `json:"settings"`
+	Status                 Status            `json:"status"`
+	History                []storage.Session `json:"history"`
+	Models                 []models.Model    `json:"models"`
+	DataDir                string            `json:"dataDir"`
+	Ready                  bool              `json:"ready"`
+	FloatingIndicator      bool              `json:"floatingIndicator"`
+	LaunchAtLoginAvailable bool              `json:"launchAtLoginAvailable"`
+	StartInTrayAvailable   bool              `json:"startInTrayAvailable"`
 }
 type App struct {
-	ctx              context.Context
-	mu               sync.Mutex
-	store            *storage.Store
-	settings         storage.Settings
-	status           Status
-	shortcut         *platform.Shortcut
-	recorder         audio.Capture
-	microphones      func() ([]audio.Device, error)
-	engine           speech.Engine
-	id, path, target string
-	recordSettings   storage.Settings
-	timer            *time.Timer
-	cancel           context.CancelFunc
-	wg               sync.WaitGroup
-	closing          bool
-	shutdownOnce     sync.Once
-	notify           func(string, ...interface{})
-	copyText         func(string) error
-	indicator        indicator.Controller
-	indicatorActive  bool
-	tray             tray.Controller
-	closeToTray      bool
-	quitRequested    bool
-	showWindow       func()
-	hideWindow       func()
-	quitApplication  func()
+	ctx                  context.Context
+	mu                   sync.Mutex
+	store                *storage.Store
+	settings             storage.Settings
+	status               Status
+	shortcut             *platform.Shortcut
+	recorder             audio.Capture
+	microphones          func() ([]audio.Device, error)
+	engine               speech.Engine
+	id, path, target     string
+	recordSettings       storage.Settings
+	timer                *time.Timer
+	cancel               context.CancelFunc
+	wg                   sync.WaitGroup
+	closing              bool
+	shutdownOnce         sync.Once
+	notify               func(string, ...interface{})
+	copyText             func(string) error
+	indicator            indicator.Controller
+	indicatorActive      bool
+	tray                 tray.Controller
+	closeToTray          bool
+	quitRequested        bool
+	showWindow           func()
+	hideWindow           func()
+	quitApplication      func()
+	loginStart           startup.Controller
+	development          bool
+	startupComplete      bool
+	domReady             bool
+	initialWindowApplied bool
+	windowRequested      bool
 }
 
 func NewApp() *App {
@@ -76,11 +86,19 @@ func NewApp() *App {
 }
 func (a *App) startup(ctx context.Context) {
 	a.mu.Lock()
-	defer a.mu.Unlock()
+	defer func() {
+		a.startupComplete = true
+		show := a.initialWindowLocked()
+		a.mu.Unlock()
+		if show != nil {
+			show()
+		}
+	}()
 	if a.closing {
 		return
 	}
 	a.ctx = ctx
+	a.development = runtime.Environment(ctx).BuildType != "production"
 	a.notify = func(topic string, data ...interface{}) { runtime.EventsEmit(ctx, topic, data...) }
 	a.copyText = func(text string) error { return runtime.ClipboardSetText(ctx, text) }
 	a.showWindow = func() { runtime.Show(ctx); runtime.WindowUnminimise(ctx); runtime.WindowShow(ctx) }
@@ -111,6 +129,20 @@ func (a *App) startup(ctx context.Context) {
 		return
 	}
 	a.settings.WhisperPath = models.PreferredRuntime(a.settings.WhisperPath)
+	if !a.development {
+		a.loginStart, err = startup.New()
+		if err == nil && a.loginStart != nil {
+			var enabled bool
+			enabled, err = a.loginStart.Enabled()
+			if err == nil {
+				a.settings.LaunchAtLogin = enabled
+			}
+		}
+		if err != nil {
+			a.status.StartupError = "Launch at login unavailable: " + err.Error()
+			a.loginStart = nil
+		}
+	}
 	a.indicator, err = indicator.New(indicator.Actions{
 		Stop:   func() { _ = a.StopRecording() },
 		Cancel: func() { _ = a.Cancel() },
@@ -124,11 +156,37 @@ func (a *App) startup(ctx context.Context) {
 
 func (a *App) show() {
 	a.mu.Lock()
+	a.windowRequested = true
 	show, closing := a.showWindow, a.closing
 	a.mu.Unlock()
 	if !closing && show != nil {
 		show()
 	}
+}
+
+func (a *App) onDomReady(context.Context) {
+	a.mu.Lock()
+	a.domReady = true
+	show := a.initialWindowLocked()
+	a.mu.Unlock()
+	if show != nil {
+		show()
+	}
+}
+
+// Wails creates the window hidden. Decide once both startup and the webview are
+// ready, regardless of callback order. A second launch always opens the window.
+func (a *App) initialWindowLocked() func() {
+	if a.closing || !a.domReady || !a.startupComplete || a.initialWindowApplied {
+		return nil
+	}
+	a.initialWindowApplied = true
+	ready := a.store != nil && speech.Validate(speech.Options{Executable: a.settings.WhisperPath, Model: a.settings.ModelPath}) == nil
+	background := a.settings.StartInTray && !a.development && a.tray != nil && ready && a.status.Phase != "error" && a.status.ShortcutError == "" && a.status.StartupError == ""
+	if background && !a.windowRequested {
+		return nil
+	}
+	return a.showWindow
 }
 
 func (a *App) trayRecord() {
@@ -296,7 +354,7 @@ func (a *App) GetSnapshot() (Snapshot, error) {
 		return Snapshot{}, err
 	}
 	ready := speech.Validate(speech.Options{Executable: a.settings.WhisperPath, Model: a.settings.ModelPath}) == nil
-	return Snapshot{Settings: a.settings, Status: a.status, History: history, Models: models.List(a.store.Dir), DataDir: a.store.Dir, Ready: ready, FloatingIndicator: a.indicator != nil}, nil
+	return Snapshot{Settings: a.settings, Status: a.status, History: history, Models: models.List(a.store.Dir), DataDir: a.store.Dir, Ready: ready, FloatingIndicator: a.indicator != nil, LaunchAtLoginAvailable: a.loginStart != nil, StartInTrayAvailable: a.tray != nil && !a.development}, nil
 }
 func (a *App) GetMicrophones() ([]audio.Device, error) {
 	a.mu.Lock()
@@ -499,6 +557,30 @@ func (a *App) SaveSettings(settings storage.Settings) error {
 		}
 	}
 	old := a.settings
+	if settings.StartInTray && !old.StartInTray && (a.tray == nil || a.development) {
+		return errors.New("start in background requires tray or menu-bar controls in a packaged app")
+	}
+	if a.loginStart == nil && settings.LaunchAtLogin != old.LaunchAtLogin {
+		return errors.New("launch at login is unavailable in this build")
+	}
+	previousLogin := false
+	if a.loginStart != nil {
+		var err error
+		previousLogin, err = a.loginStart.Enabled()
+		if err != nil {
+			return fmt.Errorf("check launch at login: %w", err)
+		}
+	}
+	restoreSettings := func() {
+		if a.settings.Shortcut != old.Shortcut && a.shortcut != nil {
+			a.shortcut.Close()
+			a.shortcut = nil
+		}
+		a.settings = old
+		if a.shortcut == nil {
+			a.registerShortcut()
+		}
+	}
 	if old.Shortcut != settings.Shortcut {
 		oldKey := a.shortcut
 		a.shortcut = nil
@@ -514,18 +596,28 @@ func (a *App) SaveSettings(settings storage.Settings) error {
 			return fmt.Errorf("shortcut could not be registered: %s", failure)
 		}
 	}
-	if err := a.store.SaveSettings(settings); err != nil {
-		if a.settings.Shortcut != old.Shortcut && a.shortcut != nil {
-			a.shortcut.Close()
-			a.shortcut = nil
+	// Re-enabling also refreshes the executable path after moving/updating Yap.
+	loginChanged := a.loginStart != nil && (settings.LaunchAtLogin || previousLogin != settings.LaunchAtLogin)
+	if loginChanged {
+		if err := a.loginStart.SetEnabled(settings.LaunchAtLogin); err != nil {
+			restoreSettings()
+			return fmt.Errorf("update launch at login: %w", err)
 		}
-		a.settings = old
-		if a.shortcut == nil {
-			a.registerShortcut()
+	}
+	if err := a.store.SaveSettings(settings); err != nil {
+		restoreSettings()
+		if loginChanged {
+			if rollbackErr := a.loginStart.SetEnabled(previousLogin); rollbackErr != nil {
+				a.status.StartupError = "Could not restore launch-at-login registration: " + rollbackErr.Error()
+				return errors.Join(err, errors.New(a.status.StartupError))
+			}
 		}
 		return err
 	}
 	a.settings = settings
+	if a.loginStart != nil {
+		a.status.StartupError = ""
+	}
 	if a.shortcut == nil {
 		a.registerShortcut()
 	}
