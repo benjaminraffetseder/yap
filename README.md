@@ -15,7 +15,7 @@ Linux support is incomplete.
 
 - Hold-to-talk or toggle recording with a global shortcut.
 - Dictate in the background, with tray controls and a floating indicator.
-- Search, copy, and export past transcripts.
+- Search, edit, copy, and export past transcripts.
 - Add names and preferred spellings to a custom vocabulary.
 
 ## Getting started

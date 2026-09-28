@@ -9,6 +9,7 @@ declare global {
       deferSnapshots: boolean
       pendingSnapshots: (() => void)[]
       failSave: boolean
+      exportedText: string
       checks: DiagnosticCheck[]
       status: (phase: string) => void
       history: () => void
@@ -24,7 +25,7 @@ test.beforeEach(async ({ page }) => {
         status: { phase: "idle", message: "Ready", startedAt: 0, transcript: "", progress: 0, shortcutError: "", indicatorError: "", trayError: "", startupError: "" },
         models: [], history: [], ready: true, dataDir: "", floatingIndicator: true, launchAtLoginAvailable: true, startInTrayAvailable: true, vocabulary: [], microphoneTested: false, shortcutTested: false, diagnostic: { phase: "", message: "", details: "", transcript: "", durationMs: 0 },
       },
-      callbacks: {}, deferSnapshots: false, pendingSnapshots: [], failSave: false, checks: [{ id: "runtime", name: "Whisper runtime", ready: true, message: "Executable found" }, { id: "model", name: "Speech model", ready: true, message: "Model file readable" }, { id: "microphone", name: "Microphone", ready: true, message: "System default" }],
+      callbacks: {}, deferSnapshots: false, pendingSnapshots: [], failSave: false, exportedText: "", checks: [{ id: "runtime", name: "Whisper runtime", ready: true, message: "Executable found" }, { id: "model", name: "Speech model", ready: true, message: "Model file readable" }, { id: "microphone", name: "Microphone", ready: true, message: "System default" }],
       status(phase: string) {
         state.snapshot.status = { ...state.snapshot.status, phase, message: phase === "transcribing" ? "Transcribing…" : "Ready", startedAt: Date.now() }
         state.callbacks["dictation:status"](structuredClone(state.snapshot.status))
@@ -66,6 +67,14 @@ test.beforeEach(async ({ page }) => {
         CompleteSetup: async () => { state.snapshot.settings.setupComplete = true },
         RestartSetup: async () => { state.snapshot.settings.setupComplete = false; state.snapshot.microphoneTested = false; state.snapshot.shortcutTested = false },
         InstallModel: async (id: string) => { state.status("downloading"); state.snapshot.settings.modelPath = `/${id}`; state.snapshot.settings.whisperPath = "/whisper" },
+        SaveTranscript: async (id: string, text: string) => {
+          if (state.failSave) throw new Error("Transcript save failed")
+          const entry = state.snapshot.history.find(item => item.id === id)
+          if (!entry) throw new Error("This dictation no longer exists")
+          entry.finalTranscript = text
+          state.history()
+        },
+        ExportSession: async (id: string) => { state.exportedText = state.snapshot.history.find(entry => entry.id === id)?.finalTranscript ?? "" },
         CopyText: async (text: string) => { state.snapshot.status.transcript = text },
         StartRecording: async () => { state.status("recording") },
       } } },
@@ -384,4 +393,93 @@ test("test capture and transcription remain cancellable across navigation", asyn
   await page.getByRole("navigation", { name: "Main navigation" }).getByRole("link", { name: "Settings", exact: true }).click()
   await expect(page.getByText("Test cancelled", { exact: true })).toBeVisible()
   await expect(page.getByRole("button", { name: "Test dictation", exact: true })).toBeEnabled()
+})
+
+test("saved transcript edits drive display, search, copy and export while keeping originals", async ({ page }) => {
+  await page.addInitScript(() => { window.dictationTest.snapshot.history = [{ id: "edit", createdAt: "2026-10-07", durationMs: 1000, rawTranscript: "um, send postgres", finalTranscript: "Send PostgreSQL.", speechModel: "base", language: "en", audioPath: "" }] })
+  await page.goto("/#/history")
+  await page.getByRole("button", { name: /Send PostgreSQL/ }).click()
+  await page.getByRole("button", { name: "Edit transcript", exact: true }).click()
+  const dialog = page.getByRole("dialog", { name: "Edit transcript" })
+  const input = dialog.getByLabel("Transcript", { exact: true })
+  await expect(input).toHaveValue("Send PostgreSQL.")
+  await expect(input).toBeFocused()
+  await expect(dialog.getByRole("button", { name: "Save transcript" })).toBeDisabled()
+  await input.fill("Send PostgreSQL to Benji.\nThanks!")
+  await dialog.getByRole("button", { name: "Save transcript" }).click()
+  await expect(dialog).toHaveCount(0)
+  await expect(page.getByText("Send PostgreSQL to Benji.\nThanks!", { exact: true })).toBeVisible()
+  await page.getByRole("button", { name: "Copy", exact: true }).click()
+  await expect.poll(() => page.evaluate(() => window.dictationTest.snapshot.status.transcript)).toBe("Send PostgreSQL to Benji.\nThanks!")
+  await page.getByRole("button", { name: "Export text", exact: true }).click()
+  await expect.poll(() => page.evaluate(() => window.dictationTest.exportedText)).toBe("Send PostgreSQL to Benji.\nThanks!")
+  await page.getByLabel("Search transcripts").fill("Benji")
+  await expect(page.getByText("Send PostgreSQL to Benji.\nThanks!", { exact: true })).toBeVisible()
+  await page.getByLabel("Search transcripts").fill("um,")
+  await page.getByText("Original transcript", { exact: true }).click()
+  await expect(page.getByText("um, send postgres", { exact: true })).toBeVisible()
+  await expect.poll(() => page.evaluate(() => window.dictationTest.snapshot.history[0].rawTranscript)).toBe("um, send postgres")
+})
+
+test("editor retains its draft across refresh and failed saves, then saves with keyboard shortcut", async ({ page }) => {
+  await page.addInitScript(() => { window.dictationTest.snapshot.history = [{ id: "edit", createdAt: "2026-10-07", durationMs: 1000, rawTranscript: "Original plain transcript.", finalTranscript: "Original plain transcript.", speechModel: "base", language: "en", audioPath: "" }] })
+  await page.goto("/#/history")
+  await page.getByRole("button", { name: /Original plain transcript/ }).click()
+  await page.getByRole("button", { name: "Edit transcript", exact: true }).click()
+  const dialog = page.getByRole("dialog", { name: "Edit transcript" })
+  const input = dialog.getByLabel("Transcript", { exact: true })
+  await input.fill("My correction.")
+  await page.evaluate(() => { window.dictationTest.failSave = true; window.dictationTest.history() })
+  await settle(page)
+  await expect(input).toHaveValue("My correction.")
+  await dialog.getByRole("button", { name: "Save transcript" }).click()
+  await expect(dialog.getByRole("alert")).toHaveText("Transcript save failed")
+  await expect(input).toHaveValue("My correction.")
+  await expect.poll(() => page.evaluate(() => window.dictationTest.snapshot.history[0].finalTranscript)).toBe("Original plain transcript.")
+  await page.evaluate(() => { window.dictationTest.failSave = false })
+  await input.press("Control+Enter")
+  await expect(dialog).toHaveCount(0)
+  await expect(page.getByText("My correction.", { exact: true })).toBeVisible()
+})
+
+test("cancel and Escape discard edits, empty edits cannot be saved, and outside clicks keep the draft", async ({ page }) => {
+  await page.addInitScript(() => { window.dictationTest.snapshot.history = [{ id: "edit", createdAt: "2026-10-07", durationMs: 1000, rawTranscript: "Original plain transcript.", finalTranscript: "Original plain transcript.", speechModel: "base", language: "en", audioPath: "" }] })
+  await page.goto("/#/history")
+  await page.getByRole("button", { name: /Original plain transcript/ }).click()
+  const edit = page.getByRole("button", { name: "Edit transcript", exact: true })
+  await edit.click()
+  const dialog = page.getByRole("dialog", { name: "Edit transcript" })
+  const input = dialog.getByLabel("Transcript", { exact: true })
+  await input.fill(" \n ")
+  await expect(dialog.getByRole("button", { name: "Save transcript" })).toBeDisabled()
+  await input.fill("Discard this.")
+  await page.mouse.click(5, 5)
+  await expect(input).toHaveValue("Discard this.")
+  await dialog.getByRole("button", { name: "Cancel", exact: true }).click()
+  await expect(dialog).toHaveCount(0)
+  await expect(edit).toBeFocused()
+  await expect.poll(() => page.evaluate(() => window.dictationTest.snapshot.history[0].finalTranscript)).toBe("Original plain transcript.")
+  await edit.click()
+  await expect(input).toHaveValue("Original plain transcript.")
+  await input.fill("Escape this.")
+  await input.press("Escape")
+  await expect(dialog).toHaveCount(0)
+  await expect(edit).toBeFocused()
+  await expect.poll(() => page.evaluate(() => window.dictationTest.snapshot.history[0].finalTranscript)).toBe("Original plain transcript.")
+})
+
+test("deleted recordings fail safely without losing the editor draft", async ({ page }) => {
+  await page.addInitScript(() => { window.dictationTest.snapshot.history = [{ id: "edit", createdAt: "2026-10-07", durationMs: 1000, rawTranscript: "Original plain transcript.", finalTranscript: "Original plain transcript.", speechModel: "base", language: "en", audioPath: "" }] })
+  await page.goto("/#/history")
+  await page.getByRole("button", { name: /Original plain transcript/ }).click()
+  await page.getByRole("button", { name: "Edit transcript", exact: true }).click()
+  const dialog = page.getByRole("dialog", { name: "Edit transcript" })
+  await dialog.getByLabel("Transcript", { exact: true }).fill("Keep my draft.")
+  await page.evaluate(() => { window.dictationTest.snapshot.history = []; window.dictationTest.history() })
+  await settle(page)
+  await dialog.getByRole("button", { name: "Save transcript" }).click()
+  await expect(dialog.getByRole("alert")).toHaveText("This dictation no longer exists")
+  await expect(dialog.getByLabel("Transcript", { exact: true })).toHaveValue("Keep my draft.")
+  await dialog.getByRole("button", { name: "Cancel", exact: true }).click()
+  await expect(page.getByRole("heading", { name: "No dictations yet", exact: true })).toBeVisible()
 })

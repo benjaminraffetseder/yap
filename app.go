@@ -800,6 +800,22 @@ func processTranscript(text string, settings storage.Settings, entries []vocabul
 	return vocabulary.Apply(text, entries)
 }
 func (a *App) CopyText(text string) error { return runtime.ClipboardSetText(a.ctx, text) }
+func (a *App) SaveTranscript(id, text string) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if err := a.available(); err != nil {
+		return err
+	}
+	if err := a.store.UpdateTranscript(id, text); err != nil {
+		return err
+	}
+	if id == a.id && a.status.Phase == "done" {
+		a.status.Transcript, a.status.Message = text, "Transcript updated in History"
+		a.emit()
+	}
+	a.event("dictation:history")
+	return nil
+}
 func (a *App) DeleteSession(id string) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()

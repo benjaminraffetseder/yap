@@ -4,9 +4,12 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
+	"unicode/utf8"
 	"yap/internal/vocabulary"
 
 	_ "modernc.org/sqlite"
@@ -142,6 +145,35 @@ func (s *Store) Session(id string) (Session, error) {
 	var v Session
 	err := s.db.QueryRow("SELECT r.id,r.created_at,r.duration_ms,r.transcript,r.model,r.language,r.audio_path,COALESCE(o.transcript,r.transcript) FROM recordings r LEFT JOIN recording_outputs o ON r.id=o.id WHERE r.id=?", id).Scan(&v.ID, &v.CreatedAt, &v.DurationMS, &v.RawTranscript, &v.SpeechModel, &v.Language, &v.AudioPath, &v.FinalTranscript)
 	return v, err
+}
+
+// Corrections share the processed-text table; raw recognition and recording
+// metadata remain immutable. The INSERT selects only an existing recording so
+// deleting a session cannot leave an orphaned correction.
+func (s *Store) UpdateTranscript(id, text string) error {
+	if strings.TrimSpace(text) == "" {
+		return errors.New("enter a transcript before saving")
+	}
+	if !utf8.ValidString(text) || strings.ContainsRune(text, 0) {
+		return errors.New("transcript must contain valid text without null characters")
+	}
+	if utf8.RuneCountInString(text) > 100000 {
+		return errors.New("use at most 100,000 characters in a transcript")
+	}
+	result, err := s.db.Exec(`INSERT INTO recording_outputs(id,transcript)
+		SELECT id,? FROM recordings WHERE id=?
+		ON CONFLICT(id) DO UPDATE SET transcript=excluded.transcript`, text, id)
+	if err != nil {
+		return fmt.Errorf("could not save transcript: %w", err)
+	}
+	count, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if count == 0 {
+		return errors.New("this dictation no longer exists; close the editor and refresh History")
+	}
+	return nil
 }
 func (s *Store) Delete(id string) error {
 	v, err := s.Session(id)
