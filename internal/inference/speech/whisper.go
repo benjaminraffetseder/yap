@@ -17,18 +17,41 @@ type Engine interface {
 }
 type Whisper struct{}
 
-func Validate(opts Options) error {
-	if opts.Executable == "" {
-		return fmt.Errorf("install Whisper in Models, or select a whisper-cli executable")
+var ErrNoSpeech = fmt.Errorf("no speech detected; try a longer recording")
+
+func ValidateExecutable(executable string) error {
+	if executable == "" {
+		return fmt.Errorf("install Whisper in Models, or select a whisper-cli executable in Settings")
 	}
-	if _, err := exec.LookPath(opts.Executable); err != nil {
-		return fmt.Errorf("Whisper executable is unavailable: %w", err)
+	path, err := exec.LookPath(executable)
+	if err != nil {
+		return fmt.Errorf("Whisper executable is unavailable; select whisper-cli in Settings: %w", err)
 	}
-	info, err := os.Stat(opts.Model)
-	if err != nil || info.IsDir() {
-		return fmt.Errorf("select an installed Whisper model in Models")
+	info, err := os.Stat(path)
+	if err != nil || !info.Mode().IsRegular() {
+		return fmt.Errorf("select a regular whisper-cli executable in Settings")
 	}
 	return nil
+}
+
+func ValidateModel(model string) error {
+	f, err := os.Open(model)
+	if err != nil {
+		return fmt.Errorf("speech model is unavailable; download one in Models or select its file in Settings: %w", err)
+	}
+	defer f.Close()
+	info, err := f.Stat()
+	if err != nil || !info.Mode().IsRegular() || info.Size() == 0 {
+		return fmt.Errorf("speech model is empty or invalid; download it again in Models")
+	}
+	return nil
+}
+
+func Validate(opts Options) error {
+	if err := ValidateExecutable(opts.Executable); err != nil {
+		return err
+	}
+	return ValidateModel(opts.Model)
 }
 func (Whisper) Transcribe(ctx context.Context, audio string, opts Options) (string, error) {
 	if err := Validate(opts); err != nil {
@@ -63,7 +86,7 @@ func (Whisper) Transcribe(ctx context.Context, audio string, opts Options) (stri
 	}
 	text := strings.TrimSpace(string(data))
 	if text == "" {
-		return "", fmt.Errorf("no speech detected; try a longer recording")
+		return "", ErrNoSpeech
 	}
 	return text, nil
 }

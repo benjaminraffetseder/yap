@@ -60,5 +60,8 @@ Audio retention is off by default. Transcripts stay in History until you delete 
 
 - **No microphone input:** check OS permission and the saved input device.
   **Settings → Run setup** lets you repeat the microphone and shortcut checks.
+- **Transcription fails:** save your settings, then run **Dictation diagnostics**.
+  It records a short test and shows runtime errors without saving to History or
+  changing the clipboard. Technical details can help with a bug report.
 - **Paste doesn't work:** check History and the clipboard. Yap won't switch
   focus back to another app to paste. On a Mac, check Accessibility permission.

@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { useDictation } from "@/components/dictation-provider"
-import { backend, isDesktop, type VocabularyEntry } from "@/lib/backend"
+import { backend, isBusy, isDesktop, type VocabularyEntry } from "@/lib/backend"
 
 type Draft = Omit<VocabularyEntry, "aliases"> & { aliases: string }
 const draftOf = (entries: VocabularyEntry[]): Draft[] => entries.map(entry => ({ ...entry, aliases: entry.aliases.join(", ") }))
@@ -13,7 +13,7 @@ export function VocabularyPage() {
   const [draft, setDraft] = useState(() => draftOf(snapshot.vocabulary))
   const baseline = useRef(draftOf(snapshot.vocabulary))
   const [saving, setSaving] = useState(false)
-  const busy = ["recording", "transcribing", "downloading", "mic-test"].includes(snapshot.status.phase)
+  const busy = isBusy(snapshot.status.phase)
   useEffect(() => {
     const previous = baseline.current
     baseline.current = draftOf(snapshot.vocabulary)

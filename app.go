@@ -39,6 +39,7 @@ type Status struct {
 	StartupError   string  `json:"startupError"`
 }
 type Snapshot struct {
+	Diagnostic             DiagnosticResult   `json:"diagnostic"`
 	Vocabulary             []vocabulary.Entry `json:"vocabulary"`
 	MicrophoneTested       bool               `json:"microphoneTested"`
 	ShortcutTested         bool               `json:"shortcutTested"`
@@ -53,6 +54,7 @@ type Snapshot struct {
 	StartInTrayAvailable   bool               `json:"startInTrayAvailable"`
 }
 type App struct {
+	diagnostic                       DiagnosticResult
 	vocabulary                       []vocabulary.Entry
 	recordVocabulary                 []vocabulary.Entry
 	microphoneTested, shortcutTested bool
@@ -273,7 +275,7 @@ func (a *App) shutdown(ctx context.Context) {
 		if a.cancel != nil {
 			a.cancel()
 		}
-		if a.status.Phase == "recording" || a.status.Phase == "mic-test" {
+		if a.status.Phase == "recording" || a.status.Phase == "mic-test" || a.status.Phase == "diagnostic-recording" {
 			a.recorder.Stop()
 			os.Remove(a.path)
 		}
@@ -328,7 +330,7 @@ func (a *App) available() error {
 	return nil
 }
 func (a *App) busy() bool {
-	return a.status.Phase == "recording" || a.status.Phase == "transcribing" || a.status.Phase == "downloading" || a.status.Phase == "mic-test"
+	return a.status.Phase == "recording" || a.status.Phase == "transcribing" || a.status.Phase == "downloading" || a.status.Phase == "mic-test" || a.status.Phase == "diagnostic-recording" || a.status.Phase == "diagnostic-transcribing"
 }
 func (a *App) registerShortcut() {
 	s, err := platform.Register(a.settings.Shortcut, a.hotkeyDown, a.hotkeyUp)
@@ -382,7 +384,7 @@ func (a *App) GetSnapshot() (Snapshot, error) {
 	}
 	ready := speech.Validate(speech.Options{Executable: a.settings.WhisperPath, Model: a.settings.ModelPath}) == nil
 	entries, _ := vocabulary.Normalize(a.vocabulary)
-	return Snapshot{Vocabulary: entries, MicrophoneTested: a.microphoneTested, ShortcutTested: a.shortcutTested, Settings: a.settings, Status: a.status, History: history, Models: models.List(a.store.Dir), DataDir: a.store.Dir, Ready: ready, FloatingIndicator: a.indicator != nil, LaunchAtLoginAvailable: a.loginStart != nil, StartInTrayAvailable: a.tray != nil && !a.development}, nil
+	return Snapshot{Diagnostic: a.diagnostic, Vocabulary: entries, MicrophoneTested: a.microphoneTested, ShortcutTested: a.shortcutTested, Settings: a.settings, Status: a.status, History: history, Models: models.List(a.store.Dir), DataDir: a.store.Dir, Ready: ready, FloatingIndicator: a.indicator != nil, LaunchAtLoginAvailable: a.loginStart != nil, StartInTrayAvailable: a.tray != nil && !a.development}, nil
 }
 func (a *App) GetMicrophones() ([]audio.Device, error) {
 	a.mu.Lock()
@@ -514,17 +516,7 @@ func (a *App) transcribe(ctx context.Context, id, path, target string, duration 
 		audioPath = path
 	}
 	session := storage.NewSession(id, duration, text, filepath.Base(settings.ModelPath), settings.Language, audioPath)
-	if settings.CleanText {
-		protected := []string{}
-		for _, entry := range entries {
-			if entry.Enabled {
-				protected = append(protected, entry.Canonical)
-				protected = append(protected, entry.Aliases...)
-			}
-		}
-		text = cleanup.Apply(text, settings.Language, protected...)
-	}
-	text = vocabulary.Apply(text, entries)
+	text = processTranscript(text, settings, entries)
 	session.FinalTranscript = text
 	if err = a.store.Add(session); err != nil {
 		a.fail(fmt.Errorf("could not save transcript: %w", err))
@@ -553,7 +545,8 @@ func (a *App) Cancel() error {
 	if err := a.available(); err != nil {
 		return err
 	}
-	if a.status.Phase == "mic-test" {
+	if a.status.Phase == "mic-test" || a.status.Phase == "diagnostic-recording" {
+		diagnostic := a.status.Phase == "diagnostic-recording"
 		if a.timer != nil {
 			a.timer.Stop()
 		}
@@ -562,6 +555,10 @@ func (a *App) Cancel() error {
 		a.microphoneTested = false
 		a.status.Phase, a.status.Message = "idle", "Microphone test cancelled"
 		a.status.StartedAt = 0
+		if diagnostic {
+			a.diagnostic = DiagnosticResult{Phase: "cancelled", Message: "Test cancelled"}
+			a.status.Message = a.diagnostic.Message
+		}
 		a.emit()
 		a.event("setup:changed")
 		return err
@@ -677,6 +674,9 @@ func (a *App) SaveSettings(settings storage.Settings) error {
 		return err
 	}
 	a.settings = settings
+	if old.MicrophoneID != settings.MicrophoneID || old.WhisperPath != settings.WhisperPath || old.ModelPath != settings.ModelPath || old.Language != settings.Language || old.CleanText != settings.CleanText {
+		a.diagnostic = DiagnosticResult{}
+	}
 	if old.MicrophoneID != settings.MicrophoneID {
 		a.microphoneTested = false
 	}
@@ -777,6 +777,7 @@ func (a *App) InstallModel(id string) error {
 			return
 		}
 		a.settings = settings
+		a.diagnostic = DiagnosticResult{}
 		a.status.Phase = "idle"
 		a.status.Message = "Model installed. Ready to dictate."
 		a.status.Progress = 0
@@ -784,6 +785,19 @@ func (a *App) InstallModel(id string) error {
 		a.event("dictation:history")
 	}()
 	return nil
+}
+func processTranscript(text string, settings storage.Settings, entries []vocabulary.Entry) string {
+	if settings.CleanText {
+		protected := []string{}
+		for _, entry := range entries {
+			if entry.Enabled {
+				protected = append(protected, entry.Canonical)
+				protected = append(protected, entry.Aliases...)
+			}
+		}
+		text = cleanup.Apply(text, settings.Language, protected...)
+	}
+	return vocabulary.Apply(text, entries)
 }
 func (a *App) CopyText(text string) error { return runtime.ClipboardSetText(a.ctx, text) }
 func (a *App) DeleteSession(id string) error {

@@ -57,8 +57,32 @@ func TestTranscriptAndEmptyOutput(t *testing.T) {
 		t.Fatalf("unexpected transcript: %q %v", text, err)
 	}
 	t.Setenv("YAP_TEST_WHISPER", "empty")
-	if _, err = (Whisper{}).Transcribe(context.Background(), "audio.wav", opts); err == nil {
+	if _, err = (Whisper{}).Transcribe(context.Background(), "audio.wav", opts); !errors.Is(err, ErrNoSpeech) {
 		t.Fatal("accepted empty transcription")
+	}
+}
+func TestFileChecksRejectMissingEmptyAndDirectoryModels(t *testing.T) {
+	opts := testOptions(t)
+	if err := Validate(opts); err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateExecutable(""); err == nil {
+		t.Fatal("empty runtime accepted")
+	}
+	if err := ValidateExecutable("missing-whisper-cli"); err == nil {
+		t.Fatal("missing runtime accepted")
+	}
+	if err := ValidateModel(t.TempDir()); err == nil {
+		t.Fatal("directory model accepted")
+	}
+	if err := os.WriteFile(opts.Model, nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateModel(opts.Model); err == nil {
+		t.Fatal("empty model accepted")
+	}
+	if err := ValidateModel(filepath.Join(t.TempDir(), "missing.bin")); err == nil {
+		t.Fatal("missing model accepted")
 	}
 }
 func TestVocabularyPromptIsOneLiteralArgument(t *testing.T) {

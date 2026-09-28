@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test"
-import type { Settings, Snapshot, Status, VocabularyEntry } from "../src/lib/backend"
+import type { DiagnosticCheck, Settings, Snapshot, Status, VocabularyEntry } from "../src/lib/backend"
 
 declare global {
   interface Window {
@@ -9,6 +9,7 @@ declare global {
       deferSnapshots: boolean
       pendingSnapshots: (() => void)[]
       failSave: boolean
+      checks: DiagnosticCheck[]
       status: (phase: string) => void
       history: () => void
     }
@@ -21,9 +22,9 @@ test.beforeEach(async ({ page }) => {
       snapshot: {
         settings: { microphoneId: "", whisperPath: "/whisper", modelPath: "/model", language: "auto", shortcut: "Ctrl+Alt+Space", interaction: "hold", autoPaste: true, saveAudio: false, launchAtLogin: false, startInTray: false, cleanText: false, setupComplete: true },
         status: { phase: "idle", message: "Ready", startedAt: 0, transcript: "", progress: 0, shortcutError: "", indicatorError: "", trayError: "", startupError: "" },
-        models: [], history: [], ready: true, dataDir: "", floatingIndicator: true, launchAtLoginAvailable: true, startInTrayAvailable: true, vocabulary: [], microphoneTested: false, shortcutTested: false,
+        models: [], history: [], ready: true, dataDir: "", floatingIndicator: true, launchAtLoginAvailable: true, startInTrayAvailable: true, vocabulary: [], microphoneTested: false, shortcutTested: false, diagnostic: { phase: "", message: "", details: "", transcript: "", durationMs: 0 },
       },
-      callbacks: {}, deferSnapshots: false, pendingSnapshots: [], failSave: false,
+      callbacks: {}, deferSnapshots: false, pendingSnapshots: [], failSave: false, checks: [{ id: "runtime", name: "Whisper runtime", ready: true, message: "Executable found" }, { id: "model", name: "Speech model", ready: true, message: "Model file readable" }, { id: "microphone", name: "Microphone", ready: true, message: "System default" }],
       status(phase: string) {
         state.snapshot.status = { ...state.snapshot.status, phase, message: phase === "transcribing" ? "Transcribing…" : "Ready", startedAt: Date.now() }
         state.callbacks["dictation:status"](structuredClone(state.snapshot.status))
@@ -45,6 +46,9 @@ test.beforeEach(async ({ page }) => {
           return Promise.resolve(copy)
         },
         GetMicrophones: async () => [{ id: "usb", name: "USB microphone" }],
+        GetDiagnosticChecks: async () => structuredClone(state.checks),
+        StartDiagnosticTest: async () => { state.snapshot.diagnostic = { phase: "recording", message: "Say a short sentence", details: "", transcript: "", durationMs: 0 }; state.status("diagnostic-recording"); state.callbacks["dictation:level"](.6) },
+        StopDiagnosticTest: async () => { state.snapshot.diagnostic.phase = "transcribing"; state.snapshot.diagnostic.message = "Transcribing test…"; state.status("diagnostic-transcribing") },
         SaveSettings: async (settings: Settings) => {
           if (state.failSave) throw new Error("Settings save failed")
           if (settings.microphoneId !== state.snapshot.settings.microphoneId) state.snapshot.microphoneTested = false
@@ -58,7 +62,7 @@ test.beforeEach(async ({ page }) => {
         },
         StartMicrophoneTest: async () => { state.snapshot.microphoneTested = false; state.status("mic-test"); state.callbacks["dictation:level"](.6) },
         StopMicrophoneTest: async () => { state.snapshot.microphoneTested = true; state.status("idle") },
-        Cancel: async () => { state.snapshot.microphoneTested = false; state.status("idle") },
+        Cancel: async () => { if (state.snapshot.status.phase.startsWith("diagnostic-")) state.snapshot.diagnostic = { phase: "cancelled", message: "Test cancelled", details: "", transcript: "", durationMs: 0 }; state.snapshot.microphoneTested = false; state.status("idle") },
         CompleteSetup: async () => { state.snapshot.settings.setupComplete = true },
         RestartSetup: async () => { state.snapshot.settings.setupComplete = false; state.snapshot.microphoneTested = false; state.snapshot.shortcutTested = false },
         InstallModel: async (id: string) => { state.status("downloading"); state.snapshot.settings.modelPath = `/${id}`; state.snapshot.settings.whisperPath = "/whisper" },
@@ -309,4 +313,75 @@ test("microphone test remains stoppable after navigating away from setup", async
   await page.getByRole("button", { name: "Stop microphone test", exact: true }).click()
   await expect(page.getByRole("button", { name: "Stop microphone test", exact: true })).toHaveCount(0)
   await expect.poll(() => page.evaluate(() => window.dictationTest.snapshot.microphoneTested)).toBe(true)
+})
+
+test("diagnostics show microphone activity and an isolated transcript preview", async ({ page }) => {
+  await page.goto("/#/settings")
+  await expect(page.getByText("Executable found", { exact: true })).toBeVisible()
+  await page.getByRole("button", { name: "Test dictation", exact: true }).click()
+  await expect(page.getByRole("meter", { name: "Dictation test microphone level" })).toHaveAttribute("value", "0.6")
+  await expect(page.getByLabel("Global shortcut", { exact: true })).toBeDisabled()
+  await page.getByRole("button", { name: "Stop dictation test", exact: true }).click()
+  await expect(page.getByRole("button", { name: "Transcribing test…", exact: true })).toBeDisabled()
+  await expect(page.getByRole("button", { name: "Cancel test", exact: true })).toBeEnabled()
+  await page.evaluate(() => {
+    const state = window.dictationTest
+    state.snapshot.diagnostic = { phase: "done", message: "Runtime and model verified", details: "", transcript: "A short test sentence.", durationMs: 2000 }
+    state.status("idle")
+    state.callbacks["setup:changed"]()
+  })
+  await expect(page.getByText("Runtime and model verified", { exact: true })).toBeVisible()
+  await expect(page.getByText("A short test sentence.", { exact: true })).toBeVisible()
+  await expect(page.getByLabel("Global shortcut", { exact: true })).toBeEnabled()
+  await expect.poll(() => page.evaluate(() => window.dictationTest.snapshot.history.length)).toBe(0)
+  await expect.poll(() => page.evaluate(() => window.dictationTest.snapshot.status.transcript)).toBe("")
+})
+
+test("diagnostics block unsaved settings and unavailable files until refreshed", async ({ page }) => {
+  await page.goto("/#/settings")
+  const testDictation = page.getByRole("button", { name: "Test dictation", exact: true })
+  await expect(testDictation).toBeEnabled()
+  await page.getByLabel("Global shortcut", { exact: true }).fill("Ctrl+Alt+P")
+  await expect(testDictation).toBeDisabled()
+  await expect(page.getByText("Save settings before testing the changes.", { exact: true })).toBeVisible()
+  await page.getByRole("button", { name: "Save settings", exact: true }).click()
+  await expect(testDictation).toBeEnabled()
+  await page.evaluate(() => { window.dictationTest.checks[1] = { id: "model", name: "Speech model", ready: false, message: "Speech model is empty; download it again in Models." } })
+  await page.getByRole("button", { name: "Refresh diagnostics" }).click()
+  await expect(page.getByText("Speech model is empty; download it again in Models.", { exact: true })).toBeVisible()
+  await expect(testDictation).toBeDisabled()
+  await page.evaluate(() => { window.dictationTest.checks[1] = { id: "model", name: "Speech model", ready: true, message: "Model file readable" } })
+  await page.getByRole("button", { name: "Refresh diagnostics" }).click()
+  await expect(testDictation).toBeEnabled()
+})
+
+test("diagnostic errors include recovery guidance and expandable details", async ({ page }) => {
+  await page.goto("/#/settings")
+  await page.getByRole("button", { name: "Test dictation", exact: true }).click()
+  await page.getByRole("button", { name: "Stop dictation test", exact: true }).click()
+  await page.evaluate(() => {
+    const state = window.dictationTest
+    state.snapshot.diagnostic = { phase: "error", message: "Transcription failed. Reinstall the model in Models.", details: "Whisper could not load model: invalid header", transcript: "", durationMs: 0 }
+    state.status("idle")
+    state.callbacks["setup:changed"]()
+  })
+  await expect(page.getByRole("alert").filter({ hasText: "Reinstall the model" })).toBeVisible()
+  await page.getByText("Technical details", { exact: true }).click()
+  await expect(page.getByText("Whisper could not load model: invalid header", { exact: true })).toBeVisible()
+  await page.getByRole("button", { name: "Test dictation", exact: true }).click()
+  await expect(page.getByText("Whisper could not load model: invalid header", { exact: true })).toHaveCount(0)
+  await page.getByRole("button", { name: "Cancel test", exact: true }).click()
+  await expect(page.getByText("Test cancelled", { exact: true })).toBeVisible()
+})
+
+test("test capture and transcription remain cancellable across navigation", async ({ page }) => {
+  await page.goto("/#/settings")
+  await page.getByRole("button", { name: "Test dictation", exact: true }).click()
+  await page.getByRole("navigation", { name: "Main navigation" }).getByRole("link", { name: "Models", exact: true }).click()
+  await page.getByRole("button", { name: "Stop test recording", exact: true }).click()
+  await expect(page.getByText("Transcribing test…", { exact: true })).toBeVisible()
+  await page.getByRole("button", { name: "Cancel", exact: true }).click()
+  await page.getByRole("navigation", { name: "Main navigation" }).getByRole("link", { name: "Settings", exact: true }).click()
+  await expect(page.getByText("Test cancelled", { exact: true })).toBeVisible()
+  await expect(page.getByRole("button", { name: "Test dictation", exact: true })).toBeEnabled()
 })

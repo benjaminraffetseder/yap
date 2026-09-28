@@ -45,6 +45,8 @@ func presentation(s State) view {
 		v.status, v.recordEnabled, v.cancelEnabled = "Downloading…", false, true
 	case "mic-test":
 		v.status, v.recordEnabled, v.cancelEnabled = "Testing microphone…", false, true
+	case "diagnostic-recording", "diagnostic-transcribing":
+		v.status, v.recordEnabled, v.cancelEnabled = "Testing dictation…", false, true
 	case "error":
 		v.status = "Dictation failed"
 	case "closing":

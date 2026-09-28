@@ -27,14 +27,19 @@ func (a *App) SaveVocabulary(entries []vocabulary.Entry) ([]vocabulary.Entry, er
 		return nil, err
 	}
 	a.vocabulary = normalized
+	a.diagnostic = DiagnosticResult{}
 	a.event("setup:changed")
 	return normalized, nil
 }
 
-// Test capture is never transcribed or retained, even when SaveAudio is enabled.
+// Microphone-only tests never invoke inference or retain their audio.
 func (a *App) StartMicrophoneTest() error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	return a.startCaptureTest(false)
+}
+
+func (a *App) startCaptureTest(transcription bool) error {
 	if err := a.available(); err != nil {
 		return err
 	}
@@ -63,14 +68,20 @@ func (a *App) StartMicrophoneTest() error {
 	}
 	a.path = path
 	a.status.Phase, a.status.Message = "mic-test", "Speak to test your microphone"
+	if transcription {
+		a.recordSettings = a.settings
+		a.recordVocabulary, _ = vocabulary.Normalize(a.vocabulary)
+		a.status.Phase, a.status.Message = "diagnostic-recording", "Say a short sentence, then stop the test"
+		a.diagnostic = DiagnosticResult{Phase: "recording", Message: a.status.Message}
+	}
 	a.status.StartedAt = time.Now().UnixMilli()
 	a.emit()
 	a.event("setup:changed")
 	a.timer = time.AfterFunc(10*time.Second, func() {
 		a.mu.Lock()
 		defer a.mu.Unlock()
-		if !a.closing && a.path == path && a.status.Phase == "mic-test" {
-			_ = a.stopMicrophoneTest()
+		if !a.closing && a.path == path && (a.status.Phase == "mic-test" || a.status.Phase == "diagnostic-recording") {
+			_ = a.stopCaptureTest()
 		}
 	})
 	return nil
@@ -85,14 +96,20 @@ func (a *App) StopMicrophoneTest() error {
 	if a.status.Phase != "mic-test" {
 		return errors.New("no microphone test in progress")
 	}
-	return a.stopMicrophoneTest()
+	return a.stopCaptureTest()
 }
 
-func (a *App) stopMicrophoneTest() error {
+func (a *App) stopCaptureTest() error {
+	diagnostic := a.status.Phase == "diagnostic-recording"
 	if a.timer != nil {
 		a.timer.Stop()
 	}
-	_, err := a.recorder.Stop()
+	duration, err := a.recorder.Stop()
+	if diagnostic && err == nil && a.micSignal.Load() && duration >= 300 {
+		a.microphoneTested = true
+		a.transcribeDiagnostic(duration)
+		return nil
+	}
 	removeErr := os.Remove(a.path)
 	if err == nil && removeErr != nil && !os.IsNotExist(removeErr) {
 		err = removeErr
@@ -102,6 +119,12 @@ func (a *App) stopMicrophoneTest() error {
 	a.status.StartedAt = 0
 	if err == nil && !a.microphoneTested {
 		err = errors.New("no microphone signal detected; check microphone access and choose another input")
+	}
+	if diagnostic {
+		if err == nil {
+			err = errors.New("record for at least a moment before stopping the test")
+		}
+		a.diagnostic = DiagnosticResult{Phase: "error", Message: err.Error()}
 	}
 	if err != nil {
 		a.status.Message = err.Error()

@@ -3,7 +3,7 @@ import { ArrowRight, Check, Copy, Download, Keyboard, Loader2, Mic, Square } fro
 import { Link } from "react-router"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { useDictation } from "@/components/dictation-provider"
-import { backend, duration, isDesktop } from "@/lib/backend"
+import { backend, duration, isBusy, isDesktop } from "@/lib/backend"
 import { SetupPage } from "@/pages/setup-page"
 export function HomePage() {
   const { snapshot, loading, level, run } = useDictation()
@@ -11,7 +11,7 @@ export function HomePage() {
   const [now, setNow] = useState(Date.now())
   const [pending, setPending] = useState(false)
   const recording = status.phase === "recording"
-  const working = ["transcribing", "downloading", "mic-test"].includes(status.phase)
+  const working = isBusy(status.phase) && !recording
   const modelName = snapshot.models.find(model => model.path === settings.modelPath && model.installed)?.name ?? settings.modelPath.split(/[\\/]/).pop()
   useEffect(() => { if (!recording) return; const timer = setInterval(() => setNow(Date.now()), 200); return () => clearInterval(timer) }, [recording])
   async function record() { setPending(true); await run(recording ? backend.stop : backend.start); setPending(false) }

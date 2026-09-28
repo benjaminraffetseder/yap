@@ -8,7 +8,7 @@ const empty: Snapshot = {
     { id: "tiny", name: "Whisper Tiny", size: 77691713, description: "Fastest · short dictation", installed: false, path: "" },
     { id: "base", name: "Whisper Base", size: 147951465, description: "Lightweight · everyday dictation", installed: false, path: "" },
     { id: "small", name: "Whisper Small", size: 487601967, description: "Balanced · better accuracy", installed: false, path: "" },
-  ], history: [], dataDir: "", ready: false, floatingIndicator: false, launchAtLoginAvailable: false, startInTrayAvailable: false, vocabulary: [], microphoneTested: false, shortcutTested: false,
+  ], history: [], dataDir: "", ready: false, floatingIndicator: false, launchAtLoginAvailable: false, startInTrayAvailable: false, vocabulary: [], microphoneTested: false, shortcutTested: false, diagnostic: { phase: "", message: "", details: "", transcript: "", durationMs: 0 },
 }
 type Context = { snapshot: Snapshot; level: number; error: string; loading: boolean; refresh: () => Promise<void>; run: (action: () => Promise<unknown>, reload?: boolean) => Promise<void>; clearError: () => void }
 const DictationContext = createContext<Context | null>(null)

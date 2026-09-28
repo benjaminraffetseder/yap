@@ -7,7 +7,8 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useTheme } from "@/components/theme-provider"
 import { useDictation } from "@/components/dictation-provider"
-import { backend, isDesktop, message, type Microphone } from "@/lib/backend"
+import { backend, isBusy, isDesktop, message, type Microphone } from "@/lib/backend"
+import { DiagnosticsPanel } from "@/components/diagnostics-panel"
 const themes = [{ value: "light", label: "Light", icon: Sun }, { value: "dark", label: "Dark", icon: Moon }, { value: "system", label: "System", icon: Monitor }] as const
 export function SettingsPage() {
   const navigate = useNavigate()
@@ -21,7 +22,7 @@ export function SettingsPage() {
   const [microphoneError, setMicrophoneError] = useState("")
   const [microphonesLoaded, setMicrophonesLoaded] = useState(false)
   const microphoneRequest = useRef(0)
-  const busy = ["recording", "transcribing", "downloading", "mic-test"].includes(snapshot.status.phase)
+  const busy = isBusy(snapshot.status.phase)
   const dirty = JSON.stringify(settings) !== JSON.stringify(snapshot.settings)
   const selectedMicrophoneMissing = microphonesLoaded && !microphoneError && !!settings.microphoneId && !microphones.some(mic => mic.id === settings.microphoneId)
   const microphoneOptions = [
@@ -61,6 +62,7 @@ export function SettingsPage() {
   async function save() { setSaving(true); await run(() => backend.settings(settings)); setSaving(false) }
   return <div className="space-y-7">
     <header><h1 className="text-2xl font-semibold tracking-tight">Settings</h1></header>
+    <DiagnosticsPanel disabled={dirty || saving} />
     <fieldset disabled={!isDesktop || busy || saving} className="space-y-6 disabled:opacity-60">
       <section className="settings-section"><h2 className="font-semibold">Text processing</h2><label className="mt-5 flex cursor-pointer items-start gap-3"><input type="checkbox" className="mt-1 accent-[var(--primary)]" checked={settings.cleanText} onChange={event => setSettings({ ...settings, cleanText: event.target.checked })} /><span className="text-sm">Light cleanup<span className="mt-1 block text-xs text-muted-foreground">Apply local spacing, capitalization, and punctuation rules; remove common English/German filler words. Original transcripts stay in History.</span></span></label></section>
       <section className="settings-section"><h2 className="font-semibold">Startup</h2>

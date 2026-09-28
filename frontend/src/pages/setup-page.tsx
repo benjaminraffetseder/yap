@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useDictation } from "@/components/dictation-provider"
-import { backend, type Microphone } from "@/lib/backend"
+import { backend, isBusy, type Microphone } from "@/lib/backend"
 import { ModelsPage } from "@/pages/models-page"
 
 export function SetupPage() {
@@ -17,7 +17,7 @@ export function SetupPage() {
   const [shortcut, setShortcut] = useState(snapshot.settings.shortcut)
   const [pending, setPending] = useState(false)
   const testing = snapshot.status.phase === "mic-test"
-  const busy = ["recording", "transcribing", "downloading", "mic-test"].includes(snapshot.status.phase)
+  const busy = isBusy(snapshot.status.phase)
   useEffect(() => { if (step === 1) void run(async () => setMicrophones(await backend.microphones()), false) }, [step]) // Fetch only when this step opens.
   const options = [{ value: "", label: "System default" }, ...microphones.map(device => ({ value: device.id, label: device.name })), ...(mic && !microphones.some(device => device.id === mic) ? [{ value: mic, label: "Selected microphone (disconnected)" }] : [])]
   async function action(work: () => Promise<unknown>) { setPending(true); await run(work); setPending(false) }
@@ -34,6 +34,7 @@ export function SetupPage() {
         <Button variant="outline" size="icon" aria-label="Refresh microphones" disabled={busy || pending} onClick={() => void action(async () => setMicrophones(await backend.microphones()))}><RefreshCw className="size-4" /></Button>
       </div></div>
       <p className="text-sm text-muted-foreground">Speak for a few seconds. Test audio is deleted and never transcribed.</p>
+      <p className="text-xs text-muted-foreground">To test transcription too, open <Link className="text-primary underline" to="/settings">dictation diagnostics in Settings</Link>.</p>
       {testing && <div className="space-y-2"><meter aria-label="Microphone level" className="h-4 w-full" min={0} max={1} value={level} /><p role="status" className="text-sm">{snapshot.status.message}</p></div>}
       {!testing && <p role="status" className={`text-sm ${micPassed ? "text-primary" : "text-muted-foreground"}`}>{micPassed ? "Microphone test passed" : snapshot.status.message !== "Ready when you are" ? snapshot.status.message : ""}</p>}
       <Button disabled={pending || (busy && !testing)} onClick={() => void action(async () => { if (testing) return backend.stopMicTest(); if (mic !== snapshot.settings.microphoneId) await backend.settings({ ...snapshot.settings, microphoneId: mic }); await backend.testMic() })}>{testing ? "Stop test" : "Test microphone"}</Button>
