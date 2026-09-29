@@ -10,6 +10,7 @@ import { useTheme } from "@/components/theme-provider"
 import { useDictation } from "@/components/dictation-provider"
 import { backend, isBusy, isDesktop, message, type Microphone } from "@/lib/backend"
 import { DiagnosticsPanel } from "@/components/diagnostics-panel"
+import { ShortcutInput } from "@/components/shortcut-input"
 const themes = [{ value: "light", label: "Light", icon: Sun }, { value: "dark", label: "Dark", icon: Moon }, { value: "system", label: "System", icon: Monitor }] as const
 export function SettingsPage() {
   const navigate = useNavigate()
@@ -90,7 +91,7 @@ export function SettingsPage() {
         </div>
       </section>
       <section className="settings-section"><h2 className="font-semibold">Keyboard & delivery</h2>
-        <div className="mt-6 grid gap-5 sm:grid-cols-2"><div className="space-y-2"><Label htmlFor="shortcut">Global shortcut</Label><Input id="shortcut" value={settings.shortcut} onChange={event => setSettings({ ...settings, shortcut: event.target.value })} /><p className="text-xs text-muted-foreground">Ctrl, Alt, Shift + Space, A–Z, or F1–F12.</p></div><div className="space-y-2"><Label htmlFor="interaction">Recording mode</Label><select id="interaction" className="form-select" value={settings.interaction} onChange={event => setSettings({ ...settings, interaction: event.target.value })}><option value="hold">Hold to talk</option><option value="toggle">Press to start / press to stop</option></select></div></div>
+        <div className="mt-6 grid gap-5 sm:grid-cols-2"><div className="space-y-2"><Label htmlFor="shortcut">Global shortcut</Label><ShortcutInput id="shortcut" value={settings.shortcut} disabled={!isDesktop || busy || saving} onChange={shortcut => setSettings(old => ({ ...old, shortcut }))} /><p className="text-xs text-muted-foreground">Ctrl, Alt, Shift + Space, A–Z, or F1–F12.</p></div><div className="space-y-2"><Label htmlFor="interaction">Recording mode</Label><select id="interaction" className="form-select" value={settings.interaction} onChange={event => setSettings({ ...settings, interaction: event.target.value })}><option value="hold">Hold to talk</option><option value="toggle">Press to start / press to stop</option></select></div></div>
         <label className="mt-6 flex cursor-pointer items-start gap-3"><input type="checkbox" className="mt-1 accent-[var(--primary)]" checked={settings.autoPaste} onChange={event => setSettings({ ...settings, autoPaste: event.target.checked })} /><span className="text-sm">Paste automatically<span className="mt-1 block text-xs text-muted-foreground">Paste into the focused app after shortcut dictation. Otherwise, copy only.</span></span></label>
         {snapshot.status.shortcutError && <p role="alert" className="mt-4 text-xs text-destructive">{snapshot.status.shortcutError}</p>}
       </section>

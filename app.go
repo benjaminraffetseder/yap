@@ -65,7 +65,11 @@ type App struct {
 	store                            *storage.Store
 	settings                         storage.Settings
 	status                           Status
-	shortcut                         *platform.Shortcut
+	shortcut                         shortcutRegistration
+	registerKey                      func(string, func(), func()) (shortcutRegistration, error)
+	shortcutGeneration               uint64
+	shortcutCaptureID                string
+	shortcutCaptureTimer             *time.Timer
 	recorder                         audio.Capture
 	microphones                      func() ([]audio.Device, error)
 	engine                           speech.Engine
@@ -261,13 +265,22 @@ func (a *App) beforeClose(ctx context.Context) bool {
 func (a *App) updateTray() {
 	if a.tray != nil {
 		ready := a.store != nil && speech.Validate(speech.Options{Executable: a.settings.WhisperPath, Model: a.settings.ModelPath}) == nil
-		a.tray.Update(tray.State{Phase: a.status.Phase, Ready: ready})
+		phase := a.status.Phase
+		if a.shortcutCaptureID != "" {
+			phase = "shortcut-capture"
+		}
+		a.tray.Update(tray.State{Phase: phase, Ready: ready})
 	}
 }
 func (a *App) shutdown(ctx context.Context) {
 	a.shutdownOnce.Do(func() {
 		a.mu.Lock()
 		a.closing = true
+		a.shortcutCaptureID = ""
+		if a.shortcutCaptureTimer != nil {
+			a.shortcutCaptureTimer.Stop()
+			a.shortcutCaptureTimer = nil
+		}
 		if a.tray != nil {
 			a.tray.Update(tray.State{Phase: "closing"})
 		}
@@ -332,10 +345,33 @@ func (a *App) available() error {
 	return nil
 }
 func (a *App) busy() bool {
-	return a.status.Phase == "recording" || a.status.Phase == "transcribing" || a.status.Phase == "downloading" || a.status.Phase == "mic-test" || a.status.Phase == "diagnostic-recording" || a.status.Phase == "diagnostic-transcribing"
+	return a.shortcutCaptureID != "" || a.status.Phase == "recording" || a.status.Phase == "transcribing" || a.status.Phase == "downloading" || a.status.Phase == "mic-test" || a.status.Phase == "diagnostic-recording" || a.status.Phase == "diagnostic-transcribing"
 }
 func (a *App) registerShortcut() {
-	s, err := platform.Register(a.settings.Shortcut, a.hotkeyDown, a.hotkeyUp)
+	// Retired registrations can still have queued callbacks waiting on a.mu.
+	a.shortcutGeneration++
+	generation := a.shortcutGeneration
+	down := func() {
+		a.mu.Lock()
+		defer a.mu.Unlock()
+		if generation == a.shortcutGeneration {
+			a.hotkeyDownLocked()
+		}
+	}
+	up := func() {
+		a.mu.Lock()
+		defer a.mu.Unlock()
+		if generation == a.shortcutGeneration {
+			a.hotkeyUpLocked()
+		}
+	}
+	var s shortcutRegistration
+	var err error
+	if a.registerKey != nil {
+		s, err = a.registerKey(a.settings.Shortcut, down, up)
+	} else {
+		s, err = platform.Register(a.settings.Shortcut, down, up)
+	}
 	if err != nil {
 		a.status.ShortcutError = err.Error()
 		return
@@ -346,7 +382,10 @@ func (a *App) registerShortcut() {
 func (a *App) hotkeyDown() {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	if a.closing {
+	a.hotkeyDownLocked()
+}
+func (a *App) hotkeyDownLocked() {
+	if a.closing || a.shortcutCaptureID != "" {
 		return
 	}
 	if !a.settings.SetupComplete {
@@ -370,7 +409,10 @@ func (a *App) hotkeyDown() {
 func (a *App) hotkeyUp() {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	if !a.closing && a.settings.Interaction == "hold" && a.status.Phase == "recording" {
+	a.hotkeyUpLocked()
+}
+func (a *App) hotkeyUpLocked() {
+	if !a.closing && a.shortcutCaptureID == "" && a.settings.Interaction == "hold" && a.status.Phase == "recording" {
 		a.stop()
 	}
 }
@@ -658,7 +700,7 @@ func (a *App) SaveSettings(settings storage.Settings) error {
 			failure := a.status.ShortcutError
 			a.settings = old
 			a.registerShortcut()
-			return fmt.Errorf("shortcut could not be registered: %s", failure)
+			return fmt.Errorf("shortcut could not be registered: %s; choose another combination; your saved shortcut is unchanged", failure)
 		}
 	}
 	// Re-enabling also refreshes the executable path after moving/updating Yap.

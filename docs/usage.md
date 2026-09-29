@@ -19,7 +19,7 @@ Choose a microphone under **Settings → Audio input**, then save. **System
 default** follows your OS setting. If a selected microphone is unplugged, Yap
 asks you to reconnect it or choose another one.
 
-Enter a shortcut in Settings and save it.
+Use **Record shortcut** in Settings, then choose **Use shortcut** and save.
 Supported combinations use Ctrl, Alt, or Shift with Space, A–Z, or F1–F12.
 Windows/Command and AltGr aren't supported. If another app has claimed the
 shortcut, choose another; the microphone button still works.

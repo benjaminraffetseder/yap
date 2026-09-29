@@ -2,7 +2,7 @@ import { useEffect, useState } from "react"
 import { Check, RefreshCw } from "lucide-react"
 import { Link } from "react-router"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
+import { ShortcutInput } from "@/components/shortcut-input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useDictation } from "@/components/dictation-provider"
@@ -41,7 +41,7 @@ export function SetupPage() {
     </section>}
     {step === 2 && <section className="settings-section space-y-5">
       <h2 className="font-semibold">Test your shortcut</h2>
-      <div className="max-w-lg space-y-2"><Label htmlFor="setup-shortcut">Global shortcut</Label><div className="flex gap-2"><Input id="setup-shortcut" value={shortcut} disabled={busy || pending} onChange={event => setShortcut(event.target.value)} /><Button variant="outline" disabled={busy || pending || shortcut === snapshot.settings.shortcut} onClick={() => void action(() => backend.settings({ ...snapshot.settings, shortcut }))}>Apply shortcut</Button></div></div>
+      <div className="max-w-lg space-y-2"><Label htmlFor="setup-shortcut">Global shortcut</Label><div className="flex gap-2"><ShortcutInput id="setup-shortcut" value={shortcut} disabled={busy || pending} onChange={setShortcut} /><Button variant="outline" disabled={busy || pending || shortcut === snapshot.settings.shortcut} onClick={() => void action(() => backend.settings({ ...snapshot.settings, shortcut }))}>Apply shortcut</Button></div></div>
       <p className="text-sm text-muted-foreground">Press <kbd className="rounded border px-2 py-1">{snapshot.settings.shortcut}</kbd> once. During setup, the shortcut confirms it works without starting a recording.</p>
       <p className="text-xs text-muted-foreground">Ctrl, Alt, Shift + Space, A–Z, or F1–F12. Change hold/toggle mode in <Link className="underline" to="/settings">Settings</Link>.</p>
       {snapshot.status.shortcutError && <p role="alert" className="text-sm text-destructive">{snapshot.status.shortcutError}</p>}

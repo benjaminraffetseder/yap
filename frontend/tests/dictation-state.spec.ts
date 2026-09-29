@@ -12,6 +12,13 @@ declare global {
       pendingHistory: { query: string; resolve: () => void }[]
       failHistory: boolean
       failSave: boolean
+      captureToken: string
+      captureEnded: number
+      failCapture: boolean
+      failRestore: boolean
+      deferCapture: boolean
+      resolveCapture: (() => void) | null
+      occupiedShortcut: string
       exportedText: string
       checks: DiagnosticCheck[]
       status: (phase: string) => void
@@ -28,7 +35,7 @@ test.beforeEach(async ({ page }) => {
         status: { phase: "idle", message: "Ready", startedAt: 0, transcript: "", progress: 0, shortcutError: "", indicatorError: "", trayError: "", startupError: "", historyError: "" },
         models: [], history: [], ready: true, dataDir: "", floatingIndicator: true, launchAtLoginAvailable: true, startInTrayAvailable: true, vocabulary: [], microphoneTested: false, shortcutTested: false, diagnostic: { phase: "", message: "", details: "", transcript: "", durationMs: 0 },
       },
-      callbacks: {}, deferSnapshots: false, pendingSnapshots: [], deferHistory: false, pendingHistory: [], failHistory: false, failSave: false, exportedText: "", checks: [{ id: "runtime", name: "Whisper runtime", ready: true, message: "Executable found" }, { id: "model", name: "Speech model", ready: true, message: "Model file readable" }, { id: "microphone", name: "Microphone", ready: true, message: "System default" }],
+      callbacks: {}, deferSnapshots: false, pendingSnapshots: [], deferHistory: false, pendingHistory: [], failHistory: false, captureToken: "", captureEnded: 0, failCapture: false, failRestore: false, deferCapture: false, resolveCapture: null, occupiedShortcut: "", failSave: false, exportedText: "", checks: [{ id: "runtime", name: "Whisper runtime", ready: true, message: "Executable found" }, { id: "model", name: "Speech model", ready: true, message: "Model file readable" }, { id: "microphone", name: "Microphone", ready: true, message: "System default" }],
       status(phase: string) {
         state.snapshot.status = { ...state.snapshot.status, phase, message: phase === "transcribing" ? "Transcribing…" : "Ready", startedAt: Date.now() }
         state.callbacks["dictation:status"](structuredClone(state.snapshot.status))
@@ -75,6 +82,7 @@ test.beforeEach(async ({ page }) => {
         StopDiagnosticTest: async () => { state.snapshot.diagnostic.phase = "transcribing"; state.snapshot.diagnostic.message = "Transcribing test…"; state.status("diagnostic-transcribing") },
         SaveSettings: async (settings: Settings) => {
           if (state.failSave) throw new Error("Settings save failed")
+          if (settings.shortcut === state.occupiedShortcut) throw new Error("shortcut could not be registered: already in use; choose another combination; your saved shortcut is unchanged")
           if (settings.microphoneId !== state.snapshot.settings.microphoneId) state.snapshot.microphoneTested = false
           if (settings.shortcut !== state.snapshot.settings.shortcut) state.snapshot.shortcutTested = false
           state.snapshot.settings = structuredClone(settings)
@@ -83,6 +91,20 @@ test.beforeEach(async ({ page }) => {
             state.snapshot.history = state.snapshot.history.filter(entry => !(Date.parse(entry.createdAt) < cutoff))
             state.history()
           }
+        },
+        BeginShortcutCapture: async () => {
+          if (state.failCapture) throw new Error("Could not start shortcut capture")
+          if (state.captureToken) throw new Error("finish the current operation before recording a shortcut")
+          const token = crypto.randomUUID()
+          state.captureToken = token
+          if (state.deferCapture) return new Promise(resolve => { state.resolveCapture = () => resolve(token) })
+          return token
+        },
+        EndShortcutCapture: async (token: string) => {
+          if (token !== state.captureToken) return
+          state.captureToken = ""; state.captureEnded++
+          state.callbacks["shortcut:capture-ended"]?.(token)
+          if (state.failRestore) throw new Error("could not restore the saved shortcut; choose another combination and save settings")
         },
         SaveVocabulary: async (entries: VocabularyEntry[]) => {
           if (state.failSave) throw new Error("Vocabulary save failed")
@@ -753,4 +775,158 @@ test("Models shows actual disk usage and protects the active model during remova
   await expect(page.getByRole("button", { name: "Remove Whisper Tiny", exact: true })).toHaveCount(0)
   await expect(page.getByRole("button", { name: "Download & use", exact: true })).toBeEnabled()
   await expect.poll(() => page.evaluate(() => window.dictationTest.snapshot.settings.modelPath)).toBe("/model")
+})
+
+async function recordShortcut(page: Page) {
+  await page.getByRole("button", { name: "Record shortcut", exact: true }).click()
+  const dialog = page.getByRole("dialog", { name: "Record shortcut", exact: true })
+  await expect(dialog.getByText("Press a key combination", { exact: true })).toBeVisible()
+  return dialog
+}
+
+test("shortcut capture waits for key release, changes only the draft and preserves other settings edits", async ({ page }) => {
+  await page.goto("/#/settings")
+  await page.getByRole("checkbox", { name: /Keep recordings/ }).check()
+  const dialog = await recordShortcut(page)
+  const area = dialog.getByRole("group", { name: "Shortcut capture" })
+  await expect(area).toBeFocused()
+  await page.keyboard.down("Control"); await page.keyboard.down("Alt"); await page.keyboard.down("p")
+  await expect(dialog.getByText("Ctrl+Alt+P", { exact: true })).toBeVisible()
+  await expect(dialog.getByRole("button", { name: "Use shortcut", exact: true })).toBeDisabled()
+  await page.keyboard.up("p"); await page.keyboard.up("Alt"); await page.keyboard.up("Control")
+  await expect(dialog.getByRole("button", { name: "Use shortcut", exact: true })).toBeEnabled()
+  await dialog.getByRole("button", { name: "Use shortcut", exact: true }).click()
+  await expect(dialog).toHaveCount(0)
+  await expect(page.getByRole("button", { name: "Record shortcut", exact: true })).toBeFocused()
+  await expect(page.getByLabel("Global shortcut", { exact: true })).toHaveValue("Ctrl+Alt+P")
+  await page.evaluate(() => window.dictationTest.history())
+  await settle(page)
+  await expect(page.getByRole("checkbox", { name: /Keep recordings/ })).toBeChecked()
+  await expect.poll(() => page.evaluate(() => window.dictationTest.snapshot.settings.shortcut)).toBe("Ctrl+Alt+Space")
+  await expect.poll(() => page.evaluate(() => window.dictationTest.captureToken)).toBe("")
+  await expect.poll(() => page.evaluate(() => window.dictationTest.captureEnded)).toBe(1)
+  await page.getByRole("button", { name: "Save settings", exact: true }).click()
+  await expect.poll(() => page.evaluate(() => window.dictationTest.snapshot.settings.shortcut)).toBe("Ctrl+Alt+P")
+  await expect.poll(() => page.evaluate(() => window.dictationTest.snapshot.history.length)).toBe(0)
+})
+
+test("recorder accepts the existing Space shortcut and function keys without starting dictation", async ({ page }) => {
+  await page.goto("/#/settings")
+  let dialog = await recordShortcut(page)
+  await dialog.getByRole("group", { name: "Shortcut capture" }).press("Control+Alt+Space")
+  await expect(dialog.getByText("Ctrl+Alt+Space", { exact: true })).toBeVisible()
+  await dialog.getByRole("button", { name: "Use shortcut", exact: true }).click()
+  await expect.poll(() => page.evaluate(() => window.dictationTest.snapshot.status.phase)).toBe("idle")
+  dialog = await recordShortcut(page)
+  await dialog.getByRole("group", { name: "Shortcut capture" }).press("Control+Shift+F12")
+  await expect(dialog.getByText("Ctrl+Shift+F12", { exact: true })).toBeVisible()
+  await dialog.getByRole("button", { name: "Use shortcut", exact: true }).click()
+  await expect(page.getByLabel("Global shortcut", { exact: true })).toHaveValue("Ctrl+Shift+F12")
+})
+
+test("recorder rejects unsupported keys and modifiers, ignores repeat, and leaves Tab accessible", async ({ page }) => {
+  await page.goto("/#/settings")
+  const dialog = await recordShortcut(page)
+  const area = dialog.getByRole("group", { name: "Shortcut capture" })
+  await area.press("a")
+  await expect(dialog.getByRole("alert")).toHaveText("Include at least one modifier: Ctrl, Alt, or Shift.")
+  await area.press("Control+1")
+  await expect(dialog.getByRole("alert")).toHaveText("Use Space, A–Z, or F1–F12.")
+  await area.press("Meta+a")
+  await expect(dialog.getByRole("alert")).toHaveText("Use Ctrl, Alt, or Shift. Command, Windows, and AltGr are not supported.")
+  await area.dispatchEvent("keydown", { key: "Process", code: "KeyA", ctrlKey: true, isComposing: true })
+  await expect(dialog.getByRole("alert")).toHaveText("Finish composing text, then press a shortcut.")
+  await area.dispatchEvent("keyup", { key: "Process", code: "KeyA" })
+  await area.evaluate(element => {
+    const event = new KeyboardEvent("keydown", { key: "x", code: "KeyX", ctrlKey: true, altKey: true, bubbles: true })
+    Object.defineProperty(event, "getModifierState", { value: (name: string) => name === "AltGraph" })
+    element.dispatchEvent(event)
+  })
+  await expect(dialog.getByRole("alert")).toHaveText("Use Ctrl, Alt, or Shift. Command, Windows, and AltGr are not supported.")
+  await area.dispatchEvent("keyup", { key: "x", code: "KeyX" })
+  await area.press("Control+Alt+p")
+  await area.dispatchEvent("keydown", { key: "b", code: "KeyB", ctrlKey: true, repeat: true })
+  await expect(dialog.getByText("Ctrl+Alt+P", { exact: true })).toBeVisible()
+  await area.press("Tab")
+  await expect(dialog.getByRole("button", { name: "Cancel", exact: true })).toBeFocused()
+  await dialog.getByRole("button", { name: "Cancel", exact: true }).press("Enter")
+  await expect(dialog).toHaveCount(0)
+})
+
+test("Cancel, Escape and focus loss restore the saved shortcut and discard the candidate", async ({ page }) => {
+  await page.goto("/#/settings")
+  for (const action of ["cancel", "escape", "blur"]) {
+    const dialog = await recordShortcut(page)
+    await dialog.getByRole("group", { name: "Shortcut capture" }).press("Control+Alt+p")
+    if (action === "cancel") await dialog.getByRole("button", { name: "Cancel", exact: true }).click()
+    else if (action === "escape") await dialog.getByRole("group", { name: "Shortcut capture" }).press("Escape")
+    else await page.evaluate(() => window.dispatchEvent(new Event("blur")))
+    await expect(dialog).toHaveCount(0)
+    await expect(page.getByLabel("Global shortcut", { exact: true })).toHaveValue("Ctrl+Alt+Space")
+    await expect.poll(() => page.evaluate(() => window.dictationTest.captureToken)).toBe("")
+  }
+  await expect.poll(() => page.evaluate(() => window.dictationTest.captureEnded)).toBe(3)
+})
+
+test("late capture replies and backend timeout cannot leave the shortcut suspended", async ({ page }) => {
+  await page.goto("/#/settings")
+  await page.evaluate(() => { window.dictationTest.deferCapture = true })
+  await page.getByRole("button", { name: "Record shortcut", exact: true }).click()
+  let dialog = page.getByRole("dialog", { name: "Record shortcut", exact: true })
+  await expect.poll(() => page.evaluate(() => !!window.dictationTest.resolveCapture)).toBe(true)
+  await dialog.getByRole("button", { name: "Cancel", exact: true }).click()
+  await expect(dialog).toHaveCount(0)
+  await page.evaluate(() => { window.dictationTest.resolveCapture!(); window.dictationTest.deferCapture = false })
+  await expect.poll(() => page.evaluate(() => window.dictationTest.captureToken)).toBe("")
+  dialog = await recordShortcut(page)
+  await page.evaluate(() => {
+    const state = window.dictationTest
+    const token = state.captureToken
+    state.captureToken = ""
+    state.callbacks["shortcut:capture-ended"](token)
+  })
+  await expect(dialog).toHaveCount(0)
+  await expect(page.getByRole("alert").filter({ hasText: "Shortcut capture timed out" })).toBeVisible()
+})
+
+test("recorder reports start and restoration failures, and save conflicts keep the draft", async ({ page }) => {
+  await page.goto("/#/settings")
+  await page.evaluate(() => { window.dictationTest.failCapture = true })
+  await page.getByRole("button", { name: "Record shortcut", exact: true }).click()
+  let dialog = page.getByRole("dialog", { name: "Record shortcut", exact: true })
+  await expect(dialog.getByRole("alert")).toHaveText("Could not start shortcut capture")
+  await expect(dialog.getByRole("button", { name: "Use shortcut", exact: true })).toBeDisabled()
+  await dialog.getByRole("button", { name: "Cancel", exact: true }).click()
+  await page.evaluate(() => { window.dictationTest.failCapture = false; window.dictationTest.failRestore = true })
+  dialog = await recordShortcut(page)
+  await dialog.getByRole("group", { name: "Shortcut capture" }).press("Control+Alt+p")
+  await dialog.getByRole("button", { name: "Use shortcut", exact: true }).click()
+  await expect(page.getByRole("alert").filter({ hasText: "could not restore the saved shortcut" })).toBeVisible()
+  await page.evaluate(() => { window.dictationTest.failRestore = false; window.dictationTest.occupiedShortcut = "Ctrl+Alt+P" })
+  await page.getByRole("button", { name: "Save settings", exact: true }).click()
+  await expect(page.getByRole("alert").filter({ hasText: "your saved shortcut is unchanged" })).toBeVisible()
+  await expect(page.getByLabel("Global shortcut", { exact: true })).toHaveValue("Ctrl+Alt+P")
+  await expect.poll(() => page.evaluate(() => window.dictationTest.snapshot.settings.shortcut)).toBe("Ctrl+Alt+Space")
+  await page.evaluate(() => { window.dictationTest.occupiedShortcut = "" })
+  await page.getByRole("button", { name: "Save settings", exact: true }).click()
+  await expect.poll(() => page.evaluate(() => window.dictationTest.snapshot.settings.shortcut)).toBe("Ctrl+Alt+P")
+})
+
+test("shortcut recorder is disabled during active work and works in first-run setup", async ({ page }) => {
+  await page.goto("/#/settings")
+  for (const phase of ["recording", "transcribing", "downloading", "mic-test", "diagnostic-recording", "diagnostic-transcribing"]) {
+    await page.evaluate(phase => window.dictationTest.status(phase), phase)
+    await expect(page.getByRole("button", { name: "Record shortcut", exact: true })).toBeDisabled()
+  }
+  await page.evaluate(() => { const state = window.dictationTest; state.status("idle"); state.snapshot.settings.setupComplete = false; state.snapshot.microphoneTested = true; state.callbacks["setup:changed"]() })
+  await page.getByRole("navigation", { name: "Main navigation" }).getByRole("link", { name: "Dictate", exact: true }).click()
+  await page.getByRole("button", { name: "Next", exact: true }).click()
+  await page.getByRole("button", { name: "Next", exact: true }).click()
+  const dialog = await recordShortcut(page)
+  await dialog.getByRole("group", { name: "Shortcut capture" }).press("Shift+F8")
+  await dialog.getByRole("button", { name: "Use shortcut", exact: true }).click()
+  await expect(page.getByLabel("Global shortcut", { exact: true })).toHaveValue("Shift+F8")
+  await page.getByRole("button", { name: "Apply shortcut", exact: true }).click()
+  await expect.poll(() => page.evaluate(() => window.dictationTest.snapshot.settings.shortcut)).toBe("Shift+F8")
+  await expect.poll(() => page.evaluate(() => window.dictationTest.snapshot.status.phase)).toBe("idle")
 })
