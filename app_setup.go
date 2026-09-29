@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/google/uuid"
 	"yap/internal/inference/speech"
 	"yap/internal/vocabulary"
 )
@@ -13,6 +14,19 @@ import (
 func (a *App) SaveVocabulary(entries []vocabulary.Entry) ([]vocabulary.Entry, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	return a.saveVocabularyLocked(entries)
+}
+
+// Append against the current vocabulary, not a possibly stale webview snapshot.
+func (a *App) AddVocabularyTerm(canonical string, aliases []string) ([]vocabulary.Entry, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	entries := append([]vocabulary.Entry{}, a.vocabulary...)
+	entries = append(entries, vocabulary.Entry{ID: uuid.NewString(), Canonical: canonical, Aliases: aliases, Enabled: true})
+	return a.saveVocabularyLocked(entries)
+}
+
+func (a *App) saveVocabularyLocked(entries []vocabulary.Entry) ([]vocabulary.Entry, error) {
 	if err := a.available(); err != nil {
 		return nil, err
 	}

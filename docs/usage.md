@@ -40,7 +40,9 @@ History lets you search, copy, export, and delete recent transcripts.
 Deleting a transcript also removes its retained audio.
 
 **Edit transcript** changes the saved result while keeping the original
-transcription. Ctrl/Cmd+Enter saves; Escape cancels.
+transcription. Ctrl/Cmd+Enter saves; Escape cancels. To reuse a corrected spelling,
+select a name or phrase and choose **Add to vocabulary**. Save the transcript
+separately if you also want to keep the edit.
 
 Vocabulary entries have a preferred spelling and optional aliases. For example,
 `postgres` can map to `PostgreSQL`. Matching uses whole words or phrases, not

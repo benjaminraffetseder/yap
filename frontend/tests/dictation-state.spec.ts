@@ -61,6 +61,17 @@ test.beforeEach(async ({ page }) => {
           state.snapshot.vocabulary = structuredClone(entries.map(entry => ({ ...entry, canonical: entry.canonical.trim() })))
           return structuredClone(state.snapshot.vocabulary)
         },
+        AddVocabularyTerm: async (canonical: string, aliases: string[]) => {
+          if (state.failSave) throw new Error("Vocabulary save failed")
+          if (state.snapshot.status.phase === "recording") throw new Error("finish the current operation before changing vocabulary")
+          canonical = canonical.trim()
+          for (const phrase of [canonical, ...aliases]) {
+            if (state.snapshot.vocabulary.some(entry => [entry.canonical, ...entry.aliases].some(value => value.toLowerCase() === phrase.toLowerCase()))) throw new Error(`"${phrase}" is already assigned to another vocabulary term`)
+          }
+          state.snapshot.vocabulary.push({ id: crypto.randomUUID(), canonical, aliases, enabled: true })
+          state.callbacks["setup:changed"]()
+          return structuredClone(state.snapshot.vocabulary)
+        },
         StartMicrophoneTest: async () => { state.snapshot.microphoneTested = false; state.status("mic-test"); state.callbacks["dictation:level"](.6) },
         StopMicrophoneTest: async () => { state.snapshot.microphoneTested = true; state.status("idle") },
         Cancel: async () => { if (state.snapshot.status.phase.startsWith("diagnostic-")) state.snapshot.diagnostic = { phase: "cancelled", message: "Test cancelled", details: "", transcript: "", durationMs: 0 }; state.snapshot.microphoneTested = false; state.status("idle") },
@@ -482,4 +493,116 @@ test("deleted recordings fail safely without losing the editor draft", async ({ 
   await expect(dialog.getByLabel("Transcript", { exact: true })).toHaveValue("Keep my draft.")
   await dialog.getByRole("button", { name: "Cancel", exact: true }).click()
   await expect(page.getByRole("heading", { name: "No dictations yet", exact: true })).toBeVisible()
+})
+
+async function openCorrectionEditor(page: Page) {
+  await page.addInitScript(() => { window.dictationTest.snapshot.history = [{ id: "correction", createdAt: "2026-10-07", durationMs: 1000, rawTranscript: "postgres connection ready.", finalTranscript: "postgres connection ready.", speechModel: "base", language: "en", audioPath: "" }] })
+  await page.goto("/#/history")
+  await page.getByRole("button", { name: /postgres connection ready/ }).click()
+  await page.getByRole("button", { name: "Edit transcript", exact: true }).click()
+  const input = page.getByLabel("Transcript", { exact: true })
+  await input.fill("PostgreSQL connection ready.")
+  return input
+}
+
+test("a selected correction adds a confirmed term without saving the transcript draft", async ({ page }) => {
+  const input = await openCorrectionEditor(page)
+  const add = page.getByRole("button", { name: "Add to vocabulary", exact: true })
+  await expect(add).toBeDisabled()
+  await input.press("Home")
+  await input.press("Control+Shift+ArrowRight")
+  await expect(add).toBeEnabled()
+  await add.click()
+  const term = page.getByRole("dialog", { name: "Add to vocabulary", exact: true })
+  await expect(term.getByLabel("Preferred spelling", { exact: true })).toHaveValue("PostgreSQL")
+  await expect(term.getByLabel("Preferred spelling", { exact: true })).toBeFocused()
+  await term.getByLabel("Aliases (comma-separated)").fill("postgres, post gre SQL")
+  // A newer saved vocabulary must survive even if the editor's snapshot is older.
+  await page.evaluate(() => { window.dictationTest.snapshot.vocabulary.push({ id: "newer", canonical: "SQLite", aliases: [], enabled: false }) })
+  await term.getByRole("button", { name: "Save term", exact: true }).click()
+  await expect(page.getByRole("dialog", { name: "Edit transcript" })).toBeVisible()
+  await expect(page.getByRole("status").filter({ hasText: "Added to vocabulary" })).toBeVisible()
+  await expect(input).toHaveValue("PostgreSQL connection ready.")
+  await expect(input).toBeFocused()
+  await expect.poll(() => page.evaluate(() => window.dictationTest.snapshot.vocabulary.map(entry => ({ ...entry, id: "" })))).toEqual([
+    { id: "", canonical: "SQLite", aliases: [], enabled: false },
+    { id: "", canonical: "PostgreSQL", aliases: ["postgres", "post gre SQL"], enabled: true },
+  ])
+  await expect.poll(() => page.evaluate(() => window.dictationTest.snapshot.history[0].finalTranscript)).toBe("postgres connection ready.")
+  await expect.poll(() => page.evaluate(() => window.dictationTest.snapshot.status.transcript)).toBe("")
+  await input.press("Control+Enter")
+  await expect(page.getByRole("dialog")).toHaveCount(0)
+  await expect.poll(() => page.evaluate(() => window.dictationTest.snapshot.history[0].finalTranscript)).toBe("PostgreSQL connection ready.")
+  await page.getByRole("navigation", { name: "Main navigation" }).getByRole("link", { name: "Vocabulary", exact: true }).click()
+  await expect(page.getByLabel("Preferred spelling", { exact: true }).last()).toHaveValue("PostgreSQL")
+})
+
+test("term save failures and conflicts preserve both drafts for retry", async ({ page }) => {
+  const input = await openCorrectionEditor(page)
+  await input.press("Home")
+  await input.press("Control+Shift+ArrowRight")
+  await page.getByRole("button", { name: "Add to vocabulary", exact: true }).click()
+  const term = page.getByRole("dialog", { name: "Add to vocabulary" })
+  const aliases = term.getByLabel("Aliases (comma-separated)")
+  await aliases.fill("postgres")
+  await page.evaluate(() => { window.dictationTest.failSave = true; window.dictationTest.history() })
+  await term.getByRole("button", { name: "Save term", exact: true }).click()
+  await expect(term.getByRole("alert")).toHaveText("Vocabulary save failed")
+  await expect(aliases).toHaveValue("postgres")
+  await page.evaluate(() => {
+    window.dictationTest.failSave = false
+    window.dictationTest.snapshot.vocabulary = [{ id: "taken", canonical: "Other", aliases: ["postgres"], enabled: true }]
+  })
+  await aliases.press("Control+Enter")
+  await expect(term.getByRole("alert")).toHaveText('"postgres" is already assigned to another vocabulary term')
+  await aliases.fill("post gre SQL")
+  await aliases.press("Enter")
+  await expect(input).toHaveValue("PostgreSQL connection ready.")
+  await expect.poll(() => page.evaluate(() => window.dictationTest.snapshot.vocabulary.length)).toBe(2)
+})
+
+test("Cancel and Escape return from vocabulary confirmation without losing edits", async ({ page }) => {
+  const input = await openCorrectionEditor(page)
+  for (const cancelWithEscape of [false, true]) {
+    await input.press("Home")
+    await input.press("Control+Shift+ArrowRight")
+    await page.getByRole("button", { name: "Add to vocabulary", exact: true }).click()
+    const term = page.getByRole("dialog", { name: "Add to vocabulary" })
+    await term.getByLabel("Preferred spelling", { exact: true }).fill("Discarded")
+    await page.mouse.click(5, 5)
+    await expect(term).toBeVisible()
+    if (cancelWithEscape) await term.getByLabel("Preferred spelling", { exact: true }).press("Escape")
+    else await term.getByRole("button", { name: "Cancel", exact: true }).click()
+    await expect(input).toHaveValue("PostgreSQL connection ready.")
+    await expect(input).toBeFocused()
+  }
+  await expect.poll(() => page.evaluate(() => window.dictationTest.snapshot.vocabulary.length)).toBe(0)
+  await input.press("Escape")
+  await expect(page.getByRole("dialog")).toHaveCount(0)
+  await expect.poll(() => page.evaluate(() => window.dictationTest.snapshot.history[0].finalTranscript)).toBe("postgres connection ready.")
+})
+
+test("vocabulary selection rejects multiline or oversized terms and respects active recording", async ({ page }) => {
+  const input = await openCorrectionEditor(page)
+  const add = page.getByRole("button", { name: "Add to vocabulary", exact: true })
+  await input.fill("a".repeat(81))
+  await input.press("Control+A")
+  await expect(add).toBeDisabled()
+  await input.fill("Two\nlines")
+  await input.press("Control+A")
+  await expect(add).toBeDisabled()
+  await input.fill("PostgreSQL")
+  await input.press("Control+A")
+  await expect(add).toBeEnabled()
+  await add.click()
+  const term = page.getByRole("dialog", { name: "Add to vocabulary" })
+  await term.getByLabel("Preferred spelling", { exact: true }).fill(" ")
+  await expect(term.getByRole("button", { name: "Save term", exact: true })).toBeDisabled()
+  await term.getByLabel("Preferred spelling", { exact: true }).fill("PostgreSQL")
+  await page.evaluate(() => { window.dictationTest.status("recording") })
+  await expect(term.getByRole("button", { name: "Save term", exact: true })).toBeDisabled()
+  await expect(term.getByText("Finish the current operation before adding a term.", { exact: true })).toBeVisible()
+  await page.evaluate(() => { window.dictationTest.status("idle") })
+  await term.getByRole("button", { name: "Save term", exact: true }).click()
+  await expect(input).toHaveValue("PostgreSQL")
 })

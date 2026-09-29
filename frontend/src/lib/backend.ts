@@ -1,4 +1,4 @@
-import { Cancel, CompleteSetup, CopyText, DeleteSession, ExportSession, GetAudio, GetDiagnosticChecks, GetMicrophones, GetSnapshot, InstallModel, RestartSetup, SaveSettings, SaveTranscript, SaveVocabulary, SelectFile, StartDiagnosticTest, StartMicrophoneTest, StartRecording, StopDiagnosticTest, StopMicrophoneTest, StopRecording } from "@wails/go/main/App"
+import { AddVocabularyTerm, Cancel, CompleteSetup, CopyText, DeleteSession, ExportSession, GetAudio, GetDiagnosticChecks, GetMicrophones, GetSnapshot, InstallModel, RestartSetup, SaveSettings, SaveTranscript, SaveVocabulary, SelectFile, StartDiagnosticTest, StartMicrophoneTest, StartRecording, StopDiagnosticTest, StopMicrophoneTest, StopRecording } from "@wails/go/main/App"
 export const isDesktop = typeof window !== "undefined" && "go" in window
 export type Settings = { microphoneId: string; whisperPath: string; modelPath: string; language: string; shortcut: string; interaction: string; autoPaste: boolean; saveAudio: boolean; launchAtLogin: boolean; startInTray: boolean; cleanText: boolean; setupComplete: boolean }
 export type VocabularyEntry = { id: string; canonical: string; aliases: string[]; enabled: boolean }
@@ -17,6 +17,7 @@ export const backend = {
   diagnosticChecks: async (): Promise<DiagnosticCheck[]> => GetDiagnosticChecks(), testDictation: StartDiagnosticTest, stopDictationTest: StopDiagnosticTest,
   copy: CopyText, remove: DeleteSession, audio: GetAudio, export: ExportSession,
   saveTranscript: SaveTranscript,
+  addVocabularyTerm: AddVocabularyTerm,
 }
 export function isBusy(phase: string) { return ["recording", "transcribing", "downloading", "mic-test", "diagnostic-recording", "diagnostic-transcribing"].includes(phase) }
 export function message(cause: unknown) { return cause instanceof Error ? cause.message : String(cause) }
