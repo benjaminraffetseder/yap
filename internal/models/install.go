@@ -23,6 +23,8 @@ type Model struct {
 	SHA         string `json:"-"`
 	Installed   bool   `json:"installed"`
 	Path        string `json:"path"`
+	DiskBytes   int64  `json:"diskBytes"`
+	Removable   bool   `json:"removable"`
 }
 
 var Catalog = []Model{
@@ -35,9 +37,13 @@ func List(dir string) []Model {
 	list := append([]Model{}, Catalog...)
 	for i := range list {
 		p := filepath.Join(dir, "models", "ggml-"+list[i].ID+".bin")
-		if st, err := os.Stat(p); err == nil && st.Size() == list[i].Size {
-			list[i].Installed = true
-			list[i].Path = p
+		if st, err := os.Lstat(p); err == nil && st.Mode().IsRegular() {
+			list[i].DiskBytes = st.Size()
+			list[i].Removable = managedModelPath(dir, p) == nil
+			if st.Size() == list[i].Size {
+				list[i].Installed = true
+				list[i].Path = p
+			}
 		}
 	}
 	return list

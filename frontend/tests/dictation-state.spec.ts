@@ -8,6 +8,9 @@ declare global {
       callbacks: Record<string, (...args: unknown[]) => void>
       deferSnapshots: boolean
       pendingSnapshots: (() => void)[]
+      deferHistory: boolean
+      pendingHistory: { query: string; resolve: () => void }[]
+      failHistory: boolean
       failSave: boolean
       exportedText: string
       checks: DiagnosticCheck[]
@@ -21,11 +24,11 @@ test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {
     const state: Window["dictationTest"] = {
       snapshot: {
-        settings: { microphoneId: "", whisperPath: "/whisper", modelPath: "/model", language: "auto", shortcut: "Ctrl+Alt+Space", interaction: "hold", autoPaste: true, saveAudio: false, launchAtLogin: false, startInTray: false, cleanText: false, setupComplete: true },
-        status: { phase: "idle", message: "Ready", startedAt: 0, transcript: "", progress: 0, shortcutError: "", indicatorError: "", trayError: "", startupError: "" },
+        settings: { microphoneId: "", whisperPath: "/whisper", modelPath: "/model", language: "auto", shortcut: "Ctrl+Alt+Space", interaction: "hold", autoPaste: true, saveAudio: false, launchAtLogin: false, startInTray: false, cleanText: false, setupComplete: true, historyRetentionDays: 0 },
+        status: { phase: "idle", message: "Ready", startedAt: 0, transcript: "", progress: 0, shortcutError: "", indicatorError: "", trayError: "", startupError: "", historyError: "" },
         models: [], history: [], ready: true, dataDir: "", floatingIndicator: true, launchAtLoginAvailable: true, startInTrayAvailable: true, vocabulary: [], microphoneTested: false, shortcutTested: false, diagnostic: { phase: "", message: "", details: "", transcript: "", durationMs: 0 },
       },
-      callbacks: {}, deferSnapshots: false, pendingSnapshots: [], failSave: false, exportedText: "", checks: [{ id: "runtime", name: "Whisper runtime", ready: true, message: "Executable found" }, { id: "model", name: "Speech model", ready: true, message: "Model file readable" }, { id: "microphone", name: "Microphone", ready: true, message: "System default" }],
+      callbacks: {}, deferSnapshots: false, pendingSnapshots: [], deferHistory: false, pendingHistory: [], failHistory: false, failSave: false, exportedText: "", checks: [{ id: "runtime", name: "Whisper runtime", ready: true, message: "Executable found" }, { id: "model", name: "Speech model", ready: true, message: "Model file readable" }, { id: "microphone", name: "Microphone", ready: true, message: "System default" }],
       status(phase: string) {
         state.snapshot.status = { ...state.snapshot.status, phase, message: phase === "transcribing" ? "Transcribing…" : "Ready", startedAt: Date.now() }
         state.callbacks["dictation:status"](structuredClone(state.snapshot.status))
@@ -46,6 +49,26 @@ test.beforeEach(async ({ page }) => {
           if (state.deferSnapshots) return new Promise(resolve => { state.pendingSnapshots.push(() => resolve(copy)) })
           return Promise.resolve(copy)
         },
+        GetHistory: async (query: string, page: number) => {
+          if (state.failHistory) throw new Error("History load failed")
+          const entries = state.snapshot.history.filter(entry => [entry.rawTranscript, entry.finalTranscript].some(text => text.toLowerCase().includes(query.toLowerCase())))
+          const result = { entries: structuredClone(entries.slice(page * 50, (page + 1) * 50)), total: entries.length, page, pageSize: 50 }
+          if (state.deferHistory) return new Promise(resolve => { state.pendingHistory.push({ query, resolve: () => resolve(result) }) })
+          return result
+        },
+        DeleteSessions: async (ids: string[]) => {
+          if (state.failSave) throw new Error("History deletion failed")
+          state.snapshot.history = state.snapshot.history.filter(entry => !ids.includes(entry.id))
+          state.history()
+        },
+        ExportSessions: async (ids: string[]) => { state.exportedText = state.snapshot.history.filter(entry => ids.includes(entry.id)).map(entry => entry.finalTranscript).join("\n") },
+        RemoveModel: async (id: string) => {
+          if (state.failSave) throw new Error("Model removal failed")
+          const model = state.snapshot.models.find(model => model.id === id)!
+          if (model.path === state.snapshot.settings.modelPath) throw new Error("switch to another model before removing the active model")
+          model.installed = false; model.removable = false; model.diskBytes = 0; model.path = ""
+          state.history()
+        },
         GetMicrophones: async () => [{ id: "usb", name: "USB microphone" }],
         GetDiagnosticChecks: async () => structuredClone(state.checks),
         StartDiagnosticTest: async () => { state.snapshot.diagnostic = { phase: "recording", message: "Say a short sentence", details: "", transcript: "", durationMs: 0 }; state.status("diagnostic-recording"); state.callbacks["dictation:level"](.6) },
@@ -55,6 +78,11 @@ test.beforeEach(async ({ page }) => {
           if (settings.microphoneId !== state.snapshot.settings.microphoneId) state.snapshot.microphoneTested = false
           if (settings.shortcut !== state.snapshot.settings.shortcut) state.snapshot.shortcutTested = false
           state.snapshot.settings = structuredClone(settings)
+          if (settings.historyRetentionDays > 0) {
+            const cutoff = Date.now() - settings.historyRetentionDays * 86400000
+            state.snapshot.history = state.snapshot.history.filter(entry => !(Date.parse(entry.createdAt) < cutoff))
+            state.history()
+          }
         },
         SaveVocabulary: async (entries: VocabularyEntry[]) => {
           if (state.failSave) throw new Error("Vocabulary save failed")
@@ -274,7 +302,7 @@ test("first run guides installation, mic testing and shortcut verification", asy
     s.settings.setupComplete = false
     s.settings.modelPath = ""
     s.ready = false
-    s.models = [{ id: "base", name: "Whisper Base", description: "Everyday dictation", size: 147000000, path: "/base", installed: false }]
+    s.models = [{ id: "base", name: "Whisper Base", description: "Everyday dictation", size: 147000000, path: "/base", installed: false, diskBytes: 0, removable: false }]
   })
   await page.goto("/")
   await expect(page.getByRole("heading", { name: "Set up Yap" })).toBeVisible()
@@ -605,4 +633,124 @@ test("vocabulary selection rejects multiline or oversized terms and respects act
   await page.evaluate(() => { window.dictationTest.status("idle") })
   await term.getByRole("button", { name: "Save term", exact: true }).click()
   await expect(input).toHaveValue("PostgreSQL")
+})
+
+test("History pages select and export only the current page, and recover after deleting its last entries", async ({ page }) => {
+  await page.addInitScript(() => {
+    window.dictationTest.snapshot.history = Array.from({ length: 52 }, (_, i) => ({ id: `row-${i}`, createdAt: "2026-10-07", durationMs: 1000, rawTranscript: `Original ${i}`, finalTranscript: `Dictation ${i}`, speechModel: "base", language: "en", audioPath: "" }))
+  })
+  await page.goto("/#/history")
+  await expect(page.getByText("Page 1 of 2", { exact: true })).toBeVisible()
+  await page.getByRole("checkbox", { name: "Select page", exact: true }).check()
+  await expect(page.getByText("50 selected", { exact: true })).toBeVisible()
+  await page.getByRole("button", { name: "Next", exact: true }).click()
+  await expect(page.getByText("Page 2 of 2", { exact: true })).toBeVisible()
+  await expect(page.getByText("50 selected", { exact: true })).toHaveCount(0)
+  await page.getByRole("checkbox", { name: "Select page", exact: true }).check()
+  await page.getByRole("button", { name: "Export selected", exact: true }).click()
+  await expect.poll(() => page.evaluate(() => window.dictationTest.exportedText)).toBe("Dictation 50\nDictation 51")
+  await page.getByRole("button", { name: "Delete selected", exact: true }).click()
+  let dialog = page.getByRole("dialog", { name: "Delete 2 dictations?" })
+  await dialog.getByRole("button", { name: "Cancel", exact: true }).click()
+  await expect.poll(() => page.evaluate(() => window.dictationTest.snapshot.history.length)).toBe(52)
+  await page.getByRole("button", { name: "Delete selected", exact: true }).click()
+  dialog = page.getByRole("dialog", { name: "Delete 2 dictations?" })
+  await page.evaluate(() => { window.dictationTest.failSave = true })
+  await dialog.getByRole("button", { name: "Delete dictations", exact: true }).click()
+  await expect(dialog.getByRole("alert")).toHaveText("History deletion failed")
+  await page.evaluate(() => { window.dictationTest.failSave = false })
+  await dialog.getByRole("button", { name: "Delete dictations", exact: true }).click()
+  await expect(dialog).toHaveCount(0)
+  await expect.poll(() => page.evaluate(() => window.dictationTest.snapshot.history.length)).toBe(50)
+  await expect(page.getByText("50 dictations", { exact: true })).toBeVisible()
+  await expect(page.getByRole("button", { name: /Dictation 0\b/ })).toBeVisible()
+  await expect(page.getByRole("navigation", { name: "History pages" })).toHaveCount(0)
+})
+
+test("History searches all entries beyond 500 and ignores older search replies", async ({ page }) => {
+  await page.addInitScript(() => {
+    window.dictationTest.snapshot.history = Array.from({ length: 501 }, (_, i) => ({ id: `row-${i}`, createdAt: "2026-10-07", durationMs: 1000, rawTranscript: i === 500 ? "Älterer Name" : "alpha", finalTranscript: i === 500 ? "beta correction" : "alpha", speechModel: "base", language: "en", audioPath: "" }))
+  })
+  await page.goto("/#/history")
+  await expect(page.getByText("501 dictations", { exact: true })).toBeVisible()
+  const search = page.getByLabel("Search transcripts")
+  await search.fill("ÄLTERER")
+  await expect(page.getByRole("button", { name: /beta correction/ })).toBeVisible()
+  await page.evaluate(() => { window.dictationTest.deferHistory = true })
+  await search.fill("alpha")
+  await expect.poll(() => page.evaluate(() => window.dictationTest.pendingHistory.length)).toBe(1)
+  await search.fill("beta")
+  await expect.poll(() => page.evaluate(() => window.dictationTest.pendingHistory.length)).toBe(2)
+  await page.evaluate(() => { window.dictationTest.pendingHistory[1].resolve() })
+  await expect(page.getByText("1 dictation", { exact: true })).toBeVisible()
+  await page.evaluate(() => { window.dictationTest.pendingHistory[0].resolve() })
+  await settle(page)
+  await expect(page.getByRole("button", { name: /beta correction/ })).toBeVisible()
+  await expect(page.getByRole("button", { name: /^alpha/ })).toHaveCount(0)
+  await page.evaluate(() => { window.dictationTest.deferHistory = false; window.dictationTest.failHistory = true })
+  await search.fill("missing")
+  await expect(page.getByRole("alert").filter({ hasText: "History load failed" })).toBeVisible()
+  await expect(page.getByRole("checkbox", { name: "Select page", exact: true })).toBeDisabled()
+  await page.evaluate(() => { window.dictationTest.failHistory = false })
+  await page.getByRole("button", { name: "Retry", exact: true }).click()
+  await expect(page.getByRole("heading", { name: "No matching transcripts", exact: true })).toBeVisible()
+})
+
+test("retention defaults to forever and requires confirmation before saving or deleting", async ({ page }) => {
+  await page.addInitScript(() => { window.dictationTest.snapshot.history = [{ id: "old", createdAt: "2000-01-01T00:00:00Z", durationMs: 1000, rawTranscript: "Old", finalTranscript: "Edited old", speechModel: "base", language: "en", audioPath: "/audio.wav" }] })
+  await page.goto("/#/settings")
+  const retention = page.getByLabel("History retention", { exact: true })
+  await expect(retention).toHaveValue("0")
+  await retention.selectOption("30")
+  await page.getByRole("button", { name: "Save settings", exact: true }).click()
+  let dialog = page.getByRole("dialog", { name: "Enable automatic deletion?" })
+  await expect.poll(() => page.evaluate(() => window.dictationTest.snapshot.settings.historyRetentionDays)).toBe(0)
+  await dialog.getByRole("button", { name: "Cancel", exact: true }).click()
+  await expect.poll(() => page.evaluate(() => window.dictationTest.snapshot.history.length)).toBe(1)
+  await expect(retention).toHaveValue("30")
+  await page.evaluate(() => { window.dictationTest.failSave = true })
+  await page.getByRole("button", { name: "Save settings", exact: true }).click()
+  dialog = page.getByRole("dialog", { name: "Enable automatic deletion?" })
+  await dialog.getByRole("button", { name: "Save and delete older history", exact: true }).click()
+  await expect(page.getByRole("alert").filter({ hasText: "Settings save failed" })).toBeVisible()
+  await expect.poll(() => page.evaluate(() => window.dictationTest.snapshot.history.length)).toBe(1)
+  await page.evaluate(() => { window.dictationTest.failSave = false })
+  await page.getByRole("button", { name: "Save settings", exact: true }).click()
+  await page.getByRole("dialog").getByRole("button", { name: "Save and delete older history", exact: true }).click()
+  await expect.poll(() => page.evaluate(() => window.dictationTest.snapshot.settings.historyRetentionDays)).toBe(30)
+  await expect.poll(() => page.evaluate(() => window.dictationTest.snapshot.history.length)).toBe(0)
+  await retention.selectOption("0")
+  await page.getByRole("button", { name: "Save settings", exact: true }).click()
+  await expect(page.getByRole("dialog")).toHaveCount(0)
+  await expect.poll(() => page.evaluate(() => window.dictationTest.snapshot.settings.historyRetentionDays)).toBe(0)
+})
+
+test("Models shows actual disk usage and protects the active model during removal and retries", async ({ page }) => {
+  await page.addInitScript(() => {
+    window.dictationTest.snapshot.models = [
+      { id: "base", name: "Whisper Base", description: "Balanced", size: 147000000, installed: true, path: "/model", diskBytes: 3000000, removable: true },
+      { id: "tiny", name: "Whisper Tiny", description: "Fast", size: 77000000, installed: true, path: "/tiny", diskBytes: 2000000, removable: true },
+    ]
+  })
+  await page.goto("/#/models")
+  await expect(page.getByText("5 MB used by downloaded models", { exact: true })).toBeVisible()
+  await expect(page.getByRole("button", { name: "Remove Whisper Base", exact: true })).toBeDisabled()
+  await page.getByRole("button", { name: "Remove Whisper Tiny", exact: true }).click()
+  let dialog = page.getByRole("dialog", { name: "Remove Whisper Tiny?" })
+  await dialog.getByRole("button", { name: "Cancel", exact: true }).click()
+  await expect(page.getByText("5 MB used by downloaded models", { exact: true })).toBeVisible()
+  await page.getByRole("button", { name: "Remove Whisper Tiny", exact: true }).click()
+  dialog = page.getByRole("dialog", { name: "Remove Whisper Tiny?" })
+  await page.evaluate(() => { window.dictationTest.status("recording") })
+  await expect(dialog.getByRole("button", { name: "Remove model", exact: true })).toBeDisabled()
+  await page.evaluate(() => { window.dictationTest.status("idle"); window.dictationTest.failSave = true })
+  await dialog.getByRole("button", { name: "Remove model", exact: true }).click()
+  await expect(dialog.getByRole("alert")).toHaveText("Model removal failed")
+  await page.evaluate(() => { window.dictationTest.failSave = false })
+  await dialog.getByRole("button", { name: "Remove model", exact: true }).click()
+  await expect(dialog).toHaveCount(0)
+  await expect(page.getByText("3 MB used by downloaded models", { exact: true })).toBeVisible()
+  await expect(page.getByRole("button", { name: "Remove Whisper Tiny", exact: true })).toHaveCount(0)
+  await expect(page.getByRole("button", { name: "Download & use", exact: true })).toBeEnabled()
+  await expect.poll(() => page.evaluate(() => window.dictationTest.snapshot.settings.modelPath)).toBe("/model")
 })

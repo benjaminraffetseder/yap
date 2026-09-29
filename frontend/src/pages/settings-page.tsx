@@ -4,6 +4,7 @@ import { Link, useNavigate } from "react-router"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useTheme } from "@/components/theme-provider"
 import { useDictation } from "@/components/dictation-provider"
@@ -17,6 +18,7 @@ export function SettingsPage() {
   const [settings, setSettings] = useState(snapshot.settings)
   const savedSettings = useRef(snapshot.settings)
   const [saving, setSaving] = useState(false)
+  const [confirmRetention, setConfirmRetention] = useState(false)
   const [microphones, setMicrophones] = useState<Microphone[]>([])
   const [loadingMicrophones, setLoadingMicrophones] = useState(false)
   const [microphoneError, setMicrophoneError] = useState("")
@@ -59,7 +61,10 @@ export function SettingsPage() {
   async function browse(kind: "model" | "runtime") {
     await run(async () => { const path = await backend.selectFile(kind); if (path) setSettings(old => ({ ...old, [kind === "model" ? "modelPath" : "whisperPath"]: path })) }, false)
   }
-  async function save() { setSaving(true); await run(() => backend.settings(settings)); setSaving(false) }
+  async function save(confirmed = false) {
+    if (!confirmed && settings.historyRetentionDays > 0 && settings.historyRetentionDays !== snapshot.settings.historyRetentionDays) { setConfirmRetention(true); return }
+    setSaving(true); setConfirmRetention(false); await run(() => backend.settings(settings)); setSaving(false)
+  }
   return <div className="space-y-7">
     <header><h1 className="text-2xl font-semibold tracking-tight">Settings</h1></header>
     <DiagnosticsPanel disabled={dirty || saving} />
@@ -94,10 +99,14 @@ export function SettingsPage() {
           <div className="max-w-sm space-y-2"><Label htmlFor="language">Spoken language</Label><select id="language" className="form-select" value={settings.language} onChange={event => setSettings({ ...settings, language: event.target.value })}>{[{ id: "auto", label: "Detect automatically" }, { id: "en", label: "English" }, { id: "de", label: "German" }, { id: "fr", label: "French" }, { id: "es", label: "Spanish" }, { id: "it", label: "Italian" }, { id: "pt", label: "Portuguese" }, { id: "nl", label: "Dutch" }, { id: "pl", label: "Polish" }, { id: "ja", label: "Japanese" }, { id: "zh", label: "Chinese" }, { id: "uk", label: "Ukrainian" }].map(language => <option key={language.id} value={language.id}>{language.label}</option>)}</select></div>
         </div>
       </section>
-      <section className="settings-section"><h2 className="font-semibold">History & storage</h2><label className="mt-5 flex cursor-pointer items-start gap-3"><input type="checkbox" className="mt-1 accent-[var(--primary)]" checked={settings.saveAudio} onChange={event => setSettings({ ...settings, saveAudio: event.target.checked })} /><span className="text-sm">Keep recordings<span className="mt-1 block text-xs text-muted-foreground">Save audio for playback in History. Otherwise, delete it after processing.</span></span></label>{snapshot.dataDir && <p className="mt-5 break-all text-xs leading-5 text-muted-foreground">Data folder: <span className="font-mono">{snapshot.dataDir}</span></p>}</section>
+      <section className="settings-section"><h2 className="font-semibold">History & storage</h2><label className="mt-5 flex cursor-pointer items-start gap-3"><input type="checkbox" className="mt-1 accent-[var(--primary)]" checked={settings.saveAudio} onChange={event => setSettings({ ...settings, saveAudio: event.target.checked })} /><span className="text-sm">Keep recordings<span className="mt-1 block text-xs text-muted-foreground">Save audio for playback in History. Otherwise, delete it after processing.</span></span></label>
+        <div className="mt-5 max-w-sm space-y-2"><Label htmlFor="history-retention">History retention</Label><select id="history-retention" className="form-select" value={settings.historyRetentionDays ?? 0} onChange={event => setSettings({ ...settings, historyRetentionDays: Number(event.target.value) })}><option value={0}>Keep forever</option><option value={7}>7 days</option><option value={30}>30 days</option><option value={90}>90 days</option></select><p className="text-xs text-muted-foreground">Automatically delete older transcripts and retained audio on startup, after dictation, and when saving settings.</p></div>
+        {snapshot.status.historyError && <p role="alert" className="mt-3 text-xs text-destructive">{snapshot.status.historyError}</p>}
+        {snapshot.dataDir && <p className="mt-5 break-all text-xs leading-5 text-muted-foreground">Data folder: <span className="font-mono">{snapshot.dataDir}</span></p>}</section>
       <div className="flex items-center gap-4"><Button disabled={!dirty || saving || selectedMicrophoneMissing} className="rounded-lg" onClick={() => void save()}><Save className="size-4" />{saving ? "Saving…" : "Save settings"}</Button>{dirty && <span className="text-xs text-muted-foreground">Unsaved changes</span>}</div>
     </fieldset>
     <section className="settings-section"><h2 className="mb-4 font-semibold">Setup</h2><Button variant="outline" disabled={!isDesktop || busy || saving || dirty} onClick={() => void run(async () => { await backend.restartSetup(); navigate("/") })}>Run setup</Button>{dirty && <p className="mt-2 text-xs text-muted-foreground">Save settings before running setup.</p>}</section>
     <section className="settings-section"><h2 className="mb-4 font-semibold">Appearance</h2><div className="flex gap-3" role="group" aria-label="Color theme">{themes.map(({ value, label, icon: Icon }) => <Button key={value} variant={theme === value ? "default" : "outline"} onClick={() => setTheme(value)} aria-pressed={theme === value}><Icon className="size-4" />{label}</Button>)}</div></section>
+    <Dialog open={confirmRetention} disablePointerDismissal onOpenChange={setConfirmRetention}><DialogContent><DialogHeader><DialogTitle>Enable automatic deletion?</DialogTitle><DialogDescription>Saving removes transcripts and retained audio older than {settings.historyRetentionDays} days now and during future cleanup. Deletion is permanent.</DialogDescription></DialogHeader><DialogFooter><Button variant="outline" onClick={() => setConfirmRetention(false)}>Cancel</Button><Button variant="destructive" disabled={busy || saving} onClick={() => void save(true)}>Save and delete older history</Button></DialogFooter></DialogContent></Dialog>
   </div>
 }

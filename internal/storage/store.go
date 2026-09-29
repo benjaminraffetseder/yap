@@ -16,18 +16,19 @@ import (
 )
 
 type Settings struct {
-	MicrophoneID  string `json:"microphoneId"`
-	WhisperPath   string `json:"whisperPath"`
-	ModelPath     string `json:"modelPath"`
-	Language      string `json:"language"`
-	Shortcut      string `json:"shortcut"`
-	Interaction   string `json:"interaction"`
-	AutoPaste     bool   `json:"autoPaste"`
-	SaveAudio     bool   `json:"saveAudio"`
-	LaunchAtLogin bool   `json:"launchAtLogin"`
-	StartInTray   bool   `json:"startInTray"`
-	CleanText     bool   `json:"cleanText"`
-	SetupComplete bool   `json:"setupComplete"`
+	MicrophoneID         string `json:"microphoneId"`
+	WhisperPath          string `json:"whisperPath"`
+	ModelPath            string `json:"modelPath"`
+	Language             string `json:"language"`
+	Shortcut             string `json:"shortcut"`
+	Interaction          string `json:"interaction"`
+	AutoPaste            bool   `json:"autoPaste"`
+	SaveAudio            bool   `json:"saveAudio"`
+	LaunchAtLogin        bool   `json:"launchAtLogin"`
+	StartInTray          bool   `json:"startInTray"`
+	CleanText            bool   `json:"cleanText"`
+	SetupComplete        bool   `json:"setupComplete"`
+	HistoryRetentionDays int    `json:"historyRetentionDays"`
 }
 
 func Defaults() Settings {
@@ -182,8 +183,22 @@ func (s *Store) Delete(id string) error {
 	}
 	// Only delete audio owned by the application, even if the database is modified.
 	if v.AudioPath != "" && filepath.Dir(v.AudioPath) == filepath.Join(s.Dir, "recordings") {
-		if err = os.Remove(v.AudioPath); err != nil && !os.IsNotExist(err) {
-			return err
+		st, statErr := os.Lstat(v.AudioPath)
+		if statErr != nil && !os.IsNotExist(statErr) {
+			return statErr
+		}
+		if statErr == nil {
+			root, rootErr := filepath.EvalSymlinks(s.Dir)
+			dir, dirErr := filepath.EvalSymlinks(filepath.Join(s.Dir, "recordings"))
+			if rootErr != nil || dirErr != nil || dir != filepath.Join(root, "recordings") {
+				return errors.New("recording storage is redirected or unavailable; audio was not removed")
+			}
+			if !st.Mode().IsRegular() {
+				return errors.New("retained audio is not a regular file; remove it manually before deleting the dictation")
+			}
+			if err = os.Remove(v.AudioPath); err != nil && !os.IsNotExist(err) {
+				return err
+			}
 		}
 	}
 	_, err = s.db.Exec("DELETE FROM recordings WHERE id=?", id)

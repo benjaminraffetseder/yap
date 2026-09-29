@@ -37,6 +37,7 @@ type Status struct {
 	IndicatorError string  `json:"indicatorError"`
 	TrayError      string  `json:"trayError"`
 	StartupError   string  `json:"startupError"`
+	HistoryError   string  `json:"historyError"`
 }
 type Snapshot struct {
 	Diagnostic             DiagnosticResult   `json:"diagnostic"`
@@ -141,6 +142,7 @@ func (a *App) startup(ctx context.Context) {
 		return
 	}
 	a.settings.WhisperPath = models.PreferredRuntime(a.settings.WhisperPath)
+	a.pruneHistoryLocked()
 	a.vocabulary, err = a.store.Vocabulary()
 	if err != nil {
 		a.fail(err)
@@ -523,6 +525,7 @@ func (a *App) transcribe(ctx context.Context, id, path, target string, duration 
 		return
 	}
 	persisted = true
+	a.pruneHistoryLocked()
 	a.status.Transcript = text
 	a.status.StartedAt = 0
 	a.status.Phase = "done"
@@ -589,6 +592,9 @@ func (a *App) SaveSettings(settings storage.Settings) error {
 	}
 	if settings.Interaction != "hold" && settings.Interaction != "toggle" {
 		return errors.New("choose hold or toggle recording")
+	}
+	if !storage.ValidRetention(settings.HistoryRetentionDays) {
+		return errors.New("choose forever, 7, 30, or 90 days for History retention")
 	}
 	if !regexp.MustCompile(`^(auto|[a-z]{2,3})$`).MatchString(settings.Language) {
 		return errors.New("use auto or a language code such as en or de")
@@ -689,6 +695,7 @@ func (a *App) SaveSettings(settings storage.Settings) error {
 	if a.shortcut == nil {
 		a.registerShortcut()
 	}
+	a.pruneHistoryLocked()
 	a.emit()
 	return nil
 }
@@ -817,12 +824,7 @@ func (a *App) SaveTranscript(id, text string) error {
 	return nil
 }
 func (a *App) DeleteSession(id string) error {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	if err := a.available(); err != nil {
-		return err
-	}
-	return a.store.Delete(id)
+	return a.DeleteSessions([]string{id})
 }
 func (a *App) GetAudio(id string) (string, error) {
 	a.mu.Lock()

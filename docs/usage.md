@@ -36,8 +36,8 @@ app, open it from its new location and save the startup setting again.
 
 ## History and vocabulary
 
-History lets you search, copy, export, and delete recent transcripts.
-Deleting a transcript also removes its retained audio.
+History lets you search original and edited text, and copy or export it. Select entries to export or delete several at once. Deleting an entry
+also deletes its retained audio.
 
 **Edit transcript** changes the saved result while keeping the original
 transcription. Ctrl/Cmd+Enter saves; Escape cancels. To reuse a corrected spelling,
@@ -59,7 +59,13 @@ Yap stores its database, models, runtimes, and recordings in the OS user
 configuration folder: `%APPDATA%\yap` on Windows or
 `~/Library/Application Support/yap` on macOS.
 
-Audio retention is off by default. Transcripts stay in History until you delete them.
+Audio retention is off by default. History retention defaults to **Keep forever**;
+you can choose 7, 30, or 90 days under Settings → History & storage. Cleanup runs
+when you save that setting, start Yap, and finish a dictation. Turning it off
+doesn't recover deleted entries, so export anything you want to keep first.
+
+In Models, switch away from a model before removing it. Yap only removes managed
+downloads, not custom files.
 
 ## When something goes wrong
 
