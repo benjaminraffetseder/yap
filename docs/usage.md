@@ -53,6 +53,38 @@ guarantee a particular transcription. The limit is 100 terms, with ten aliases e
 punctuation, and common English/German filler words. It uses local rules and is
 off by default. It doesn't need a text model or change older transcripts.
 
+## Local text models
+
+Text processing is optional. It needs a running model server on your computer;
+Yap doesn't install the server or load a GGUF file itself.
+
+In **Prompts**, enter a local server URL and model ID, enable LLM processing, save, and choose
+**Test model**. Common local server URLs are:
+
+| Server | URL |
+| --- | --- |
+| Ollama | `http://127.0.0.1:11434/v1` |
+| LM Studio | `http://127.0.0.1:1234/v1` |
+| llama-server | `http://127.0.0.1:8080/v1` |
+
+Use a loopback URL ending in `/v1`, without `/api` or `/models`. Remote endpoints
+and API keys are not supported. Enter the ID of a loaded model in your server.
+
+Cleanup and Summary prompts are included. Edit them or add your own; there can
+be up to 30 prompts, each with up to 8,000 characters of instructions. The text
+is supplied separately, so you don't need placeholders.
+
+There are two ways to process text:
+
+- **Process text** in the transcript editor previews a result from your draft.
+  Choose **Replace draft**, then **Save transcript** to keep it.
+- **After dictation** runs a chosen prompt before copying or pasting new
+  dictations. If processing fails or is cancelled, the speech transcript stays
+  in History, but nothing is copied or pasted.
+
+Requests time out after five minutes. Long input may exceed your model's context
+window; try a shorter passage if it fails.
+
 ## Storage
 
 Yap stores its database, models, runtimes, and recordings in the OS user

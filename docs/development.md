@@ -30,7 +30,7 @@ shortcuts through Wails. Use the desktop app to test those.
 | `internal/audio` | Capture, decoding, and WAV import |
 | `internal/platform` | Global shortcuts and text insertion |
 | `internal/indicator`, `internal/tray`, `internal/startup` | Native desktop controls |
-| `internal/inference` | Whisper CLI client |
+| `internal/inference` | Whisper CLI and local text-server clients |
 | `internal/models` | Model/runtime downloads and verification |
 | `internal/storage` | SQLite, history, and retention |
 | `frontend/src` | Pages, components, and bridge helpers |

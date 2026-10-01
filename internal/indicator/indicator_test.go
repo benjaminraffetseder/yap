@@ -18,11 +18,13 @@ func TestPresentation(t *testing.T) {
 		{"recording", State{Phase: "recording", StartedAt: 35_000}, "Recording  1:05", true, true, false},
 		{"clock adjustment", State{Phase: "recording", StartedAt: 101_000}, "Recording  0:00", true, true, false},
 		{"transcribing", State{Phase: "transcribing"}, "Transcribing…", true, false, false},
+		{"processing", State{Phase: "transcribing", Message: "Processing text…"}, "Processing text…", true, false, false},
 		{"cancelling", State{Phase: "transcribing", Message: "Cancelling…"}, "Cancelling…", true, false, false},
 		{"copied", State{Phase: "done", Message: "Copied to clipboard"}, "Copied to clipboard", true, false, true},
 		{"pasted", State{Phase: "done", Message: "Pasted into your application"}, "Pasted", true, false, true},
 		{"paste fallback", State{Phase: "done", Message: "Focus changed"}, "Ready to paste", true, false, true},
 		{"clipboard failed", State{Phase: "done", Message: "Saved to history; clipboard failed: unavailable"}, "Saved to history", true, false, true},
+		{"processing failed", State{Phase: "done", Message: "Saved to History; text processing failed: unavailable"}, "Saved to history", true, false, true},
 		{"failed", State{Phase: "error"}, "Dictation failed", true, true, true},
 		{"cancelled", State{Phase: "idle", Message: "Transcription cancelled"}, "Cancelled", true, false, true},
 	} {

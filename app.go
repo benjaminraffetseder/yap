@@ -19,6 +19,7 @@ import (
 	"yap/internal/cleanup"
 	"yap/internal/indicator"
 	"yap/internal/inference/speech"
+	textmodel "yap/internal/inference/text"
 	"yap/internal/models"
 	"yap/internal/platform"
 	"yap/internal/startup"
@@ -40,6 +41,7 @@ type Status struct {
 	HistoryError   string  `json:"historyError"`
 }
 type Snapshot struct {
+	TextProcessing         textmodel.Config   `json:"textProcessing"`
 	Diagnostic             DiagnosticResult   `json:"diagnostic"`
 	Vocabulary             []vocabulary.Entry `json:"vocabulary"`
 	MicrophoneTested       bool               `json:"microphoneTested"`
@@ -55,6 +57,12 @@ type Snapshot struct {
 	StartInTrayAvailable   bool               `json:"startInTrayAvailable"`
 }
 type App struct {
+	textConfig                       textmodel.Config
+	recordTextConfig                 textmodel.Config
+	textEngine                       textmodel.Engine
+	textJobID                        string
+	cancelledTextRequests            map[string]time.Time
+	textCancel                       context.CancelFunc
 	diagnostic                       DiagnosticResult
 	vocabulary                       []vocabulary.Entry
 	recordVocabulary                 []vocabulary.Entry
@@ -99,7 +107,7 @@ type App struct {
 }
 
 func NewApp() *App {
-	return &App{settings: storage.Defaults(), status: Status{Phase: "idle", Message: "Ready when you are"}, recorder: audio.New(), microphones: audio.Devices, engine: speech.Whisper{}}
+	return &App{textConfig: textmodel.Defaults(), textEngine: textmodel.Local{}, settings: storage.Defaults(), status: Status{Phase: "idle", Message: "Ready when you are"}, recorder: audio.New(), microphones: audio.Devices, engine: speech.Whisper{}}
 }
 func (a *App) startup(ctx context.Context) {
 	a.mu.Lock()
@@ -146,6 +154,11 @@ func (a *App) startup(ctx context.Context) {
 		return
 	}
 	a.settings.WhisperPath = models.PreferredRuntime(a.settings.WhisperPath)
+	a.textConfig, err = a.store.TextProcessing()
+	if err != nil {
+		a.fail(fmt.Errorf("could not load prompts: %w", err))
+		return
+	}
 	a.pruneHistoryLocked()
 	a.vocabulary, err = a.store.Vocabulary()
 	if err != nil {
@@ -266,6 +279,9 @@ func (a *App) updateTray() {
 	if a.tray != nil {
 		ready := a.store != nil && speech.Validate(speech.Options{Executable: a.settings.WhisperPath, Model: a.settings.ModelPath}) == nil
 		phase := a.status.Phase
+		if phase == "transcribing" && a.status.Message == "Processing text…" {
+			phase = "text-processing"
+		}
 		if a.shortcutCaptureID != "" {
 			phase = "shortcut-capture"
 		}
@@ -289,6 +305,9 @@ func (a *App) shutdown(ctx context.Context) {
 		}
 		if a.cancel != nil {
 			a.cancel()
+		}
+		if a.textCancel != nil {
+			a.textCancel()
 		}
 		if a.status.Phase == "recording" || a.status.Phase == "mic-test" || a.status.Phase == "diagnostic-recording" {
 			a.recorder.Stop()
@@ -345,7 +364,7 @@ func (a *App) available() error {
 	return nil
 }
 func (a *App) busy() bool {
-	return a.shortcutCaptureID != "" || a.status.Phase == "recording" || a.status.Phase == "transcribing" || a.status.Phase == "downloading" || a.status.Phase == "mic-test" || a.status.Phase == "diagnostic-recording" || a.status.Phase == "diagnostic-transcribing"
+	return a.shortcutCaptureID != "" || a.status.Phase == "text-processing" || a.status.Phase == "recording" || a.status.Phase == "transcribing" || a.status.Phase == "downloading" || a.status.Phase == "mic-test" || a.status.Phase == "diagnostic-recording" || a.status.Phase == "diagnostic-transcribing"
 }
 func (a *App) registerShortcut() {
 	// Retired registrations can still have queued callbacks waiting on a.mu.
@@ -428,7 +447,8 @@ func (a *App) GetSnapshot() (Snapshot, error) {
 	}
 	ready := speech.Validate(speech.Options{Executable: a.settings.WhisperPath, Model: a.settings.ModelPath}) == nil
 	entries, _ := vocabulary.Normalize(a.vocabulary)
-	return Snapshot{Diagnostic: a.diagnostic, Vocabulary: entries, MicrophoneTested: a.microphoneTested, ShortcutTested: a.shortcutTested, Settings: a.settings, Status: a.status, History: history, Models: models.List(a.store.Dir), DataDir: a.store.Dir, Ready: ready, FloatingIndicator: a.indicator != nil, LaunchAtLoginAvailable: a.loginStart != nil, StartInTrayAvailable: a.tray != nil && !a.development}, nil
+	config, _ := textmodel.Normalize(a.textConfig)
+	return Snapshot{TextProcessing: config, Diagnostic: a.diagnostic, Vocabulary: entries, MicrophoneTested: a.microphoneTested, ShortcutTested: a.shortcutTested, Settings: a.settings, Status: a.status, History: history, Models: models.List(a.store.Dir), DataDir: a.store.Dir, Ready: ready, FloatingIndicator: a.indicator != nil, LaunchAtLoginAvailable: a.loginStart != nil, StartInTrayAvailable: a.tray != nil && !a.development}, nil
 }
 func (a *App) GetMicrophones() ([]audio.Device, error) {
 	a.mu.Lock()
@@ -475,6 +495,7 @@ func (a *App) start(external bool) error {
 		return err
 	}
 	a.recordSettings = a.settings
+	a.recordTextConfig, _ = textmodel.Normalize(a.textConfig)
 	a.recordVocabulary, _ = vocabulary.Normalize(a.vocabulary)
 	a.status.Phase = "recording"
 	a.status.Message = "Listening…"
@@ -522,15 +543,16 @@ func (a *App) stop() {
 	ctx, cancel := context.WithTimeout(a.ctx, 15*time.Minute)
 	a.cancel = cancel
 	id, path, target, settings := a.id, a.path, a.target, a.recordSettings
+	textConfig := a.recordTextConfig
 	entries := a.recordVocabulary
 	a.wg.Add(1)
 	go func() {
 		defer a.wg.Done()
 		defer cancel()
-		a.transcribe(ctx, id, path, target, duration, settings, entries)
+		a.transcribe(ctx, id, path, target, duration, settings, entries, textConfig)
 	}()
 }
-func (a *App) transcribe(ctx context.Context, id, path, target string, duration int64, settings storage.Settings, entries []vocabulary.Entry) {
+func (a *App) transcribe(ctx context.Context, id, path, target string, duration int64, settings storage.Settings, entries []vocabulary.Entry, textConfig textmodel.Config) {
 	persisted := false
 	defer func() {
 		if !persisted || !settings.SaveAudio {
@@ -540,7 +562,7 @@ func (a *App) transcribe(ctx context.Context, id, path, target string, duration 
 	text, err := a.engine.Transcribe(ctx, path, speech.Options{Executable: settings.WhisperPath, Model: settings.ModelPath, Language: settings.Language, Prompt: vocabulary.Prompt(entries)})
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	a.cancel = nil
+	defer func() { a.cancel = nil }()
 	if a.closing {
 		return
 	}
@@ -568,6 +590,42 @@ func (a *App) transcribe(ctx context.Context, id, path, target string, duration 
 	}
 	persisted = true
 	a.pruneHistoryLocked()
+	if textConfig.Enabled && textConfig.AutoPromptID != "" {
+		prompt, promptErr := textConfig.Prompt(textConfig.AutoPromptID)
+		a.status.Message = "Processing text…"
+		a.emit()
+		a.event("dictation:history")
+		// The successful speech result is already durable. Slow text inference
+		// runs outside the state lock so Cancel, shutdown, and snapshots work.
+		a.mu.Unlock()
+		var processed string
+		if promptErr == nil {
+			processed, promptErr = a.textEngine.Process(ctx, textConfig, prompt, text)
+		}
+		a.mu.Lock()
+		if a.closing {
+			return
+		}
+		if ctx.Err() != nil {
+			a.status.Phase, a.status.Message = "done", "Text processing cancelled; transcript saved to History"
+			a.status.Transcript, a.status.StartedAt = text, 0
+			a.emit()
+			return
+		}
+		if promptErr == nil {
+			promptErr = textmodel.ValidateText(processed)
+		}
+		if promptErr == nil {
+			promptErr = a.store.UpdateTranscript(id, processed)
+		}
+		if promptErr != nil {
+			a.status.Phase, a.status.Message = "done", "Saved to History; text processing failed: "+promptErr.Error()
+			a.status.Transcript, a.status.StartedAt = text, 0
+			a.emit()
+			return
+		}
+		text = processed
+	}
 	a.status.Transcript = text
 	a.status.StartedAt = 0
 	a.status.Phase = "done"
@@ -616,6 +674,8 @@ func (a *App) Cancel() error {
 		a.status.Message = "Recording discarded"
 		a.status.StartedAt = 0
 		a.emit()
+	} else if a.textCancel != nil && a.status.Phase == "text-processing" {
+		a.textCancel()
 	} else if a.cancel != nil {
 		a.cancel()
 		a.status.Message = "Cancelling…"
@@ -854,6 +914,9 @@ func (a *App) SaveTranscript(id, text string) error {
 	defer a.mu.Unlock()
 	if err := a.available(); err != nil {
 		return err
+	}
+	if id == a.id && a.status.Phase == "transcribing" {
+		return errors.New("finish the current dictation before editing its transcript")
 	}
 	if err := a.store.UpdateTranscript(id, text); err != nil {
 		return err

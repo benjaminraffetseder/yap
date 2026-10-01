@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test"
-import type { DiagnosticCheck, Settings, Snapshot, Status, VocabularyEntry } from "../src/lib/backend"
+import type { DiagnosticCheck, Settings, Snapshot, Status, VocabularyEntry, TextProcessing } from "../src/lib/backend"
 
 declare global {
   interface Window {
@@ -19,6 +19,9 @@ declare global {
       deferCapture: boolean
       resolveCapture: (() => void) | null
       occupiedShortcut: string
+      processing: { id: string; input: string; prompt: string; resolve: (result: string) => void; reject: (error: Error) => void } | null
+      failProcessing: boolean
+      cancelledProcessing: string[]
       exportedText: string
       checks: DiagnosticCheck[]
       status: (phase: string) => void
@@ -31,6 +34,7 @@ test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {
     const state: Window["dictationTest"] = {
       snapshot: {
+        textProcessing: { enabled: false, endpoint: "http://127.0.0.1:11434/v1", model: "", autoPromptId: "", prompts: [{ id: "cleanup", name: "Cleanup", instruction: "Clean up text." }, { id: "summary", name: "Summary", instruction: "Summarize text." }] },
         settings: { microphoneId: "", whisperPath: "/whisper", modelPath: "/model", language: "auto", shortcut: "Ctrl+Alt+Space", interaction: "hold", autoPaste: true, saveAudio: false, launchAtLogin: false, startInTray: false, cleanText: false, setupComplete: true, historyRetentionDays: 0 },
         status: { phase: "idle", message: "Ready", startedAt: 0, transcript: "", progress: 0, shortcutError: "", indicatorError: "", trayError: "", startupError: "", historyError: "" },
         models: [], history: [], ready: true, dataDir: "", floatingIndicator: true, launchAtLoginAvailable: true, startInTrayAvailable: true, vocabulary: [], microphoneTested: false, shortcutTested: false, diagnostic: { phase: "", message: "", details: "", transcript: "", durationMs: 0 },
@@ -40,6 +44,7 @@ test.beforeEach(async ({ page }) => {
         state.snapshot.status = { ...state.snapshot.status, phase, message: phase === "transcribing" ? "Transcribing…" : "Ready", startedAt: Date.now() }
         state.callbacks["dictation:status"](structuredClone(state.snapshot.status))
       },
+      processing: null, failProcessing: false, cancelledProcessing: [],
       history() { state.callbacks["dictation:history"]() },
     }
     window.dictationTest = state
@@ -111,6 +116,21 @@ test.beforeEach(async ({ page }) => {
           state.snapshot.vocabulary = structuredClone(entries.map(entry => ({ ...entry, canonical: entry.canonical.trim() })))
           return structuredClone(state.snapshot.vocabulary)
         },
+        SaveTextProcessing: async (config: TextProcessing) => {
+          if (state.failSave) throw new Error("Prompts save failed")
+          state.snapshot.textProcessing = structuredClone(config)
+          state.callbacks["setup:changed"]()
+          return structuredClone(config)
+        },
+        ProcessText: async (id: string, input: string, prompt: string) => {
+          if (state.failProcessing) throw new Error("Model unavailable")
+          return new Promise<string>((resolve, reject) => { state.processing = { id, input, prompt, resolve: result => { state.processing = null; resolve(result) }, reject } })
+        },
+        CancelTextProcessing: async (id: string) => {
+          state.cancelledProcessing.push(id)
+          // Deliberately leave the reply pending to exercise late results.
+        },
+        TestTextModel: async () => { if (state.failProcessing) throw new Error("Model unavailable"); return "OK" },
         AddVocabularyTerm: async (canonical: string, aliases: string[]) => {
           if (state.failSave) throw new Error("Vocabulary save failed")
           if (state.snapshot.status.phase === "recording") throw new Error("finish the current operation before changing vocabulary")
@@ -929,4 +949,92 @@ test("shortcut recorder is disabled during active work and works in first-run se
   await page.getByRole("button", { name: "Apply shortcut", exact: true }).click()
   await expect.poll(() => page.evaluate(() => window.dictationTest.snapshot.settings.shortcut)).toBe("Shift+F8")
   await expect.poll(() => page.evaluate(() => window.dictationTest.snapshot.status.phase)).toBe("idle")
+})
+
+
+test("prompt drafts survive refresh and failed save; model testing uses saved config", async ({ page }, testInfo) => {
+  await page.goto("/#/prompts")
+  await page.getByRole("checkbox", { name: "Enable LLM processing" }).check()
+  await page.getByLabel("Model identifier").fill("my-local-model")
+  await page.getByLabel("Local server URL").fill("http://127.0.0.1:1234/v1")
+  await page.getByRole("button", { name: "Add prompt" }).click()
+  await page.getByLabel("Name", { exact: true }).fill("Technical ticket")
+  await page.getByLabel("Instructions").fill("Format the transcript as a bug report. Keep names unchanged.")
+  await page.getByLabel("After dictation").selectOption({ label: "Technical ticket" })
+  await expect(page.getByRole("button", { name: "Test model", exact: true })).toBeDisabled()
+  await expect.poll(() => page.evaluate(() => window.dictationTest.snapshot.textProcessing.enabled)).toBe(false)
+  await page.evaluate(() => { window.dictationTest.history(); window.dictationTest.failSave = true })
+  await settle(page)
+  await expect(page.getByLabel("Name", { exact: true })).toHaveValue("Technical ticket")
+  await page.getByRole("button", { name: "Save prompts", exact: true }).click()
+  await expect(page.getByText("Prompts save failed", { exact: true })).toBeVisible()
+  await expect(page.getByLabel("Model identifier")).toHaveValue("my-local-model")
+  await page.evaluate(() => { window.dictationTest.failSave = false })
+  await page.getByRole("button", { name: "Save prompts", exact: true }).click()
+  await expect(page.getByRole("button", { name: "Save prompts", exact: true })).toBeDisabled()
+  await expect.poll(() => page.evaluate(() => window.dictationTest.snapshot.textProcessing.prompts.length)).toBe(3)
+  await page.getByRole("button", { name: "Test model", exact: true }).click()
+  await expect(page.getByText("Model responded successfully.", { exact: true })).toBeVisible()
+  await page.screenshot({ path: testInfo.outputPath("prompts.png"), fullPage: true })
+  await page.getByRole("button", { name: "Delete prompt", exact: true }).click()
+  await expect(page.getByLabel("After dictation")).toHaveValue("")
+  await page.getByRole("checkbox", { name: "Enable LLM processing" }).uncheck()
+  await page.getByRole("button", { name: "Save prompts", exact: true }).click()
+  await expect.poll(() => page.evaluate(() => window.dictationTest.snapshot.textProcessing.enabled)).toBe(false)
+  await expect(page.getByLabel("After dictation")).toBeDisabled()
+})
+
+async function openPromptEditor(page: Page) {
+  await page.addInitScript(() => {
+    const state = window.dictationTest
+    state.snapshot.textProcessing.enabled = true
+    state.snapshot.textProcessing.model = "custom-model"
+    state.snapshot.history = [{ id: "prompt", createdAt: "2026-10-07", durationMs: 1000, rawTranscript: "Original speech.", finalTranscript: "Saved correction.", speechModel: "base", language: "en", audioPath: "" }]
+  })
+  await page.goto("/#/history")
+  await page.getByRole("button", { name: /Saved correction/ }).click()
+  await page.getByRole("button", { name: "Edit transcript", exact: true }).click()
+  await page.getByLabel("Transcript", { exact: true }).fill("Unsaved draft for summary.")
+  await page.getByRole("button", { name: "Process text", exact: true }).click()
+}
+
+test("prompt previews use the draft and change History only after apply and save", async ({ page }, testInfo) => {
+  await openPromptEditor(page)
+  await page.getByLabel("Prompt", { exact: true }).selectOption("summary")
+  await page.getByRole("button", { name: "Generate preview", exact: true }).click()
+  await expect.poll(() => page.evaluate(() => window.dictationTest.processing?.input)).toBe("Unsaved draft for summary.")
+  await expect.poll(() => page.evaluate(() => window.dictationTest.processing?.prompt)).toBe("summary")
+  await page.evaluate(() => window.dictationTest.processing!.resolve("Concise summary."))
+  await expect(page.getByLabel("Preview", { exact: true })).toHaveValue("Concise summary.")
+  await page.screenshot({ path: testInfo.outputPath("preview.png") })
+  await expect.poll(() => page.evaluate(() => window.dictationTest.snapshot.history[0].finalTranscript)).toBe("Saved correction.")
+  await page.getByRole("button", { name: "Use result", exact: true }).click()
+  await expect(page.getByLabel("Transcript", { exact: true })).toHaveValue("Concise summary.")
+  await expect.poll(() => page.evaluate(() => window.dictationTest.snapshot.status.transcript)).toBe("")
+  await page.getByRole("button", { name: "Save transcript", exact: true }).click()
+  await expect.poll(() => page.evaluate(() => window.dictationTest.snapshot.history[0].finalTranscript)).toBe("Concise summary.")
+  await expect.poll(() => page.evaluate(() => window.dictationTest.snapshot.history[0].rawTranscript)).toBe("Original speech.")
+})
+
+test("failed and cancelled generation retain the draft and suppress late results", async ({ page }) => {
+  await openPromptEditor(page)
+  await page.evaluate(() => { window.dictationTest.failProcessing = true })
+  await page.getByRole("button", { name: "Generate preview", exact: true }).click()
+  await expect(page.getByText("Model unavailable", { exact: true })).toBeVisible()
+  await page.evaluate(() => { window.dictationTest.failProcessing = false })
+  await page.getByRole("button", { name: "Generate preview", exact: true }).click()
+  await page.getByRole("button", { name: "Cancel processing", exact: true }).click()
+  await expect.poll(() => page.evaluate(() => window.dictationTest.cancelledProcessing.length)).toBe(1)
+  await page.evaluate(() => window.dictationTest.processing!.resolve("Late unwanted replacement."))
+  await expect(page.getByText("Processing cancelled", { exact: true })).toBeVisible()
+  await expect(page.getByRole("button", { name: "Use result", exact: true })).toBeDisabled()
+  await page.getByRole("button", { name: "Back to transcript", exact: true }).click()
+  await expect(page.getByLabel("Transcript", { exact: true })).toHaveValue("Unsaved draft for summary.")
+  await page.getByRole("button", { name: "Process text", exact: true }).click()
+  await page.getByRole("button", { name: "Generate preview", exact: true }).click()
+  await page.keyboard.press("Escape")
+  await expect(page.getByLabel("Transcript", { exact: true })).toHaveValue("Unsaved draft for summary.")
+  await expect.poll(() => page.evaluate(() => window.dictationTest.cancelledProcessing.length)).toBe(2)
+  await page.evaluate(() => window.dictationTest.processing!.resolve("Another late reply."))
+  await expect(page.getByLabel("Transcript", { exact: true })).toHaveValue("Unsaved draft for summary.")
 })

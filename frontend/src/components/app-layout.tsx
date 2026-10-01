@@ -1,5 +1,5 @@
 import { useState, type CSSProperties } from "react"
-import { AudioLines, BookOpen, HardDriveDownload, History, Mic, PanelLeftClose, PanelLeftOpen, Settings2, X } from "lucide-react"
+import { AudioLines, BookOpen, HardDriveDownload, History, Mic, PanelLeftClose, PanelLeftOpen, Settings2, Sparkles, X } from "lucide-react"
 import { NavLink, Outlet } from "react-router"
 import { cn } from "@/lib/utils"
 import { isDesktop } from "@/lib/backend"
@@ -13,6 +13,7 @@ const navigation = [
   { to: "/history", label: "History", icon: History },
   { to: "/models", label: "Models", icon: HardDriveDownload },
   { to: "/vocabulary", label: "Vocabulary", icon: BookOpen },
+  { to: "/prompts", label: "Prompts", icon: Sparkles },
   { to: "/settings", label: "Settings", icon: Settings2 },
 ]
 const sidebarKey = "yap-sidebar-collapsed"

@@ -40,6 +40,9 @@ func presentation(s State, now time.Time) view {
 		return view{visible: true, label: fmt.Sprintf("Recording  %d:%02d", seconds/60, seconds%60), stop: "Stop", cancel: "Cancel"}
 	case "transcribing":
 		label := "Transcribing…"
+		if s.Message == "Processing text…" {
+			label = "Processing text…"
+		}
 		if strings.Contains(s.Message, "Cancelling") {
 			label = "Cancelling…"
 		}
@@ -52,7 +55,7 @@ func presentation(s State, now time.Time) view {
 		case "Pasted into your application":
 			label = "Pasted"
 		default:
-			if strings.Contains(s.Message, "clipboard failed") {
+			if strings.Contains(s.Message, "clipboard failed") || strings.Contains(s.Message, "History") {
 				label = "Saved to history"
 			}
 		}

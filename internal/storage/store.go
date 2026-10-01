@@ -73,6 +73,7 @@ func Open(dir string) (*Store, error) {
 	// still insert/read recordings normally; their deletes also run this trigger.
 	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS vocabulary (id INTEGER PRIMARY KEY CHECK(id=1), value TEXT NOT NULL);
 	CREATE TABLE IF NOT EXISTS recording_outputs (id TEXT PRIMARY KEY, transcript TEXT NOT NULL);
+	CREATE TABLE IF NOT EXISTS text_processing (id INTEGER PRIMARY KEY CHECK(id=1), value TEXT NOT NULL);
 	CREATE TRIGGER IF NOT EXISTS delete_recording_output AFTER DELETE ON recordings BEGIN DELETE FROM recording_outputs WHERE id=OLD.id; END;`)
 	if err != nil {
 		db.Close()

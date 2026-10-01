@@ -17,6 +17,7 @@ Linux support is incomplete.
 - Dictate in the background, with tray controls and a floating indicator.
 - Search, edit, copy, and export past transcripts.
 - Add names and preferred spellings to a custom vocabulary.
+- Run cleanup or custom prompts through an optional local text model.
 
 ## Getting started
 
@@ -48,6 +49,9 @@ History is saved locally. Keeping audio recordings is off by default; temporary
 audio is removed after use, though a forced shutdown can leave files behind.
 History and retained recordings are **not encrypted**.
 On Windows, the data folder is `%APPDATA%\yap`.
+
+Optional text processing connects to a model server on localhost. Use a model
+that runs locally: Yap can't stop that server from forwarding requests elsewhere.
 
 ## Build from source
 

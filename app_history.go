@@ -27,6 +27,13 @@ func (a *App) DeleteSessions(ids []string) error {
 	if err := a.available(); err != nil {
 		return err
 	}
+	if a.status.Phase == "transcribing" {
+		for _, id := range ids {
+			if id == a.id {
+				return errors.New("finish the current dictation before deleting its transcript")
+			}
+		}
+	}
 	_, err := a.store.DeleteSessions(ids)
 	a.clearDeletedResultLocked()
 	a.event("dictation:history") // Also refresh after a partially failed audio cleanup.

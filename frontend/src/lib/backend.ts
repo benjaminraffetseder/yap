@@ -1,6 +1,11 @@
 import { AddVocabularyTerm, Cancel, CompleteSetup, CopyText, DeleteSession, ExportSession, GetAudio, GetDiagnosticChecks, GetMicrophones, GetSnapshot, InstallModel, RestartSetup, SaveSettings, SaveTranscript, SaveVocabulary, SelectFile, StartDiagnosticTest, StartMicrophoneTest, StartRecording, StopDiagnosticTest, StopMicrophoneTest, StopRecording } from "@wails/go/main/App"
 import { DeleteSessions, ExportSessions, GetHistory, RemoveModel } from "@wails/go/main/App"
 import { BeginShortcutCapture, EndShortcutCapture } from "@wails/go/main/App"
+import { SaveTextProcessing, ProcessText, CancelTextProcessing, TestTextModel } from "@wails/go/main/App"
+import { text } from "@wails/go/models"
+export type TextPrompt = { id: string; name: string; instruction: string }
+export type TextProcessing = { enabled: boolean; endpoint: string; model: string; autoPromptId: string; prompts: TextPrompt[] }
+export const defaultTextProcessing: TextProcessing = { enabled: false, endpoint: "http://127.0.0.1:11434/v1", model: "", autoPromptId: "", prompts: [{ id: "cleanup", name: "Cleanup", instruction: "Fix punctuation, capitalization, and obvious grammar mistakes. Remove filler words and accidental repetitions. Preserve meaning, names, technical terms, and the original language. Return only the cleaned text." }, { id: "summary", name: "Summary", instruction: "Summarize the transcript concisely in its original language. Preserve key facts, names, decisions, and action items. Do not invent details. Return only the summary." }] }
 export const isDesktop = typeof window !== "undefined" && "go" in window
 export type Settings = { microphoneId: string; whisperPath: string; modelPath: string; language: string; shortcut: string; interaction: string; autoPaste: boolean; saveAudio: boolean; launchAtLogin: boolean; startInTray: boolean; cleanText: boolean; setupComplete: boolean; historyRetentionDays: number }
 export type VocabularyEntry = { id: string; canonical: string; aliases: string[]; enabled: boolean }
@@ -11,7 +16,7 @@ export type Session = { id: string; createdAt: string; durationMs: number; rawTr
 export type HistoryPageResult = { entries: Session[]; total: number; page: number; pageSize: number }
 export type Status = { phase: string; message: string; startedAt: number; transcript: string; progress: number; shortcutError: string; indicatorError: string; trayError: string; startupError: string; historyError: string }
 export type Model = { id: string; name: string; description: string; size: number; installed: boolean; path: string; diskBytes: number; removable: boolean }
-export type Snapshot = { settings: Settings; status: Status; history: Session[]; models: Model[]; dataDir: string; ready: boolean; floatingIndicator: boolean; launchAtLoginAvailable: boolean; startInTrayAvailable: boolean; vocabulary: VocabularyEntry[]; microphoneTested: boolean; shortcutTested: boolean; diagnostic: DiagnosticResult }
+export type Snapshot = { textProcessing: TextProcessing; settings: Settings; status: Status; history: Session[]; models: Model[]; dataDir: string; ready: boolean; floatingIndicator: boolean; launchAtLoginAvailable: boolean; startInTrayAvailable: boolean; vocabulary: VocabularyEntry[]; microphoneTested: boolean; shortcutTested: boolean; diagnostic: DiagnosticResult }
 export const backend = {
   snapshot: async (): Promise<Snapshot> => GetSnapshot(), start: StartRecording, stop: StopRecording, cancel: Cancel,
   microphones: async (): Promise<Microphone[]> => GetMicrophones(),
@@ -24,7 +29,9 @@ export const backend = {
   history: async (query: string, page: number): Promise<HistoryPageResult> => GetHistory(query, page),
   removeSessions: DeleteSessions, exportSessions: ExportSessions, removeModel: RemoveModel,
   beginShortcutCapture: BeginShortcutCapture, endShortcutCapture: EndShortcutCapture,
+  textProcessing: async (config: TextProcessing): Promise<TextProcessing> => SaveTextProcessing(text.Config.createFrom(config)),
+  processText: ProcessText, cancelTextProcessing: CancelTextProcessing, testTextModel: TestTextModel,
 }
-export function isBusy(phase: string) { return ["recording", "transcribing", "downloading", "mic-test", "diagnostic-recording", "diagnostic-transcribing"].includes(phase) }
+export function isBusy(phase: string) { return ["recording", "transcribing", "text-processing", "downloading", "mic-test", "diagnostic-recording", "diagnostic-transcribing"].includes(phase) }
 export function message(cause: unknown) { return cause instanceof Error ? cause.message : String(cause) }
 export function duration(ms: number) { const seconds = Math.floor(ms / 1000); return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}` }

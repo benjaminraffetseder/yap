@@ -8,6 +8,7 @@ import { DictationProvider } from "@/components/dictation-provider"
 import { HistoryPage } from "@/pages/history-page"
 import { ModelsPage } from "@/pages/models-page"
 import { VocabularyPage } from "@/pages/vocabulary-page"
+import { PromptsPage } from "@/pages/prompts-page"
 
 export function App() {
   return (
@@ -21,6 +22,7 @@ export function App() {
             <Route path="history" element={<HistoryPage />} />
             <Route path="models" element={<ModelsPage />} />
             <Route path="vocabulary" element={<VocabularyPage />} />
+            <Route path="prompts" element={<PromptsPage />} />
             <Route path="*" element={<NotFoundPage />} />
           </Route>
         </Routes>

@@ -1,7 +1,8 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react"
 import { EventsOn } from "@wails/runtime/runtime"
-import { backend, isDesktop, message, type Snapshot, type Status } from "@/lib/backend"
+import { backend, defaultTextProcessing, isDesktop, message, type Snapshot, type Status } from "@/lib/backend"
 const empty: Snapshot = {
+  textProcessing: defaultTextProcessing,
   settings: { microphoneId: "", whisperPath: "", modelPath: "", language: "auto", shortcut: "Ctrl+Alt+Space", interaction: "hold", autoPaste: true, saveAudio: false, launchAtLogin: false, startInTray: false, cleanText: false, setupComplete: false, historyRetentionDays: 0 },
   status: { phase: "idle", message: "Ready when you are", startedAt: 0, transcript: "", progress: 0, shortcutError: "", indicatorError: "", trayError: "", startupError: "", historyError: "" },
   models: [
