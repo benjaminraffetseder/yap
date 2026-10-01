@@ -18,7 +18,15 @@ export type Status = { phase: string; message: string; startedAt: number; transc
 export type Model = { id: string; name: string; description: string; size: number; installed: boolean; path: string; diskBytes: number; removable: boolean }
 export type Snapshot = { textProcessing: TextProcessing; settings: Settings; status: Status; history: Session[]; models: Model[]; dataDir: string; ready: boolean; floatingIndicator: boolean; launchAtLoginAvailable: boolean; startInTrayAvailable: boolean; vocabulary: VocabularyEntry[]; microphoneTested: boolean; shortcutTested: boolean; diagnostic: DiagnosticResult }
 export const backend = {
-  snapshot: async (): Promise<Snapshot> => GetSnapshot(), start: StartRecording, stop: StopRecording, cancel: Cancel,
+  snapshot: async (): Promise<Snapshot> => {
+    const value = await GetSnapshot()
+    // A long-running dev backend can predate the frontend and generated bindings.
+    // Keep the last safe snapshot instead of rendering incompatible page state.
+    if (!value.textProcessing || !Array.isArray(value.textProcessing.prompts)) {
+      throw new Error("Yap's interface and backend are different versions. Quit and reopen Yap. In development, restart wails dev.")
+    }
+    return value
+  }, start: StartRecording, stop: StopRecording, cancel: Cancel,
   microphones: async (): Promise<Microphone[]> => GetMicrophones(),
   settings: SaveSettings, selectFile: SelectFile, install: InstallModel,
   vocabulary: SaveVocabulary, testMic: StartMicrophoneTest, stopMicTest: StopMicrophoneTest, completeSetup: CompleteSetup, restartSetup: RestartSetup,

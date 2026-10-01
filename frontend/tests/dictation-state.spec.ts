@@ -8,6 +8,7 @@ declare global {
       callbacks: Record<string, (...args: unknown[]) => void>
       deferSnapshots: boolean
       failSnapshot: boolean
+      legacySnapshot: boolean
       installedModelIDs: string[]
       pendingSnapshots: (() => void)[]
       deferHistory: boolean
@@ -41,7 +42,7 @@ test.beforeEach(async ({ page }) => {
         status: { phase: "idle", message: "Ready", startedAt: 0, transcript: "", progress: 0, shortcutError: "", indicatorError: "", trayError: "", startupError: "", historyError: "" },
         models: [], history: [], ready: true, dataDir: "", floatingIndicator: true, launchAtLoginAvailable: true, startInTrayAvailable: true, vocabulary: [], microphoneTested: false, shortcutTested: false, diagnostic: { phase: "", message: "", details: "", transcript: "", durationMs: 0 },
       },
-      callbacks: {}, failSnapshot: false, installedModelIDs: [], deferSnapshots: false, pendingSnapshots: [], deferHistory: false, pendingHistory: [], failHistory: false, captureToken: "", captureEnded: 0, failCapture: false, failRestore: false, deferCapture: false, resolveCapture: null, occupiedShortcut: "", failSave: false, exportedText: "", checks: [{ id: "runtime", name: "Whisper runtime", ready: true, message: "Executable found" }, { id: "model", name: "Speech model", ready: true, message: "Model file readable" }, { id: "microphone", name: "Microphone", ready: true, message: "System default" }],
+      callbacks: {}, failSnapshot: false, legacySnapshot: false, installedModelIDs: [], deferSnapshots: false, pendingSnapshots: [], deferHistory: false, pendingHistory: [], failHistory: false, captureToken: "", captureEnded: 0, failCapture: false, failRestore: false, deferCapture: false, resolveCapture: null, occupiedShortcut: "", failSave: false, exportedText: "", checks: [{ id: "runtime", name: "Whisper runtime", ready: true, message: "Executable found" }, { id: "model", name: "Speech model", ready: true, message: "Model file readable" }, { id: "microphone", name: "Microphone", ready: true, message: "System default" }],
       status(phase: string) {
         state.snapshot.status = { ...state.snapshot.status, phase, message: phase === "transcribing" ? "Transcribing…" : "Ready", startedAt: Date.now() }
         state.callbacks["dictation:status"](structuredClone(state.snapshot.status))
@@ -61,6 +62,7 @@ test.beforeEach(async ({ page }) => {
         GetSnapshot() {
           if (state.failSnapshot) return Promise.reject(new Error("Snapshot unavailable"))
           const copy = structuredClone(state.snapshot)
+          if (state.legacySnapshot) Reflect.deleteProperty(copy, "textProcessing")
           if (state.deferSnapshots) return new Promise(resolve => { state.pendingSnapshots.push(() => resolve(copy)) })
           return Promise.resolve(copy)
         },
@@ -1101,4 +1103,24 @@ test("an active damaged model can be repaired without enabling removal", async (
   await page.evaluate(() => { window.dictationTest.status("idle"); window.dictationTest.history() })
   await expect(page.getByRole("button", { name: "Active", exact: true })).toBeDisabled()
   await expect(page.getByRole("button", { name: "Remove Whisper Tiny", exact: true })).toBeDisabled()
+})
+
+
+test("an outdated backend keeps the interface visible and recovers after restart", async ({ page }) => {
+  const errors: string[] = []
+  page.on("pageerror", error => errors.push(error.message))
+  await page.addInitScript(() => { window.dictationTest.legacySnapshot = true })
+  await page.goto("/#/prompts")
+  await expect(page.getByRole("alert").filter({ hasText: "different versions" })).toBeVisible()
+  await expect(page.getByRole("heading", { name: "Prompts", exact: true })).toBeVisible()
+  await expect(page.getByRole("navigation", { name: "Main navigation" })).toBeVisible()
+  await expect(page.getByRole("checkbox", { name: "Enable LLM processing" })).toBeDisabled()
+  await page.evaluate(() => { window.dictationTest.legacySnapshot = false })
+  await page.getByRole("button", { name: "Retry loading", exact: true }).click()
+  await expect(page.getByRole("checkbox", { name: "Enable LLM processing" })).toBeEnabled()
+  await expect(page.getByRole("alert")).toHaveCount(0)
+  await page.evaluate(() => { window.dictationTest.legacySnapshot = true; window.dictationTest.history() })
+  await expect(page.getByRole("alert").filter({ hasText: "different versions" })).toBeVisible()
+  await expect(page.getByRole("heading", { name: "Prompts", exact: true })).toBeVisible()
+  expect(errors).toEqual([])
 })
