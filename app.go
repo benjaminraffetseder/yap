@@ -856,7 +856,7 @@ func (a *App) InstallModel(id string) error {
 		var model string
 		if err == nil {
 			a.mu.Lock()
-			a.status.Message = "Downloading Whisper " + id + "…"
+			a.status.Message = "Checking or downloading Whisper " + id + "…"
 			a.status.Progress = 0
 			a.emit()
 			a.mu.Unlock()

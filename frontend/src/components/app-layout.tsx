@@ -24,7 +24,7 @@ function readCollapsed() {
 }
 
 export function AppLayout() {
-  const { error, clearError } = useDictation()
+  const { error, clearError, loading, run, refresh } = useDictation()
   const [collapsed, setCollapsed] = useState(readCollapsed)
   const toggleLabel = collapsed ? "Expand sidebar" : "Collapse sidebar"
 
@@ -72,6 +72,7 @@ export function AppLayout() {
               <span className="flex-1 whitespace-pre-wrap">{error}</span>
               <Button variant="ghost" size="icon-sm" onClick={clearError} aria-label="Dismiss error"><X aria-hidden="true" /></Button>
             </div>}
+            {isDesktop && loading && <div role="status" className="mt-6 flex items-center gap-3 text-sm text-muted-foreground"><span>Loading app…</span><Button variant="outline" size="sm" onClick={() => void run(refresh, false)}>Retry loading</Button></div>}
             <Outlet />
           </div>
         </main>

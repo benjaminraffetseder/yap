@@ -15,7 +15,7 @@ const themes = [{ value: "light", label: "Light", icon: Sun }, { value: "dark", 
 export function SettingsPage() {
   const navigate = useNavigate()
   const { theme, setTheme } = useTheme()
-  const { snapshot, run } = useDictation()
+  const { snapshot, run, loading } = useDictation()
   const [settings, setSettings] = useState(snapshot.settings)
   const savedSettings = useRef(snapshot.settings)
   const [saving, setSaving] = useState(false)
@@ -63,13 +63,14 @@ export function SettingsPage() {
     await run(async () => { const path = await backend.selectFile(kind); if (path) setSettings(old => ({ ...old, [kind === "model" ? "modelPath" : "whisperPath"]: path })) }, false)
   }
   async function save(confirmed = false) {
+    if (loading || saving || busy) return
     if (!confirmed && settings.historyRetentionDays > 0 && settings.historyRetentionDays !== snapshot.settings.historyRetentionDays) { setConfirmRetention(true); return }
     setSaving(true); setConfirmRetention(false); await run(() => backend.settings(settings)); setSaving(false)
   }
   return <div className="space-y-7">
     <header><h1 className="text-2xl font-semibold tracking-tight">Settings</h1></header>
-    <DiagnosticsPanel disabled={dirty || saving} />
-    <fieldset disabled={!isDesktop || busy || saving} className="space-y-6 disabled:opacity-60">
+    <DiagnosticsPanel disabled={dirty || saving || loading} />
+    <fieldset disabled={!isDesktop || busy || saving || loading} className="space-y-6 disabled:opacity-60">
       <section className="settings-section"><h2 className="font-semibold">Text processing</h2><label className="mt-5 flex cursor-pointer items-start gap-3"><input type="checkbox" className="mt-1 accent-[var(--primary)]" checked={settings.cleanText} onChange={event => setSettings({ ...settings, cleanText: event.target.checked })} /><span className="text-sm">Light cleanup<span className="mt-1 block text-xs text-muted-foreground">Apply local spacing, capitalization, and punctuation rules; remove common English/German filler words. Original transcripts stay in History.</span></span></label></section>
       <section className="settings-section"><h2 className="font-semibold">Startup</h2>
         <label className={`mt-5 flex items-start gap-3 ${snapshot.launchAtLoginAvailable ? "cursor-pointer" : "opacity-60"}`}><input type="checkbox" className="mt-1 accent-[var(--primary)]" disabled={!snapshot.launchAtLoginAvailable} checked={settings.launchAtLogin} onChange={event => setSettings({ ...settings, launchAtLogin: event.target.checked })} /><span className="text-sm">Launch at login</span></label>
@@ -79,7 +80,7 @@ export function SettingsPage() {
       <section className="settings-section"><h2 className="font-semibold">Audio input</h2>
         <div className="mt-5 max-w-xl space-y-2"><Label htmlFor="microphone">Microphone</Label>
           <div className="flex gap-2">
-            <Select items={microphoneOptions} value={settings.microphoneId} disabled={!isDesktop || busy || saving} onValueChange={value => { if (value !== null) setSettings(old => ({ ...old, microphoneId: value })) }}>
+            <Select items={microphoneOptions} value={settings.microphoneId} disabled={!isDesktop || busy || saving || loading} onValueChange={value => { if (value !== null) setSettings(old => ({ ...old, microphoneId: value })) }}>
               <SelectTrigger id="microphone" className="data-[size=default]:h-9 w-full min-w-0 rounded-md bg-background px-3" aria-describedby="microphone-status"><SelectValue /></SelectTrigger>
               <SelectContent alignItemWithTrigger={false} align="start"><div className="p-1">{microphoneOptions.map(option => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}</div></SelectContent>
             </Select>
@@ -91,7 +92,7 @@ export function SettingsPage() {
         </div>
       </section>
       <section className="settings-section"><h2 className="font-semibold">Keyboard & delivery</h2>
-        <div className="mt-6 grid gap-5 sm:grid-cols-2"><div className="space-y-2"><Label htmlFor="shortcut">Global shortcut</Label><ShortcutInput id="shortcut" value={settings.shortcut} disabled={!isDesktop || busy || saving} onChange={shortcut => setSettings(old => ({ ...old, shortcut }))} /><p className="text-xs text-muted-foreground">Ctrl, Alt, Shift + Space, A–Z, or F1–F12.</p></div><div className="space-y-2"><Label htmlFor="interaction">Recording mode</Label><select id="interaction" className="form-select" value={settings.interaction} onChange={event => setSettings({ ...settings, interaction: event.target.value })}><option value="hold">Hold to talk</option><option value="toggle">Press to start / press to stop</option></select></div></div>
+        <div className="mt-6 grid gap-5 sm:grid-cols-2"><div className="space-y-2"><Label htmlFor="shortcut">Global shortcut</Label><ShortcutInput id="shortcut" value={settings.shortcut} disabled={!isDesktop || busy || saving || loading} onChange={shortcut => setSettings(old => ({ ...old, shortcut }))} /><p className="text-xs text-muted-foreground">Ctrl, Alt, Shift + Space, A–Z, or F1–F12.</p></div><div className="space-y-2"><Label htmlFor="interaction">Recording mode</Label><select id="interaction" className="form-select" value={settings.interaction} onChange={event => setSettings({ ...settings, interaction: event.target.value })}><option value="hold">Hold to talk</option><option value="toggle">Press to start / press to stop</option></select></div></div>
         <label className="mt-6 flex cursor-pointer items-start gap-3"><input type="checkbox" className="mt-1 accent-[var(--primary)]" checked={settings.autoPaste} onChange={event => setSettings({ ...settings, autoPaste: event.target.checked })} /><span className="text-sm">Paste automatically<span className="mt-1 block text-xs text-muted-foreground">Paste into the focused app after shortcut dictation. Otherwise, copy only.</span></span></label>
         {snapshot.status.shortcutError && <p role="alert" className="mt-4 text-xs text-destructive">{snapshot.status.shortcutError}</p>}
       </section>

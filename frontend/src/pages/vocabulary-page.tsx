@@ -9,7 +9,7 @@ import { backend, isBusy, isDesktop, type VocabularyEntry } from "@/lib/backend"
 type Draft = Omit<VocabularyEntry, "aliases"> & { aliases: string }
 const draftOf = (entries: VocabularyEntry[]): Draft[] => entries.map(entry => ({ ...entry, aliases: entry.aliases.join(", ") }))
 export function VocabularyPage() {
-  const { snapshot, run } = useDictation()
+  const { snapshot, run, loading } = useDictation()
   const [draft, setDraft] = useState(() => draftOf(snapshot.vocabulary))
   const baseline = useRef(draftOf(snapshot.vocabulary))
   const [saving, setSaving] = useState(false)
@@ -22,6 +22,7 @@ export function VocabularyPage() {
   const dirty = JSON.stringify(draft) !== JSON.stringify(draftOf(snapshot.vocabulary))
   function update(id: string, value: Partial<Draft>) { setDraft(old => old.map(entry => entry.id === id ? { ...entry, ...value } : entry)) }
   async function save() {
+    if (loading || saving || busy) return
     setSaving(true)
     await run(async () => {
       const saved = await backend.vocabulary(draft.map(entry => ({ ...entry, aliases: entry.aliases.split(",").map(alias => alias.trim()).filter(Boolean) })))
@@ -31,7 +32,7 @@ export function VocabularyPage() {
   }
   return <div className="space-y-7">
     <header><h1 className="text-2xl font-semibold tracking-tight">Vocabulary</h1><p className="mt-2 text-sm text-muted-foreground">Preferred spellings hint speech recognition. Aliases replace exact words or phrases in the result.</p></header>
-    <fieldset disabled={!isDesktop || busy || saving} className="space-y-4 disabled:opacity-60">
+    <fieldset disabled={!isDesktop || busy || saving || loading} className="space-y-4 disabled:opacity-60">
       {!draft.length && <p className="rounded-xl border border-dashed p-6 text-sm text-muted-foreground">Add names, brands, or technical terms you use often.</p>}
       {draft.map(entry => <section key={entry.id} className="rounded-xl border bg-card p-5">
         <div className="flex items-center justify-between gap-3"><label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={entry.enabled} onChange={event => update(entry.id, { enabled: event.target.checked })} />Enabled</label><Button variant="ghost" size="icon" aria-label={`Remove ${entry.canonical || "term"}`} onClick={() => setDraft(old => old.filter(item => item.id !== entry.id))}><Trash2 className="size-4" /></Button></div>

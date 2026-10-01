@@ -38,9 +38,10 @@ func List(dir string) []Model {
 	for i := range list {
 		p := filepath.Join(dir, "models", "ggml-"+list[i].ID+".bin")
 		if st, err := os.Lstat(p); err == nil && st.Mode().IsRegular() {
+			list[i].Path = p
 			list[i].DiskBytes = st.Size()
 			list[i].Removable = managedModelPath(dir, p) == nil
-			if st.Size() == list[i].Size {
+			if valid, err := verifyModel(context.Background(), p, list[i], true); err == nil && valid {
 				list[i].Installed = true
 				list[i].Path = p
 			}
@@ -114,14 +115,31 @@ func Download(ctx context.Context, url, dest, hash string, size int64, report fu
 func Install(ctx context.Context, dir, id string, report func(int64, int64)) (string, error) {
 	for _, m := range Catalog {
 		if m.ID == id {
-			dest := filepath.Join(dir, "models", "ggml-"+id+".bin")
-			if st, err := os.Stat(dest); err == nil && st.Size() == m.Size {
-				return dest, nil
-			}
-			return dest, Download(ctx, "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-"+id+".bin", dest, m.SHA, m.Size, report)
+			return installModel(ctx, dir, m, "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-"+id+".bin", report)
 		}
 	}
 	return "", fmt.Errorf("unknown model %q", id)
+}
+func installModel(ctx context.Context, dir string, model Model, url string, report func(int64, int64)) (string, error) {
+	dest := filepath.Join(dir, "models", "ggml-"+model.ID+".bin")
+	if err := ctx.Err(); err != nil {
+		return dest, err
+	}
+	if _, err := os.Lstat(dest); err == nil {
+		if err = managedModelPath(dir, dest); err != nil {
+			return dest, err
+		}
+		valid, err := verifyModel(ctx, dest, model, false)
+		if err != nil {
+			return dest, err
+		}
+		if valid {
+			return dest, nil
+		}
+	} else if !os.IsNotExist(err) {
+		return dest, err
+	}
+	return dest, Download(ctx, url, dest, model.SHA, model.Size, report)
 }
 func RuntimePath(dir string) string {
 	var found string

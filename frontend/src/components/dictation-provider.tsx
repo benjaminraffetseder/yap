@@ -25,10 +25,12 @@ export function DictationProvider({ children }: { children: ReactNode }) {
     const request = ++snapshotRequest.current
     const revision = statusRevision.current
     const value = await backend.snapshot()
+    if (request !== snapshotRequest.current) return
     // Bridge replies may arrive out of order or after a newer status event.
     setSnapshot(old => request !== snapshotRequest.current ? old : {
       ...value, status: revision === statusRevision.current ? value.status : old.status,
     })
+    setLoading(false)
   }, [])
   async function run(action: () => Promise<unknown>, reload = true) {
     setError(""); try { await action(); if (reload) await refresh() } catch (cause) { setError(message(cause)) }
@@ -40,7 +42,7 @@ export function DictationProvider({ children }: { children: ReactNode }) {
     const offLevel = EventsOn("dictation:level", (value: number) => { if (active) setLevel(value) })
     const offHistory = EventsOn("dictation:history", () => { void refresh().catch(cause => { if (active) setError(message(cause)) }) })
     const offSetup = EventsOn("setup:changed", () => { void refresh().catch(cause => { if (active) setError(message(cause)) }) })
-    void refresh().catch(cause => { if (active) setError(message(cause)) }).finally(() => { if (active) setLoading(false) })
+    void refresh().catch(cause => { if (active) setError(message(cause)) })
     return () => { active = false; snapshotRequest.current++; offStatus(); offLevel(); offHistory(); offSetup() }
   }, [refresh])
   return <DictationContext.Provider value={{ snapshot, level, error, loading, refresh, run, clearError: () => setError("") }}>{children}</DictationContext.Provider>

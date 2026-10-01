@@ -104,6 +104,9 @@ func (s *Store) PruneHistory(days int, now time.Time) (int, error) {
 	if !ValidRetention(days) {
 		return 0, errors.New("choose forever, 7, 30, or 90 days for History retention")
 	}
+	if err := s.RecoverPendingDeletes(); err != nil {
+		return 0, err
+	}
 	if days == 0 {
 		return 0, nil
 	}

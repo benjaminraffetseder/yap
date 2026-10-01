@@ -97,7 +97,7 @@ when you save that setting, start Yap, and finish a dictation. Turning it off
 doesn't recover deleted entries, so export anything you want to keep first.
 
 In Models, switch away from a model before removing it. Yap only removes managed
-downloads, not custom files.
+downloads, not custom files. **Repair & use** replaces a damaged model.
 
 ## When something goes wrong
 

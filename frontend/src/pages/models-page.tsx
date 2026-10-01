@@ -6,13 +6,13 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { useDictation } from "@/components/dictation-provider"
 import { backend, isBusy, isDesktop, message, type Model } from "@/lib/backend"
 export function ModelsPage({ embedded = false }: { embedded?: boolean }) {
-  const { snapshot, run, refresh } = useDictation()
+  const { snapshot, run, refresh, loading } = useDictation()
   const [removing, setRemoving] = useState<Model | null>(null)
   const [pending, setPending] = useState(false)
   const [error, setError] = useState("")
   const { status, settings, models } = snapshot
   const downloading = status.phase === "downloading"
-  const busy = isBusy(status.phase)
+  const busy = isBusy(status.phase) || loading
   const megabytes = (bytes: number) => `${new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 }).format(bytes / 1_000_000)} MB`
   const diskBytes = models.reduce((sum, model) => sum + (model.diskBytes ?? 0), 0)
   async function remove() {
@@ -29,11 +29,13 @@ export function ModelsPage({ embedded = false }: { embedded?: boolean }) {
     {status.phase === "error" && <p role="alert" className="rounded-xl border border-destructive/30 bg-destructive/5 p-4 text-sm whitespace-pre-wrap text-destructive">{status.message}</p>}
     <div className="grid gap-4 lg:grid-cols-3">{models.map(model => {
       const selected = settings.modelPath === model.path && model.installed
+      const active = !!model.path && settings.modelPath === model.path
+      const repair = model.removable && !model.installed
       return <section key={model.id} className={`flex flex-col rounded-2xl border bg-card p-5 ${selected ? "border-primary/40 ring-1 ring-primary/15" : ""}`}>
         <HardDrive className="mb-5 size-6 text-primary" aria-hidden="true" />
         <h2 className="font-semibold">{model.name}</h2><p className="mt-2 text-xs leading-5 text-muted-foreground">{model.description}</p><p className="my-5 text-xs text-muted-foreground">{model.diskBytes ? `${megabytes(model.diskBytes)} on disk` : `${megabytes(model.size)} download`}</p>
-        <Button className="mt-auto rounded-lg" variant={selected ? "outline" : "default"} disabled={!isDesktop || busy || pending || selected} onClick={() => void run(() => model.installed ? backend.settings({ ...settings, modelPath: model.path }) : backend.install(model.id))}>{selected ? <><Check className="size-4" />Active</> : model.installed ? "Use model" : <><Download className="size-4" />Download & use</>}</Button>
-        {model.removable && <Button size="sm" variant="ghost" className="mt-2 text-muted-foreground" aria-label={`Remove ${model.name}`} disabled={!isDesktop || busy || pending || selected} title={selected ? "Switch to another model before removing this one" : undefined} onClick={() => { setError(""); setRemoving(model) }}><Trash2 className="size-3.5" />Remove</Button>}
+        <Button className="mt-auto rounded-lg" variant={selected ? "outline" : "default"} disabled={!isDesktop || busy || pending || selected} onClick={() => void run(() => model.installed ? backend.settings({ ...settings, modelPath: model.path }) : backend.install(model.id))}>{selected ? <><Check className="size-4" />Active</> : model.installed ? "Use model" : <><Download className="size-4" />{repair ? "Repair & use" : "Download & use"}</>}</Button>
+        {model.removable && <Button size="sm" variant="ghost" className="mt-2 text-muted-foreground" aria-label={`Remove ${model.name}`} disabled={!isDesktop || busy || pending || active} title={active ? "Switch to another model before removing this one" : undefined} onClick={() => { setError(""); setRemoving(model) }}><Trash2 className="size-3.5" />Remove</Button>}
       </section>
     })}</div>
     <p className="text-xs text-muted-foreground">For custom models or an existing installation, select local files in <Link className="text-primary underline" to="/settings">Settings</Link>.</p>

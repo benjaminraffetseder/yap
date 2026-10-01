@@ -7,6 +7,8 @@ declare global {
       snapshot: Snapshot
       callbacks: Record<string, (...args: unknown[]) => void>
       deferSnapshots: boolean
+      failSnapshot: boolean
+      installedModelIDs: string[]
       pendingSnapshots: (() => void)[]
       deferHistory: boolean
       pendingHistory: { query: string; resolve: () => void }[]
@@ -39,7 +41,7 @@ test.beforeEach(async ({ page }) => {
         status: { phase: "idle", message: "Ready", startedAt: 0, transcript: "", progress: 0, shortcutError: "", indicatorError: "", trayError: "", startupError: "", historyError: "" },
         models: [], history: [], ready: true, dataDir: "", floatingIndicator: true, launchAtLoginAvailable: true, startInTrayAvailable: true, vocabulary: [], microphoneTested: false, shortcutTested: false, diagnostic: { phase: "", message: "", details: "", transcript: "", durationMs: 0 },
       },
-      callbacks: {}, deferSnapshots: false, pendingSnapshots: [], deferHistory: false, pendingHistory: [], failHistory: false, captureToken: "", captureEnded: 0, failCapture: false, failRestore: false, deferCapture: false, resolveCapture: null, occupiedShortcut: "", failSave: false, exportedText: "", checks: [{ id: "runtime", name: "Whisper runtime", ready: true, message: "Executable found" }, { id: "model", name: "Speech model", ready: true, message: "Model file readable" }, { id: "microphone", name: "Microphone", ready: true, message: "System default" }],
+      callbacks: {}, failSnapshot: false, installedModelIDs: [], deferSnapshots: false, pendingSnapshots: [], deferHistory: false, pendingHistory: [], failHistory: false, captureToken: "", captureEnded: 0, failCapture: false, failRestore: false, deferCapture: false, resolveCapture: null, occupiedShortcut: "", failSave: false, exportedText: "", checks: [{ id: "runtime", name: "Whisper runtime", ready: true, message: "Executable found" }, { id: "model", name: "Speech model", ready: true, message: "Model file readable" }, { id: "microphone", name: "Microphone", ready: true, message: "System default" }],
       status(phase: string) {
         state.snapshot.status = { ...state.snapshot.status, phase, message: phase === "transcribing" ? "Transcribing…" : "Ready", startedAt: Date.now() }
         state.callbacks["dictation:status"](structuredClone(state.snapshot.status))
@@ -57,6 +59,7 @@ test.beforeEach(async ({ page }) => {
       },
       go: { main: { App: {
         GetSnapshot() {
+          if (state.failSnapshot) return Promise.reject(new Error("Snapshot unavailable"))
           const copy = structuredClone(state.snapshot)
           if (state.deferSnapshots) return new Promise(resolve => { state.pendingSnapshots.push(() => resolve(copy)) })
           return Promise.resolve(copy)
@@ -87,6 +90,7 @@ test.beforeEach(async ({ page }) => {
         StopDiagnosticTest: async () => { state.snapshot.diagnostic.phase = "transcribing"; state.snapshot.diagnostic.message = "Transcribing test…"; state.status("diagnostic-transcribing") },
         SaveSettings: async (settings: Settings) => {
           if (state.failSave) throw new Error("Settings save failed")
+          if (settings.setupComplete !== state.snapshot.settings.setupComplete) throw new Error("use setup to change its completion state")
           if (settings.shortcut === state.occupiedShortcut) throw new Error("shortcut could not be registered: already in use; choose another combination; your saved shortcut is unchanged")
           if (settings.microphoneId !== state.snapshot.settings.microphoneId) state.snapshot.microphoneTested = false
           if (settings.shortcut !== state.snapshot.settings.shortcut) state.snapshot.shortcutTested = false
@@ -147,7 +151,7 @@ test.beforeEach(async ({ page }) => {
         Cancel: async () => { if (state.snapshot.status.phase.startsWith("diagnostic-")) state.snapshot.diagnostic = { phase: "cancelled", message: "Test cancelled", details: "", transcript: "", durationMs: 0 }; state.snapshot.microphoneTested = false; state.status("idle") },
         CompleteSetup: async () => { state.snapshot.settings.setupComplete = true },
         RestartSetup: async () => { state.snapshot.settings.setupComplete = false; state.snapshot.microphoneTested = false; state.snapshot.shortcutTested = false },
-        InstallModel: async (id: string) => { state.status("downloading"); state.snapshot.settings.modelPath = `/${id}`; state.snapshot.settings.whisperPath = "/whisper" },
+        InstallModel: async (id: string) => { state.installedModelIDs.push(id); state.status("downloading"); state.snapshot.settings.modelPath = `/${id}`; state.snapshot.settings.whisperPath = "/whisper"; const model = state.snapshot.models.find(item => item.id === id); if (model) { model.installed = true; model.path = `/${id}` } },
         SaveTranscript: async (id: string, text: string) => {
           if (state.failSave) throw new Error("Transcript save failed")
           const entry = state.snapshot.history.find(item => item.id === id)
@@ -748,6 +752,7 @@ test("retention defaults to forever and requires confirmation before saving or d
   let dialog = page.getByRole("dialog", { name: "Enable automatic deletion?" })
   await expect.poll(() => page.evaluate(() => window.dictationTest.snapshot.settings.historyRetentionDays)).toBe(0)
   await dialog.getByRole("button", { name: "Cancel", exact: true }).click()
+  await expect(dialog).toHaveCount(0)
   await expect.poll(() => page.evaluate(() => window.dictationTest.snapshot.history.length)).toBe(1)
   await expect(retention).toHaveValue("30")
   await page.evaluate(() => { window.dictationTest.failSave = true })
@@ -755,6 +760,7 @@ test("retention defaults to forever and requires confirmation before saving or d
   dialog = page.getByRole("dialog", { name: "Enable automatic deletion?" })
   await dialog.getByRole("button", { name: "Save and delete older history", exact: true }).click()
   await expect(page.getByRole("alert").filter({ hasText: "Settings save failed" })).toBeVisible()
+  await expect(dialog).toHaveCount(0)
   await expect.poll(() => page.evaluate(() => window.dictationTest.snapshot.history.length)).toBe(1)
   await page.evaluate(() => { window.dictationTest.failSave = false })
   await page.getByRole("button", { name: "Save settings", exact: true }).click()
@@ -1037,4 +1043,62 @@ test("failed and cancelled generation retain the draft and suppress late results
   await expect.poll(() => page.evaluate(() => window.dictationTest.cancelledProcessing.length)).toBe(2)
   await page.evaluate(() => window.dictationTest.processing!.resolve("Another late reply."))
   await expect(page.getByLabel("Transcript", { exact: true })).toHaveValue("Unsaved draft for summary.")
+})
+
+
+for (const route of ["vocabulary", "settings"]) {
+  test(`${route} waits for the initial snapshot before allowing edits`, async ({ page }) => {
+    await page.addInitScript(() => {
+      const state = window.dictationTest
+      state.deferSnapshots = true
+      state.snapshot.vocabulary = [{ id: "existing", canonical: "PostgreSQL", aliases: ["postgres"], enabled: true }]
+      state.snapshot.settings.language = "de"
+    })
+    await page.goto(`/#/${route}`)
+    const control = route === "vocabulary" ? page.getByRole("button", { name: "Add term", exact: true }) : page.getByRole("checkbox", { name: /^Keep recordings/ })
+    await expect(control).toBeDisabled()
+    await expect.poll(() => page.evaluate(() => window.dictationTest.pendingSnapshots.length)).toBeGreaterThan(0)
+    await page.evaluate(() => { const state = window.dictationTest; state.deferSnapshots = false; state.pendingSnapshots.splice(0).forEach(resolve => resolve()) })
+    await expect(control).toBeEnabled()
+    if (route === "vocabulary") {
+      await expect(page.getByLabel("Preferred spelling").first()).toHaveValue("PostgreSQL")
+      await control.click()
+      await page.getByLabel("Preferred spelling").nth(1).fill("Benji")
+      await page.getByRole("button", { name: "Save vocabulary", exact: true }).click()
+      await expect.poll(() => page.evaluate(() => window.dictationTest.snapshot.vocabulary.map(v => v.canonical).join(","))).toBe("PostgreSQL,Benji")
+    } else {
+      await control.check()
+      await page.getByRole("button", { name: "Save settings", exact: true }).click()
+      await expect.poll(() => page.evaluate(() => window.dictationTest.snapshot.settings.saveAudio)).toBe(true)
+      await expect.poll(() => page.evaluate(() => window.dictationTest.snapshot.settings.language)).toBe("de")
+      await expect.poll(() => page.evaluate(() => window.dictationTest.snapshot.settings.setupComplete)).toBe(true)
+    }
+  })
+
+  test(`${route} stays protected after a failed initial snapshot and can retry`, async ({ page }) => {
+    await page.addInitScript(() => { window.dictationTest.failSnapshot = true })
+    await page.goto(`/#/${route}`)
+    const control = route === "vocabulary" ? page.getByRole("button", { name: "Add term", exact: true }) : page.getByRole("checkbox", { name: /^Keep recordings/ })
+    await expect(page.getByText("Snapshot unavailable", { exact: true })).toBeVisible()
+    await expect(control).toBeDisabled()
+    await page.evaluate(() => { window.dictationTest.failSnapshot = false })
+    await page.getByRole("button", { name: "Retry loading", exact: true }).click()
+    await expect(control).toBeEnabled()
+    await expect(page.getByRole("button", { name: "Retry loading", exact: true })).toHaveCount(0)
+  })
+}
+
+test("an active damaged model can be repaired without enabling removal", async ({ page }) => {
+  await page.addInitScript(() => {
+    const state = window.dictationTest
+    state.snapshot.settings.modelPath = "/broken"
+    state.snapshot.models = [{ id: "tiny", name: "Whisper Tiny", description: "", size: 100, diskBytes: 100, path: "/broken", installed: false, removable: true }]
+  })
+  await page.goto("/#/models")
+  await expect(page.getByRole("button", { name: "Remove Whisper Tiny", exact: true })).toBeDisabled()
+  await page.getByRole("button", { name: "Repair & use", exact: true }).click()
+  await expect.poll(() => page.evaluate(() => window.dictationTest.installedModelIDs)).toEqual(["tiny"])
+  await page.evaluate(() => { window.dictationTest.status("idle"); window.dictationTest.history() })
+  await expect(page.getByRole("button", { name: "Active", exact: true })).toBeDisabled()
+  await expect(page.getByRole("button", { name: "Remove Whisper Tiny", exact: true })).toBeDisabled()
 })

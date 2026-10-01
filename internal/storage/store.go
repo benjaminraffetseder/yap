@@ -74,6 +74,7 @@ func Open(dir string) (*Store, error) {
 	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS vocabulary (id INTEGER PRIMARY KEY CHECK(id=1), value TEXT NOT NULL);
 	CREATE TABLE IF NOT EXISTS recording_outputs (id TEXT PRIMARY KEY, transcript TEXT NOT NULL);
 	CREATE TABLE IF NOT EXISTS text_processing (id INTEGER PRIMARY KEY CHECK(id=1), value TEXT NOT NULL);
+	CREATE TABLE IF NOT EXISTS pending_audio_deletions (id TEXT PRIMARY KEY, original TEXT NOT NULL, staged TEXT NOT NULL);
 	CREATE TRIGGER IF NOT EXISTS delete_recording_output AFTER DELETE ON recordings BEGIN DELETE FROM recording_outputs WHERE id=OLD.id; END;`)
 	if err != nil {
 		db.Close()
@@ -176,34 +177,6 @@ func (s *Store) UpdateTranscript(id, text string) error {
 		return errors.New("this dictation no longer exists; close the editor and refresh History")
 	}
 	return nil
-}
-func (s *Store) Delete(id string) error {
-	v, err := s.Session(id)
-	if err != nil {
-		return err
-	}
-	// Only delete audio owned by the application, even if the database is modified.
-	if v.AudioPath != "" && filepath.Dir(v.AudioPath) == filepath.Join(s.Dir, "recordings") {
-		st, statErr := os.Lstat(v.AudioPath)
-		if statErr != nil && !os.IsNotExist(statErr) {
-			return statErr
-		}
-		if statErr == nil {
-			root, rootErr := filepath.EvalSymlinks(s.Dir)
-			dir, dirErr := filepath.EvalSymlinks(filepath.Join(s.Dir, "recordings"))
-			if rootErr != nil || dirErr != nil || dir != filepath.Join(root, "recordings") {
-				return errors.New("recording storage is redirected or unavailable; audio was not removed")
-			}
-			if !st.Mode().IsRegular() {
-				return errors.New("retained audio is not a regular file; remove it manually before deleting the dictation")
-			}
-			if err = os.Remove(v.AudioPath); err != nil && !os.IsNotExist(err) {
-				return err
-			}
-		}
-	}
-	_, err = s.db.Exec("DELETE FROM recordings WHERE id=?", id)
-	return err
 }
 func NewSession(id string, duration int64, text, model, language, path string) Session {
 	return Session{ID: id, CreatedAt: time.Now().UTC().Format(time.RFC3339Nano), DurationMS: duration, RawTranscript: text, FinalTranscript: text, SpeechModel: model, Language: language, AudioPath: path}

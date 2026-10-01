@@ -39,6 +39,7 @@ type Recorder struct {
 	file       *os.File
 	stop, done chan struct{}
 	count      uint32
+	next       int
 	err        error
 }
 
@@ -66,6 +67,7 @@ func (r *Recorder) Start(path, microphoneID string, level func(float64)) error {
 	}
 	r.file = f
 	r.count = 0
+	r.next = 0
 	r.err = nil
 	if err = Header(f, 0); err != nil {
 		f.Close()
@@ -104,10 +106,14 @@ func (r *Recorder) Start(path, microphoneID string, level func(float64)) error {
 	go r.pump(level)
 	return nil
 }
-func (r *Recorder) drain(requeue bool, level func(float64)) {
-	for i, h := range r.headers {
+func (r *Recorder) drain(requeue func(*waveHeader) error, level func(float64)) {
+	// Requeued buffers move to the end of the driver queue. Continue from the
+	// oldest outstanding buffer, including the partial buffers returned by reset.
+	for n := 0; n < len(r.headers); n++ {
+		i := r.next
+		h := r.headers[i]
 		if h.Flags&1 == 0 {
-			continue
+			break
 		}
 		data := r.buffers[i][:int(h.BytesRecorded)]
 		if r.err == nil {
@@ -116,8 +122,9 @@ func (r *Recorder) drain(requeue bool, level func(float64)) {
 			r.err = err
 			level(Level(data))
 		}
-		if requeue {
-			if err := mmCall(waveAdd, r.handle, uintptr(unsafe.Pointer(h)), unsafe.Sizeof(*h)); err != nil && r.err == nil {
+		r.next = (i + 1) % len(r.headers)
+		if requeue != nil {
+			if err := requeue(h); err != nil && r.err == nil {
 				r.err = err
 			}
 		}
@@ -130,7 +137,9 @@ func (r *Recorder) pump(level func(float64)) {
 	for {
 		select {
 		case <-ticker.C:
-			r.drain(true, level)
+			r.drain(func(h *waveHeader) error {
+				return mmCall(waveAdd, r.handle, uintptr(unsafe.Pointer(h)), unsafe.Sizeof(*h))
+			}, level)
 		case <-r.stop:
 			return
 		}
@@ -160,7 +169,7 @@ func (r *Recorder) Stop() (int64, error) {
 	if err := mmCall(waveReset, r.handle); err != nil && r.err == nil {
 		r.err = err
 	}
-	r.drain(false, func(float64) {})
+	r.drain(nil, func(float64) {})
 	r.cleanup()
 	err := finish(r.file, r.count)
 	if r.err != nil {
