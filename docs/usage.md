@@ -58,8 +58,8 @@ off by default. It doesn't need a text model or change older transcripts.
 Text processing is optional. It needs a running model server on your computer;
 Yap doesn't install the server or load a GGUF file itself.
 
-In **Prompts**, enter a local server URL and model ID, enable LLM processing, save, and choose
-**Test model**. Common local server URLs are:
+In **Prompts**, select a server and model, enable LLM processing, save, and choose
+**Test model**. The presets use these base URLs:
 
 | Server | URL |
 | --- | --- |
@@ -110,3 +110,9 @@ downloads, not custom files. **Repair & use** replaces a damaged model.
   changing the clipboard. Technical details can help with a bug report.
 - **Paste doesn't work:** check History and the clipboard. Yap won't switch
   focus back to another app to paste. On a Mac, check Accessibility permission.
+- **The interface fails to load:** try the recovery screen's retry or reload
+  action. Quit and reopen Yap if it reports a backend version mismatch. During
+  development, restart `wails dev`. Unsaved drafts may be lost on reload.
+
+Error reports stay in memory until you choose to copy them. Check what you're
+sharing before posting a report, and leave out private transcripts or recordings.

@@ -7,6 +7,7 @@ export type TextPrompt = { id: string; name: string; instruction: string }
 export type TextProcessing = { enabled: boolean; endpoint: string; model: string; autoPromptId: string; prompts: TextPrompt[] }
 export const defaultTextProcessing: TextProcessing = { enabled: false, endpoint: "http://127.0.0.1:11434/v1", model: "", autoPromptId: "", prompts: [{ id: "cleanup", name: "Cleanup", instruction: "Fix punctuation, capitalization, and obvious grammar mistakes. Remove filler words and accidental repetitions. Preserve meaning, names, technical terms, and the original language. Return only the cleaned text." }, { id: "summary", name: "Summary", instruction: "Summarize the transcript concisely in its original language. Preserve key facts, names, decisions, and action items. Do not invent details. Return only the summary." }] }
 export const isDesktop = typeof window !== "undefined" && "go" in window
+export const backendVersionMismatchMessage = "Yap's interface and backend are different versions. Quit and reopen Yap. In development, restart wails dev."
 export type Settings = { microphoneId: string; whisperPath: string; modelPath: string; language: string; shortcut: string; interaction: string; autoPaste: boolean; saveAudio: boolean; launchAtLogin: boolean; startInTray: boolean; cleanText: boolean; setupComplete: boolean; historyRetentionDays: number }
 export type VocabularyEntry = { id: string; canonical: string; aliases: string[]; enabled: boolean }
 export type DiagnosticResult = { phase: string; message: string; details: string; transcript: string; durationMs: number }
@@ -23,7 +24,7 @@ export const backend = {
     // A long-running dev backend can predate the frontend and generated bindings.
     // Keep the last safe snapshot instead of rendering incompatible page state.
     if (!value.textProcessing || !Array.isArray(value.textProcessing.prompts)) {
-      throw new Error("Yap's interface and backend are different versions. Quit and reopen Yap. In development, restart wails dev.")
+      throw new Error(backendVersionMismatchMessage)
     }
     return value
   }, start: StartRecording, stop: StopRecording, cancel: Cancel,

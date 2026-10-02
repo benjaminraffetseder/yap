@@ -31,6 +31,8 @@ declare global {
       pendingModelLists: { id: string; endpoint: string; resolve: (models: string[]) => void }[]
       cancelledProcessing: string[]
       exportedText: string
+      clipboard: string
+      failClipboard: boolean
       checks: DiagnosticCheck[]
       status: (phase: string) => void
       history: () => void
@@ -47,7 +49,7 @@ test.beforeEach(async ({ page }) => {
         status: { phase: "idle", message: "Ready", startedAt: 0, transcript: "", progress: 0, shortcutError: "", indicatorError: "", trayError: "", startupError: "", historyError: "" },
         models: [], history: [], ready: true, dataDir: "", floatingIndicator: true, launchAtLoginAvailable: true, startInTrayAvailable: true, vocabulary: [], microphoneTested: false, shortcutTested: false, diagnostic: { phase: "", message: "", details: "", transcript: "", durationMs: 0 },
       },
-      callbacks: {}, failSnapshot: false, legacySnapshot: false, installedModelIDs: [], deferSnapshots: false, pendingSnapshots: [], deferHistory: false, pendingHistory: [], failHistory: false, captureToken: "", captureEnded: 0, failCapture: false, failRestore: false, deferCapture: false, resolveCapture: null, occupiedShortcut: "", failSave: false, exportedText: "", checks: [{ id: "runtime", name: "Whisper runtime", ready: true, message: "Executable found" }, { id: "model", name: "Speech model", ready: true, message: "Model file readable" }, { id: "microphone", name: "Microphone", ready: true, message: "System default" }],
+      callbacks: {}, failSnapshot: false, legacySnapshot: false, installedModelIDs: [], deferSnapshots: false, pendingSnapshots: [], deferHistory: false, pendingHistory: [], failHistory: false, captureToken: "", captureEnded: 0, failCapture: false, failRestore: false, deferCapture: false, resolveCapture: null, occupiedShortcut: "", failSave: false, exportedText: "", clipboard: "", failClipboard: false, checks: [{ id: "runtime", name: "Whisper runtime", ready: true, message: "Executable found" }, { id: "model", name: "Speech model", ready: true, message: "Model file readable" }, { id: "microphone", name: "Microphone", ready: true, message: "System default" }],
       status(phase: string) {
         state.snapshot.status = { ...state.snapshot.status, phase, message: phase === "transcribing" ? "Transcribing…" : "Ready", startedAt: Date.now() }
         state.callbacks["dictation:status"](structuredClone(state.snapshot.status))
@@ -58,6 +60,7 @@ test.beforeEach(async ({ page }) => {
     window.dictationTest = state
     Object.assign(window, {
       runtime: {
+        ClipboardSetText: async (text: string) => { if (state.failClipboard) return false; state.clipboard = text; return true },
         EventsOnMultiple(topic: string, handler: (...args: unknown[]) => void) {
           state.callbacks[topic] = handler
           return () => { delete state.callbacks[topic] }
@@ -1162,6 +1165,50 @@ test("local models can be selected without changing saved preferences until Save
   await expect(page.getByLabel("Model identifier")).toHaveValue("llama:8b")
 })
 
+test("server presets discover LM Studio and preserve saved choices until Save", async ({ page }, testInfo) => {
+  await page.addInitScript(() => {
+    window.dictationTest.textModels = ["ollama-model"]
+    window.dictationTest.snapshot.textProcessing.model = "ollama-model"
+  })
+  await page.goto("/#/prompts")
+  const server = page.getByRole("combobox", { name: "Server", exact: true })
+  const model = page.getByRole("combobox", { name: "Model", exact: true })
+  await expect(server).toContainText("Ollama")
+  await expect(model).toContainText("ollama-model")
+  await page.getByLabel("Local server URL").fill("http://10.5.0.2:1234/api/v1/models")
+  await expect(server).toContainText("Custom")
+  await page.evaluate(() => { window.dictationTest.textModels = ["lm-studio-model"] })
+  await server.click()
+  await page.getByRole("option", { name: "LM Studio", exact: true }).click()
+  await expect(page.getByLabel("Local server URL")).toHaveValue("http://127.0.0.1:1234/v1")
+  await expect.poll(() => page.evaluate(() => window.dictationTest.modelListRequests.at(-1)?.endpoint)).toBe("http://127.0.0.1:1234/v1")
+  await expect(page.getByText(/This model is not listed/)).toBeVisible()
+  await expect(page.getByLabel("Model identifier")).toHaveValue("ollama-model")
+  await model.click()
+  await page.getByRole("option", { name: "lm-studio-model", exact: true }).click()
+  expect(await page.evaluate(() => window.dictationTest.snapshot.textProcessing.endpoint)).toBe("http://127.0.0.1:11434/v1")
+  await page.getByRole("button", { name: "Save prompts", exact: true }).click()
+  await expect.poll(() => page.evaluate(() => window.dictationTest.snapshot.textProcessing.endpoint)).toBe("http://127.0.0.1:1234/v1")
+  await expect.poll(() => page.evaluate(() => window.dictationTest.snapshot.textProcessing.model)).toBe("lm-studio-model")
+  await page.screenshot({ path: testInfo.outputPath("server-picker.png"), fullPage: true })
+  await server.click()
+  await page.getByRole("option", { name: "Ollama", exact: true }).click()
+  await expect(page.getByLabel("Local server URL")).toHaveValue("http://127.0.0.1:11434/v1")
+  await page.getByRole("button", { name: "Discard changes", exact: true }).click()
+  await expect(server).toContainText("LM Studio")
+  await expect(page.getByLabel("Local server URL")).toHaveValue("http://127.0.0.1:1234/v1")
+  await server.click()
+  await page.getByRole("option", { name: "Custom", exact: true }).click()
+  await expect(server).toContainText("Custom")
+  await page.getByLabel("Local server URL").fill("http://localhost:7777/v1")
+  await expect.poll(() => page.evaluate(() => window.dictationTest.modelListRequests.at(-1)?.endpoint)).toBe("http://localhost:7777/v1")
+  await server.click()
+  await page.getByRole("option", { name: "llama-server", exact: true }).click()
+  await expect(page.getByLabel("Local server URL")).toHaveValue("http://127.0.0.1:8080/v1")
+  await expect.poll(() => page.evaluate(() => window.dictationTest.modelListRequests.at(-1)?.endpoint)).toBe("http://127.0.0.1:8080/v1")
+  expect(await page.evaluate(() => window.dictationTest.snapshot.textProcessing.endpoint)).toBe("http://127.0.0.1:1234/v1")
+})
+
 test("discovery keeps manual IDs across failures, empty lists, missing models and retries", async ({ page }) => {
   await page.addInitScript(() => {
     const state = window.dictationTest
@@ -1194,7 +1241,8 @@ test("endpoint changes and navigation cancel discovery and ignore late model lis
   await page.addInitScript(() => { window.dictationTest.deferModelList = true })
   await page.goto("/#/prompts")
   await expect.poll(() => page.evaluate(() => window.dictationTest.pendingModelLists.length)).toBe(1)
-  await page.getByLabel("Local server URL").fill("http://127.0.0.1:1234/v1")
+  await page.getByRole("combobox", { name: "Server", exact: true }).click()
+  await page.getByRole("option", { name: "LM Studio", exact: true }).click()
   await expect.poll(() => page.evaluate(() => window.dictationTest.pendingModelLists.length)).toBe(2)
   await expect.poll(() => page.evaluate(() => window.dictationTest.cancelledProcessing.includes(window.dictationTest.pendingModelLists[0].id))).toBe(true)
   await page.evaluate(() => { window.dictationTest.pendingModelLists[1].resolve(["current-server-model"]); window.dictationTest.pendingModelLists[0].resolve(["stale-server-model"]) })
@@ -1221,4 +1269,109 @@ test("older backends show discovery restart guidance without hiding Prompts", as
   await expect(page.getByRole("heading", { name: "Prompts", exact: true })).toBeVisible()
   await page.getByLabel("Model identifier").fill("manual-model")
   expect(errors).toEqual([])
+})
+
+test("render crashes show copyable recovery and retry preserves saved data", async ({ page }, testInfo) => {
+  await page.addInitScript(() => {
+    const state = window.dictationTest
+    state.snapshot.settings.language = "de"
+    state.snapshot.settings.cleanText = true
+    state.snapshot.history = [{ id: "kept", createdAt: "2026-10-07T10:00:00Z", durationMs: 2000, rawTranscript: "PRIVATE_HISTORY_CONTENT", finalTranscript: "Saved correction", speechModel: "base", language: "de", audioPath: "" }]
+    state.snapshot.vocabulary = [{ id: "term", canonical: "PRIVATE_VOCABULARY", aliases: [], enabled: true }]
+    Reflect.set(state.snapshot.settings, "shortcut", null)
+  })
+  await page.goto("/")
+  await expect(page.getByRole("heading", { name: /couldn.t display the interface/ })).toBeVisible()
+  await expect(page.getByRole("button", { name: "Retry interface", exact: true })).toBeFocused()
+  await page.getByText("Technical details", { exact: true }).click()
+  const details = page.getByLabel("Diagnostic details")
+  await expect(details).toHaveValue(/Interface rendering/)
+  await expect(details).toHaveValue(/split/)
+  await page.getByRole("button", { name: "Copy diagnostics", exact: true }).click()
+  await expect(page.getByRole("status")).toHaveText("Diagnostics copied.")
+  const report = await page.evaluate(() => window.dictationTest.clipboard)
+  expect(report).toContain("HomePage")
+  expect(report).not.toContain("PRIVATE_HISTORY_CONTENT")
+  expect(report).not.toContain("PRIVATE_VOCABULARY")
+  await page.screenshot({ path: testInfo.outputPath("interface-recovery.png"), fullPage: true })
+  await page.evaluate(() => { window.dictationTest.snapshot.settings.shortcut = "Ctrl+Alt+Space" })
+  await page.getByRole("button", { name: "Retry interface", exact: true }).click()
+  await expect(page.getByRole("heading", { name: "Dictate", exact: true })).toBeVisible()
+  await expect(page.getByText("Saved correction", { exact: true })).toBeVisible()
+  await page.getByRole("link", { name: "Settings", exact: true }).click()
+  await expect(page.getByLabel("Spoken language")).toHaveValue("de")
+  await expect(page.getByRole("checkbox", { name: /^Light cleanup/ })).toBeChecked()
+  await expect.poll(() => page.evaluate(() => window.dictationTest.snapshot.history[0].rawTranscript)).toBe("PRIVATE_HISTORY_CONTENT")
+})
+
+test("persistent crashes stay recoverable and window reload keeps persisted preferences", async ({ page }) => {
+  await page.addInitScript(() => {
+    const state = window.dictationTest
+    const saved = sessionStorage.getItem("saved-recovery-fixture")
+    if (saved) state.snapshot = JSON.parse(saved)
+    else {
+      state.snapshot.settings.language = "de"
+      state.snapshot.settings.saveAudio = true
+      state.snapshot.history = [{ id: "kept", createdAt: "2026-10-07T10:00:00Z", durationMs: 1000, rawTranscript: "Persisted history", finalTranscript: "Persisted history", speechModel: "base", language: "de", audioPath: "" }]
+      sessionStorage.setItem("saved-recovery-fixture", JSON.stringify(state.snapshot))
+      localStorage.setItem("desktop-theme", "dark")
+      localStorage.setItem("yap-sidebar-collapsed", "true")
+      Reflect.set(state.snapshot.settings, "shortcut", null)
+    }
+  })
+  await page.goto("/")
+  await expect(page.getByRole("heading", { name: /couldn.t display the interface/ })).toBeVisible()
+  await page.getByRole("button", { name: "Retry interface", exact: true }).click()
+  await expect(page.getByRole("heading", { name: /couldn.t display the interface/ })).toBeVisible()
+  await Promise.all([page.waitForEvent("load"), page.getByRole("button", { name: "Reload window", exact: true }).click()])
+  await expect(page.getByRole("heading", { name: "Dictate", exact: true })).toBeVisible()
+  await expect(page.getByText("Persisted history", { exact: true })).toBeVisible()
+  await expect(page.locator("html")).toHaveClass(/dark/)
+  await expect(page.getByRole("button", { name: "Expand sidebar", exact: true })).toBeVisible()
+  await page.getByRole("link", { name: "Settings", exact: true }).click()
+  await expect(page.getByLabel("Spoken language")).toHaveValue("de")
+  await expect(page.getByRole("checkbox", { name: /^Keep recordings/ })).toBeChecked()
+})
+
+test("provider failures recover outside app context and clipboard failure supports manual copying", async ({ page }) => {
+  await page.addInitScript(() => {
+    window.dictationTest.failClipboard = true
+    window.matchMedia = () => { throw new Error("Theme provider failed") }
+  })
+  await page.goto("/")
+  await expect(page.getByRole("heading", { name: /couldn.t display the interface/ })).toBeVisible()
+  await page.getByText("Technical details", { exact: true }).click()
+  await expect(page.getByLabel("Diagnostic details")).toHaveValue(/Theme provider failed/)
+  await page.getByRole("button", { name: "Copy diagnostics", exact: true }).click()
+  await expect(page.getByRole("alert").filter({ hasText: "Could not copy" })).toBeVisible()
+  const details = page.getByLabel("Diagnostic details")
+  await expect(details).toBeFocused()
+  expect(await details.evaluate((node: HTMLTextAreaElement) => node.selectionEnd - node.selectionStart)).toBeGreaterThan(0)
+  await page.evaluate(() => { window.dictationTest.failClipboard = false })
+  await page.getByRole("button", { name: "Copy diagnostics", exact: true }).click()
+  await expect(page.getByRole("status")).toHaveText("Diagnostics copied.")
+  await expect(page.getByRole("alert").filter({ hasText: "Could not copy" })).toHaveCount(0)
+})
+
+test("startup recovery provides diagnostics and retry without overwriting saved configuration", async ({ page }) => {
+  await page.addInitScript(() => {
+    const state = window.dictationTest
+    state.failSnapshot = true
+    state.snapshot.settings.language = "de"
+    state.snapshot.textProcessing.model = "saved-model"
+    state.snapshot.textProcessing.enabled = true
+  })
+  await page.goto("/#/prompts")
+  await expect(page.getByRole("region", { name: "Connection recovery" })).toBeVisible()
+  await expect(page.getByRole("checkbox", { name: "Enable LLM processing" })).toBeDisabled()
+  await page.getByText("Technical details", { exact: true }).click()
+  await page.getByRole("button", { name: "Copy diagnostics", exact: true }).click()
+  await expect.poll(() => page.evaluate(() => window.dictationTest.clipboard)).toContain("Backend connection")
+  await expect.poll(() => page.evaluate(() => window.dictationTest.clipboard)).toContain("Snapshot unavailable")
+  await page.evaluate(() => { window.dictationTest.failSnapshot = false })
+  await page.getByRole("button", { name: "Retry loading", exact: true }).click()
+  await expect(page.getByRole("region", { name: "Connection recovery" })).toHaveCount(0)
+  await expect(page.getByRole("checkbox", { name: "Enable LLM processing" })).toBeChecked()
+  await expect(page.getByLabel("Model identifier")).toHaveValue("saved-model")
+  await expect.poll(() => page.evaluate(() => window.dictationTest.snapshot.settings.language)).toBe("de")
 })

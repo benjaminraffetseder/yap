@@ -2,11 +2,12 @@ import { useState, type CSSProperties } from "react"
 import { AudioLines, BookOpen, HardDriveDownload, History, Mic, PanelLeftClose, PanelLeftOpen, Settings2, Sparkles, X } from "lucide-react"
 import { NavLink, Outlet } from "react-router"
 import { cn } from "@/lib/utils"
-import { isDesktop } from "@/lib/backend"
+import { backendVersionMismatchMessage, isDesktop } from "@/lib/backend"
 import { Button } from "@/components/ui/button"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { useDictation } from "@/components/dictation-provider"
 import { RecordingStatus } from "@/components/recording-status"
+import { RecoveryActions } from "@/components/recovery-actions"
 
 const navigation = [
   { to: "/", label: "Dictate", icon: Mic },
@@ -27,6 +28,7 @@ export function AppLayout() {
   const { error, clearError, loading, run, refresh } = useDictation()
   const [collapsed, setCollapsed] = useState(readCollapsed)
   const toggleLabel = collapsed ? "Expand sidebar" : "Collapse sidebar"
+  const connectionFailure = !!error && (loading || error === backendVersionMismatchMessage)
 
   function toggleSidebar() {
     const next = !collapsed
@@ -68,11 +70,14 @@ export function AppLayout() {
         <main id="main-content" className="min-w-0 flex-1">
           <div className="mx-auto max-w-5xl px-6 py-8 lg:px-10">
             {!isDesktop && <div className="mb-6 rounded-lg border bg-muted/50 px-4 py-3 text-sm text-muted-foreground">Browser preview. Native features require the desktop app.</div>}
-            {error && <div role="alert" className="mb-6 flex items-start gap-3 rounded-lg border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive">
+            {connectionFailure ? <section aria-label="Connection recovery" className="mb-6 space-y-4 rounded-lg border border-destructive/30 bg-card p-4">
+              <div className="space-y-2"><h2 className="text-sm font-semibold">Couldn’t connect to Yap</h2><p role="alert" className="text-sm text-destructive">{error}</p></div>
+              <RecoveryActions source="Backend connection" details={error} retryLabel="Retry loading" onRetry={() => void run(refresh, false)} />
+            </section> : error && <div role="alert" className="mb-6 flex items-start gap-3 rounded-lg border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive">
               <span className="flex-1 whitespace-pre-wrap">{error}</span>
               <Button variant="ghost" size="icon-sm" onClick={clearError} aria-label="Dismiss error"><X aria-hidden="true" /></Button>
             </div>}
-            {isDesktop && loading && <div role="status" className="mt-6 flex items-center gap-3 text-sm text-muted-foreground"><span>Loading app…</span><Button variant="outline" size="sm" onClick={() => void run(refresh, false)}>Retry loading</Button></div>}
+            {isDesktop && loading && !connectionFailure && <div role="status" className="mt-6 flex items-center gap-3 text-sm text-muted-foreground"><span>Loading app…</span><Button variant="outline" size="sm" onClick={() => void run(refresh, false)}>Retry loading</Button></div>}
             <Outlet />
           </div>
         </main>
