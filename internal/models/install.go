@@ -1,7 +1,6 @@
 package models
 
 import (
-	"archive/zip"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -11,7 +10,6 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"strings"
 	"time"
 )
 
@@ -142,10 +140,16 @@ func installModel(ctx context.Context, dir string, model Model, url string, repo
 	return dest, Download(ctx, url, dest, model.SHA, model.Size, report)
 }
 func RuntimePath(dir string) string {
+	return runtimePathIn(filepath.Join(dir, "runtime", "whisper-1.9.2"))
+}
+
+func runtimePathIn(root string) string {
 	var found string
-	filepath.WalkDir(filepath.Join(dir, "runtime", "whisper-1.9.2"), func(path string, entry os.DirEntry, err error) error {
-		if err == nil && !entry.IsDir() && entry.Name() == "whisper-cli.exe" {
-			found = path
+	filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
+		if err == nil && entry.Type().IsRegular() && entry.Name() == "whisper-cli.exe" {
+			if info, err := entry.Info(); err == nil && info.Size() > 0 {
+				found = path
+			}
 		}
 		return nil
 	})
@@ -169,59 +173,5 @@ func InstallRuntime(ctx context.Context, dir string, report func(int64, int64)) 
 		return "", err
 	}
 	defer os.Remove(archive)
-	r, err := zip.OpenReader(archive)
-	if err != nil {
-		return "", err
-	}
-	defer r.Close()
-	temp, err := os.MkdirTemp(filepath.Join(dir, "runtime"), ".extract-")
-	if err != nil {
-		return "", err
-	}
-	defer os.RemoveAll(temp)
-	for _, file := range r.File {
-		name := filepath.FromSlash(file.Name)
-		if !filepath.IsLocal(name) || strings.Contains(name, ":") {
-			return "", fmt.Errorf("invalid archive path")
-		}
-		dest := filepath.Join(temp, name)
-		if file.FileInfo().IsDir() {
-			if err = os.MkdirAll(dest, 0700); err != nil {
-				return "", err
-			}
-			continue
-		}
-		if err = os.MkdirAll(filepath.Dir(dest), 0700); err != nil {
-			return "", err
-		}
-		src, err := file.Open()
-		if err != nil {
-			return "", err
-		}
-		out, err := os.OpenFile(dest, os.O_CREATE|os.O_WRONLY|os.O_EXCL, 0600)
-		if err != nil {
-			src.Close()
-			return "", err
-		}
-		_, err = io.Copy(out, src)
-		src.Close()
-		closeErr := out.Close()
-		if err != nil {
-			return "", err
-		}
-		if closeErr != nil {
-			return "", closeErr
-		}
-		if err = ctx.Err(); err != nil {
-			return "", err
-		}
-	}
-	if err = os.Rename(temp, filepath.Join(dir, "runtime", "whisper-1.9.2")); err != nil {
-		return "", err
-	}
-	path := RuntimePath(dir)
-	if path == "" {
-		return "", fmt.Errorf("Whisper executable missing from archive")
-	}
-	return path, nil
+	return installRuntimeArchive(ctx, dir, archive)
 }

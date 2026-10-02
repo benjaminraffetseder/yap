@@ -68,7 +68,9 @@ In **Prompts**, enter a local server URL and model ID, enable LLM processing, sa
 | llama-server | `http://127.0.0.1:8080/v1` |
 
 Use a loopback URL ending in `/v1`, without `/api` or `/models`. Remote endpoints
-and API keys are not supported. Enter the ID of a loaded model in your server.
+and API keys aren't supported. A listed model may still need loading in your
+server; **Test model** checks whether it can generate text. You can enter a model
+ID manually if the server doesn't list models.
 
 Cleanup and Summary prompts are included. Edit them or add your own; there can
 be up to 30 prompts, each with up to 8,000 characters of instructions. The text

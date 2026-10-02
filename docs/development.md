@@ -40,6 +40,9 @@ Keep platform-specific code in the existing `_windows`, `_darwin`, and `_other`
 files with matching build tags. Bound Go structs use camelCase JSON fields.
 Wails generates `frontend/wailsjs`; don't edit it by hand.
 
+The local hotkey dependency has a small event-ordering patch. Keep the `replace`
+in `go.mod`; [the patch notes](../third_party/hotkey/README.md) explain why.
+
 To add a UI component, run `npm run ui:add -- <component>` from `frontend`.
 Use the existing Base UI components and theme rather than introducing another
 component library.

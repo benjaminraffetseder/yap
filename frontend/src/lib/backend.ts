@@ -1,7 +1,7 @@
 import { AddVocabularyTerm, Cancel, CompleteSetup, CopyText, DeleteSession, ExportSession, GetAudio, GetDiagnosticChecks, GetMicrophones, GetSnapshot, InstallModel, RestartSetup, SaveSettings, SaveTranscript, SaveVocabulary, SelectFile, StartDiagnosticTest, StartMicrophoneTest, StartRecording, StopDiagnosticTest, StopMicrophoneTest, StopRecording } from "@wails/go/main/App"
 import { DeleteSessions, ExportSessions, GetHistory, RemoveModel } from "@wails/go/main/App"
 import { BeginShortcutCapture, EndShortcutCapture } from "@wails/go/main/App"
-import { SaveTextProcessing, ProcessText, CancelTextProcessing, TestTextModel } from "@wails/go/main/App"
+import { SaveTextProcessing, ProcessText, CancelTextProcessing, TestTextModel, ListTextModels } from "@wails/go/main/App"
 import { text } from "@wails/go/models"
 export type TextPrompt = { id: string; name: string; instruction: string }
 export type TextProcessing = { enabled: boolean; endpoint: string; model: string; autoPromptId: string; prompts: TextPrompt[] }
@@ -39,6 +39,13 @@ export const backend = {
   beginShortcutCapture: BeginShortcutCapture, endShortcutCapture: EndShortcutCapture,
   textProcessing: async (config: TextProcessing): Promise<TextProcessing> => SaveTextProcessing(text.Config.createFrom(config)),
   processText: ProcessText, cancelTextProcessing: CancelTextProcessing, testTextModel: TestTextModel,
+  listTextModels: async (id: string, endpoint: string): Promise<string[]> => {
+    const api = (window as unknown as { go?: { main?: { App?: Record<string, unknown> } } }).go?.main?.App
+    if (typeof api?.ListTextModels !== "function") {
+      throw new Error("Model discovery needs the current backend. Quit and reopen Yap; in development, restart wails dev.")
+    }
+    return ListTextModels(id, endpoint)
+  },
 }
 export function isBusy(phase: string) { return ["recording", "transcribing", "text-processing", "downloading", "mic-test", "diagnostic-recording", "diagnostic-transcribing"].includes(phase) }
 export function message(cause: unknown) { return cause instanceof Error ? cause.message : String(cause) }

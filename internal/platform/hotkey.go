@@ -38,31 +38,51 @@ func Register(value string, down, up func()) (*Shortcut, error) {
 		return nil, err
 	}
 	s := &Shortcut{key: h, stop: make(chan struct{})}
-	go func() {
-		held := false
-		for {
-			select {
-			case _, ok := <-h.Keydown():
-				if !ok {
-					return
-				}
-				if !held {
-					held = true
-					down()
-				}
-			case _, ok := <-h.Keyup():
-				if !ok {
-					return
-				}
-				if held {
-					held = false
-					up()
-				}
-			case <-s.stop:
+	go dispatchShortcutEvents(h.Keydown(), h.Keyup(), s.stop, down, up)
+	return s, nil
+}
+
+func dispatchShortcutEvents(presses, releases <-chan hotkey.Event, stop <-chan struct{}, down, up func()) {
+	held, next := false, uint64(1)
+	pending := map[uint64]bool{}
+	for {
+		select {
+		case event, ok := <-presses:
+			if !ok {
 				return
 			}
+			pending[event.Sequence] = true
+		case event, ok := <-releases:
+			if !ok {
+				return
+			}
+			pending[event.Sequence] = false
+		case <-stop:
+			return
 		}
-	}()
-	return s, nil
+		// The two dependency queues may arrive in either order. Native source
+		// numbers let us replay complete taps and ignore only actual repeats.
+		for {
+			pressed, ok := pending[next]
+			if !ok {
+				break
+			}
+			select {
+			case <-stop:
+				return
+			default:
+			}
+			delete(pending, next)
+			next++
+			if pressed != held {
+				held = pressed
+				if pressed {
+					down()
+				} else {
+					up()
+				}
+			}
+		}
+	}
 }
 func (s *Shortcut) Close() { close(s.stop); s.key.Unregister() }

@@ -63,6 +63,7 @@ type App struct {
 	textJobID                        string
 	cancelledTextRequests            map[string]time.Time
 	textCancel                       context.CancelFunc
+	modelDiscoveryCancels            map[string]context.CancelFunc
 	diagnostic                       DiagnosticResult
 	vocabulary                       []vocabulary.Entry
 	recordVocabulary                 []vocabulary.Entry
@@ -308,6 +309,9 @@ func (a *App) shutdown(ctx context.Context) {
 		}
 		if a.textCancel != nil {
 			a.textCancel()
+		}
+		for _, cancel := range a.modelDiscoveryCancels {
+			cancel()
 		}
 		if a.status.Phase == "recording" || a.status.Phase == "mic-test" || a.status.Phase == "diagnostic-recording" {
 			a.recorder.Stop()

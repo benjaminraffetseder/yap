@@ -18,6 +18,13 @@ type Engine interface {
 }
 type Local struct{}
 
+func localHTTPClient(headerTimeout time.Duration) (*http.Client, func()) {
+	// Neither environment proxies nor redirects may move a loopback request.
+	transport := &http.Transport{DialContext: (&net.Dialer{Timeout: 5 * time.Second}).DialContext, ResponseHeaderTimeout: headerTimeout}
+	client := &http.Client{Transport: transport, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	return client, transport.CloseIdleConnections
+}
+
 func (Local) Process(ctx context.Context, config Config, prompt Prompt, input string) (string, error) {
 	if err := ValidateText(input); err != nil {
 		return "", err
@@ -50,9 +57,8 @@ func (Local) Process(ctx context.Context, config Config, prompt Prompt, input st
 	req.Header.Set("Content-Type", "application/json")
 	// No environment proxy and no redirects, including redirects to other local
 	// services. Each request owns its transport; shutdown cancels its context.
-	transport := &http.Transport{DialContext: (&net.Dialer{Timeout: 5 * time.Second}).DialContext, ResponseHeaderTimeout: 5 * time.Minute}
-	defer transport.CloseIdleConnections()
-	client := &http.Client{Transport: transport, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	client, closeClient := localHTTPClient(5 * time.Minute)
+	defer closeClient()
 	resp, err := client.Do(req)
 	if err != nil {
 		if ctx.Err() != nil {

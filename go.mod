@@ -2,6 +2,9 @@ module yap
 
 go 1.26.0
 
+// Preserve native hotkey edge ordering across the dependency's two queues.
+replace golang.design/x/hotkey => ./third_party/hotkey
+
 require (
 	github.com/google/uuid v1.6.0
 	github.com/wailsapp/wails/v2 v2.16.0

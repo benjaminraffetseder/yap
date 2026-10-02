@@ -24,6 +24,11 @@ declare global {
       occupiedShortcut: string
       processing: { id: string; input: string; prompt: string; resolve: (result: string) => void; reject: (error: Error) => void } | null
       failProcessing: boolean
+      textModels: string[]
+      modelListError: string
+      deferModelList: boolean
+      modelListRequests: { id: string; endpoint: string }[]
+      pendingModelLists: { id: string; endpoint: string; resolve: (models: string[]) => void }[]
       cancelledProcessing: string[]
       exportedText: string
       checks: DiagnosticCheck[]
@@ -47,7 +52,7 @@ test.beforeEach(async ({ page }) => {
         state.snapshot.status = { ...state.snapshot.status, phase, message: phase === "transcribing" ? "Transcribing…" : "Ready", startedAt: Date.now() }
         state.callbacks["dictation:status"](structuredClone(state.snapshot.status))
       },
-      processing: null, failProcessing: false, cancelledProcessing: [],
+      processing: null, failProcessing: false, cancelledProcessing: [], textModels: [], modelListError: "", deferModelList: false, modelListRequests: [], pendingModelLists: [],
       history() { state.callbacks["dictation:history"]() },
     }
     window.dictationTest = state
@@ -127,6 +132,12 @@ test.beforeEach(async ({ page }) => {
           state.snapshot.textProcessing = structuredClone(config)
           state.callbacks["setup:changed"]()
           return structuredClone(config)
+        },
+        ListTextModels: async (id: string, endpoint: string) => {
+          state.modelListRequests.push({ id, endpoint })
+          if (state.modelListError) throw new Error(state.modelListError)
+          if (state.deferModelList) return new Promise<string[]>(resolve => { state.pendingModelLists.push({ id, endpoint, resolve }) })
+          return structuredClone(state.textModels)
         },
         ProcessText: async (id: string, input: string, prompt: string) => {
           if (state.failProcessing) throw new Error("Model unavailable")
@@ -1122,5 +1133,92 @@ test("an outdated backend keeps the interface visible and recovers after restart
   await page.evaluate(() => { window.dictationTest.legacySnapshot = true; window.dictationTest.history() })
   await expect(page.getByRole("alert").filter({ hasText: "different versions" })).toBeVisible()
   await expect(page.getByRole("heading", { name: "Prompts", exact: true })).toBeVisible()
+  expect(errors).toEqual([])
+})
+
+
+test("local models can be selected without changing saved preferences until Save", async ({ page }, testInfo) => {
+  await page.addInitScript(() => { window.dictationTest.textModels = ["gemma", "llama:8b"] })
+  await page.goto("/#/prompts")
+  await expect(page.getByText("Server responded. 2 models available.", { exact: true })).toBeVisible()
+  await page.getByLabel("Name", { exact: true }).fill("My cleanup")
+  const picker = page.getByRole("combobox", { name: "Model", exact: true })
+  await picker.click()
+  await page.getByRole("option", { name: "llama:8b", exact: true }).click()
+  await expect(picker).toContainText("llama:8b")
+  await expect(page.getByLabel("Model identifier")).toHaveCount(0)
+  await expect.poll(() => page.evaluate(() => window.dictationTest.snapshot.textProcessing.model)).toBe("")
+  await page.getByRole("checkbox", { name: "Enable LLM processing" }).check()
+  await expect(page.getByRole("button", { name: "Test model", exact: true })).toBeDisabled()
+  await page.getByRole("button", { name: "Refresh models", exact: true }).click()
+  await expect(page.getByLabel("Name", { exact: true })).toHaveValue("My cleanup")
+  await page.getByRole("button", { name: "Save prompts", exact: true }).click()
+  await expect.poll(() => page.evaluate(() => window.dictationTest.snapshot.textProcessing.model)).toBe("llama:8b")
+  await page.getByRole("button", { name: "Test model", exact: true }).click()
+  await expect(page.getByText("Model responded successfully.", { exact: true })).toBeVisible()
+  await page.screenshot({ path: testInfo.outputPath("model-picker.png"), fullPage: true })
+  await picker.click()
+  await page.getByRole("option", { name: "Enter model ID manually", exact: true }).click()
+  await expect(page.getByLabel("Model identifier")).toHaveValue("llama:8b")
+})
+
+test("discovery keeps manual IDs across failures, empty lists, missing models and retries", async ({ page }) => {
+  await page.addInitScript(() => {
+    const state = window.dictationTest
+    state.snapshot.textProcessing.model = "old-model"
+    state.modelListError = "Could not reach server. Start it and refresh models."
+  })
+  await page.goto("/#/prompts")
+  await expect(page.getByRole("alert").filter({ hasText: "Start it and refresh models" })).toBeVisible()
+  await expect(page.getByLabel("Model identifier")).toHaveValue("old-model")
+  await page.getByLabel("Model identifier").fill("custom-model")
+  await page.evaluate(() => { window.dictationTest.modelListError = "" })
+  await page.getByRole("button", { name: "Refresh models", exact: true }).click()
+  await expect(page.getByText(/No models listed/)).toBeVisible()
+  await expect(page.getByLabel("Model identifier")).toHaveValue("custom-model")
+  await page.evaluate(() => { window.dictationTest.textModels = ["available-model"] })
+  await page.getByRole("button", { name: "Refresh models", exact: true }).click()
+  await expect(page.getByText(/This model is not listed/)).toBeVisible()
+  await expect(page.getByLabel("Model identifier")).toHaveValue("custom-model")
+  await page.evaluate(() => { window.dictationTest.modelListError = "Server stopped. Start it and refresh models." })
+  await page.getByRole("button", { name: "Refresh models", exact: true }).click()
+  await expect(page.getByRole("alert").filter({ hasText: "Server stopped" })).toBeVisible()
+  await page.getByRole("combobox", { name: "Model", exact: true }).click()
+  await expect(page.getByRole("option", { name: "available-model", exact: true })).toHaveCount(0)
+  await page.keyboard.press("Escape")
+  await expect(page.getByLabel("Model identifier")).toHaveValue("custom-model")
+  await expect.poll(() => page.evaluate(() => window.dictationTest.snapshot.textProcessing.model)).toBe("old-model")
+})
+
+test("endpoint changes and navigation cancel discovery and ignore late model lists", async ({ page }) => {
+  await page.addInitScript(() => { window.dictationTest.deferModelList = true })
+  await page.goto("/#/prompts")
+  await expect.poll(() => page.evaluate(() => window.dictationTest.pendingModelLists.length)).toBe(1)
+  await page.getByLabel("Local server URL").fill("http://127.0.0.1:1234/v1")
+  await expect.poll(() => page.evaluate(() => window.dictationTest.pendingModelLists.length)).toBe(2)
+  await expect.poll(() => page.evaluate(() => window.dictationTest.cancelledProcessing.includes(window.dictationTest.pendingModelLists[0].id))).toBe(true)
+  await page.evaluate(() => { window.dictationTest.pendingModelLists[1].resolve(["current-server-model"]); window.dictationTest.pendingModelLists[0].resolve(["stale-server-model"]) })
+  await expect(page.getByText("Server responded. 1 model available.", { exact: true })).toBeVisible()
+  await page.getByRole("combobox", { name: "Model", exact: true }).click()
+  await expect(page.getByRole("option", { name: "stale-server-model", exact: true })).toHaveCount(0)
+  await page.getByRole("option", { name: "current-server-model", exact: true }).click()
+  await expect(page.getByRole("combobox", { name: "Model", exact: true })).toContainText("current-server-model")
+  await page.getByRole("button", { name: "Refresh models", exact: true }).click()
+  await expect.poll(() => page.evaluate(() => window.dictationTest.pendingModelLists.length)).toBe(3)
+  await page.getByRole("link", { name: "Settings", exact: true }).click()
+  await expect.poll(() => page.evaluate(() => window.dictationTest.cancelledProcessing.includes(window.dictationTest.pendingModelLists[2].id))).toBe(true)
+  await page.evaluate(() => { window.dictationTest.pendingModelLists[2].resolve(["late-after-navigation"]) })
+  await expect(page.getByRole("heading", { name: "Settings", exact: true })).toBeVisible()
+  await expect.poll(() => page.evaluate(() => window.dictationTest.snapshot.textProcessing.model)).toBe("")
+})
+
+test("older backends show discovery restart guidance without hiding Prompts", async ({ page }) => {
+  const errors: string[] = []
+  page.on("pageerror", error => errors.push(error.message))
+  await page.addInitScript(() => { Reflect.deleteProperty(Reflect.get(window, "go").main.App, "ListTextModels") })
+  await page.goto("/#/prompts")
+  await expect(page.getByRole("alert").filter({ hasText: "restart wails dev" })).toBeVisible()
+  await expect(page.getByRole("heading", { name: "Prompts", exact: true })).toBeVisible()
+  await page.getByLabel("Model identifier").fill("manual-model")
   expect(errors).toEqual([])
 })

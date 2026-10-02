@@ -40,6 +40,49 @@ func (a *App) TestTextModel(requestID string) (string, error) {
 	return a.processTextRequest(requestID, "Connection test.", "", true)
 }
 
+// Use the draft endpoint without saving preferences or changing dictation state.
+func (a *App) ListTextModels(requestID, endpoint string) ([]string, error) {
+	a.mu.Lock()
+	if err := a.available(); err != nil {
+		a.mu.Unlock()
+		return nil, err
+	}
+	if requestID == "" || len(requestID) > 80 || strings.ContainsAny(requestID, "\r\n\x00") {
+		a.mu.Unlock()
+		return nil, errors.New("invalid discovery request")
+	}
+	a.pruneTextCancellationsLocked()
+	if _, cancelled := a.cancelledTextRequests[requestID]; cancelled {
+		a.mu.Unlock()
+		return nil, context.Canceled
+	}
+	if len(a.modelDiscoveryCancels) >= 4 || a.modelDiscoveryCancels[requestID] != nil || a.textJobID == requestID {
+		a.mu.Unlock()
+		return nil, errors.New("model discovery is already running; try again shortly")
+	}
+	parent := a.ctx
+	if parent == nil {
+		parent = context.Background()
+	}
+	ctx, cancel := context.WithCancel(parent)
+	if a.modelDiscoveryCancels == nil {
+		a.modelDiscoveryCancels = map[string]context.CancelFunc{}
+	}
+	a.modelDiscoveryCancels[requestID] = cancel
+	a.wg.Add(1)
+	a.mu.Unlock()
+	defer a.wg.Done()
+	defer cancel()
+	models, err := textmodel.ListModels(ctx, endpoint)
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	delete(a.modelDiscoveryCancels, requestID)
+	if a.closing || ctx.Err() != nil {
+		return nil, context.Canceled
+	}
+	return models, err
+}
+
 func (a *App) processTextRequest(requestID, input, promptID string, test bool) (string, error) {
 	a.mu.Lock()
 	if err := a.available(); err != nil {
@@ -137,6 +180,9 @@ func (a *App) CancelTextProcessing(requestID string) {
 	a.cancelledTextRequests[requestID] = time.Now()
 	if a.textJobID == requestID && a.textCancel != nil {
 		a.textCancel()
+	}
+	if cancel := a.modelDiscoveryCancels[requestID]; cancel != nil {
+		cancel()
 	}
 }
 
