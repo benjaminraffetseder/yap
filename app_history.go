@@ -21,6 +21,22 @@ func (a *App) GetHistory(query string, page int) (storage.HistoryPage, error) {
 	return a.store.SearchHistory(query, page)
 }
 
+func (a *App) GetSession(id string) (*storage.Session, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if err := a.available(); err != nil {
+		return nil, err
+	}
+	entry, err := a.store.Session(id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &entry, nil
+}
+
 func (a *App) DeleteSessions(ids []string) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()

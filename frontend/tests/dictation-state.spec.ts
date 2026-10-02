@@ -13,6 +13,9 @@ declare global {
       pendingSnapshots: (() => void)[]
       deferHistory: boolean
       pendingHistory: { query: string; resolve: () => void }[]
+      failSession: boolean
+      deferSessions: boolean
+      pendingSessions: { id: string; resolve: () => void }[]
       failHistory: boolean
       failSave: boolean
       captureToken: string
@@ -49,7 +52,7 @@ test.beforeEach(async ({ page }) => {
         status: { phase: "idle", message: "Ready", startedAt: 0, transcript: "", progress: 0, shortcutError: "", indicatorError: "", trayError: "", startupError: "", historyError: "" },
         models: [], history: [], ready: true, dataDir: "", floatingIndicator: true, launchAtLoginAvailable: true, startInTrayAvailable: true, vocabulary: [], microphoneTested: false, shortcutTested: false, diagnostic: { phase: "", message: "", details: "", transcript: "", durationMs: 0 },
       },
-      callbacks: {}, failSnapshot: false, legacySnapshot: false, installedModelIDs: [], deferSnapshots: false, pendingSnapshots: [], deferHistory: false, pendingHistory: [], failHistory: false, captureToken: "", captureEnded: 0, failCapture: false, failRestore: false, deferCapture: false, resolveCapture: null, occupiedShortcut: "", failSave: false, exportedText: "", clipboard: "", failClipboard: false, checks: [{ id: "runtime", name: "Whisper runtime", ready: true, message: "Executable found" }, { id: "model", name: "Speech model", ready: true, message: "Model file readable" }, { id: "microphone", name: "Microphone", ready: true, message: "System default" }],
+      callbacks: {}, failSession: false, deferSessions: false, pendingSessions: [], failSnapshot: false, legacySnapshot: false, installedModelIDs: [], deferSnapshots: false, pendingSnapshots: [], deferHistory: false, pendingHistory: [], failHistory: false, captureToken: "", captureEnded: 0, failCapture: false, failRestore: false, deferCapture: false, resolveCapture: null, occupiedShortcut: "", failSave: false, exportedText: "", clipboard: "", failClipboard: false, checks: [{ id: "runtime", name: "Whisper runtime", ready: true, message: "Executable found" }, { id: "model", name: "Speech model", ready: true, message: "Model file readable" }, { id: "microphone", name: "Microphone", ready: true, message: "System default" }],
       status(phase: string) {
         state.snapshot.status = { ...state.snapshot.status, phase, message: phase === "transcribing" ? "Transcribing…" : "Ready", startedAt: Date.now() }
         state.callbacks["dictation:status"](structuredClone(state.snapshot.status))
@@ -80,6 +83,12 @@ test.beforeEach(async ({ page }) => {
           const result = { entries: structuredClone(entries.slice(page * 50, (page + 1) * 50)), total: entries.length, page, pageSize: 50 }
           if (state.deferHistory) return new Promise(resolve => { state.pendingHistory.push({ query, resolve: () => resolve(result) }) })
           return result
+        },
+        GetSession: async (id: string) => {
+          if (state.failSession) throw new Error("Dictation load failed")
+          const value = structuredClone(state.snapshot.history.find(entry => entry.id === id) ?? null)
+          if (state.deferSessions) return new Promise(resolve => { state.pendingSessions.push({ id, resolve: () => resolve(value) }) })
+          return value
         },
         DeleteSessions: async (ids: string[]) => {
           if (state.failSave) throw new Error("History deletion failed")
@@ -406,11 +415,139 @@ test("history uses processed text for copy and exposes searchable originals", as
   })
   await page.goto("/#/history")
   await page.getByLabel("Search transcripts").fill("um,")
-  await page.getByRole("button", { name: /Send PostgreSQL/ }).click()
-  await page.getByText("Original transcript", { exact: true }).click()
+  await page.getByRole("link", { name: /Send PostgreSQL/ }).click()
+  await expect(page.getByRole("region", { name: "Original transcription", exact: true })).toBeVisible()
   await expect(page.getByText("um, send postgres", { exact: true })).toBeVisible()
-  await page.getByRole("button", { name: "Copy", exact: true }).click()
+  await expect(page.getByRole("region", { name: "Result", exact: true })).toContainText("Send PostgreSQL.")
+  await page.getByRole("button", { name: "Copy original", exact: true }).click()
+  await expect.poll(() => page.evaluate(() => window.dictationTest.snapshot.status.transcript)).toBe("um, send postgres")
+  await page.getByRole("button", { name: "Copy result", exact: true }).click()
   await expect.poll(() => page.evaluate(() => window.dictationTest.snapshot.status.transcript)).toBe("Send PostgreSQL.")
+})
+
+test("History opens a dictation page with comparison panels that stack on narrow windows", async ({ page }, testInfo) => {
+  await page.addInitScript(() => {
+    localStorage.setItem("desktop-theme", "dark")
+    window.dictationTest.snapshot.history = [
+      { id: "summary", createdAt: "2026-10-07T11:17:07", durationMs: 18000, rawTranscript: "um yesterday the Paris based AI lab released a new model. We should test it with our dictation workflow and compare the results with our current model.", finalTranscript: "A Paris-based AI lab released a new model. Test it with the dictation workflow and compare it with the current model.", speechModel: "ggml-small.bin", language: "en", audioPath: "" },
+      { id: "plain", createdAt: "2026-10-07T10:00:00", durationMs: 5000, rawTranscript: "An unchanged transcription.", finalTranscript: "An unchanged transcription.", speechModel: "base", language: "en", audioPath: "" },
+    ]
+  })
+  await page.setViewportSize({ width: 1280, height: 900 })
+  await page.goto("/#/history")
+  const cards = page.getByRole("article")
+  await expect(cards.first()).toContainText("Result")
+  await expect(cards.nth(1)).toContainText("Transcription")
+  await page.getByRole("link", { name: /A Paris-based AI lab/ }).click()
+  await expect(page).toHaveURL(/#\/history\/summary$/)
+  await expect(page.getByRole("heading", { name: "Dictation", exact: true })).toBeFocused()
+  const result = page.getByRole("region", { name: "Result", exact: true })
+  const original = page.getByRole("region", { name: "Original transcription", exact: true })
+  await expect(result).toBeVisible()
+  await expect(original).toBeVisible()
+  let left = (await result.boundingBox())!
+  let right = (await original.boundingBox())!
+  expect(right.x).toBeGreaterThan(left.x + left.width)
+  await page.screenshot({ path: testInfo.outputPath("history-comparison-desktop.png"), fullPage: true, animations: "disabled" })
+  await page.setViewportSize({ width: 600, height: 900 })
+  left = (await result.boundingBox())!
+  right = (await original.boundingBox())!
+  expect(right.y).toBeGreaterThan(left.y + left.height)
+  expect(right.x).toBe(left.x)
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+  await page.screenshot({ path: testInfo.outputPath("history-comparison-narrow.png"), fullPage: true, animations: "disabled" })
+  await page.setViewportSize({ width: 1280, height: 900 })
+  await page.getByRole("button", { name: "Edit transcript", exact: true }).click()
+  const dialog = page.getByRole("dialog", { name: "Edit transcript", exact: true })
+  await expect(dialog.getByRole("region", { name: "Original transcription", exact: true })).toContainText("um yesterday")
+  await expect(dialog.getByRole("textbox", { name: "Editable text", exact: true })).toBeFocused()
+  await page.screenshot({ path: testInfo.outputPath("editor-comparison.png"), animations: "disabled" })
+  await dialog.getByRole("button", { name: "Cancel", exact: true }).click()
+  await page.getByRole("link", { name: "Back to History", exact: true }).click()
+  await page.getByRole("link", { name: /An unchanged transcription/ }).click()
+  await expect(page.getByRole("region", { name: "Result", exact: true })).toHaveCount(0)
+  await expect(page.getByRole("region", { name: "Original transcription", exact: true })).toHaveCount(0)
+  await expect(page.getByRole("region", { name: "Transcription", exact: true })).toBeVisible()
+  await page.getByRole("button", { name: "Copy transcription", exact: true }).click()
+  await expect.poll(() => page.evaluate(() => window.dictationTest.snapshot.status.transcript)).toBe("An unchanged transcription.")
+})
+
+test("dictation pages preserve the History search and page when returning and deleting", async ({ page }) => {
+  await page.addInitScript(() => {
+    window.dictationTest.snapshot.history = Array.from({ length: 52 }, (_, i) => ({ id: `row-${i}`, createdAt: "2026-10-07", durationMs: 1000, rawTranscript: `Original ${i}`, finalTranscript: `Dictation ${i}`, speechModel: "base", language: "en", audioPath: "" }))
+  })
+  await page.goto("/#/history?q=Original&page=1")
+  await expect(page.getByText("Page 2 of 2", { exact: true })).toBeVisible()
+  await page.getByRole("link", { name: /Dictation 50\b/ }).click()
+  await expect(page).toHaveURL(/#\/history\/row-50\?q=Original&page=1$/)
+  await expect(page.getByRole("region", { name: "Result", exact: true })).toContainText("Dictation 50")
+  await expect(page.getByRole("navigation", { name: "Main navigation" }).getByRole("link", { name: "History", exact: true })).toHaveAttribute("aria-current", "page")
+  await page.getByRole("link", { name: "Back to History", exact: true }).click()
+  await expect(page.getByLabel("Search transcripts")).toHaveValue("Original")
+  await expect(page.getByText("Page 2 of 2", { exact: true })).toBeVisible()
+  await page.getByRole("link", { name: /Dictation 50\b/ }).click()
+  await page.getByRole("button", { name: "Delete", exact: true }).click()
+  const dialog = page.getByRole("dialog", { name: "Delete this dictation?", exact: true })
+  await page.evaluate(() => { window.dictationTest.failSave = true })
+  await dialog.getByRole("button", { name: "Delete dictation", exact: true }).click()
+  await expect(dialog.getByRole("alert")).toHaveText("History deletion failed")
+  await page.evaluate(() => { window.dictationTest.failSave = false })
+  await dialog.getByRole("button", { name: "Delete dictation", exact: true }).click()
+  await expect(page).toHaveURL(/#\/history\?q=Original&page=1$/)
+  await expect(page.getByLabel("Search transcripts")).toHaveValue("Original")
+  await expect(page.getByText("Page 2 of 2", { exact: true })).toBeVisible()
+  await expect(page.getByRole("link", { name: /Dictation 51\b/ })).toBeVisible()
+  await expect(page.getByRole("link", { name: /Dictation 50\b/ })).toHaveCount(0)
+})
+
+test("direct dictation pages load older entries outside the snapshot, retry errors and handle missing entries", async ({ page }) => {
+  await page.addInitScript(() => {
+    const state = window.dictationTest
+    state.snapshot.history = Array.from({ length: 501 }, (_, i) => ({ id: `row-${i}`, createdAt: "2026-10-07", durationMs: 1000, rawTranscript: `Original ${i}`, finalTranscript: `Saved ${i}`, speechModel: "base", language: "en", audioPath: "" }))
+    Reflect.set(Reflect.get(window, "go").main.App, "GetSnapshot", async () => ({ ...structuredClone(state.snapshot), history: structuredClone(state.snapshot.history.slice(0, 500)) }))
+  })
+  await page.goto("/#/history/row-500")
+  await expect(page.getByRole("region", { name: "Result", exact: true })).toContainText("Saved 500")
+  await page.reload()
+  await expect(page.getByRole("region", { name: "Original transcription", exact: true })).toContainText("Original 500")
+  await page.evaluate(() => { window.dictationTest.failSession = true; window.dictationTest.history() })
+  await expect(page.getByRole("alert").filter({ hasText: "Dictation load failed" })).toBeVisible()
+  await expect(page.getByRole("button", { name: "Copy result", exact: true })).toBeDisabled()
+  await page.evaluate(() => { window.dictationTest.failSession = false })
+  await page.getByRole("button", { name: "Retry", exact: true }).click()
+  await expect(page.getByRole("button", { name: "Copy result", exact: true })).toBeEnabled()
+  await page.evaluate(() => { window.location.hash = "/history/missing" })
+  await expect(page.getByRole("heading", { name: "Dictation not found", exact: true })).toBeVisible()
+  await expect(page.getByRole("button", { name: "Copy result", exact: true })).toHaveCount(0)
+  await page.getByRole("link", { name: "Back to History", exact: true }).click()
+  await expect(page.getByRole("heading", { name: "History", exact: true })).toBeVisible()
+})
+
+test("dictation pages ignore a late reply from another entry", async ({ page }) => {
+  await page.addInitScript(() => {
+    const state = window.dictationTest
+    state.deferSessions = true
+    state.snapshot.history = ["one", "two"].map(id => ({ id, createdAt: "2026-10-07", durationMs: 1000, rawTranscript: `Original ${id}`, finalTranscript: `Result ${id}`, speechModel: "base", language: "en", audioPath: "" }))
+  })
+  await page.goto("/#/history/one")
+  await expect.poll(() => page.evaluate(() => window.dictationTest.pendingSessions.some(request => request.id === "one"))).toBe(true)
+  await page.evaluate(() => { window.location.hash = "/history/two" })
+  await expect.poll(() => page.evaluate(() => window.dictationTest.pendingSessions.some(request => request.id === "two"))).toBe(true)
+  // StrictMode may start and discard an extra request when mounting the second page.
+  await page.evaluate(() => { window.dictationTest.pendingSessions.filter(request => request.id === "two").forEach(request => request.resolve()) })
+  await expect(page.getByRole("region", { name: "Result", exact: true })).toContainText("Result two")
+  await page.evaluate(() => { window.dictationTest.pendingSessions.filter(request => request.id === "one").forEach(request => request.resolve()) })
+  await settle(page)
+  await expect(page.getByRole("region", { name: "Result", exact: true })).toContainText("Result two")
+  await expect(page.getByText("Result one", { exact: true })).toHaveCount(0)
+})
+
+test("dictation pages show restart guidance for an outdated backend", async ({ page }) => {
+  await page.addInitScript(() => { Reflect.deleteProperty(Reflect.get(window, "go").main.App, "GetSession") })
+  await page.goto("/#/history/one")
+  await expect(page.getByRole("alert").filter({ hasText: "restart wails dev" })).toBeVisible()
+  await expect(page.getByRole("heading", { name: "Dictation", exact: true })).toBeVisible()
+  await expect(page.getByRole("link", { name: "Back to History", exact: true })).toBeVisible()
 })
 
 test("microphone test remains stoppable after navigating away from setup", async ({ page }) => {
@@ -499,10 +636,10 @@ test("test capture and transcription remain cancellable across navigation", asyn
 test("saved transcript edits drive display, search, copy and export while keeping originals", async ({ page }) => {
   await page.addInitScript(() => { window.dictationTest.snapshot.history = [{ id: "edit", createdAt: "2026-10-07", durationMs: 1000, rawTranscript: "um, send postgres", finalTranscript: "Send PostgreSQL.", speechModel: "base", language: "en", audioPath: "" }] })
   await page.goto("/#/history")
-  await page.getByRole("button", { name: /Send PostgreSQL/ }).click()
+  await page.getByRole("link", { name: /Send PostgreSQL/ }).click()
   await page.getByRole("button", { name: "Edit transcript", exact: true }).click()
   const dialog = page.getByRole("dialog", { name: "Edit transcript" })
-  const input = dialog.getByLabel("Transcript", { exact: true })
+  const input = dialog.getByRole("textbox", { name: "Editable text", exact: true })
   await expect(input).toHaveValue("Send PostgreSQL.")
   await expect(input).toBeFocused()
   await expect(dialog.getByRole("button", { name: "Save transcript" })).toBeDisabled()
@@ -510,14 +647,16 @@ test("saved transcript edits drive display, search, copy and export while keepin
   await dialog.getByRole("button", { name: "Save transcript" }).click()
   await expect(dialog).toHaveCount(0)
   await expect(page.getByText("Send PostgreSQL to Benji.\nThanks!", { exact: true })).toBeVisible()
-  await page.getByRole("button", { name: "Copy", exact: true }).click()
+  await page.getByRole("button", { name: "Copy result", exact: true }).click()
   await expect.poll(() => page.evaluate(() => window.dictationTest.snapshot.status.transcript)).toBe("Send PostgreSQL to Benji.\nThanks!")
-  await page.getByRole("button", { name: "Export text", exact: true }).click()
+  await page.getByRole("button", { name: "Export result", exact: true }).click()
   await expect.poll(() => page.evaluate(() => window.dictationTest.exportedText)).toBe("Send PostgreSQL to Benji.\nThanks!")
+  await page.getByRole("link", { name: "Back to History", exact: true }).click()
   await page.getByLabel("Search transcripts").fill("Benji")
   await expect(page.getByText("Send PostgreSQL to Benji.\nThanks!", { exact: true })).toBeVisible()
   await page.getByLabel("Search transcripts").fill("um,")
-  await page.getByText("Original transcript", { exact: true }).click()
+  await page.getByRole("link", { name: /Send PostgreSQL to Benji/ }).click()
+  await expect(page.getByRole("region", { name: "Original transcription", exact: true })).toBeVisible()
   await expect(page.getByText("um, send postgres", { exact: true })).toBeVisible()
   await expect.poll(() => page.evaluate(() => window.dictationTest.snapshot.history[0].rawTranscript)).toBe("um, send postgres")
 })
@@ -525,10 +664,10 @@ test("saved transcript edits drive display, search, copy and export while keepin
 test("editor retains its draft across refresh and failed saves, then saves with keyboard shortcut", async ({ page }) => {
   await page.addInitScript(() => { window.dictationTest.snapshot.history = [{ id: "edit", createdAt: "2026-10-07", durationMs: 1000, rawTranscript: "Original plain transcript.", finalTranscript: "Original plain transcript.", speechModel: "base", language: "en", audioPath: "" }] })
   await page.goto("/#/history")
-  await page.getByRole("button", { name: /Original plain transcript/ }).click()
+  await page.getByRole("link", { name: /Original plain transcript/ }).click()
   await page.getByRole("button", { name: "Edit transcript", exact: true }).click()
   const dialog = page.getByRole("dialog", { name: "Edit transcript" })
-  const input = dialog.getByLabel("Transcript", { exact: true })
+  const input = dialog.getByRole("textbox", { name: "Editable text", exact: true })
   await input.fill("My correction.")
   await page.evaluate(() => { window.dictationTest.failSave = true; window.dictationTest.history() })
   await settle(page)
@@ -546,11 +685,11 @@ test("editor retains its draft across refresh and failed saves, then saves with 
 test("cancel and Escape discard edits, empty edits cannot be saved, and outside clicks keep the draft", async ({ page }) => {
   await page.addInitScript(() => { window.dictationTest.snapshot.history = [{ id: "edit", createdAt: "2026-10-07", durationMs: 1000, rawTranscript: "Original plain transcript.", finalTranscript: "Original plain transcript.", speechModel: "base", language: "en", audioPath: "" }] })
   await page.goto("/#/history")
-  await page.getByRole("button", { name: /Original plain transcript/ }).click()
+  await page.getByRole("link", { name: /Original plain transcript/ }).click()
   const edit = page.getByRole("button", { name: "Edit transcript", exact: true })
   await edit.click()
   const dialog = page.getByRole("dialog", { name: "Edit transcript" })
-  const input = dialog.getByLabel("Transcript", { exact: true })
+  const input = dialog.getByRole("textbox", { name: "Editable text", exact: true })
   await input.fill(" \n ")
   await expect(dialog.getByRole("button", { name: "Save transcript" })).toBeDisabled()
   await input.fill("Discard this.")
@@ -572,25 +711,25 @@ test("cancel and Escape discard edits, empty edits cannot be saved, and outside 
 test("deleted recordings fail safely without losing the editor draft", async ({ page }) => {
   await page.addInitScript(() => { window.dictationTest.snapshot.history = [{ id: "edit", createdAt: "2026-10-07", durationMs: 1000, rawTranscript: "Original plain transcript.", finalTranscript: "Original plain transcript.", speechModel: "base", language: "en", audioPath: "" }] })
   await page.goto("/#/history")
-  await page.getByRole("button", { name: /Original plain transcript/ }).click()
+  await page.getByRole("link", { name: /Original plain transcript/ }).click()
   await page.getByRole("button", { name: "Edit transcript", exact: true }).click()
   const dialog = page.getByRole("dialog", { name: "Edit transcript" })
-  await dialog.getByLabel("Transcript", { exact: true }).fill("Keep my draft.")
+  await dialog.getByRole("textbox", { name: "Editable text", exact: true }).fill("Keep my draft.")
   await page.evaluate(() => { window.dictationTest.snapshot.history = []; window.dictationTest.history() })
   await settle(page)
   await dialog.getByRole("button", { name: "Save transcript" }).click()
   await expect(dialog.getByRole("alert")).toHaveText("This dictation no longer exists")
-  await expect(dialog.getByLabel("Transcript", { exact: true })).toHaveValue("Keep my draft.")
+  await expect(dialog.getByRole("textbox", { name: "Editable text", exact: true })).toHaveValue("Keep my draft.")
   await dialog.getByRole("button", { name: "Cancel", exact: true }).click()
-  await expect(page.getByRole("heading", { name: "No dictations yet", exact: true })).toBeVisible()
+  await expect(page.getByRole("heading", { name: "Dictation not found", exact: true })).toBeVisible()
 })
 
 async function openCorrectionEditor(page: Page) {
   await page.addInitScript(() => { window.dictationTest.snapshot.history = [{ id: "correction", createdAt: "2026-10-07", durationMs: 1000, rawTranscript: "postgres connection ready.", finalTranscript: "postgres connection ready.", speechModel: "base", language: "en", audioPath: "" }] })
   await page.goto("/#/history")
-  await page.getByRole("button", { name: /postgres connection ready/ }).click()
+  await page.getByRole("link", { name: /postgres connection ready/ }).click()
   await page.getByRole("button", { name: "Edit transcript", exact: true }).click()
-  const input = page.getByLabel("Transcript", { exact: true })
+  const input = page.getByRole("textbox", { name: "Editable text", exact: true })
   await input.fill("PostgreSQL connection ready.")
   return input
 }
@@ -725,7 +864,7 @@ test("History pages select and export only the current page, and recover after d
   await expect(dialog).toHaveCount(0)
   await expect.poll(() => page.evaluate(() => window.dictationTest.snapshot.history.length)).toBe(50)
   await expect(page.getByText("50 dictations", { exact: true })).toBeVisible()
-  await expect(page.getByRole("button", { name: /Dictation 0\b/ })).toBeVisible()
+  await expect(page.getByRole("link", { name: /Dictation 0\b/ })).toBeVisible()
   await expect(page.getByRole("navigation", { name: "History pages" })).toHaveCount(0)
 })
 
@@ -737,7 +876,7 @@ test("History searches all entries beyond 500 and ignores older search replies",
   await expect(page.getByText("501 dictations", { exact: true })).toBeVisible()
   const search = page.getByLabel("Search transcripts")
   await search.fill("ÄLTERER")
-  await expect(page.getByRole("button", { name: /beta correction/ })).toBeVisible()
+  await expect(page.getByRole("link", { name: /beta correction/ })).toBeVisible()
   await page.evaluate(() => { window.dictationTest.deferHistory = true })
   await search.fill("alpha")
   await expect.poll(() => page.evaluate(() => window.dictationTest.pendingHistory.length)).toBe(1)
@@ -747,8 +886,8 @@ test("History searches all entries beyond 500 and ignores older search replies",
   await expect(page.getByText("1 dictation", { exact: true })).toBeVisible()
   await page.evaluate(() => { window.dictationTest.pendingHistory[0].resolve() })
   await settle(page)
-  await expect(page.getByRole("button", { name: /beta correction/ })).toBeVisible()
-  await expect(page.getByRole("button", { name: /^alpha/ })).toHaveCount(0)
+  await expect(page.getByRole("link", { name: /beta correction/ })).toBeVisible()
+  await expect(page.getByRole("link", { name: /^alpha/ })).toHaveCount(0)
   await page.evaluate(() => { window.dictationTest.deferHistory = false; window.dictationTest.failHistory = true })
   await search.fill("missing")
   await expect(page.getByRole("alert").filter({ hasText: "History load failed" })).toBeVisible()
@@ -1014,9 +1153,9 @@ async function openPromptEditor(page: Page) {
     state.snapshot.history = [{ id: "prompt", createdAt: "2026-10-07", durationMs: 1000, rawTranscript: "Original speech.", finalTranscript: "Saved correction.", speechModel: "base", language: "en", audioPath: "" }]
   })
   await page.goto("/#/history")
-  await page.getByRole("button", { name: /Saved correction/ }).click()
+  await page.getByRole("link", { name: /Saved correction/ }).click()
   await page.getByRole("button", { name: "Edit transcript", exact: true }).click()
-  await page.getByLabel("Transcript", { exact: true }).fill("Unsaved draft for summary.")
+  await page.getByRole("textbox", { name: "Editable text", exact: true }).fill("Unsaved draft for summary.")
   await page.getByRole("button", { name: "Process text", exact: true }).click()
 }
 
@@ -1027,11 +1166,14 @@ test("prompt previews use the draft and change History only after apply and save
   await expect.poll(() => page.evaluate(() => window.dictationTest.processing?.input)).toBe("Unsaved draft for summary.")
   await expect.poll(() => page.evaluate(() => window.dictationTest.processing?.prompt)).toBe("summary")
   await page.evaluate(() => window.dictationTest.processing!.resolve("Concise summary."))
-  await expect(page.getByLabel("Preview", { exact: true })).toHaveValue("Concise summary.")
-  await page.screenshot({ path: testInfo.outputPath("preview.png") })
+  await expect(page.getByRole("textbox", { name: "Generated result", exact: true })).toHaveValue("Concise summary.")
+  await expect(page.getByRole("textbox", { name: "Generated result", exact: true })).toHaveAttribute("readonly", "")
+  await expect(page.getByRole("region", { name: "Input text", exact: true })).toContainText("Unsaved draft for summary.")
+  await expect(page.getByRole("region", { name: "Generated result", exact: true })).toContainText("Summary")
+  await page.screenshot({ path: testInfo.outputPath("preview.png"), animations: "disabled" })
   await expect.poll(() => page.evaluate(() => window.dictationTest.snapshot.history[0].finalTranscript)).toBe("Saved correction.")
   await page.getByRole("button", { name: "Use result", exact: true }).click()
-  await expect(page.getByLabel("Transcript", { exact: true })).toHaveValue("Concise summary.")
+  await expect(page.getByRole("textbox", { name: "Editable text", exact: true })).toHaveValue("Concise summary.")
   await expect.poll(() => page.evaluate(() => window.dictationTest.snapshot.status.transcript)).toBe("")
   await page.getByRole("button", { name: "Save transcript", exact: true }).click()
   await expect.poll(() => page.evaluate(() => window.dictationTest.snapshot.history[0].finalTranscript)).toBe("Concise summary.")
@@ -1051,14 +1193,14 @@ test("failed and cancelled generation retain the draft and suppress late results
   await expect(page.getByText("Processing cancelled", { exact: true })).toBeVisible()
   await expect(page.getByRole("button", { name: "Use result", exact: true })).toBeDisabled()
   await page.getByRole("button", { name: "Back to transcript", exact: true }).click()
-  await expect(page.getByLabel("Transcript", { exact: true })).toHaveValue("Unsaved draft for summary.")
+  await expect(page.getByRole("textbox", { name: "Editable text", exact: true })).toHaveValue("Unsaved draft for summary.")
   await page.getByRole("button", { name: "Process text", exact: true }).click()
   await page.getByRole("button", { name: "Generate preview", exact: true }).click()
   await page.keyboard.press("Escape")
-  await expect(page.getByLabel("Transcript", { exact: true })).toHaveValue("Unsaved draft for summary.")
+  await expect(page.getByRole("textbox", { name: "Editable text", exact: true })).toHaveValue("Unsaved draft for summary.")
   await expect.poll(() => page.evaluate(() => window.dictationTest.cancelledProcessing.length)).toBe(2)
   await page.evaluate(() => window.dictationTest.processing!.resolve("Another late reply."))
-  await expect(page.getByLabel("Transcript", { exact: true })).toHaveValue("Unsaved draft for summary.")
+  await expect(page.getByRole("textbox", { name: "Editable text", exact: true })).toHaveValue("Unsaved draft for summary.")
 })
 
 

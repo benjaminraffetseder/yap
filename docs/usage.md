@@ -36,7 +36,8 @@ app, open it from its new location and save the startup setting again.
 
 ## History and vocabulary
 
-History lets you search original and edited text, and copy or export it. Select entries to export or delete several at once. Deleting an entry
+History lets you search original and edited text, open a dictation, and copy or
+export it. Select entries to export or delete several at once. Deleting an entry
 also deletes its retained audio.
 
 **Edit transcript** changes the saved result while keeping the original

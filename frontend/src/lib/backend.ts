@@ -1,5 +1,5 @@
 import { AddVocabularyTerm, Cancel, CompleteSetup, CopyText, DeleteSession, ExportSession, GetAudio, GetDiagnosticChecks, GetMicrophones, GetSnapshot, InstallModel, RestartSetup, SaveSettings, SaveTranscript, SaveVocabulary, SelectFile, StartDiagnosticTest, StartMicrophoneTest, StartRecording, StopDiagnosticTest, StopMicrophoneTest, StopRecording } from "@wails/go/main/App"
-import { DeleteSessions, ExportSessions, GetHistory, RemoveModel } from "@wails/go/main/App"
+import { DeleteSessions, ExportSessions, GetHistory, GetSession, RemoveModel } from "@wails/go/main/App"
 import { BeginShortcutCapture, EndShortcutCapture } from "@wails/go/main/App"
 import { SaveTextProcessing, ProcessText, CancelTextProcessing, TestTextModel, ListTextModels } from "@wails/go/main/App"
 import { text } from "@wails/go/models"
@@ -36,6 +36,11 @@ export const backend = {
   saveTranscript: SaveTranscript,
   addVocabularyTerm: AddVocabularyTerm,
   history: async (query: string, page: number): Promise<HistoryPageResult> => GetHistory(query, page),
+  session: async (id: string): Promise<Session | null> => {
+    const api = (window as unknown as { go?: { main?: { App?: Record<string, unknown> } } }).go?.main?.App
+    if (typeof api?.GetSession !== "function") throw new Error("Dictation pages need the current backend. Quit and reopen Yap; in development, restart wails dev.")
+    return GetSession(id)
+  },
   removeSessions: DeleteSessions, exportSessions: ExportSessions, removeModel: RemoveModel,
   beginShortcutCapture: BeginShortcutCapture, endShortcutCapture: EndShortcutCapture,
   textProcessing: async (config: TextProcessing): Promise<TextProcessing> => SaveTextProcessing(text.Config.createFrom(config)),

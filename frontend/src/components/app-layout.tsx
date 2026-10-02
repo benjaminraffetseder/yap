@@ -55,7 +55,7 @@ export function AppLayout() {
           <nav aria-label="Main navigation" className="flex flex-1 flex-col gap-1">
             {navigation.map(({ to, label, icon: Icon }) => (
               <Tooltip key={`${to}-${collapsed}`} disabled={!collapsed}>
-                <TooltipTrigger render={<NavLink to={to} end />} className={cn(
+                <TooltipTrigger render={<NavLink to={to} end={to !== "/history"} />} className={cn(
                     "flex h-11 shrink-0 items-center gap-3 rounded-lg px-3 text-sm text-muted-foreground outline-none transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring aria-[current=page]:bg-primary/10 aria-[current=page]:font-medium aria-[current=page]:text-primary",
                     to === "/settings" && "mt-auto",
                   )}>
