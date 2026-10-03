@@ -30,7 +30,7 @@ export function SetupPage() {
     {step === 1 && <section className="settings-section space-y-5">
       <h2 className="font-semibold">Test your microphone</h2>
       <div className="max-w-xl space-y-2"><Label htmlFor="setup-microphone">Microphone</Label><div className="flex gap-2">
-        <Select items={options} value={mic} disabled={busy || pending} onValueChange={value => { if (value !== null) setMic(value) }}><SelectTrigger id="setup-microphone" className="w-full"><SelectValue /></SelectTrigger><SelectContent alignItemWithTrigger={false}>{options.map(option => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}</SelectContent></Select>
+        <Select items={options} value={mic} disabled={busy || pending} onValueChange={value => { if (value !== null) setMic(value) }}><SelectTrigger id="setup-microphone" className="data-[size=default]:h-9 w-full"><SelectValue /></SelectTrigger><SelectContent alignItemWithTrigger={false}>{options.map(option => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}</SelectContent></Select>
         <Button variant="outline" size="icon" aria-label="Refresh microphones" disabled={busy || pending} onClick={() => void action(async () => setMicrophones(await backend.microphones()))}><RefreshCw className="size-4" /></Button>
       </div></div>
       <p className="text-sm text-muted-foreground">Speak for a few seconds. Test audio is deleted and never transcribed.</p>

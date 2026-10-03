@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import { FolderOpen, Monitor, Moon, RefreshCw, Save, Sun } from "lucide-react"
 import { Link, useNavigate } from "react-router"
 import { Button } from "@/components/ui/button"
+import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
@@ -12,6 +13,9 @@ import { backend, isBusy, isDesktop, message, type Microphone } from "@/lib/back
 import { DiagnosticsPanel } from "@/components/diagnostics-panel"
 import { ShortcutInput } from "@/components/shortcut-input"
 const themes = [{ value: "light", label: "Light", icon: Sun }, { value: "dark", label: "Dark", icon: Moon }, { value: "system", label: "System", icon: Monitor }] as const
+const recordingModes = [{ value: "hold", label: "Hold to talk" }, { value: "toggle", label: "Press to start / press to stop" }]
+const languages = [{ value: "auto", label: "Detect automatically" }, { value: "en", label: "English" }, { value: "de", label: "German" }, { value: "fr", label: "French" }, { value: "es", label: "Spanish" }, { value: "it", label: "Italian" }, { value: "pt", label: "Portuguese" }, { value: "nl", label: "Dutch" }, { value: "pl", label: "Polish" }, { value: "ja", label: "Japanese" }, { value: "zh", label: "Chinese" }, { value: "uk", label: "Ukrainian" }]
+const retentionOptions = [{ value: "0", label: "Keep forever" }, { value: "7", label: "7 days" }, { value: "30", label: "30 days" }, { value: "90", label: "90 days" }]
 export function SettingsPage() {
   const navigate = useNavigate()
   const { theme, setTheme } = useTheme()
@@ -26,6 +30,7 @@ export function SettingsPage() {
   const [microphonesLoaded, setMicrophonesLoaded] = useState(false)
   const microphoneRequest = useRef(0)
   const busy = isBusy(snapshot.status.phase)
+  const controlsDisabled = !isDesktop || busy || saving || loading
   const dirty = JSON.stringify(settings) !== JSON.stringify(snapshot.settings)
   const selectedMicrophoneMissing = microphonesLoaded && !microphoneError && !!settings.microphoneId && !microphones.some(mic => mic.id === settings.microphoneId)
   const microphoneOptions = [
@@ -70,11 +75,11 @@ export function SettingsPage() {
   return <div className="space-y-7">
     <header><h1 className="text-2xl font-semibold tracking-tight">Settings</h1></header>
     <DiagnosticsPanel disabled={dirty || saving || loading} />
-    <fieldset disabled={!isDesktop || busy || saving || loading} className="space-y-6 disabled:opacity-60">
-      <section className="settings-section"><h2 className="font-semibold">Text processing</h2><label className="mt-5 flex cursor-pointer items-start gap-3"><input type="checkbox" className="mt-1 accent-[var(--primary)]" checked={settings.cleanText} onChange={event => setSettings({ ...settings, cleanText: event.target.checked })} /><span className="text-sm">Light cleanup<span className="mt-1 block text-xs text-muted-foreground">Apply local spacing, capitalization, and punctuation rules; remove common English/German filler words. Original transcripts stay in History.</span></span></label></section>
+    <fieldset disabled={controlsDisabled} className="space-y-6 disabled:opacity-60">
+      <section className="settings-section"><h2 className="font-semibold">Text processing</h2><label className="mt-5 flex cursor-pointer items-start gap-3"><Checkbox className="mt-1" disabled={controlsDisabled} checked={settings.cleanText} onCheckedChange={checked => setSettings({ ...settings, cleanText: checked })} /><span className="text-sm">Light cleanup<span className="mt-1 block text-xs text-muted-foreground">Apply local spacing, capitalization, and punctuation rules; remove common English/German filler words. Original transcripts stay in History.</span></span></label></section>
       <section className="settings-section"><h2 className="font-semibold">Startup</h2>
-        <label className={`mt-5 flex items-start gap-3 ${snapshot.launchAtLoginAvailable ? "cursor-pointer" : "opacity-60"}`}><input type="checkbox" className="mt-1 accent-[var(--primary)]" disabled={!snapshot.launchAtLoginAvailable} checked={settings.launchAtLogin} onChange={event => setSettings({ ...settings, launchAtLogin: event.target.checked })} /><span className="text-sm">Launch at login</span></label>
-        <label className={`mt-5 flex items-start gap-3 ${snapshot.startInTrayAvailable || settings.startInTray ? "cursor-pointer" : "opacity-60"}`}><input type="checkbox" className="mt-1 accent-[var(--primary)]" disabled={!snapshot.startInTrayAvailable && !settings.startInTray} checked={settings.startInTray} onChange={event => setSettings({ ...settings, startInTray: event.target.checked })} /><span className="text-sm">Start in tray / menu bar<span className="mt-1 block text-xs text-muted-foreground">Keep the main window hidden on the next launch.</span></span></label>
+        <label className={`mt-5 flex items-start gap-3 ${snapshot.launchAtLoginAvailable ? "cursor-pointer" : "opacity-60"}`}><Checkbox className="mt-1" disabled={controlsDisabled || !snapshot.launchAtLoginAvailable} checked={settings.launchAtLogin} onCheckedChange={checked => setSettings({ ...settings, launchAtLogin: checked })} /><span className="text-sm">Launch at login</span></label>
+        <label className={`mt-5 flex items-start gap-3 ${snapshot.startInTrayAvailable || settings.startInTray ? "cursor-pointer" : "opacity-60"}`}><Checkbox className="mt-1" disabled={controlsDisabled || (!snapshot.startInTrayAvailable && !settings.startInTray)} checked={settings.startInTray} onCheckedChange={checked => setSettings({ ...settings, startInTray: checked })} /><span className="text-sm">Start in tray / menu bar<span className="mt-1 block text-xs text-muted-foreground">Keep the main window hidden on the next launch.</span></span></label>
         {snapshot.status.startupError ? <p role="alert" className="mt-4 text-xs text-destructive">{snapshot.status.startupError}</p> : !snapshot.launchAtLoginAvailable && !snapshot.startInTrayAvailable && <p className="mt-4 text-xs text-muted-foreground">Startup options require a packaged Windows or macOS app.</p>}
       </section>
       <section className="settings-section"><h2 className="font-semibold">Audio input</h2>
@@ -92,17 +97,32 @@ export function SettingsPage() {
         </div>
       </section>
       <section className="settings-section"><h2 className="font-semibold">Keyboard & delivery</h2>
-        <div className="mt-6 grid gap-5 sm:grid-cols-2"><div className="space-y-2"><Label htmlFor="shortcut">Global shortcut</Label><ShortcutInput id="shortcut" value={settings.shortcut} disabled={!isDesktop || busy || saving || loading} onChange={shortcut => setSettings(old => ({ ...old, shortcut }))} /><p className="text-xs text-muted-foreground">Ctrl, Alt, Shift + Space, A–Z, or F1–F12.</p></div><div className="space-y-2"><Label htmlFor="interaction">Recording mode</Label><select id="interaction" className="form-select" value={settings.interaction} onChange={event => setSettings({ ...settings, interaction: event.target.value })}><option value="hold">Hold to talk</option><option value="toggle">Press to start / press to stop</option></select></div></div>
-        <label className="mt-6 flex cursor-pointer items-start gap-3"><input type="checkbox" className="mt-1 accent-[var(--primary)]" checked={settings.autoPaste} onChange={event => setSettings({ ...settings, autoPaste: event.target.checked })} /><span className="text-sm">Paste automatically<span className="mt-1 block text-xs text-muted-foreground">Paste into the focused app after shortcut dictation. Otherwise, copy only.</span></span></label>
+        <div className="mt-6 grid gap-5 sm:grid-cols-2"><div className="space-y-2"><Label htmlFor="shortcut">Global shortcut</Label><ShortcutInput id="shortcut" value={settings.shortcut} disabled={controlsDisabled} onChange={shortcut => setSettings(old => ({ ...old, shortcut }))} /><p className="text-xs text-muted-foreground">Ctrl, Alt, Shift + Space, A–Z, or F1–F12.</p></div><div className="space-y-2"><Label htmlFor="interaction">Recording mode</Label>
+          <Select items={recordingModes} value={settings.interaction} disabled={controlsDisabled} onValueChange={value => { if (value !== null) setSettings(old => ({ ...old, interaction: value })) }}>
+            <SelectTrigger id="interaction" className="data-[size=default]:h-9 w-full min-w-0 rounded-md bg-background"><SelectValue /></SelectTrigger>
+            <SelectContent alignItemWithTrigger={false} align="start">{recordingModes.map(option => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}</SelectContent>
+          </Select>
+        </div></div>
+        <label className="mt-6 flex cursor-pointer items-start gap-3"><Checkbox className="mt-1" disabled={controlsDisabled} checked={settings.autoPaste} onCheckedChange={checked => setSettings({ ...settings, autoPaste: checked })} /><span className="text-sm">Paste automatically<span className="mt-1 block text-xs text-muted-foreground">Paste into the focused app after shortcut dictation. Otherwise, copy only.</span></span></label>
         {snapshot.status.shortcutError && <p role="alert" className="mt-4 text-xs text-destructive">{snapshot.status.shortcutError}</p>}
       </section>
       <section className="settings-section"><h2 className="font-semibold">Speech recognition</h2><p className="mt-1 text-xs text-muted-foreground">Manage downloads in <Link to="/models" className="text-primary underline">Models</Link>, or select local files below.</p>
         <div className="mt-6 space-y-5">{([{ key: "whisperPath", kind: "runtime", title: "Whisper executable", placeholder: "Select whisper-cli" }, { key: "modelPath", kind: "model", title: "Speech model", placeholder: "Select a ggml Whisper .bin model" }] as const).map(field => <div key={field.key} className="space-y-2"><Label htmlFor={field.key}>{field.title}</Label><div className="flex gap-2"><Input id={field.key} placeholder={field.placeholder} value={settings[field.key]} onChange={event => setSettings({ ...settings, [field.key]: event.target.value })} /><Button variant="outline" aria-label={`Browse ${field.title}`} onClick={() => void browse(field.kind)}><FolderOpen className="size-4" /></Button></div></div>)}
-          <div className="max-w-sm space-y-2"><Label htmlFor="language">Spoken language</Label><select id="language" className="form-select" value={settings.language} onChange={event => setSettings({ ...settings, language: event.target.value })}>{[{ id: "auto", label: "Detect automatically" }, { id: "en", label: "English" }, { id: "de", label: "German" }, { id: "fr", label: "French" }, { id: "es", label: "Spanish" }, { id: "it", label: "Italian" }, { id: "pt", label: "Portuguese" }, { id: "nl", label: "Dutch" }, { id: "pl", label: "Polish" }, { id: "ja", label: "Japanese" }, { id: "zh", label: "Chinese" }, { id: "uk", label: "Ukrainian" }].map(language => <option key={language.id} value={language.id}>{language.label}</option>)}</select></div>
+          <div className="max-w-sm space-y-2"><Label htmlFor="language">Spoken language</Label>
+            <Select items={languages} value={settings.language} disabled={controlsDisabled} onValueChange={value => { if (value !== null) setSettings(old => ({ ...old, language: value })) }}>
+              <SelectTrigger id="language" className="data-[size=default]:h-9 w-full min-w-0 rounded-md bg-background"><SelectValue /></SelectTrigger>
+              <SelectContent alignItemWithTrigger={false} align="start">{languages.map(option => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}</SelectContent>
+            </Select>
+          </div>
         </div>
       </section>
-      <section className="settings-section"><h2 className="font-semibold">History & storage</h2><label className="mt-5 flex cursor-pointer items-start gap-3"><input type="checkbox" className="mt-1 accent-[var(--primary)]" checked={settings.saveAudio} onChange={event => setSettings({ ...settings, saveAudio: event.target.checked })} /><span className="text-sm">Keep recordings<span className="mt-1 block text-xs text-muted-foreground">Save audio for playback in History. Otherwise, delete it after processing.</span></span></label>
-        <div className="mt-5 max-w-sm space-y-2"><Label htmlFor="history-retention">History retention</Label><select id="history-retention" className="form-select" value={settings.historyRetentionDays ?? 0} onChange={event => setSettings({ ...settings, historyRetentionDays: Number(event.target.value) })}><option value={0}>Keep forever</option><option value={7}>7 days</option><option value={30}>30 days</option><option value={90}>90 days</option></select><p className="text-xs text-muted-foreground">Automatically delete older transcripts and retained audio on startup, after dictation, and when saving settings.</p></div>
+      <section className="settings-section"><h2 className="font-semibold">History & storage</h2><label className="mt-5 flex cursor-pointer items-start gap-3"><Checkbox className="mt-1" disabled={controlsDisabled} checked={settings.saveAudio} onCheckedChange={checked => setSettings({ ...settings, saveAudio: checked })} /><span className="text-sm">Keep recordings<span className="mt-1 block text-xs text-muted-foreground">Save audio for playback in History. Otherwise, delete it after processing.</span></span></label>
+        <div className="mt-5 max-w-sm space-y-2"><Label htmlFor="history-retention">History retention</Label>
+          <Select items={retentionOptions} value={String(settings.historyRetentionDays ?? 0)} disabled={controlsDisabled} onValueChange={value => { if (value !== null) setSettings(old => ({ ...old, historyRetentionDays: Number(value) })) }}>
+            <SelectTrigger id="history-retention" className="data-[size=default]:h-9 w-full min-w-0 rounded-md bg-background"><SelectValue /></SelectTrigger>
+            <SelectContent alignItemWithTrigger={false} align="start">{retentionOptions.map(option => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}</SelectContent>
+          </Select>
+          <p className="text-xs text-muted-foreground">Automatically delete older transcripts and retained audio on startup, after dictation, and when saving settings.</p></div>
         {snapshot.status.historyError && <p role="alert" className="mt-3 text-xs text-destructive">{snapshot.status.historyError}</p>}
         {snapshot.dataDir && <p className="mt-5 break-all text-xs leading-5 text-muted-foreground">Data folder: <span className="font-mono">{snapshot.dataDir}</span></p>}</section>
       <div className="flex items-center gap-4"><Button disabled={!dirty || saving || selectedMicrophoneMissing} className="rounded-lg" onClick={() => void save()}><Save className="size-4" />{saving ? "Saving…" : "Save settings"}</Button>{dirty && <span className="text-xs text-muted-foreground">Unsaved changes</span>}</div>

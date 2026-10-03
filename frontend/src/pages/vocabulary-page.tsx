@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react"
 import { Plus, Save, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { useDictation } from "@/components/dictation-provider"
@@ -35,7 +36,7 @@ export function VocabularyPage() {
     <fieldset disabled={!isDesktop || busy || saving || loading} className="space-y-4 disabled:opacity-60">
       {!draft.length && <p className="rounded-xl border border-dashed p-6 text-sm text-muted-foreground">Add names, brands, or technical terms you use often.</p>}
       {draft.map(entry => <section key={entry.id} className="rounded-xl border bg-card p-5">
-        <div className="flex items-center justify-between gap-3"><label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={entry.enabled} onChange={event => update(entry.id, { enabled: event.target.checked })} />Enabled</label><Button variant="ghost" size="icon" aria-label={`Remove ${entry.canonical || "term"}`} onClick={() => setDraft(old => old.filter(item => item.id !== entry.id))}><Trash2 className="size-4" /></Button></div>
+        <div className="flex items-center justify-between gap-3"><label className="flex items-center gap-2 text-sm"><Checkbox disabled={!isDesktop || busy || saving || loading} checked={entry.enabled} onCheckedChange={checked => update(entry.id, { enabled: checked })} />Enabled</label><Button variant="ghost" size="icon" aria-label={`Remove ${entry.canonical || "term"}`} onClick={() => setDraft(old => old.filter(item => item.id !== entry.id))}><Trash2 className="size-4" /></Button></div>
         <div className="mt-4 grid gap-4 sm:grid-cols-2"><div className="space-y-2"><Label htmlFor={`term-${entry.id}`}>Preferred spelling</Label><Input id={`term-${entry.id}`} maxLength={80} placeholder="e.g. PostgreSQL" value={entry.canonical} onChange={event => update(entry.id, { canonical: event.target.value })} /></div><div className="space-y-2"><Label htmlFor={`aliases-${entry.id}`}>Aliases (comma-separated)</Label><Input id={`aliases-${entry.id}`} placeholder="e.g. postgres, post gre SQL" value={entry.aliases} onChange={event => update(entry.id, { aliases: event.target.value })} /></div></div>
       </section>)}
       <div className="flex flex-wrap items-center gap-3"><Button variant="outline" disabled={draft.length >= 100} onClick={() => setDraft(old => [...old, { id: crypto.randomUUID(), canonical: "", aliases: "", enabled: true }])}><Plus className="size-4" />Add term</Button><Button disabled={!dirty} onClick={() => void save()}><Save className="size-4" />{saving ? "Saving…" : "Save vocabulary"}</Button>{dirty && <Button variant="ghost" onClick={() => setDraft(draftOf(snapshot.vocabulary))}>Discard changes</Button>}</div>
