@@ -4,6 +4,7 @@ import { Link, useSearchParams } from "react-router"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
+import { AudioImportButton } from "@/components/audio-import-button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { useDictation } from "@/components/dictation-provider"
 import { backend, duration, isDesktop, message, type HistoryPageResult, type Session } from "@/lib/backend"
@@ -84,7 +85,9 @@ export function HistoryPage() {
   }
   async function exportSelected() { setExporting(true); await run(() => backend.exportSessions(selected), false); setExporting(false) }
   return <div className="space-y-7">
-    <header><h1 className="text-2xl font-semibold tracking-tight">History</h1></header>
+    <header className="flex flex-wrap items-center justify-between gap-3"><h1 className="text-2xl font-semibold tracking-tight">History</h1><AudioImportButton /></header>
+    {snapshot.status.phase === "transcribing" && <div role="status" className="flex flex-wrap items-center gap-3 text-sm"><span>{snapshot.status.message}</span><Button size="sm" variant="outline" onClick={() => void run(backend.cancel, false)}>Cancel transcription</Button></div>}
+    {snapshot.status.phase === "error" && <p role="alert" className="text-sm text-destructive">{snapshot.status.message}</p>}
     <div className="relative"><Search className="absolute left-3 top-3 size-4 text-muted-foreground" /><Input aria-label="Search transcripts" maxLength={250} className="h-10 rounded-xl bg-card pl-10" placeholder="Search transcripts…" value={query} onChange={event => { setLoading(true); setSelected([]); setParams(event.target.value ? { q: event.target.value } : {}, { replace: true }) }} /></div>
     {snapshot.status.historyError && <p role="alert" className="text-sm text-destructive">{snapshot.status.historyError}</p>}
     {error && <div role="alert" className="flex items-center gap-3 text-sm text-destructive">{error}<Button variant="outline" size="sm" onClick={() => setReload(old => old + 1)}>Retry</Button></div>}

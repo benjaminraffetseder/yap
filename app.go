@@ -567,10 +567,10 @@ func (a *App) stop() {
 	go func() {
 		defer a.wg.Done()
 		defer cancel()
-		a.transcribe(ctx, id, path, target, duration, settings, entries, textConfig)
+		a.transcribe(ctx, id, path, target, duration, settings, entries, textConfig, true)
 	}()
 }
-func (a *App) transcribe(ctx context.Context, id, path, target string, duration int64, settings storage.Settings, entries []vocabulary.Entry, textConfig textmodel.Config) {
+func (a *App) transcribe(ctx context.Context, id, path, target string, duration int64, settings storage.Settings, entries []vocabulary.Entry, textConfig textmodel.Config, copyToClipboard bool) {
 	persisted := false
 	defer func() {
 		if !persisted || !settings.SaveAudio {
@@ -647,14 +647,17 @@ func (a *App) transcribe(ctx context.Context, id, path, target string, duration 
 	a.status.Transcript = text
 	a.status.StartedAt = 0
 	a.status.Phase = "done"
-	a.status.Message = "Copied to clipboard"
-	if err = a.copyText(text); err != nil {
-		a.status.Message = "Saved to history; clipboard failed: " + err.Error()
-	} else if target != "" {
-		if err = platform.Paste(target); err != nil {
-			a.status.Message = err.Error()
-		} else {
-			a.status.Message = "Pasted into your application"
+	a.status.Message = "Saved to History"
+	if copyToClipboard {
+		a.status.Message = "Copied to clipboard"
+		if err = a.copyText(text); err != nil {
+			a.status.Message = "Saved to history; clipboard failed: " + err.Error()
+		} else if target != "" {
+			if err = platform.Paste(target); err != nil {
+				a.status.Message = err.Error()
+			} else {
+				a.status.Message = "Pasted into your application"
+			}
 		}
 	}
 	a.emit()

@@ -5,6 +5,7 @@ import { Button, buttonVariants } from "@/components/ui/button"
 import { useDictation } from "@/components/dictation-provider"
 import { backend, duration, isBusy, isDesktop } from "@/lib/backend"
 import { SetupPage } from "@/pages/setup-page"
+import { AudioImportButton } from "@/components/audio-import-button"
 export function HomePage() {
   const { snapshot, loading, level, run } = useDictation()
   const { status, settings, history, ready } = snapshot
@@ -17,7 +18,7 @@ export function HomePage() {
   async function record() { setPending(true); await run(recording ? backend.stop : backend.start); setPending(false) }
   if (isDesktop && !loading && !settings.setupComplete) return <SetupPage />
   return <div className="space-y-8">
-    <header><h1 className="text-2xl font-semibold tracking-tight">Dictate</h1></header>
+    <header className="flex flex-wrap items-center justify-between gap-3"><h1 className="text-2xl font-semibold tracking-tight">Dictate</h1><AudioImportButton /></header>
     <section className="rounded-2xl border bg-card px-6 py-6 text-center">
       <div className="my-7 flex justify-center"><button disabled={!isDesktop || !ready || working || loading || pending} onClick={() => void record()} aria-label={recording ? "Stop recording" : "Start recording"} className="relative flex size-24 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg shadow-primary/15 transition-transform hover:scale-105 focus-visible:outline-4 focus-visible:outline-offset-4 focus-visible:outline-ring disabled:cursor-default disabled:opacity-50">
         {recording && <span className="absolute inset-[-10px] rounded-full border-2 border-primary/25" style={{ transform: `scale(${1 + level * .15})` }} />}{working || pending ? <Loader2 className="size-8 animate-spin" /> : recording ? <Square className="size-7 fill-current" /> : <Mic className="size-9" />}

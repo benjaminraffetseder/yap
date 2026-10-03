@@ -54,6 +54,17 @@ guarantee a particular transcription. The limit is 100 terms, with ten aliases e
 punctuation, and common English/German filler words. It uses local rules and is
 off by default. It doesn't need a text model or change older transcripts.
 
+## Importing audio
+
+Choose **Import audio** in Dictate or History to transcribe a WAV file.
+Files must be from 0.3 seconds to ten minutes long and up to 256 MiB.
+
+Imports use your saved speech and text-processing settings. The result goes into
+History without changing the source file or clipboard. **Keep recordings** saves
+a converted copy for playback and backup.
+
+WAV import works without extra software.
+
 ## Local text models
 
 Text processing is optional. It needs a running model server on your computer;

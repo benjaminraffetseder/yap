@@ -4,6 +4,7 @@ import { BeginShortcutCapture, EndShortcutCapture } from "@wails/go/main/App"
 import { SaveTextProcessing, ProcessText, CancelTextProcessing, TestTextModel, ListTextModels } from "@wails/go/main/App"
 import { GetSessionOutputs, GenerateSessionOutput, RegenerateSessionOutput, DeleteSessionOutput } from "@wails/go/main/App"
 import { ExportBackup, PreviewBackup, RestoreBackup, DiscardBackupPreview } from "@wails/go/main/App"
+import { ImportAudio } from "@wails/go/main/App"
 import { text } from "@wails/go/models"
 export type TextPrompt = { id: string; name: string; instruction: string }
 export type TextProcessing = { enabled: boolean; endpoint: string; model: string; autoPromptId: string; prompts: TextPrompt[] }
@@ -33,6 +34,11 @@ function requireOutputAPI(name: string) {
   if (typeof api?.[name] !== "function") throw new Error("Saved outputs need the current backend. Quit and reopen Yap; in development, restart wails dev.")
 }
 export const backend = {
+  importAudio: async (): Promise<void> => {
+    const api = (window as unknown as { go?: { main?: { App?: Record<string, unknown> } } }).go?.main?.App
+    if (typeof api?.ImportAudio !== "function") throw new Error("Audio import needs the current backend. Quit and reopen Yap; in development, restart wails dev.")
+    return ImportAudio()
+  },
   exportBackup: async (audio: boolean): Promise<BackupSummary | null> => { requireBackupAPI("ExportBackup"); return ExportBackup(audio) },
   previewBackup: async (): Promise<BackupPreview | null> => { requireBackupAPI("PreviewBackup"); return PreviewBackup() },
   restoreBackup: async (id: string, preferences: boolean): Promise<BackupSummary> => { requireBackupAPI("RestoreBackup"); return RestoreBackup(id, preferences) },

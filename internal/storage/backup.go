@@ -88,7 +88,7 @@ func archiveAudioName(id string) string {
 	return fmt.Sprintf("audio/%x.wav", sha256.Sum256([]byte(id)))
 }
 
-func (s *Store) backupRecordingRoot() (*os.Root, error) {
+func (s *Store) recordingRoot() (*os.Root, error) {
 	resolved, err := filepath.EvalSymlinks(filepath.Join(s.Dir, "recordings"))
 	base, baseErr := filepath.EvalSymlinks(s.Dir)
 	if err != nil || baseErr != nil || resolved != filepath.Join(base, "recordings") {
@@ -247,7 +247,7 @@ func (s *Store) ExportBackup(ctx context.Context, path string, includeAudio bool
 			continue
 		}
 		if recordingRoot == nil {
-			recordingRoot, e = s.backupRecordingRoot()
+			recordingRoot, e = s.recordingRoot()
 			if e != nil {
 				return summary, e
 			}
@@ -602,7 +602,7 @@ func (s *Store) RestoreBackup(ctx context.Context, b *BackupArchive, preferences
 	}
 	var root *os.Root
 	if p.summary.Recordings > 0 {
-		root, err = s.backupRecordingRoot()
+		root, err = s.recordingRoot()
 		if err != nil {
 			return RestoredBackup{}, err
 		}

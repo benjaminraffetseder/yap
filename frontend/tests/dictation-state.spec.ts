@@ -38,6 +38,9 @@ declare global {
       exportedText: string
       clipboard: string
       failClipboard: boolean
+      audioImports: number
+      cancelAudioDialog: boolean
+      failAudioImport: boolean
       backupExports: boolean[]
       backupRestores: { id: string; preferences: boolean }[]
       discardedBackups: string[]
@@ -68,6 +71,7 @@ test.beforeEach(async ({ page }) => {
       },
       outputs: [], failOutputs: false, processing: null, failProcessing: false, cancelledProcessing: [], textModels: [], modelListError: "", deferModelList: false, modelListRequests: [], pendingModelLists: [],
       backupExports: [], backupRestores: [], discardedBackups: [], backupPreview: null, failBackup: false, deferBackup: false, resolveBackup: null,
+      audioImports: 0, cancelAudioDialog: false, failAudioImport: false,
       history() { state.callbacks["dictation:history"]() },
     }
     function beginOutput(id: string, sessionID: string, prompt: TextPrompt, input: string) {
@@ -99,6 +103,14 @@ test.beforeEach(async ({ page }) => {
         },
       },
       go: { main: { App: {
+        ImportAudio: async () => {
+          state.audioImports++
+          if (state.failAudioImport) throw new Error("Choose an uncompressed mono or stereo WAV")
+          if (state.cancelAudioDialog) return
+          state.status("transcribing")
+          state.snapshot.status.message = "Transcribing imported audio…"
+          state.callbacks["dictation:status"](structuredClone(state.snapshot.status))
+        },
         ExportBackup: async (audio: boolean) => {
           if (state.failBackup) throw new Error("Backup could not be saved")
           state.backupExports.push(audio)
@@ -1907,4 +1919,56 @@ test("backup cancellation remains available after navigating back to Settings", 
   await page.evaluate(() => { window.dictationTest.resolveBackup!() })
   await expect.poll(() => page.evaluate(() => window.dictationTest.discardedBackups)).toEqual(["preview-token"])
   await expect(page.getByRole("dialog")).toHaveCount(0)
+})
+
+test("audio import is cancellable across navigation and results open from History", async ({ page }) => {
+  await page.goto("/#/history")
+  await page.getByRole("button", { name: "Import audio", exact: true }).click()
+  await expect.poll(() => page.evaluate(() => window.dictationTest.audioImports)).toBe(1)
+  await expect(page.getByRole("button", { name: "Import audio", exact: true })).toBeDisabled()
+  await expect(page.getByRole("status").filter({ hasText: "Transcribing imported audio…" })).toBeVisible()
+  await page.getByRole("link", { name: "Dictate", exact: true }).click()
+  await expect(page.getByRole("button", { name: "Start recording", exact: true })).toBeDisabled()
+  await page.getByRole("link", { name: "History", exact: true }).click()
+  await page.getByRole("button", { name: "Cancel transcription", exact: true }).click()
+  await expect.poll(() => page.evaluate(() => window.dictationTest.snapshot.status.phase)).toBe("idle")
+  await expect(page.getByText("No dictations yet", { exact: true })).toBeVisible()
+  await page.getByRole("button", { name: "Import audio", exact: true }).click()
+  await page.evaluate(() => {
+    const state = window.dictationTest
+    state.snapshot.history.push({ id: "imported", createdAt: new Date().toISOString(), durationMs: 1000, rawTranscript: "Imported words.", finalTranscript: "Imported words.", speechModel: "base", language: "auto", audioPath: "" })
+    state.status("done"); state.history()
+  })
+  await page.getByRole("link", { name: /Imported words/ }).click()
+  await expect(page.getByRole("heading", { name: "Transcription", exact: true })).toBeVisible()
+  await expect(page.getByText("Imported words.", { exact: true })).toBeVisible()
+  await expect.poll(() => page.evaluate(() => window.dictationTest.clipboard)).toBe("")
+  await page.getByRole("link", { name: "Back to History", exact: true }).click()
+  await page.getByRole("button", { name: "Import audio", exact: true }).click()
+  await page.evaluate(() => {
+    const state = window.dictationTest
+    state.status("error")
+    state.snapshot.status.message = "WAV file is truncated or damaged"
+    state.callbacks["dictation:status"](structuredClone(state.snapshot.status))
+  })
+  await expect(page.getByRole("alert")).toContainText("WAV file is truncated or damaged")
+  await expect(page.getByRole("button", { name: "Import audio", exact: true })).toBeEnabled()
+})
+
+test("audio import handles file-picker cancellation, unavailable models, invalid files and outdated backends", async ({ page }) => {
+  await page.goto("/#/history")
+  const button = page.getByRole("button", { name: "Import audio", exact: true })
+  await page.evaluate(() => { window.dictationTest.cancelAudioDialog = true })
+  await button.click()
+  await expect(button).toBeEnabled()
+  await expect.poll(() => page.evaluate(() => window.dictationTest.snapshot.history.length)).toBe(0)
+  await page.evaluate(() => { window.dictationTest.snapshot.ready = false; window.dictationTest.history() })
+  await expect(button).toBeDisabled()
+  await page.evaluate(() => { window.dictationTest.snapshot.ready = true; window.dictationTest.failAudioImport = true; window.dictationTest.history() })
+  await button.click()
+  await expect(page.getByRole("alert")).toContainText("Choose an uncompressed mono or stereo WAV")
+  await page.evaluate(() => { Reflect.deleteProperty(Reflect.get(window, "go").main.App, "ImportAudio") })
+  await button.click()
+  await expect(page.getByRole("alert")).toContainText("Audio import needs the current backend")
+  await expect(page.getByRole("heading", { name: "History", exact: true })).toBeVisible()
 })
