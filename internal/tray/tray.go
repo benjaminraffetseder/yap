@@ -49,6 +49,8 @@ func presentation(s State) view {
 		v.status, v.recordEnabled, v.cancelEnabled = "Testing microphone…", false, true
 	case "shortcut-capture":
 		v.status, v.recordEnabled = "Choosing a shortcut…", false
+	case "backup":
+		v.status, v.recordEnabled, v.cancelEnabled = "Managing backup…", false, true
 	case "diagnostic-recording", "diagnostic-transcribing":
 		v.status, v.recordEnabled, v.cancelEnabled = "Testing dictation…", false, true
 	case "error":

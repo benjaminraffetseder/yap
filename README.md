@@ -18,6 +18,7 @@ Linux support is incomplete.
 - Search, edit, copy, and export past transcripts.
 - Add names and preferred spellings to a custom vocabulary.
 - Run cleanup or custom prompts through an optional local text model.
+- Back up history, prompts, vocabulary, and saved recordings.
 
 ## Getting started
 
@@ -37,7 +38,7 @@ Closing the window leaves Yap running in the tray. Choose **Quit Yap** from the
 tray menu to exit. Settings lets you change the shortcut, microphone, recording
 mode, and startup behavior.
 
-See [Using Yap](docs/usage.md) for settings, history, and troubleshooting.
+See [Using Yap](docs/usage.md) for imports, prompts, backups, and troubleshooting.
 [Windows build notes](docs/windows.md) cover prerequisites and troubleshooting.
 
 ## Privacy
@@ -47,7 +48,7 @@ upload audio. Models and the speech runtime download only when requested.
 
 History is saved locally. Keeping audio recordings is off by default; temporary
 audio is removed after use, though a forced shutdown can leave files behind.
-History and retained recordings are **not encrypted**.
+History, retained recordings, and exported backups are **not encrypted**.
 On Windows, the data folder is `%APPDATA%\yap`.
 
 Optional text processing connects to a model server on localhost. Use a model

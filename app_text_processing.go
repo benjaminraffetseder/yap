@@ -58,7 +58,7 @@ func (a *App) RegenerateSessionOutput(requestID, sessionID, outputID string) (st
 func (a *App) GetSessionOutputs(sessionID string) ([]storage.GeneratedOutput, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	if err := a.available(); err != nil {
+	if err := a.historyAvailableLocked(); err != nil {
 		return nil, err
 	}
 	return a.store.GeneratedOutputs(sessionID)
@@ -67,7 +67,7 @@ func (a *App) GetSessionOutputs(sessionID string) ([]storage.GeneratedOutput, er
 func (a *App) DeleteSessionOutput(sessionID, outputID string) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	if err := a.available(); err != nil {
+	if err := a.historyAvailableLocked(); err != nil {
 		return err
 	}
 	if err := a.store.DeleteGeneratedOutput(sessionID, outputID); err != nil {

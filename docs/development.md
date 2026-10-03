@@ -32,7 +32,7 @@ shortcuts through Wails. Use the desktop app to test those.
 | `internal/indicator`, `internal/tray`, `internal/startup` | Native desktop controls |
 | `internal/inference` | Whisper CLI and local text-server clients |
 | `internal/models` | Model/runtime downloads and verification |
-| `internal/storage` | SQLite, history, and retention |
+| `internal/storage` | SQLite, history, retention, and backups |
 | `frontend/src` | Pages, components, and bridge helpers |
 | `build` | Wails icons, native manifests, and version metadata |
 

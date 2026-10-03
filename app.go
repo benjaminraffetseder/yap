@@ -57,6 +57,10 @@ type Snapshot struct {
 	StartInTrayAvailable   bool               `json:"startInTrayAvailable"`
 }
 type App struct {
+	pendingBackup                    *storage.BackupArchive
+	backupPreviewID                  string
+	backupHistory                    []storage.Session
+	discardBackupAfterOperation      bool
 	textConfig                       textmodel.Config
 	recordTextConfig                 textmodel.Config
 	textEngine                       textmodel.Engine
@@ -324,6 +328,10 @@ func (a *App) shutdown(ctx context.Context) {
 			s.Close()
 		}
 		a.wg.Wait()
+		if a.pendingBackup != nil {
+			a.pendingBackup.Close()
+			a.pendingBackup = nil
+		}
 		if a.indicator != nil {
 			a.indicator.Close()
 		}
@@ -368,7 +376,7 @@ func (a *App) available() error {
 	return nil
 }
 func (a *App) busy() bool {
-	return a.shortcutCaptureID != "" || a.status.Phase == "text-processing" || a.status.Phase == "recording" || a.status.Phase == "transcribing" || a.status.Phase == "downloading" || a.status.Phase == "mic-test" || a.status.Phase == "diagnostic-recording" || a.status.Phase == "diagnostic-transcribing"
+	return a.status.Phase == "backup" || a.shortcutCaptureID != "" || a.status.Phase == "text-processing" || a.status.Phase == "recording" || a.status.Phase == "transcribing" || a.status.Phase == "downloading" || a.status.Phase == "mic-test" || a.status.Phase == "diagnostic-recording" || a.status.Phase == "diagnostic-transcribing"
 }
 func (a *App) registerShortcut() {
 	// Retired registrations can still have queued callbacks waiting on a.mu.
@@ -445,9 +453,15 @@ func (a *App) GetSnapshot() (Snapshot, error) {
 	if err := a.available(); err != nil {
 		return Snapshot{}, err
 	}
-	history, err := a.store.History()
-	if err != nil {
-		return Snapshot{}, err
+	// Backups own the single database connection. Serve the pre-operation
+	// history so refreshing the UI cannot hold a.mu and prevent cancellation.
+	history := a.backupHistory
+	if a.status.Phase != "backup" {
+		var err error
+		history, err = a.store.History()
+		if err != nil {
+			return Snapshot{}, err
+		}
 	}
 	ready := speech.Validate(speech.Options{Executable: a.settings.WhisperPath, Model: a.settings.ModelPath}) == nil
 	entries, _ := vocabulary.Normalize(a.vocabulary)
@@ -916,7 +930,7 @@ func (a *App) CopyText(text string) error { return runtime.ClipboardSetText(a.ct
 func (a *App) SaveTranscript(id, text string) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	if err := a.available(); err != nil {
+	if err := a.historyAvailableLocked(); err != nil {
 		return err
 	}
 	if id == a.id && a.status.Phase == "transcribing" {
@@ -938,7 +952,7 @@ func (a *App) DeleteSession(id string) error {
 func (a *App) GetAudio(id string) (string, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	if err := a.available(); err != nil {
+	if err := a.historyAvailableLocked(); err != nil {
 		return "", err
 	}
 	v, err := a.store.Session(id)
@@ -966,7 +980,7 @@ func (a *App) GetAudio(id string) (string, error) {
 }
 func (a *App) ExportSession(id string) error {
 	a.mu.Lock()
-	if err := a.available(); err != nil {
+	if err := a.historyAvailableLocked(); err != nil {
 		a.mu.Unlock()
 		return err
 	}

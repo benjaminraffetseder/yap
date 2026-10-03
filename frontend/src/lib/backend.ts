@@ -3,6 +3,7 @@ import { DeleteSessions, ExportSessions, GetHistory, GetSession, RemoveModel } f
 import { BeginShortcutCapture, EndShortcutCapture } from "@wails/go/main/App"
 import { SaveTextProcessing, ProcessText, CancelTextProcessing, TestTextModel, ListTextModels } from "@wails/go/main/App"
 import { GetSessionOutputs, GenerateSessionOutput, RegenerateSessionOutput, DeleteSessionOutput } from "@wails/go/main/App"
+import { ExportBackup, PreviewBackup, RestoreBackup, DiscardBackupPreview } from "@wails/go/main/App"
 import { text } from "@wails/go/models"
 export type TextPrompt = { id: string; name: string; instruction: string }
 export type TextProcessing = { enabled: boolean; endpoint: string; model: string; autoPromptId: string; prompts: TextPrompt[] }
@@ -20,11 +21,22 @@ export type HistoryPageResult = { entries: Session[]; total: number; page: numbe
 export type Status = { phase: string; message: string; startedAt: number; transcript: string; progress: number; shortcutError: string; indicatorError: string; trayError: string; startupError: string; historyError: string }
 export type Model = { id: string; name: string; description: string; size: number; installed: boolean; path: string; diskBytes: number; removable: boolean }
 export type Snapshot = { textProcessing: TextProcessing; settings: Settings; status: Status; history: Session[]; models: Model[]; dataDir: string; ready: boolean; floatingIndicator: boolean; launchAtLoginAvailable: boolean; startInTrayAvailable: boolean; vocabulary: VocabularyEntry[]; microphoneTested: boolean; shortcutTested: boolean; diagnostic: DiagnosticResult }
+export type BackupSummary = { sessions: number; duplicateSessions: number; outputs: number; duplicateOutputs: number; prompts: number; skippedPrompts: number; vocabulary: number; skippedVocabulary: number; recordings: number; missingRecordings: number }
+export type BackupPreferences = Pick<Settings, "language" | "interaction" | "autoPaste" | "saveAudio" | "cleanText">
+export type BackupPreview = { id: string; filename: string; createdAt: string; preferences: BackupPreferences; summary: BackupSummary }
+function requireBackupAPI(name: string) {
+  const api = (window as unknown as { go?: { main?: { App?: Record<string, unknown> } } }).go?.main?.App
+  if (typeof api?.[name] !== "function") throw new Error("Backups need the current backend. Quit and reopen Yap; in development, restart wails dev.")
+}
 function requireOutputAPI(name: string) {
   const api = (window as unknown as { go?: { main?: { App?: Record<string, unknown> } } }).go?.main?.App
   if (typeof api?.[name] !== "function") throw new Error("Saved outputs need the current backend. Quit and reopen Yap; in development, restart wails dev.")
 }
 export const backend = {
+  exportBackup: async (audio: boolean): Promise<BackupSummary | null> => { requireBackupAPI("ExportBackup"); return ExportBackup(audio) },
+  previewBackup: async (): Promise<BackupPreview | null> => { requireBackupAPI("PreviewBackup"); return PreviewBackup() },
+  restoreBackup: async (id: string, preferences: boolean): Promise<BackupSummary> => { requireBackupAPI("RestoreBackup"); return RestoreBackup(id, preferences) },
+  discardBackup: async (id: string): Promise<void> => { requireBackupAPI("DiscardBackupPreview"); return DiscardBackupPreview(id) },
   snapshot: async (): Promise<Snapshot> => {
     const value = await GetSnapshot()
     // A long-running dev backend can predate the frontend and generated bindings.
@@ -63,6 +75,6 @@ export const backend = {
     return ListTextModels(id, endpoint)
   },
 }
-export function isBusy(phase: string) { return ["recording", "transcribing", "text-processing", "downloading", "mic-test", "diagnostic-recording", "diagnostic-transcribing"].includes(phase) }
+export function isBusy(phase: string) { return ["backup", "recording", "transcribing", "text-processing", "downloading", "mic-test", "diagnostic-recording", "diagnostic-transcribing"].includes(phase) }
 export function message(cause: unknown) { return cause instanceof Error ? cause.message : String(cause) }
 export function duration(ms: number) { const seconds = Math.floor(ms / 1000); return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}` }

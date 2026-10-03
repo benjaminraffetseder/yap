@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test"
-import type { DiagnosticCheck, Settings, Snapshot, Status, VocabularyEntry, TextProcessing, GeneratedOutput, TextPrompt } from "../src/lib/backend"
+import type { BackupPreview, BackupSummary, DiagnosticCheck, Settings, Snapshot, Status, VocabularyEntry, TextProcessing, GeneratedOutput, TextPrompt } from "../src/lib/backend"
 
 declare global {
   interface Window {
@@ -38,6 +38,13 @@ declare global {
       exportedText: string
       clipboard: string
       failClipboard: boolean
+      backupExports: boolean[]
+      backupRestores: { id: string; preferences: boolean }[]
+      discardedBackups: string[]
+      backupPreview: BackupPreview | null
+      failBackup: boolean
+      deferBackup: boolean
+      resolveBackup: (() => void) | null
       checks: DiagnosticCheck[]
       status: (phase: string) => void
       history: () => void
@@ -60,6 +67,7 @@ test.beforeEach(async ({ page }) => {
         state.callbacks["dictation:status"](structuredClone(state.snapshot.status))
       },
       outputs: [], failOutputs: false, processing: null, failProcessing: false, cancelledProcessing: [], textModels: [], modelListError: "", deferModelList: false, modelListRequests: [], pendingModelLists: [],
+      backupExports: [], backupRestores: [], discardedBackups: [], backupPreview: null, failBackup: false, deferBackup: false, resolveBackup: null,
       history() { state.callbacks["dictation:history"]() },
     }
     function beginOutput(id: string, sessionID: string, prompt: TextPrompt, input: string) {
@@ -91,6 +99,24 @@ test.beforeEach(async ({ page }) => {
         },
       },
       go: { main: { App: {
+        ExportBackup: async (audio: boolean) => {
+          if (state.failBackup) throw new Error("Backup could not be saved")
+          state.backupExports.push(audio)
+          return { sessions: 12, outputs: 3, prompts: 2, vocabulary: 4, recordings: audio ? 2 : 0, missingRecordings: audio ? 1 : 0, duplicateSessions: 0, duplicateOutputs: 0, skippedPrompts: 0, skippedVocabulary: 0 } satisfies BackupSummary
+        },
+        PreviewBackup: async () => {
+          if (state.failBackup) throw new Error("Unsupported or damaged backup")
+          if (state.deferBackup) return new Promise(resolve => { state.resolveBackup = () => resolve(structuredClone(state.backupPreview)) })
+          return structuredClone(state.backupPreview)
+        },
+        DiscardBackupPreview: async (id: string) => { state.discardedBackups.push(id) },
+        RestoreBackup: async (id: string, preferences: boolean) => {
+          if (state.failBackup) throw new Error("Restore failed; no changes were saved")
+          state.backupRestores.push({ id, preferences })
+          if (preferences) Object.assign(state.snapshot.settings, state.backupPreview!.preferences)
+          state.snapshot.history.unshift({ id: "restored", createdAt: "2026-10-08", durationMs: 1000, rawTranscript: "Restored transcription", finalTranscript: "Restored transcription", speechModel: "base", language: "de", audioPath: "" })
+          return structuredClone(state.backupPreview!.summary)
+        },
         GetSnapshot() {
           if (state.failSnapshot) return Promise.reject(new Error("Snapshot unavailable"))
           const copy = structuredClone(state.snapshot)
@@ -1754,4 +1780,131 @@ test("startup recovery provides diagnostics and retry without overwriting saved 
   await expect(page.getByRole("checkbox", { name: "Enable LLM processing" })).toBeChecked()
   await expect(page.getByLabel("Model identifier")).toHaveValue("saved-model")
   await expect.poll(() => page.evaluate(() => window.dictationTest.snapshot.settings.language)).toBe("de")
+})
+
+async function setupBackupPreview(page: Page) {
+  await page.addInitScript(() => {
+    window.dictationTest.backupPreview = {
+      id: "preview-token", filename: "yap-mac.yap-backup.zip", createdAt: "2026-10-08T12:30:00Z",
+      preferences: { language: "de", interaction: "toggle", autoPaste: false, saveAudio: true, cleanText: true },
+      summary: { sessions: 10, duplicateSessions: 2, outputs: 3, duplicateOutputs: 1, prompts: 1, skippedPrompts: 2, vocabulary: 4, skippedVocabulary: 1, recordings: 2, missingRecordings: 0 },
+    }
+  })
+}
+
+test("backups export optional audio and require a preview before a merge restore", async ({ page }, testInfo) => {
+  await setupBackupPreview(page)
+  await page.goto("/#/settings")
+  const panel = page.getByRole("region", { name: "Backup & restore", exact: true })
+  await panel.getByRole("button", { name: "Export backup", exact: true }).click()
+  await expect(panel.getByRole("status")).toContainText("12 dictations, 3 outputs, and 0 recordings")
+  await panel.getByRole("checkbox", { name: "Include retained recordings", exact: true }).check()
+  await panel.getByRole("button", { name: "Export backup", exact: true }).click()
+  await expect(panel.getByRole("status")).toContainText("1 unavailable recordings omitted")
+  await expect.poll(() => page.evaluate(() => window.dictationTest.backupExports)).toEqual([false, true])
+  await panel.getByRole("button", { name: "Restore backup", exact: true }).click()
+  const dialog = page.getByRole("dialog", { name: "Restore backup?", exact: true })
+  await expect(dialog).toContainText("10 to add · 2 kept / skipped")
+  await expect(dialog).toContainText("Microphone, shortcuts, models, startup, local server, and History retention stay unchanged")
+  await expect(dialog.getByRole("checkbox", { name: "Restore portable preferences", exact: true })).not.toBeChecked()
+  await expect.poll(() => page.evaluate(() => window.dictationTest.backupRestores)).toEqual([])
+  await page.evaluate(() => document.documentElement.classList.add("dark"))
+  await page.screenshot({ path: testInfo.outputPath("backup-preview.png"), animations: "disabled" })
+  await page.setViewportSize({ width: 520, height: 720 })
+  await page.screenshot({ path: testInfo.outputPath("backup-preview-narrow.png"), animations: "disabled" })
+  const bounds = await dialog.boundingBox()
+  expect(bounds!.y).toBeGreaterThanOrEqual(0)
+  expect(bounds!.y + bounds!.height).toBeLessThanOrEqual(720)
+  expect(await dialog.evaluate(node => node.scrollWidth <= node.clientWidth)).toBe(true)
+  await page.setViewportSize({ width: 1280, height: 720 })
+  await dialog.getByRole("button", { name: "Cancel", exact: true }).click()
+  await expect.poll(() => page.evaluate(() => window.dictationTest.discardedBackups)).toEqual(["preview-token"])
+  await expect(page.getByRole("dialog")).toHaveCount(0)
+  await panel.getByRole("button", { name: "Restore backup", exact: true }).click()
+  await dialog.getByRole("button", { name: "Restore backup", exact: true }).click()
+  await expect(panel.getByRole("status")).toContainText("Restored 10 dictations, 3 outputs, 1 prompts, and 4 terms")
+  await expect.poll(() => page.evaluate(() => window.dictationTest.backupRestores)).toEqual([{ id: "preview-token", preferences: false }])
+  await expect(page.getByRole("combobox", { name: "Spoken language", exact: true })).toContainText("Detect automatically")
+  await panel.getByRole("button", { name: "Restore backup", exact: true }).click()
+  await dialog.getByRole("checkbox", { name: "Restore portable preferences", exact: true }).check()
+  await dialog.getByRole("button", { name: "Restore backup", exact: true }).click()
+  await expect(page.getByRole("combobox", { name: "Spoken language", exact: true })).toContainText("German")
+  await expect(page.getByRole("button", { name: "Save settings", exact: true })).toBeDisabled()
+  await page.getByRole("link", { name: "History", exact: true }).click()
+  await expect(page.getByRole("link", { name: /Restored transcription/ }).first()).toBeVisible()
+})
+
+test("backup errors, busy state, unsaved settings and native cancellation preserve data", async ({ page }) => {
+  await setupBackupPreview(page)
+  await page.goto("/#/settings")
+  const panel = page.getByRole("region", { name: "Backup & restore", exact: true })
+  await page.getByRole("checkbox", { name: /^Keep recordings/ }).check()
+  await expect(panel.getByRole("button", { name: "Restore backup", exact: true })).toBeDisabled()
+  await expect(panel.getByText("Save your settings before using backups.", { exact: true })).toBeVisible()
+  await page.getByRole("button", { name: "Save settings", exact: true }).click()
+  await page.evaluate(() => window.dictationTest.status("recording"))
+  await expect(panel.getByRole("button", { name: "Export backup", exact: true })).toBeDisabled()
+  await page.evaluate(() => { window.dictationTest.status("idle"); window.dictationTest.failBackup = true })
+  await panel.getByRole("button", { name: "Restore backup", exact: true }).click()
+  await expect(panel.getByRole("alert")).toHaveText("Unsupported or damaged backup")
+  await page.evaluate(() => { window.dictationTest.failBackup = false; window.dictationTest.backupPreview = null })
+  await panel.getByRole("button", { name: "Restore backup", exact: true }).click()
+  await expect(page.getByRole("dialog")).toHaveCount(0)
+  await expect(panel.getByRole("alert")).toHaveCount(0)
+  await expect.poll(() => page.evaluate(() => window.dictationTest.backupRestores)).toEqual([])
+})
+
+test("failed restores keep the preview for retry and navigation discards late previews", async ({ page }) => {
+  await setupBackupPreview(page)
+  await page.goto("/#/settings")
+  const panel = page.getByRole("region", { name: "Backup & restore", exact: true })
+  await panel.getByRole("button", { name: "Restore backup", exact: true }).click()
+  const dialog = page.getByRole("dialog", { name: "Restore backup?", exact: true })
+  await page.evaluate(() => { window.dictationTest.failBackup = true })
+  await dialog.getByRole("button", { name: "Restore backup", exact: true }).click()
+  await expect(dialog.getByRole("alert")).toHaveText("Restore failed; no changes were saved")
+  await expect(dialog.getByRole("button", { name: "Restore backup", exact: true })).toBeEnabled()
+  await page.evaluate(() => { window.dictationTest.failBackup = false })
+  await dialog.getByRole("button", { name: "Restore backup", exact: true }).click()
+  await expect(dialog).toHaveCount(0)
+  await page.evaluate(() => { window.dictationTest.deferBackup = true })
+  await panel.getByRole("button", { name: "Restore backup", exact: true }).click()
+  await expect.poll(() => page.evaluate(() => !!window.dictationTest.resolveBackup)).toBe(true)
+  await page.getByRole("link", { name: "History", exact: true }).click()
+  await page.evaluate(() => { window.dictationTest.resolveBackup!() })
+  await expect.poll(() => page.evaluate(() => window.dictationTest.discardedBackups)).toEqual(["preview-token"])
+})
+
+test("an outdated backup backend provides restart guidance without hiding Settings", async ({ page }) => {
+  await page.addInitScript(() => { Reflect.deleteProperty(Reflect.get(window, "go").main.App, "PreviewBackup") })
+  await page.goto("/#/settings")
+  const panel = page.getByRole("region", { name: "Backup & restore", exact: true })
+  await panel.getByRole("button", { name: "Restore backup", exact: true }).click()
+  await expect(panel.getByRole("alert")).toContainText("restart wails dev")
+  await expect(page.getByRole("heading", { name: "Settings", exact: true })).toBeVisible()
+})
+
+test("backup cancellation remains available after navigating back to Settings", async ({ page }) => {
+  await setupBackupPreview(page)
+  await page.goto("/#/settings")
+  const panel = page.getByRole("region", { name: "Backup & restore", exact: true })
+  await page.evaluate(() => { window.dictationTest.deferBackup = true })
+  await panel.getByRole("button", { name: "Restore backup", exact: true }).click()
+  await expect.poll(() => page.evaluate(() => !!window.dictationTest.resolveBackup)).toBe(true)
+  await page.evaluate(() => {
+    const state = window.dictationTest
+    state.status("backup")
+    state.snapshot.status.message = "Checking backup…"
+    state.callbacks["dictation:status"](structuredClone(state.snapshot.status))
+  })
+  await page.getByRole("link", { name: "History", exact: true }).click()
+  await page.getByRole("link", { name: "Settings", exact: true }).click()
+  await expect(panel.getByRole("status")).toContainText("Checking backup…")
+  await expect(panel.getByRole("button", { name: "Export backup", exact: true })).toBeDisabled()
+  await panel.getByRole("button", { name: "Cancel operation", exact: true }).click()
+  await expect.poll(() => page.evaluate(() => window.dictationTest.snapshot.status.phase)).toBe("idle")
+  await expect(panel.getByRole("button", { name: "Restore backup", exact: true })).toBeEnabled()
+  await page.evaluate(() => { window.dictationTest.resolveBackup!() })
+  await expect.poll(() => page.evaluate(() => window.dictationTest.discardedBackups)).toEqual(["preview-token"])
+  await expect(page.getByRole("dialog")).toHaveCount(0)
 })

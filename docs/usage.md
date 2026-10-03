@@ -92,7 +92,7 @@ Requests time out after five minutes. Long input may exceed your model's context
 window; try a shorter passage if it fails. Saved outputs remain available when
 text processing is disabled.
 
-## Storage
+## Storage and backups
 
 Yap stores its database, models, runtimes, and recordings in the OS user
 configuration folder: `%APPDATA%\yap` on Windows or
@@ -105,6 +105,18 @@ doesn't recover deleted entries, so export anything you want to keep first.
 
 In Models, switch away from a model before removing it. Yap only removes managed
 downloads, not custom files. **Repair & use** replaces a damaged model.
+
+Settings → Backup & restore exports a `.yap-backup.zip` with history, edited
+text, generated outputs, prompts, vocabulary, and portable preferences.
+**Include retained recordings** is off by default. Models and runtimes aren't
+included. Save backups outside Yap's data folder and keep them private: they
+are unencrypted.
+
+Restore shows a preview and merges new entries into your library. Existing IDs
+and conflicting local entries keep their contents; skipped items are counted.
+**Restore portable preferences** is optional. Microphone, shortcut, runtime
+paths, startup, retention, and text-server settings stay specific to this computer.
+Save any pending settings edits before starting a backup or restore.
 
 ## When something goes wrong
 

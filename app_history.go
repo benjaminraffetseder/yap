@@ -15,7 +15,7 @@ import (
 func (a *App) GetHistory(query string, page int) (storage.HistoryPage, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	if err := a.available(); err != nil {
+	if err := a.historyAvailableLocked(); err != nil {
 		return storage.HistoryPage{}, err
 	}
 	return a.store.SearchHistory(query, page)
@@ -24,7 +24,7 @@ func (a *App) GetHistory(query string, page int) (storage.HistoryPage, error) {
 func (a *App) GetSession(id string) (*storage.Session, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	if err := a.available(); err != nil {
+	if err := a.historyAvailableLocked(); err != nil {
 		return nil, err
 	}
 	entry, err := a.store.Session(id)
@@ -40,7 +40,7 @@ func (a *App) GetSession(id string) (*storage.Session, error) {
 func (a *App) DeleteSessions(ids []string) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	if err := a.available(); err != nil {
+	if err := a.historyAvailableLocked(); err != nil {
 		return err
 	}
 	if a.status.Phase == "transcribing" {
@@ -66,7 +66,7 @@ func formatHistoryExport(entries []storage.Session) string {
 
 func (a *App) ExportSessions(ids []string) error {
 	a.mu.Lock()
-	if err := a.available(); err != nil {
+	if err := a.historyAvailableLocked(); err != nil {
 		a.mu.Unlock()
 		return err
 	}
