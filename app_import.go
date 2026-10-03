@@ -31,7 +31,7 @@ func (a *App) ImportAudio() error {
 	if err != nil {
 		return err
 	}
-	path, err := runtime.OpenFileDialog(a.ctx, runtime.OpenDialogOptions{Title: "Import audio", Filters: []runtime.FileFilter{{DisplayName: "WAV audio", Pattern: "*.wav"}}})
+	path, err := runtime.OpenFileDialog(a.ctx, runtime.OpenDialogOptions{Title: "Import audio", Filters: []runtime.FileFilter{{DisplayName: "Audio files", Pattern: audio.ImportFilePattern}}})
 	if err != nil || path == "" {
 		return err
 	}
@@ -60,14 +60,14 @@ func (a *App) importAudio(source string) error {
 	ctx, cancel := context.WithTimeout(a.ctx, 15*time.Minute)
 	a.cancel, a.id, a.path, a.target = cancel, id, path, ""
 	a.indicatorActive = true
-	a.status.Phase, a.status.Message, a.status.Transcript = "transcribing", "Importing WAV audio…", ""
+	a.status.Phase, a.status.Message, a.status.Transcript = "transcribing", "Importing audio…", ""
 	a.status.StartedAt, a.status.Progress = time.Now().UnixMilli(), 0
 	a.wg.Add(1)
 	a.emit()
 	go func() {
 		defer a.wg.Done()
 		defer cancel()
-		duration, err := audio.NormalizeFile(ctx, source, file)
+		duration, err := audio.NormalizeImport(ctx, source, file)
 		err = errors.Join(err, file.Close())
 		a.mu.Lock()
 		if a.closing || ctx.Err() != nil || err != nil {

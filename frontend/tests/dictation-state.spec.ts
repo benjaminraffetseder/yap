@@ -1958,6 +1958,7 @@ test("audio import is cancellable across navigation and results open from Histor
 test("audio import handles file-picker cancellation, unavailable models, invalid files and outdated backends", async ({ page }) => {
   await page.goto("/#/history")
   const button = page.getByRole("button", { name: "Import audio", exact: true })
+  await expect(button).toHaveAttribute("title", /WAV, MP3, M4A, AAC, FLAC, OGG, Opus, AIFF, WMA/)
   await page.evaluate(() => { window.dictationTest.cancelAudioDialog = true })
   await button.click()
   await expect(button).toBeEnabled()
@@ -1971,4 +1972,22 @@ test("audio import handles file-picker cancellation, unavailable models, invalid
   await button.click()
   await expect(page.getByRole("alert")).toContainText("Audio import needs the current backend")
   await expect(page.getByRole("heading", { name: "History", exact: true })).toBeVisible()
+})
+
+test("audio import shows missing decoder guidance and allows retry", async ({ page }) => {
+  await page.goto("/#/history")
+  const button = page.getByRole("button", { name: "Import audio", exact: true })
+  await button.click()
+  await page.evaluate(() => {
+    const state = window.dictationTest
+    state.status("error")
+    state.snapshot.status.message = "This audio format requires local FFmpeg. Install FFmpeg, add it to PATH, and reopen Yap. WAV import works without FFmpeg"
+    state.callbacks["dictation:status"](structuredClone(state.snapshot.status))
+  })
+  await expect(page.getByRole("alert")).toContainText("Install FFmpeg")
+  await expect(page.getByRole("alert")).toContainText("WAV import works without FFmpeg")
+  await expect(button).toBeEnabled()
+  await button.click()
+  await expect.poll(() => page.evaluate(() => window.dictationTest.audioImports)).toBe(2)
+  await expect(button).toBeDisabled()
 })

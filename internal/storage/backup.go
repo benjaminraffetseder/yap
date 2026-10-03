@@ -135,7 +135,7 @@ func backupSnapshot(ctx context.Context, tx *sql.Tx) (backupManifest, error) {
 	}
 	m.Preferences = BackupPreferences{settings.Language, settings.Interaction, settings.AutoPaste, settings.SaveAudio, settings.CleanText}
 	m.Prompts = config.Prompts
-	rows, err := tx.QueryContext(ctx, `SELECT r.id,r.created_at,r.duration_ms,r.transcript,r.model,r.language,r.audio_path,COALESCE(o.transcript,r.transcript) FROM recordings r LEFT JOIN recording_outputs o ON r.id=o.id ORDER BY r.created_at DESC,r.id DESC`)
+	rows, err := tx.QueryContext(ctx, `SELECT r.id,r.created_at,r.duration_ms,r.transcript,r.model,r.language,r.audio_path,COALESCE(o.transcript,r.transcript) FROM recordings r LEFT JOIN recording_outputs o ON r.id=o.id ORDER BY r.created_at COLLATE yap_datetime DESC,r.id DESC`)
 	if err != nil {
 		return m, err
 	}
@@ -157,7 +157,7 @@ func backupSnapshot(ctx context.Context, tx *sql.Tx) (backupManifest, error) {
 	if err != nil {
 		return m, err
 	}
-	rows, err = tx.QueryContext(ctx, "SELECT "+generatedOutputColumns+" FROM generated_outputs ORDER BY created_at,id")
+	rows, err = tx.QueryContext(ctx, "SELECT "+generatedOutputColumns+" FROM generated_outputs ORDER BY created_at COLLATE yap_datetime,id")
 	if err != nil {
 		return m, err
 	}

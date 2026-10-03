@@ -59,6 +59,77 @@ func TestHistoryPagesSearchBeyond500AndKeepOriginals(t *testing.T) {
 	}
 }
 
+func TestHistoryOrdersParsedDatesAcrossPagesAndSnapshot(t *testing.T) {
+	s, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	fixtures := []struct{ id, at string }{
+		{"a", "2026-10-08T13:00:00Z"},
+		{"b", "2026-10-08T13:00:00.1Z"},
+		{"c", "2026-10-08T13:00:00.11Z"},
+		{"d", "2026-10-08T13:00:00.110000001Z"},
+		{"e", "2026-10-08T13:00:00.999999999Z"},
+		{"f", "2026-10-08T13:00:01Z"},
+		{"g", "2026-10-08T12:00:00+02:00"},
+		{"h", "2026-10-08T11:00:00Z"},
+		{"i", "2026-10-08T09:00:00-03:00"},
+		{"j", "2026-10-08T13:00:00.11+00:00"},
+		{"malformed", "bad-date"},
+	}
+	for _, fixture := range fixtures {
+		v := NewSession(fixture.id, 1000, "date regression", "base", "en", "")
+		v.CreatedAt = fixture.at
+		if err := s.Add(v); err != nil {
+			t.Fatal(err)
+		}
+	}
+	want := []string{}
+	for i := 49; i >= 0; i-- {
+		id := fmt.Sprintf("new-%02d", i)
+		v := NewSession(id, 1000, "other", "base", "en", "")
+		v.CreatedAt = "2026-10-09T00:00:00Z"
+		if err := s.Add(v); err != nil {
+			t.Fatal(err)
+		}
+		want = append(want, id)
+	}
+	wantDates := []string{"f", "e", "d", "j", "c", "b", "a", "i", "h", "g", "malformed"}
+	want = append(want, wantDates...)
+	check := func(entries []Session, expected []string) {
+		t.Helper()
+		got := []string{}
+		for _, entry := range entries {
+			got = append(got, entry.ID)
+		}
+		if strings.Join(got, ",") != strings.Join(expected, ",") {
+			t.Fatalf("date ordering: got %v, want %v", got, expected)
+		}
+	}
+	page, err := s.SearchHistory("", 1)
+	if err != nil || page.Total != len(want) {
+		t.Fatalf("pagination: %+v %v", page, err)
+	}
+	check(page.Entries, wantDates)
+	search, err := s.SearchHistory("date regression", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	check(search.Entries, wantDates)
+	snapshot, err := s.History()
+	if err != nil {
+		t.Fatal(err)
+	}
+	check(snapshot, want)
+	for _, fixture := range fixtures {
+		v, err := s.Session(fixture.id)
+		if err != nil || v.CreatedAt != fixture.at {
+			t.Fatal("ordering changed stored date", v, err)
+		}
+	}
+}
+
 func TestBulkDeletionIsRetryableAndRemovesAudioAndCorrections(t *testing.T) {
 	s, err := Open(t.TempDir())
 	if err != nil {

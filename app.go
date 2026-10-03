@@ -497,8 +497,16 @@ func (a *App) start(external bool) error {
 	if err := speech.Validate(speech.Options{Executable: a.settings.WhisperPath, Model: a.settings.ModelPath}); err != nil {
 		return err
 	}
+	file, path, err := a.store.CreateRecording()
+	if err != nil {
+		return err
+	}
+	if err = file.Close(); err != nil {
+		os.Remove(path)
+		return err
+	}
 	a.id = uuid.NewString()
-	a.path = filepath.Join(a.store.Dir, "recordings", a.id+".wav")
+	a.path = path
 	a.target = ""
 	if external && a.settings.AutoPaste {
 		a.target = platform.Target()

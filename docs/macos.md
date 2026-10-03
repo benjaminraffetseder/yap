@@ -60,6 +60,15 @@ Closing the window keeps Yap in the menu bar. Reopen it from there or the Dock;
 `~/Library/LaunchAgents/com.yap.desktop.login.plist`. If you move the app, open
 the new copy and save the startup setting again.
 
+## Optional audio formats
+
+WAV import and microphone recording need no extra software. Other formats need
+FFmpeg. If you use Homebrew, install it with `brew install ffmpeg`.
+
+Yap checks PATH, `/opt/homebrew/bin/ffmpeg`, and `/usr/local/bin/ffmpeg`, including
+when launched from Finder. Reopen Yap after installing. See
+[Audio support](audio-support.md) for supported formats and Windows downloads.
+
 ## Testing on a Mac
 
 The desktop behavior still needs testing, particularly:

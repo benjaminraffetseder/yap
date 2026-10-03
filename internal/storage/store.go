@@ -140,7 +140,7 @@ func (s *Store) Add(v Session) error {
 	return tx.Commit()
 }
 func (s *Store) History() ([]Session, error) {
-	rows, err := s.db.Query("SELECT r.id,r.created_at,r.duration_ms,r.transcript,r.model,r.language,r.audio_path,COALESCE(o.transcript,r.transcript) FROM recordings r LEFT JOIN recording_outputs o ON r.id=o.id ORDER BY r.created_at DESC LIMIT 500")
+	rows, err := s.db.Query("SELECT r.id,r.created_at,r.duration_ms,r.transcript,r.model,r.language,r.audio_path,COALESCE(o.transcript,r.transcript) FROM recordings r LEFT JOIN recording_outputs o ON r.id=o.id ORDER BY r.created_at COLLATE yap_datetime DESC,r.id DESC LIMIT 500")
 	if err != nil {
 		return nil, err
 	}

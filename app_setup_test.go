@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -11,6 +12,37 @@ import (
 )
 
 type silentCapture struct{ fakeCapture }
+
+func TestCaptureRejectsRedirectedRecordingStorage(t *testing.T) {
+	for _, kind := range []string{"dictation", "microphone-test", "diagnostic"} {
+		t.Run(kind, func(t *testing.T) {
+			a := testApp(t)
+			recordings := filepath.Join(a.store.Dir, "recordings")
+			if err := os.Remove(recordings); err != nil {
+				t.Fatal(err)
+			}
+			external := t.TempDir()
+			if err := os.Symlink(external, recordings); err != nil {
+				t.Skip("directory symlink unavailable", err)
+			}
+			var err error
+			switch kind {
+			case "dictation":
+				err = a.StartRecording()
+			case "microphone-test":
+				err = a.StartMicrophoneTest()
+			case "diagnostic":
+				err = a.StartDiagnosticTest()
+			}
+			if err == nil {
+				t.Error("capture followed redirected recording storage")
+			}
+			if files, err := os.ReadDir(external); err != nil || len(files) != 0 {
+				t.Error("capture changed external directory", err)
+			}
+		})
+	}
+}
 
 func (silentCapture) Start(path, mic string, level func(float64)) error {
 	level(0)

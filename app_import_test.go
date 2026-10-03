@@ -5,8 +5,10 @@ import (
 	"encoding/binary"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"yap/internal/audio"
 	"yap/internal/inference/speech"
@@ -134,6 +136,45 @@ func TestAudioImportCancellationAndValidationLeaveNoPartialData(t *testing.T) {
 	a.settings.ModelPath = ""
 	if err := a.importAudio(bad); err == nil {
 		t.Fatal("imported without speech model")
+	}
+}
+
+func TestCompressedAudioImportUsesHistoryPipeline(t *testing.T) {
+	ffmpeg, err := exec.LookPath("ffmpeg")
+	if err != nil {
+		t.Skip("local FFmpeg not installed")
+	}
+	source := filepath.Join(t.TempDir(), "recorded audio.flac")
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, ffmpeg, "-hide_banner", "-loglevel", "error", "-nostdin", "-i", importedWAV(t), "-c:a", "flac", source)
+	if log, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("make FLAC fixture: %v %s", err, log)
+	}
+	before, err := os.ReadFile(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := testApp(t)
+	a.settings.SaveAudio = true
+	a.engine = importedSpeech{}
+	a.copyText = func(string) error { t.Error("compressed import touched clipboard"); return nil }
+	if err := a.importAudio(source); err != nil {
+		t.Fatal(err)
+	}
+	a.wg.Wait()
+	entries, err := a.store.History()
+	if err != nil || len(entries) != 1 || entries[0].DurationMS != 1000 || entries[0].RawTranscript != "uh, hello postgres." {
+		t.Fatalf("compressed import pipeline: %+v %v", entries, err)
+	}
+	if data, err := os.ReadFile(entries[0].AudioPath); err != nil || len(data) != 32044 || binary.LittleEndian.Uint32(data[24:]) != 16000 {
+		t.Fatalf("retained normalized audio: %v", err)
+	}
+	if after, err := os.ReadFile(source); err != nil || string(before) != string(after) {
+		t.Fatal("compressed source changed", err)
+	}
+	if a.status.Phase != "done" {
+		t.Fatalf("compressed import failed: %+v", a.status)
 	}
 }
 

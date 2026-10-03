@@ -79,6 +79,35 @@ func TestGeneratedOutputsPreserveTranscriptsAndPersistVersions(t *testing.T) {
 	}
 }
 
+func TestGeneratedOutputsOrderMixedTimestampFormats(t *testing.T) {
+	s, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	if err := s.Add(NewSession("session", 1000, "raw", "base", "en", "")); err != nil {
+		t.Fatal(err)
+	}
+	config := textmodel.Defaults()
+	config.Model = "local-model"
+	prompt, _ := config.Prompt("summary")
+	for _, fixture := range []struct{ id, at string }{
+		{"older", "2026-10-08T12:00:00.1Z"},
+		{"newer", "2026-10-08T12:00:00.11Z"},
+		{"offset", "2026-10-08T13:00:00+02:00"},
+	} {
+		v := NewGeneratedOutput("session", "raw", "summary", config, prompt)
+		v.ID, v.CreatedAt = fixture.id, fixture.at
+		if err := s.AddGeneratedOutput(v); err != nil {
+			t.Fatal(err)
+		}
+	}
+	outputs, err := s.GeneratedOutputs("session")
+	if err != nil || len(outputs) != 3 || outputs[0].ID != "newer" || outputs[1].ID != "older" || outputs[2].ID != "offset" {
+		t.Fatalf("output date ordering: %+v %v", outputs, err)
+	}
+}
+
 func TestGeneratedOutputMigrationPreservesLegacyReadsWritesAndDeletes(t *testing.T) {
 	dir := t.TempDir()
 	db, err := sql.Open("sqlite", filepath.Join(dir, "database.sqlite"))

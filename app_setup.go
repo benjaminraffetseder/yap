@@ -3,7 +3,6 @@ package main
 import (
 	"errors"
 	"os"
-	"path/filepath"
 	"time"
 
 	"github.com/google/uuid"
@@ -60,11 +59,10 @@ func (a *App) startCaptureTest(transcription bool) error {
 	if a.busy() {
 		return errors.New("finish the current operation first")
 	}
-	f, err := os.CreateTemp(filepath.Join(a.store.Dir, "recordings"), "mic-test-*.wav")
+	f, path, err := a.store.CreateRecording()
 	if err != nil {
 		return err
 	}
-	path := f.Name()
 	if err = f.Close(); err != nil {
 		os.Remove(path)
 		return err

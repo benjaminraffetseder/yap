@@ -58,7 +58,7 @@ func (s *Store) AddGeneratedOutput(v GeneratedOutput) error {
 const generatedOutputColumns = "id,recording_id,created_at,prompt_id,prompt_name,instruction,model,endpoint,input,output"
 
 func (s *Store) GeneratedOutputs(sessionID string) ([]GeneratedOutput, error) {
-	rows, err := s.db.Query("SELECT "+generatedOutputColumns+" FROM generated_outputs WHERE recording_id=? ORDER BY created_at DESC,id DESC", sessionID)
+	rows, err := s.db.Query("SELECT "+generatedOutputColumns+" FROM generated_outputs WHERE recording_id=? ORDER BY created_at COLLATE yap_datetime DESC,id DESC", sessionID)
 	if err != nil {
 		return nil, err
 	}

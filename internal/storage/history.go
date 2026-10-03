@@ -6,7 +6,31 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"modernc.org/sqlite"
 )
+
+func init() {
+	// Query-only collation preserves legacy/backup dates and the existing schema.
+	// SQLite's date helpers lose fractional precision; compare full timestamps.
+	sqlite.MustRegisterCollationUtf8("yap_datetime", compareHistoryDates)
+}
+
+func compareHistoryDates(left, right string) int {
+	a, aErr := time.Parse(time.RFC3339Nano, left)
+	b, bErr := time.Parse(time.RFC3339Nano, right)
+	switch {
+	case aErr == nil && bErr == nil:
+		return a.Compare(b)
+	case aErr == nil:
+		return 1
+	case bErr == nil:
+		return -1
+	default:
+		// Preserve malformed legacy entries after dated entries, with stable ties.
+		return strings.Compare(left, right)
+	}
+}
 
 const HistoryPageSize = 50
 
@@ -25,7 +49,7 @@ func (s *Store) SearchHistory(query string, page int) (HistoryPage, error) {
 		return out, errors.New("invalid History search or page")
 	}
 	rows, err := s.db.Query(`SELECT r.id,r.created_at,r.duration_ms,r.transcript,r.model,r.language,r.audio_path,COALESCE(o.transcript,r.transcript)
-		FROM recordings r LEFT JOIN recording_outputs o ON r.id=o.id ORDER BY r.created_at DESC,r.id DESC`)
+		FROM recordings r LEFT JOIN recording_outputs o ON r.id=o.id ORDER BY r.created_at COLLATE yap_datetime DESC,r.id DESC`)
 	if err != nil {
 		return out, err
 	}

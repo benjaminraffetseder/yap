@@ -49,6 +49,9 @@ func (r *Recorder) Start(path, microphoneID string, level func(float64)) error {
 	if r.capture != nil {
 		return errors.New("already recording")
 	}
+	if err := removeEmptyCaptureReservation(path); err != nil {
+		return err
+	}
 	name := C.CString(path)
 	defer C.free(unsafe.Pointer(name))
 	device := C.CString(microphoneID)

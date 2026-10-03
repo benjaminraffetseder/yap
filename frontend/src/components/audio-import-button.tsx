@@ -11,5 +11,5 @@ export function AudioImportButton() {
     setPending(true)
     try { await run(backend.importAudio) } finally { setPending(false) }
   }
-  return <Button variant="outline" title="WAV audio · up to 10 minutes · 256 MiB" disabled={!isDesktop || loading || !snapshot.ready || isBusy(snapshot.status.phase) || pending} onClick={() => void importAudio()}><Upload className="size-4" />Import audio</Button>
+  return <Button variant="outline" title="WAV, MP3, M4A, AAC, FLAC, OGG, Opus, AIFF, WMA · up to 10 minutes · 256 MiB" disabled={!isDesktop || loading || !snapshot.ready || isBusy(snapshot.status.phase) || pending} onClick={() => void importAudio()}><Upload className="size-4" />Import audio</Button>
 }

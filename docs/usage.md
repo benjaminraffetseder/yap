@@ -56,14 +56,16 @@ off by default. It doesn't need a text model or change older transcripts.
 
 ## Importing audio
 
-Choose **Import audio** in Dictate or History to transcribe a WAV file.
-Files must be from 0.3 seconds to ten minutes long and up to 256 MiB.
+Choose **Import audio** in Dictate or History. Supported files are WAV, MP3, M4A,
+AAC, FLAC, OGG, Opus, AIFF, and WMA, from 0.3 seconds to ten minutes long and up
+to 256 MiB. Longer files are rejected rather than cut short.
 
 Imports use your saved speech and text-processing settings. The result goes into
 History without changing the source file or clipboard. **Keep recordings** saves
 a converted copy for playback and backup.
 
-WAV import works without extra software.
+WAV works without extra software. Other formats need a local FFmpeg
+installation. See [Audio support](audio-support.md) for setup details.
 
 ## Local text models
 
