@@ -4,10 +4,56 @@ import (
 	"archive/zip"
 	"context"
 	"errors"
+	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
+
+type runtimeTransport func(*http.Request) (*http.Response, error)
+
+func (f runtimeTransport) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+func TestRuntimeInstallRejectsRedirectedStorageBeforeDownload(t *testing.T) {
+	if runtime.GOOS != "windows" || runtime.GOARCH != "amd64" {
+		t.Skip("automatic runtime installation is Windows x64 only")
+	}
+	for _, installed := range []bool{false, true} {
+		t.Run(map[bool]string{false: "fresh", true: "installed"}[installed], func(t *testing.T) {
+			dir, outside := t.TempDir(), t.TempDir()
+			if err := os.Symlink(outside, filepath.Join(dir, "runtime")); err != nil {
+				t.Skipf("symlinks unavailable: %v", err)
+			}
+			archive := filepath.Join(outside, "whisper.zip")
+			if err := os.WriteFile(archive, []byte("external archive"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			if installed {
+				root := filepath.Join(outside, "whisper-1.9.2")
+				if err := os.Mkdir(root, 0700); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(filepath.Join(root, "whisper-cli.exe"), []byte("external executable"), 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			requests := 0
+			old := http.DefaultTransport
+			http.DefaultTransport = runtimeTransport(func(*http.Request) (*http.Response, error) {
+				requests++
+				return nil, errors.New("unexpected remote request")
+			})
+			defer func() { http.DefaultTransport = old }()
+			if _, err := InstallRuntime(context.Background(), dir, func(int64, int64) {}); err == nil || requests != 0 {
+				t.Errorf("redirected runtime accepted or downloaded: %v, requests %d", err, requests)
+			}
+			if got, err := os.ReadFile(archive); err != nil || string(got) != "external archive" {
+				t.Fatalf("external archive changed: %q %v", got, err)
+			}
+		})
+	}
+}
 
 func runtimeFixture(t *testing.T, files map[string]string) (string, string, string) {
 	t.Helper()

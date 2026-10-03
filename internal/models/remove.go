@@ -11,17 +11,24 @@ import (
 
 // The managed models directory must resolve inside the actual app data folder.
 // Refuse redirected directories and symlinks rather than deleting custom files.
-func managedModelPath(dir, path string) error {
+func managedModelDirectory(dir string) (string, error) {
 	root, err := filepath.EvalSymlinks(dir)
 	if err != nil {
-		return err
+		return "", err
 	}
 	modelDir, err := filepath.EvalSymlinks(filepath.Join(dir, "models"))
 	if err != nil {
-		return err
+		return "", err
 	}
 	if !samePath(modelDir, filepath.Join(root, "models")) {
-		return errors.New("model storage is redirected; remove the file manually")
+		return "", errors.New("model storage is redirected; repair it manually")
+	}
+	return filepath.Abs(modelDir)
+}
+
+func managedModelPath(dir, path string) error {
+	if _, err := managedModelDirectory(dir); err != nil {
+		return err
 	}
 	st, err := os.Lstat(path)
 	if err != nil {

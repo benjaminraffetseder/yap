@@ -18,6 +18,7 @@ func TestGeneratedOutputsCaptureRecipesAndRegenerateWithoutReplacingText(t *test
 		t.Fatal(err)
 	}
 	a.id, a.status.Phase, a.status.Transcript = entry.ID, "done", "previous delivery"
+	a.status.Message = "Copied to clipboard"
 	a.copyText = func(string) error { t.Error("manual generation changed clipboard"); return nil }
 	fake := &fakeTextEngine{output: "summary v1", started: make(chan textCall, 1), release: make(chan struct{})}
 	a.textEngine = fake
@@ -42,7 +43,7 @@ func TestGeneratedOutputsCaptureRecipesAndRegenerateWithoutReplacingText(t *test
 	if first.Input != entry.FinalTranscript || first.Text != "summary v1" || first.Model != config.Model || first.Prompt != call.prompt || first.Endpoint != config.Endpoint {
 		t.Fatal("incorrect metadata", first)
 	}
-	if a.status.Transcript != "later correction" {
+	if a.status.Transcript != "later correction" || a.status.Message != "Transcript updated in History" {
 		t.Fatal("latest edit lost from status", a.status)
 	}
 	config.Model, config.Prompts = "new-model", config.Prompts[:1] // Summary was deleted.

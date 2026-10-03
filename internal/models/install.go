@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -67,6 +68,10 @@ func (w *progressWriter) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 func Download(ctx context.Context, url, dest, hash string, size int64, report func(int64, int64)) error {
+	return download(ctx, url, dest, hash, size, report, nil)
+}
+
+func download(ctx context.Context, url, dest, hash string, size int64, report func(int64, int64), validate func() error) error {
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return err
@@ -79,6 +84,11 @@ func Download(ctx context.Context, url, dest, hash string, size int64, report fu
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("download failed: HTTP %d", resp.StatusCode)
+	}
+	if validate != nil {
+		if err := validate(); err != nil {
+			return err
+		}
 	}
 	f, err := os.CreateTemp(filepath.Dir(dest), ".download-*")
 	if err != nil {
@@ -104,6 +114,11 @@ func Download(ctx context.Context, url, dest, hash string, size int64, report fu
 	if err = ctx.Err(); err != nil {
 		return err
 	}
+	if validate != nil {
+		if err := validate(); err != nil {
+			return err
+		}
+	}
 	if err = os.Rename(f.Name(), dest); err != nil {
 		return err
 	}
@@ -123,6 +138,11 @@ func installModel(ctx context.Context, dir string, model Model, url string, repo
 	if err := ctx.Err(); err != nil {
 		return dest, err
 	}
+	root, err := managedModelDirectory(dir)
+	if err != nil {
+		return dest, err
+	}
+	dest = filepath.Join(root, "ggml-"+model.ID+".bin")
 	if _, err := os.Lstat(dest); err == nil {
 		if err = managedModelPath(dir, dest); err != nil {
 			return dest, err
@@ -137,7 +157,21 @@ func installModel(ctx context.Context, dir string, model Model, url string, repo
 	} else if !os.IsNotExist(err) {
 		return dest, err
 	}
-	return dest, Download(ctx, url, dest, model.SHA, model.Size, report)
+	return dest, download(ctx, url, dest, model.SHA, model.Size, report, func() error {
+		actual, err := managedModelDirectory(dir)
+		if err != nil {
+			return err
+		}
+		if !samePath(actual, root) {
+			return errors.New("model storage changed during download; retry installation")
+		}
+		if _, err := os.Lstat(dest); os.IsNotExist(err) {
+			return nil
+		} else if err != nil {
+			return err
+		}
+		return managedModelPath(dir, dest)
+	})
 }
 func RuntimePath(dir string) string {
 	return runtimePathIn(filepath.Join(dir, "runtime", "whisper-1.9.2"))
@@ -165,13 +199,31 @@ func InstallRuntime(ctx context.Context, dir string, report func(int64, int64)) 
 	if runtime.GOOS != "windows" || runtime.GOARCH != "amd64" {
 		return "", fmt.Errorf("select your platform's whisper-cli executable in Settings; automatic runtime installation supports Windows x64")
 	}
+	root, err := managedRuntimeRoot(dir)
+	if err != nil {
+		return "", err
+	}
 	if path := RuntimePath(dir); path != "" {
 		return path, nil
 	}
-	archive := filepath.Join(dir, "runtime", "whisper.zip")
-	if err := Download(ctx, "https://github.com/ggml-org/whisper.cpp/releases/download/v1.9.2/whisper-bin-x64.zip", archive, "49dcc16de826f20bd53d44f947a1ae49dfa81f86cad67a64d80820cb192d674a", 8194445, report); err != nil {
+	archive := filepath.Join(root, "whisper.zip")
+	validate := func() error {
+		actual, err := managedRuntimeRoot(dir)
+		if err != nil {
+			return err
+		}
+		if !samePath(actual, root) {
+			return errors.New("runtime storage changed during download; retry installation")
+		}
+		return nil
+	}
+	if err := download(ctx, "https://github.com/ggml-org/whisper.cpp/releases/download/v1.9.2/whisper-bin-x64.zip", archive, "49dcc16de826f20bd53d44f947a1ae49dfa81f86cad67a64d80820cb192d674a", 8194445, report, validate); err != nil {
 		return "", err
 	}
-	defer os.Remove(archive)
+	defer func() {
+		if validate() == nil {
+			_ = os.Remove(archive)
+		}
+	}()
 	return installRuntimeArchive(ctx, dir, archive)
 }

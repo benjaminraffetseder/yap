@@ -209,6 +209,7 @@ func (a *App) processTextRequest(requestID, input, promptID string, test bool, t
 		if entry, err := a.store.Session(a.id); err == nil {
 			if entry.FinalTranscript != previousSavedText {
 				a.status.Transcript = entry.FinalTranscript
+				a.status.Message = "Transcript updated in History"
 			}
 		} else {
 			a.status.Phase, a.status.Message, a.status.Transcript = "idle", "Ready", ""

@@ -57,3 +57,31 @@ func TestAliasesAreLiteralBoundedAndNonCascading(t *testing.T) {
 		t.Fatal("unbounded prompt")
 	}
 }
+
+func TestOverlappingAliasesChooseLongestBoundaryValidPhrase(t *testing.T) {
+	entries := []Entry{
+		{ID: "red", Canonical: "Red", Enabled: true},
+		{ID: "fedora", Canonical: "Fedora", Aliases: []string{"red hat"}, Enabled: true},
+		{ID: "hat", Canonical: "Hat", Enabled: true},
+		{ID: "science", Canonical: "Science", Enabled: true},
+		{ID: "fiction", Canonical: "Sci-Fi", Aliases: []string{"science fiction"}, Enabled: true},
+		{ID: "net", Canonical: ".NET", Enabled: true},
+		{ID: "tool", Canonical: "NetTool", Aliases: []string{".net tool"}, Enabled: true},
+	}
+	for _, tc := range []struct{ input, want string }{
+		{"red hatchet", "Red hatchet"},
+		{"infrared hat", "infrared Hat"},
+		{"red hat", "Fedora"},
+		{"ſcience fictional", "Science fictional"},
+		{"ſcience fiction", "Sci-Fi"},
+		{".net toolkit", ".NET toolkit"},
+		{".net tool", "NetTool"},
+		{"red hatchet and red hat", "Red hatchet and Fedora"},
+	} {
+		t.Run(tc.input, func(t *testing.T) {
+			if got := Apply(tc.input, entries); got != tc.want {
+				t.Fatalf("got %q, want %q", got, tc.want)
+			}
+		})
+	}
+}

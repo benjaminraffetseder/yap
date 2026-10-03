@@ -124,24 +124,53 @@ func Apply(text string, entries []Entry) string {
 		phrases[i] = regexp.QuoteMeta(phrases[i])
 	}
 	pattern := regexp.MustCompile("(?i)(" + strings.Join(phrases, "|") + ")")
+	fallbacks := make([]*regexp.Regexp, len(phrases))
 	var out strings.Builder
 	last := 0
-	for _, match := range pattern.FindAllStringIndex(text, -1) {
-		if !boundary(text, match[0], match[1]) {
+	for search := 0; search < len(text); {
+		match := pattern.FindStringIndex(text[search:])
+		if match == nil {
+			break
+		}
+		start, end := search+match[0], search+match[1]
+		validStart := start == 0
+		if start > 0 {
+			previous, _ := utf8.DecodeLastRuneInString(text[:start])
+			validStart = !word(previous)
+		}
+		valid := validStart && boundary(text, start, end)
+		if validStart && !valid {
+			// RE2 chooses the first alternative before we can check its suffix.
+			// Retry shorter phrases at this start when a longer prefix is invalid.
+			for i, phrase := range phrases {
+				if fallbacks[i] == nil {
+					fallbacks[i] = regexp.MustCompile("(?i)^" + phrase)
+				}
+				candidate := fallbacks[i].FindStringIndex(text[start:])
+				if candidate != nil && boundary(text, start, start+candidate[1]) {
+					end, valid = start+candidate[1], true
+					break
+				}
+			}
+		}
+		if !valid {
+			// A rejected interior prefix must not consume a later valid phrase.
+			_, width := utf8.DecodeRuneInString(text[start:])
+			search = start + width
 			continue
 		}
-		out.WriteString(text[last:match[0]])
-		value, found := replacements[strings.ToLower(text[match[0]:match[1]])]
+		out.WriteString(text[last:start])
+		value, found := replacements[strings.ToLower(text[start:end])]
 		if !found { // RE2 Unicode folding also matches forms such as long-s.
 			for phrase, canonical := range replacements {
-				if strings.EqualFold(phrase, text[match[0]:match[1]]) {
+				if strings.EqualFold(phrase, text[start:end]) {
 					value = canonical
 					break
 				}
 			}
 		}
 		out.WriteString(value)
-		last = match[1]
+		last, search = end, end
 	}
 	out.WriteString(text[last:])
 	return out.String()
