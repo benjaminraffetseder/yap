@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test"
-import type { DiagnosticCheck, Settings, Snapshot, Status, VocabularyEntry, TextProcessing } from "../src/lib/backend"
+import type { DiagnosticCheck, Settings, Snapshot, Status, VocabularyEntry, TextProcessing, GeneratedOutput, TextPrompt } from "../src/lib/backend"
 
 declare global {
   interface Window {
@@ -26,6 +26,8 @@ declare global {
       resolveCapture: (() => void) | null
       occupiedShortcut: string
       processing: { id: string; input: string; prompt: string; resolve: (result: string) => void; reject: (error: Error) => void } | null
+      outputs: GeneratedOutput[]
+      failOutputs: boolean
       failProcessing: boolean
       textModels: string[]
       modelListError: string
@@ -57,8 +59,27 @@ test.beforeEach(async ({ page }) => {
         state.snapshot.status = { ...state.snapshot.status, phase, message: phase === "transcribing" ? "Transcribing…" : "Ready", startedAt: Date.now() }
         state.callbacks["dictation:status"](structuredClone(state.snapshot.status))
       },
-      processing: null, failProcessing: false, cancelledProcessing: [], textModels: [], modelListError: "", deferModelList: false, modelListRequests: [], pendingModelLists: [],
+      outputs: [], failOutputs: false, processing: null, failProcessing: false, cancelledProcessing: [], textModels: [], modelListError: "", deferModelList: false, modelListRequests: [], pendingModelLists: [],
       history() { state.callbacks["dictation:history"]() },
+    }
+    function beginOutput(id: string, sessionID: string, prompt: TextPrompt, input: string) {
+      if (state.failProcessing) return Promise.reject(new Error("Model unavailable"))
+      const config = structuredClone(state.snapshot.textProcessing)
+      const previous = structuredClone(state.snapshot.status)
+      const savedPrompt = structuredClone(prompt)
+      state.status("text-processing")
+      return new Promise<string>((resolve, reject) => {
+        state.processing = { id, input, prompt: prompt.id, reject, resolve: text => {
+          state.processing = null
+          state.snapshot.status = previous
+          state.callbacks["dictation:status"](structuredClone(previous))
+          if (state.cancelledProcessing.includes(id)) { reject(new Error("Processing cancelled")); return }
+          if (!state.snapshot.history.some(entry => entry.id === sessionID)) { reject(new Error("This dictation no longer exists")); return }
+          state.outputs.unshift({ id: crypto.randomUUID(), sessionId: sessionID, createdAt: new Date().toISOString(), prompt: savedPrompt, model: config.model, endpoint: config.endpoint, input, text })
+          state.history()
+          resolve(text)
+        } }
+      })
     }
     window.dictationTest = state
     Object.assign(window, {
@@ -93,6 +114,7 @@ test.beforeEach(async ({ page }) => {
         DeleteSessions: async (ids: string[]) => {
           if (state.failSave) throw new Error("History deletion failed")
           state.snapshot.history = state.snapshot.history.filter(entry => !ids.includes(entry.id))
+          state.outputs = state.outputs.filter(output => !ids.includes(output.sessionId))
           state.history()
         },
         ExportSessions: async (ids: string[]) => { state.exportedText = state.snapshot.history.filter(entry => ids.includes(entry.id)).map(entry => entry.finalTranscript).join("\n") },
@@ -150,6 +172,26 @@ test.beforeEach(async ({ page }) => {
           if (state.modelListError) throw new Error(state.modelListError)
           if (state.deferModelList) return new Promise<string[]>(resolve => { state.pendingModelLists.push({ id, endpoint, resolve }) })
           return structuredClone(state.textModels)
+        },
+        GetSessionOutputs: async (sessionID: string) => {
+          if (state.failOutputs) throw new Error("Outputs unavailable")
+          return structuredClone(state.outputs.filter(output => output.sessionId === sessionID))
+        },
+        GenerateSessionOutput: async (id: string, sessionID: string, promptID: string) => {
+          const entry = state.snapshot.history.find(entry => entry.id === sessionID)
+          const prompt = state.snapshot.textProcessing.prompts.find(prompt => prompt.id === promptID)
+          if (!entry || !prompt) throw new Error("Missing dictation or prompt")
+          return beginOutput(id, sessionID, prompt, entry.finalTranscript)
+        },
+        RegenerateSessionOutput: async (id: string, sessionID: string, outputID: string) => {
+          const output = state.outputs.find(output => output.sessionId === sessionID && output.id === outputID)
+          if (!output) throw new Error("Missing output")
+          return beginOutput(id, sessionID, output.prompt, output.input)
+        },
+        DeleteSessionOutput: async (sessionID: string, outputID: string) => {
+          if (state.failSave) throw new Error("Output deletion failed")
+          state.outputs = state.outputs.filter(output => output.sessionId !== sessionID || output.id !== outputID)
+          state.history()
         },
         ProcessText: async (id: string, input: string, prompt: string) => {
           if (state.failProcessing) throw new Error("Model unavailable")
@@ -548,6 +590,139 @@ test("dictation pages show restart guidance for an outdated backend", async ({ p
   await expect(page.getByRole("alert").filter({ hasText: "restart wails dev" })).toBeVisible()
   await expect(page.getByRole("heading", { name: "Dictation", exact: true })).toBeVisible()
   await expect(page.getByRole("link", { name: "Back to History", exact: true })).toBeVisible()
+})
+
+test("saved outputs retain their recipes, regenerate as new versions and leave edited text intact", async ({ page }, testInfo) => {
+  await page.addInitScript(() => {
+    localStorage.setItem("desktop-theme", "dark")
+    const state = window.dictationTest
+    state.snapshot.textProcessing.enabled = true
+    state.snapshot.textProcessing.model = "local-model"
+    state.snapshot.history = [JSON.parse(sessionStorage.getItem("output-test-entry") ?? "null") ?? { id: "one", createdAt: "2026-10-07T12:30:00", durationMs: 12000, rawTranscript: "um we should test the new model and compare its recognition of names and technical terms", finalTranscript: "Test the new model and compare its recognition of names and technical terms.", speechModel: "base", language: "en", audioPath: "" }]
+    state.outputs = JSON.parse(sessionStorage.getItem("output-test-versions") ?? "[]")
+  })
+  await page.goto("/#/history/one")
+  await expect(page.getByRole("button", { name: "Generate output", exact: true })).toBeEnabled()
+  await page.getByRole("combobox", { name: "Output prompt", exact: true }).click()
+  await page.getByRole("option", { name: "Summary", exact: true }).click()
+  await page.getByRole("button", { name: "Generate output", exact: true }).click()
+  await expect.poll(() => page.evaluate(() => window.dictationTest.processing?.input)).toBe("Test the new model and compare its recognition of names and technical terms.")
+  await page.evaluate(() => window.dictationTest.processing!.resolve("Compare the new model's recognition of names and technical terms."))
+  const first = page.getByRole("article", { name: "Summary output", exact: true }).filter({ hasText: "Compare the new model's recognition" })
+  await expect(first).toContainText("local-model")
+  await first.getByText("Input and prompt", { exact: true }).click()
+  await expect(first).toContainText("Test the new model and compare its recognition")
+  await first.getByRole("button", { name: "Copy output", exact: true }).click()
+  await expect.poll(() => page.evaluate(() => window.dictationTest.snapshot.status.transcript)).toBe("Compare the new model's recognition of names and technical terms.")
+  await page.getByRole("button", { name: "Edit transcript", exact: true }).click()
+  await page.getByRole("textbox", { name: "Editable text", exact: true }).fill("Updated transcription for the next comparison.")
+  await page.getByRole("button", { name: "Save transcript", exact: true }).click()
+  await expect(page.getByRole("region", { name: "Result", exact: true })).toContainText("Updated transcription")
+  await page.evaluate(() => {
+    const state = window.dictationTest
+    state.snapshot.textProcessing.model = "new-model"
+    state.snapshot.textProcessing.prompts = state.snapshot.textProcessing.prompts.filter(prompt => prompt.id !== "summary")
+    state.callbacks["setup:changed"]()
+  })
+  await first.getByRole("button", { name: "Regenerate", exact: true }).click()
+  await expect.poll(() => page.evaluate(() => window.dictationTest.processing?.input)).toBe("Test the new model and compare its recognition of names and technical terms.")
+  await expect.poll(() => page.evaluate(() => window.dictationTest.processing?.prompt)).toBe("summary")
+  await page.evaluate(() => window.dictationTest.processing!.resolve("Test the model with names and technical terms, then compare results."))
+  const second = page.getByRole("article", { name: "Summary output", exact: true }).filter({ hasText: "Test the model with names" })
+  await expect(second).toContainText("new-model")
+  await expect(first).toBeVisible()
+  await expect(page.getByRole("region", { name: "Result", exact: true })).toContainText("Updated transcription")
+  await expect(page.getByRole("region", { name: "Original transcription", exact: true })).toContainText("um we should test")
+  await first.getByText("Input and prompt", { exact: true }).click()
+  await page.screenshot({ path: testInfo.outputPath("saved-outputs.png"), fullPage: true, animations: "disabled" })
+  await page.evaluate(() => {
+    sessionStorage.setItem("output-test-entry", JSON.stringify(window.dictationTest.snapshot.history[0]))
+    sessionStorage.setItem("output-test-versions", JSON.stringify(window.dictationTest.outputs))
+  })
+  await page.reload()
+  await expect(first).toContainText("local-model")
+  await expect(second).toContainText("new-model")
+  await first.getByRole("button", { name: "Delete output", exact: true }).click()
+  const dialog = page.getByRole("dialog", { name: "Delete this output?", exact: true })
+  await page.evaluate(() => { window.dictationTest.failSave = true })
+  await dialog.getByRole("button", { name: "Delete output", exact: true }).click()
+  await expect(dialog.getByRole("alert")).toHaveText("Output deletion failed")
+  await page.evaluate(() => { window.dictationTest.failSave = false })
+  await dialog.getByRole("button", { name: "Delete output", exact: true }).click()
+  await expect(first).toHaveCount(0)
+  await expect(second).toBeVisible()
+  await expect(page.getByRole("region", { name: "Result", exact: true })).toContainText("Updated transcription")
+})
+
+test("failed, cancelled and abandoned output generation never adds a late result", async ({ page }) => {
+  await page.addInitScript(() => {
+    const state = window.dictationTest
+    state.snapshot.textProcessing.enabled = true
+    state.snapshot.textProcessing.model = "model"
+    state.snapshot.history = [{ id: "one", createdAt: "2026-10-07", durationMs: 1000, rawTranscript: "Original speech", finalTranscript: "Edited speech", speechModel: "base", language: "en", audioPath: "" }]
+    state.failProcessing = true
+  })
+  await page.goto("/#/history/one")
+  await page.getByRole("button", { name: "Generate output", exact: true }).click()
+  await expect(page.getByRole("alert").filter({ hasText: "Model unavailable" })).toBeVisible()
+  await expect(page.getByText("No generated outputs yet.", { exact: true })).toBeVisible()
+  await page.evaluate(() => { window.dictationTest.failProcessing = false })
+  await page.getByRole("button", { name: "Generate output", exact: true }).click()
+  await page.getByRole("button", { name: "Cancel generation", exact: true }).click()
+  await page.evaluate(() => window.dictationTest.processing!.resolve("Cancelled result"))
+  await expect(page.getByRole("alert").filter({ hasText: "Processing cancelled" })).toBeVisible()
+  expect(await page.evaluate(() => window.dictationTest.outputs.length)).toBe(0)
+  await expect(page.getByRole("region", { name: "Result", exact: true })).toContainText("Edited speech")
+  await page.getByRole("button", { name: "Generate output", exact: true }).click()
+  await page.evaluate(() => window.dictationTest.processing!.resolve("Successful retry"))
+  await expect(page.getByRole("article")).toContainText("Successful retry")
+  await page.getByRole("button", { name: "Generate output", exact: true }).click()
+  const requestID = await page.evaluate(() => window.dictationTest.processing!.id)
+  await page.getByRole("link", { name: "Back to History", exact: true }).click()
+  await expect.poll(() => page.evaluate(id => window.dictationTest.cancelledProcessing.includes(id), requestID)).toBe(true)
+  await page.evaluate(() => window.dictationTest.processing!.resolve("Late after navigation"))
+  await settle(page)
+  expect(await page.evaluate(() => window.dictationTest.outputs.map(output => output.text))).toEqual(["Successful retry"])
+  expect(await page.evaluate(() => window.dictationTest.snapshot.history[0].finalTranscript)).toBe("Edited speech")
+  expect(await page.evaluate(() => window.dictationTest.snapshot.status.transcript)).toBe("")
+})
+
+test("saved outputs remain usable with the model disabled and recover after a failed load", async ({ page }) => {
+  await page.addInitScript(() => {
+    const state = window.dictationTest
+    state.snapshot.history = [{ id: "one", createdAt: "2026-10-07", durationMs: 1000, rawTranscript: "Original speech", finalTranscript: "Edited speech", speechModel: "base", language: "en", audioPath: "" }]
+    state.snapshot.textProcessing.prompts = []
+    state.outputs = [{ id: "output", sessionId: "one", createdAt: "2026-10-07T12:30:00Z", prompt: { id: "removed", name: "Saved summary", instruction: "Summarize the input" }, model: "previous-model", endpoint: "http://127.0.0.1:1234/v1", input: "Edited speech", text: "A saved summary" }]
+    state.failOutputs = true
+  })
+  await page.goto("/#/history/one")
+  await expect(page.getByRole("alert").filter({ hasText: "Outputs unavailable" })).toBeVisible()
+  await expect(page.getByRole("button", { name: "Generate output", exact: true })).toBeDisabled()
+  await page.evaluate(() => { window.dictationTest.failOutputs = false })
+  await page.getByRole("button", { name: "Retry outputs", exact: true }).click()
+  const output = page.getByRole("article", { name: "Saved summary output", exact: true })
+  await expect(output).toContainText("previous-model")
+  await expect(output.getByRole("button", { name: "Regenerate", exact: true })).toBeDisabled()
+  await output.getByRole("button", { name: "Copy output", exact: true }).click()
+  await expect.poll(() => page.evaluate(() => window.dictationTest.snapshot.status.transcript)).toBe("A saved summary")
+  await output.getByRole("button", { name: "Delete output", exact: true }).click()
+  await page.getByRole("dialog", { name: "Delete this output?", exact: true }).getByRole("button", { name: "Delete output", exact: true }).click()
+  await expect(output).toHaveCount(0)
+  await expect(page.getByRole("region", { name: "Result", exact: true })).toContainText("Edited speech")
+})
+
+test("an outdated outputs backend keeps the transcription visible and provides restart guidance", async ({ page }) => {
+  await page.addInitScript(() => {
+    window.dictationTest.snapshot.history = [{ id: "one", createdAt: "2026-10-07", durationMs: 1000, rawTranscript: "Original speech", finalTranscript: "Edited speech", speechModel: "base", language: "en", audioPath: "" }]
+    Reflect.deleteProperty(Reflect.get(window, "go").main.App, "GetSessionOutputs")
+  })
+  await page.goto("/#/history/one")
+  await expect(page.getByRole("alert").filter({ hasText: "restart wails dev" })).toBeVisible()
+  await expect(page.getByRole("region", { name: "Result", exact: true })).toContainText("Edited speech")
+  await expect(page.getByRole("button", { name: "Copy result", exact: true })).toBeEnabled()
+  await page.evaluate(() => { Reflect.set(Reflect.get(window, "go").main.App, "GetSessionOutputs", async () => []) })
+  await page.getByRole("button", { name: "Retry outputs", exact: true }).click()
+  await expect(page.getByText("No generated outputs yet.", { exact: true })).toBeVisible()
 })
 
 test("microphone test remains stoppable after navigating away from setup", async ({ page }) => {
@@ -1172,7 +1347,7 @@ test("prompt previews use the draft and change History only after apply and save
   await expect(page.getByRole("region", { name: "Generated result", exact: true })).toContainText("Summary")
   await page.screenshot({ path: testInfo.outputPath("preview.png"), animations: "disabled" })
   await expect.poll(() => page.evaluate(() => window.dictationTest.snapshot.history[0].finalTranscript)).toBe("Saved correction.")
-  await page.getByRole("button", { name: "Use result", exact: true }).click()
+  await page.getByRole("button", { name: "Replace draft", exact: true }).click()
   await expect(page.getByRole("textbox", { name: "Editable text", exact: true })).toHaveValue("Concise summary.")
   await expect.poll(() => page.evaluate(() => window.dictationTest.snapshot.status.transcript)).toBe("")
   await page.getByRole("button", { name: "Save transcript", exact: true }).click()
@@ -1191,7 +1366,7 @@ test("failed and cancelled generation retain the draft and suppress late results
   await expect.poll(() => page.evaluate(() => window.dictationTest.cancelledProcessing.length)).toBe(1)
   await page.evaluate(() => window.dictationTest.processing!.resolve("Late unwanted replacement."))
   await expect(page.getByText("Processing cancelled", { exact: true })).toBeVisible()
-  await expect(page.getByRole("button", { name: "Use result", exact: true })).toBeDisabled()
+  await expect(page.getByRole("button", { name: "Replace draft", exact: true })).toBeDisabled()
   await page.getByRole("button", { name: "Back to transcript", exact: true }).click()
   await expect(page.getByRole("textbox", { name: "Editable text", exact: true })).toHaveValue("Unsaved draft for summary.")
   await page.getByRole("button", { name: "Process text", exact: true }).click()

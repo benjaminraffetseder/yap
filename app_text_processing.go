@@ -2,11 +2,13 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"strings"
 	"time"
 
 	textmodel "yap/internal/inference/text"
+	"yap/internal/storage"
 )
 
 func (a *App) SaveTextProcessing(config textmodel.Config) (textmodel.Config, error) {
@@ -33,11 +35,46 @@ func (a *App) SaveTextProcessing(config textmodel.Config) (textmodel.Config, err
 // Manual transformations return a preview only. They do not save a recording,
 // change a draft, or touch the clipboard. The frontend explicitly applies it.
 func (a *App) ProcessText(requestID, input, promptID string) (string, error) {
-	return a.processTextRequest(requestID, input, promptID, false)
+	return a.processTextRequest(requestID, input, promptID, false, nil)
 }
 
 func (a *App) TestTextModel(requestID string) (string, error) {
-	return a.processTextRequest(requestID, "Connection test.", "", true)
+	return a.processTextRequest(requestID, "Connection test.", "", true, nil)
+}
+
+type outputTarget struct{ sessionID, outputID string }
+
+func (a *App) GenerateSessionOutput(requestID, sessionID, promptID string) (string, error) {
+	return a.processTextRequest(requestID, "", promptID, false, &outputTarget{sessionID: sessionID})
+}
+
+func (a *App) RegenerateSessionOutput(requestID, sessionID, outputID string) (string, error) {
+	if outputID == "" {
+		return "", errors.New("choose a saved output")
+	}
+	return a.processTextRequest(requestID, "", "", false, &outputTarget{sessionID: sessionID, outputID: outputID})
+}
+
+func (a *App) GetSessionOutputs(sessionID string) ([]storage.GeneratedOutput, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if err := a.available(); err != nil {
+		return nil, err
+	}
+	return a.store.GeneratedOutputs(sessionID)
+}
+
+func (a *App) DeleteSessionOutput(sessionID, outputID string) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if err := a.available(); err != nil {
+		return err
+	}
+	if err := a.store.DeleteGeneratedOutput(sessionID, outputID); err != nil {
+		return err
+	}
+	a.event("dictation:history")
+	return nil
 }
 
 // Use the draft endpoint without saving preferences or changing dictation state.
@@ -83,7 +120,7 @@ func (a *App) ListTextModels(requestID, endpoint string) ([]string, error) {
 	return models, err
 }
 
-func (a *App) processTextRequest(requestID, input, promptID string, test bool) (string, error) {
+func (a *App) processTextRequest(requestID, input, promptID string, test bool, target *outputTarget) (string, error) {
 	a.mu.Lock()
 	if err := a.available(); err != nil {
 		a.mu.Unlock()
@@ -111,17 +148,36 @@ func (a *App) processTextRequest(requestID, input, promptID string, test bool) (
 		a.mu.Unlock()
 		return "", errors.New("enable a local text model in Prompts first")
 	}
-	if err = textmodel.ValidateText(input); err != nil {
-		a.mu.Unlock()
-		return "", err
-	}
 	prompt := textmodel.Prompt{Instruction: "Reply with only OK."}
-	if !test {
+	if target != nil {
+		entry, entryErr := a.store.Session(target.sessionID)
+		if entryErr != nil {
+			a.mu.Unlock()
+			if errors.Is(entryErr, sql.ErrNoRows) {
+				return "", errors.New("this dictation no longer exists")
+			}
+			return "", entryErr
+		}
+		input = entry.FinalTranscript
+		if target.outputID != "" {
+			prior, priorErr := a.store.GeneratedOutput(target.sessionID, target.outputID)
+			if priorErr != nil {
+				a.mu.Unlock()
+				return "", errors.New("could not load the saved output for regeneration")
+			}
+			input, prompt = prior.Input, prior.Prompt
+		}
+	}
+	if !test && (target == nil || target.outputID == "") {
 		prompt, err = config.Prompt(promptID)
 		if err != nil {
 			a.mu.Unlock()
 			return "", err
 		}
+	}
+	if err = textmodel.ValidateText(input); err != nil {
+		a.mu.Unlock()
+		return "", err
 	}
 	parent := a.ctx
 	if parent == nil {
@@ -130,6 +186,12 @@ func (a *App) processTextRequest(requestID, input, promptID string, test bool) (
 	ctx, cancel := context.WithCancel(parent)
 	a.textJobID, a.textCancel = requestID, cancel
 	previous := a.status
+	previousSavedText := ""
+	if previous.Phase == "done" && a.id != "" {
+		if entry, err := a.store.Session(a.id); err == nil {
+			previousSavedText = entry.FinalTranscript
+		}
+	}
 	a.status.Phase, a.status.Message = "text-processing", "Processing text…"
 	a.emit()
 	a.wg.Add(1)
@@ -142,9 +204,12 @@ func (a *App) processTextRequest(requestID, input, promptID string, test bool) (
 	a.textJobID, a.textCancel = "", nil
 	// Restore the dictation display, including any edited latest transcript.
 	a.status.Phase, a.status.Message = previous.Phase, previous.Message
+	a.status.Transcript = previous.Transcript
 	if previous.Phase == "done" && a.id != "" && !a.closing {
 		if entry, err := a.store.Session(a.id); err == nil {
-			a.status.Transcript = entry.FinalTranscript
+			if entry.FinalTranscript != previousSavedText {
+				a.status.Transcript = entry.FinalTranscript
+			}
 		} else {
 			a.status.Phase, a.status.Message, a.status.Transcript = "idle", "Ready", ""
 		}
@@ -152,6 +217,12 @@ func (a *App) processTextRequest(requestID, input, promptID string, test bool) (
 	a.emit()
 	if a.closing || ctx.Err() != nil {
 		return "", context.Canceled
+	}
+	if err == nil && target != nil {
+		err = a.store.AddGeneratedOutput(storage.NewGeneratedOutput(target.sessionID, input, output, config, prompt))
+		if err == nil {
+			a.event("dictation:history")
+		}
 	}
 	return output, err
 }

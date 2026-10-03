@@ -132,8 +132,12 @@ func TestAutomaticPromptsUseCapturedConfigAndPreserveOriginal(t *testing.T) {
 		t.Fatalf("wrong automatic request: %+v", call)
 	}
 	entry, err := a.store.Session(a.id)
-	if err != nil || entry.RawTranscript != "A private thought." || entry.FinalTranscript != "Summary." || copied != "Summary." {
+	if err != nil || entry.RawTranscript != "A private thought." || entry.FinalTranscript != "A private thought." || copied != "Summary." {
 		t.Fatalf("incorrect final result: %+v %q %v", entry, copied, err)
+	}
+	outputs, err := a.GetSessionOutputs(a.id)
+	if err != nil || len(outputs) != 1 || outputs[0].Text != "Summary." || outputs[0].Prompt.ID != "summary" || outputs[0].Model != "custom-local-model" {
+		t.Fatalf("missing captured output metadata: %+v %v", outputs, err)
 	}
 }
 
@@ -170,6 +174,10 @@ func TestAutomaticProcessingFailureAndCancellationKeepSpeech(t *testing.T) {
 			entry, err := a.store.Session(a.id)
 			if err != nil || entry.RawTranscript != "A private thought." || entry.FinalTranscript != "A private thought." {
 				t.Fatalf("lost speech result: %+v %v", entry, err)
+			}
+			outputs, err := a.GetSessionOutputs(a.id)
+			if err != nil || len(outputs) != 0 {
+				t.Fatal("failed generation saved an output", outputs, err)
 			}
 			if a.status.Phase != "done" || !strings.Contains(a.status.Message, "History") {
 				t.Fatalf("failure was not recoverable: %+v", a.status)
@@ -220,7 +228,7 @@ func TestLocalHTTPModelThroughAppPreviewAndAutomaticDelivery(t *testing.T) {
 	}
 	a.wg.Wait()
 	entry, err := a.store.Session(a.id)
-	if err != nil || entry.RawTranscript != "A private thought." || entry.FinalTranscript != "HTTP result." || copied != "HTTP result." || requests != 2 {
+	if err != nil || entry.RawTranscript != "A private thought." || entry.FinalTranscript != "A private thought." || copied != "HTTP result." || requests != 2 {
 		t.Fatalf("HTTP delivery: %+v %q %d %v", entry, copied, requests, err)
 	}
 }

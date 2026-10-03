@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { TextPanel } from "@/components/text-panel"
 import { TranscriptEditor } from "@/components/transcript-editor"
+import { GeneratedOutputs } from "@/components/generated-outputs"
 import { useDictation } from "@/components/dictation-provider"
 import { backend, duration, isDesktop, message, type Session } from "@/lib/backend"
 
@@ -70,6 +71,7 @@ function EntryDetail({ id }: { id: string }) {
       </div>
       <div className="flex flex-wrap items-center gap-2"><Button size="sm" variant="outline" disabled={unavailable} onClick={event => { editTrigger.current = event.currentTarget; setEditing(entry) }}><Pencil className="size-3.5" />Edit transcript</Button><Button size="sm" variant="outline" disabled={unavailable} onClick={() => void run(() => backend.export(id), false)}><Download className="size-3.5" />{changed ? "Export result" : "Export transcription"}</Button>{entry.audioPath && !audio && <Button size="sm" variant="outline" disabled={unavailable || loadingAudio} onClick={() => void play()}>{loadingAudio ? <Loader2 className="size-3.5 animate-spin" /> : <AudioLines className="size-3.5" />}Play recording</Button>}<Button size="sm" variant="ghost" disabled={unavailable} className="ml-auto text-destructive" onClick={() => { setDeleteError(""); setDeleting(true) }}><Trash2 className="size-3.5" />Delete</Button></div>
       {audio && <audio controls autoPlay src={audio} className="h-10 w-full" />}
+      <GeneratedOutputs sessionID={id} unavailable={unavailable} />
     </>}
     {editing && <TranscriptEditor session={editing} returnFocus={editTrigger} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); setReload(old => old + 1); void run(refresh, false) }} />}
     <Dialog open={deleting} disablePointerDismissal onOpenChange={value => { if (!value && !deletingNow) setDeleting(false) }}><DialogContent showCloseButton={false}><DialogHeader><DialogTitle>Delete this dictation?</DialogTitle><DialogDescription>The transcript and retained audio will be permanently removed from this device.</DialogDescription></DialogHeader>{deleteError && <p role="alert" className="text-sm text-destructive">{deleteError}</p>}<DialogFooter><Button variant="outline" disabled={deletingNow} onClick={() => setDeleting(false)}>Cancel</Button><Button variant="destructive" disabled={deletingNow} onClick={() => void remove()}>{deletingNow ? "Deleting…" : "Delete dictation"}</Button></DialogFooter></DialogContent></Dialog>

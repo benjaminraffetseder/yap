@@ -38,7 +38,7 @@ app, open it from its new location and save the startup setting again.
 
 History lets you search original and edited text, open a dictation, and copy or
 export it. Select entries to export or delete several at once. Deleting an entry
-also deletes its retained audio.
+also deletes its retained audio and generated outputs.
 
 **Edit transcript** changes the saved result while keeping the original
 transcription. Ctrl/Cmd+Enter saves; Escape cancels. To reuse a corrected spelling,
@@ -77,8 +77,11 @@ Cleanup and Summary prompts are included. Edit them or add your own; there can
 be up to 30 prompts, each with up to 8,000 characters of instructions. The text
 is supplied separately, so you don't need placeholders.
 
-There are two ways to process text:
+There are three ways to process text:
 
+- **Generated outputs** on a dictation page saves separate versions using its
+  saved text. Each output keeps its input, instructions, and model details.
+  **Regenerate** uses that saved input and prompt with your current model.
 - **Process text** in the transcript editor previews a result from your draft.
   Choose **Replace draft**, then **Save transcript** to keep it.
 - **After dictation** runs a chosen prompt before copying or pasting new
@@ -86,7 +89,8 @@ There are two ways to process text:
   in History, but nothing is copied or pasted.
 
 Requests time out after five minutes. Long input may exceed your model's context
-window; try a shorter passage if it fails.
+window; try a shorter passage if it fails. Saved outputs remain available when
+text processing is disabled.
 
 ## Storage
 

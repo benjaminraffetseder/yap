@@ -80,6 +80,17 @@ func Open(dir string) (*Store, error) {
 		db.Close()
 		return nil, err
 	}
+	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS generated_outputs (
+		id TEXT PRIMARY KEY, recording_id TEXT NOT NULL, created_at TEXT NOT NULL,
+		prompt_id TEXT NOT NULL, prompt_name TEXT NOT NULL, instruction TEXT NOT NULL,
+		model TEXT NOT NULL, endpoint TEXT NOT NULL, input TEXT NOT NULL, output TEXT NOT NULL);
+	CREATE INDEX IF NOT EXISTS generated_outputs_recording ON generated_outputs(recording_id,created_at);
+	CREATE TRIGGER IF NOT EXISTS delete_generated_outputs AFTER DELETE ON recordings
+	BEGIN DELETE FROM generated_outputs WHERE recording_id=OLD.id; END;`)
+	if err != nil {
+		db.Close()
+		return nil, err
+	}
 	return &Store{db: db, Dir: dir}, nil
 }
 func (s *Store) Close() error { return s.db.Close() }

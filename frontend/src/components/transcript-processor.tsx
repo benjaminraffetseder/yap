@@ -25,6 +25,6 @@ export function TranscriptProcessor({ input, onCancel, onUse }: { input: string;
       </TextPanel>
     </div>
     {generation.error && <p role="alert" className="text-sm text-destructive">{generation.error}</p>}
-    <DialogFooter><Button variant="outline" onClick={onCancel}>Back to transcript</Button><Button disabled={!generation.result || generation.pending} onClick={() => onUse(generation.result)}>Use result</Button></DialogFooter>
+    <DialogFooter><Button variant="outline" onClick={onCancel}>Back to transcript</Button><Button disabled={!generation.result || generation.pending} onClick={() => onUse(generation.result)}>Replace draft</Button></DialogFooter>
   </>
 }

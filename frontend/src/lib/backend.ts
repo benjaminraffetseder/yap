@@ -2,6 +2,7 @@ import { AddVocabularyTerm, Cancel, CompleteSetup, CopyText, DeleteSession, Expo
 import { DeleteSessions, ExportSessions, GetHistory, GetSession, RemoveModel } from "@wails/go/main/App"
 import { BeginShortcutCapture, EndShortcutCapture } from "@wails/go/main/App"
 import { SaveTextProcessing, ProcessText, CancelTextProcessing, TestTextModel, ListTextModels } from "@wails/go/main/App"
+import { GetSessionOutputs, GenerateSessionOutput, RegenerateSessionOutput, DeleteSessionOutput } from "@wails/go/main/App"
 import { text } from "@wails/go/models"
 export type TextPrompt = { id: string; name: string; instruction: string }
 export type TextProcessing = { enabled: boolean; endpoint: string; model: string; autoPromptId: string; prompts: TextPrompt[] }
@@ -14,10 +15,15 @@ export type DiagnosticResult = { phase: string; message: string; details: string
 export type DiagnosticCheck = { id: string; name: string; ready: boolean; message: string }
 export type Microphone = { id: string; name: string }
 export type Session = { id: string; createdAt: string; durationMs: number; rawTranscript: string; finalTranscript: string; speechModel: string; language: string; audioPath: string }
+export type GeneratedOutput = { id: string; sessionId: string; createdAt: string; prompt: TextPrompt; model: string; endpoint: string; input: string; text: string }
 export type HistoryPageResult = { entries: Session[]; total: number; page: number; pageSize: number }
 export type Status = { phase: string; message: string; startedAt: number; transcript: string; progress: number; shortcutError: string; indicatorError: string; trayError: string; startupError: string; historyError: string }
 export type Model = { id: string; name: string; description: string; size: number; installed: boolean; path: string; diskBytes: number; removable: boolean }
 export type Snapshot = { textProcessing: TextProcessing; settings: Settings; status: Status; history: Session[]; models: Model[]; dataDir: string; ready: boolean; floatingIndicator: boolean; launchAtLoginAvailable: boolean; startInTrayAvailable: boolean; vocabulary: VocabularyEntry[]; microphoneTested: boolean; shortcutTested: boolean; diagnostic: DiagnosticResult }
+function requireOutputAPI(name: string) {
+  const api = (window as unknown as { go?: { main?: { App?: Record<string, unknown> } } }).go?.main?.App
+  if (typeof api?.[name] !== "function") throw new Error("Saved outputs need the current backend. Quit and reopen Yap; in development, restart wails dev.")
+}
 export const backend = {
   snapshot: async (): Promise<Snapshot> => {
     const value = await GetSnapshot()
@@ -41,6 +47,10 @@ export const backend = {
     if (typeof api?.GetSession !== "function") throw new Error("Dictation pages need the current backend. Quit and reopen Yap; in development, restart wails dev.")
     return GetSession(id)
   },
+  generatedOutputs: async (id: string): Promise<GeneratedOutput[]> => { requireOutputAPI("GetSessionOutputs"); return GetSessionOutputs(id) },
+  generateOutput: async (requestID: string, sessionID: string, promptID: string): Promise<string> => { requireOutputAPI("GenerateSessionOutput"); return GenerateSessionOutput(requestID, sessionID, promptID) },
+  regenerateOutput: async (requestID: string, sessionID: string, outputID: string): Promise<string> => { requireOutputAPI("RegenerateSessionOutput"); return RegenerateSessionOutput(requestID, sessionID, outputID) },
+  deleteOutput: async (sessionID: string, outputID: string): Promise<void> => { requireOutputAPI("DeleteSessionOutput"); return DeleteSessionOutput(sessionID, outputID) },
   removeSessions: DeleteSessions, exportSessions: ExportSessions, removeModel: RemoveModel,
   beginShortcutCapture: BeginShortcutCapture, endShortcutCapture: EndShortcutCapture,
   textProcessing: async (config: TextProcessing): Promise<TextProcessing> => SaveTextProcessing(text.Config.createFrom(config)),

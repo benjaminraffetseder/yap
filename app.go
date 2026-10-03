@@ -620,7 +620,7 @@ func (a *App) transcribe(ctx context.Context, id, path, target string, duration 
 			promptErr = textmodel.ValidateText(processed)
 		}
 		if promptErr == nil {
-			promptErr = a.store.UpdateTranscript(id, processed)
+			promptErr = a.store.AddGeneratedOutput(storage.NewGeneratedOutput(id, text, processed, textConfig, prompt))
 		}
 		if promptErr != nil {
 			a.status.Phase, a.status.Message = "done", "Saved to History; text processing failed: "+promptErr.Error()
