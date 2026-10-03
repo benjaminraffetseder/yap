@@ -102,6 +102,9 @@ func (s *Store) deleteAndStageAudio(id, original, stage string) error {
 // Called at startup through retention cleanup (even when retention is off),
 // and before deleting another entry. Errors preserve the journal for retry.
 func (s *Store) RecoverPendingDeletes() error {
+	if err := s.recoverDiscardedAudio(); err != nil {
+		return err
+	}
 	rows, err := s.db.Query("SELECT id,original,staged FROM pending_audio_deletions")
 	if err != nil {
 		return err

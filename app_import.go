@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"errors"
-	"os"
 	"time"
 
 	"github.com/google/uuid"
@@ -71,7 +70,7 @@ func (a *App) importAudio(source string) error {
 		err = errors.Join(err, file.Close())
 		a.mu.Lock()
 		if a.closing || ctx.Err() != nil || err != nil {
-			os.Remove(path)
+			err = errors.Join(err, a.discardAudioLocked(path))
 			a.cancel = nil
 			if !a.closing {
 				if ctx.Err() != nil {

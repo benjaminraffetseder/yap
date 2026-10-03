@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"errors"
-	"os"
 	"time"
 
 	"yap/internal/inference/speech"
@@ -116,9 +115,9 @@ func (a *App) transcribeDiagnostic(duration int64) {
 		defer cancel()
 		text, err := a.engine.Transcribe(ctx, path, speech.Options{Executable: settings.WhisperPath, Model: settings.ModelPath, Language: settings.Language, Prompt: vocabulary.Prompt(entries)})
 		// Complete cleanup before emitting the result or releasing busy state.
-		removeErr := os.Remove(path)
 		a.mu.Lock()
 		defer a.mu.Unlock()
+		removeErr := a.discardAudioLocked(path)
 		a.cancel = nil
 		if a.closing {
 			return
@@ -136,7 +135,7 @@ func (a *App) transcribeDiagnostic(duration int64) {
 		case text == "":
 			result = DiagnosticResult{Phase: "error", Message: "No speech detected. Speak a longer sentence and check the selected microphone."}
 		}
-		if removeErr != nil && !os.IsNotExist(removeErr) {
+		if removeErr != nil {
 			result.Phase, result.Message = "error", "Could not delete test audio. Check access to the app's recordings folder."
 			result.Details = removeErr.Error()
 			result.Transcript = ""

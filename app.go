@@ -319,7 +319,7 @@ func (a *App) shutdown(ctx context.Context) {
 		}
 		if a.status.Phase == "recording" || a.status.Phase == "mic-test" || a.status.Phase == "diagnostic-recording" {
 			a.recorder.Stop()
-			os.Remove(a.path)
+			_ = a.discardAudioLocked(a.path)
 		}
 		s := a.shortcut
 		a.shortcut = nil
@@ -502,8 +502,7 @@ func (a *App) start(external bool) error {
 		return err
 	}
 	if err = file.Close(); err != nil {
-		os.Remove(path)
-		return err
+		return errors.Join(err, a.discardAudioLocked(path))
 	}
 	a.id = uuid.NewString()
 	a.path = path
@@ -517,8 +516,7 @@ func (a *App) start(external bool) error {
 			a.indicator.SetLevel(level)
 		}
 	}); err != nil {
-		os.Remove(a.path)
-		return err
+		return errors.Join(err, a.discardAudioLocked(a.path))
 	}
 	a.recordSettings = a.settings
 	a.recordTextConfig, _ = textmodel.Normalize(a.textConfig)
@@ -554,13 +552,11 @@ func (a *App) stop() {
 	}
 	duration, err := a.recorder.Stop()
 	if err != nil {
-		os.Remove(a.path)
-		a.fail(err)
+		a.fail(errors.Join(err, a.discardAudioLocked(a.path)))
 		return
 	}
 	if duration < 300 {
-		os.Remove(a.path)
-		a.fail(errors.New("record for at least a moment before releasing"))
+		a.fail(errors.Join(errors.New("record for at least a moment before releasing"), a.discardAudioLocked(a.path)))
 		return
 	}
 	a.status.Phase = "transcribing"
@@ -580,15 +576,15 @@ func (a *App) stop() {
 }
 func (a *App) transcribe(ctx context.Context, id, path, target string, duration int64, settings storage.Settings, entries []vocabulary.Entry, textConfig textmodel.Config, copyToClipboard bool) {
 	persisted := false
-	defer func() {
-		if !persisted || !settings.SaveAudio {
-			os.Remove(path)
-		}
-	}()
 	text, err := a.engine.Transcribe(ctx, path, speech.Options{Executable: settings.WhisperPath, Model: settings.ModelPath, Language: settings.Language, Prompt: vocabulary.Prompt(entries)})
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	defer func() { a.cancel = nil }()
+	defer func() {
+		a.cancel = nil
+		if !persisted || !settings.SaveAudio {
+			_ = a.discardAudioLocked(path)
+		}
+	}()
 	if a.closing {
 		return
 	}
@@ -683,7 +679,7 @@ func (a *App) Cancel() error {
 			a.timer.Stop()
 		}
 		_, err := a.recorder.Stop()
-		os.Remove(a.path)
+		err = errors.Join(err, a.discardAudioLocked(a.path))
 		a.microphoneTested = false
 		a.status.Phase, a.status.Message = "idle", "Microphone test cancelled"
 		a.status.StartedAt = 0
@@ -697,12 +693,13 @@ func (a *App) Cancel() error {
 	}
 	if a.status.Phase == "recording" {
 		a.timer.Stop()
-		a.recorder.Stop()
-		os.Remove(a.path)
+		_, stopErr := a.recorder.Stop()
+		err := errors.Join(stopErr, a.discardAudioLocked(a.path))
 		a.status.Phase = "idle"
 		a.status.Message = "Recording discarded"
 		a.status.StartedAt = 0
 		a.emit()
+		return err
 	} else if a.textCancel != nil && a.status.Phase == "text-processing" {
 		a.textCancel()
 	} else if a.cancel != nil {

@@ -2,7 +2,6 @@ package main
 
 import (
 	"errors"
-	"os"
 	"time"
 
 	"github.com/google/uuid"
@@ -64,8 +63,7 @@ func (a *App) startCaptureTest(transcription bool) error {
 		return err
 	}
 	if err = f.Close(); err != nil {
-		os.Remove(path)
-		return err
+		return errors.Join(err, a.discardAudioLocked(path))
 	}
 	a.microphoneTested = false
 	a.micSignal.Store(false)
@@ -75,8 +73,7 @@ func (a *App) startCaptureTest(transcription bool) error {
 		}
 		a.event("dictation:level", level)
 	}); err != nil {
-		os.Remove(path)
-		return err
+		return errors.Join(err, a.discardAudioLocked(path))
 	}
 	a.path = path
 	a.status.Phase, a.status.Message = "mic-test", "Speak to test your microphone"
@@ -122,10 +119,7 @@ func (a *App) stopCaptureTest() error {
 		a.transcribeDiagnostic(duration)
 		return nil
 	}
-	removeErr := os.Remove(a.path)
-	if err == nil && removeErr != nil && !os.IsNotExist(removeErr) {
-		err = removeErr
-	}
+	err = errors.Join(err, a.discardAudioLocked(a.path))
 	a.microphoneTested = err == nil && a.micSignal.Load()
 	a.status.Phase, a.status.Message = "idle", "Microphone test passed"
 	a.status.StartedAt = 0
