@@ -170,11 +170,13 @@ func (a *App) startup(ctx context.Context) {
 		a.fail(err)
 		return
 	}
-	a.vocabulary, err = vocabulary.Normalize(a.vocabulary)
+	normalizedVocabulary, err := vocabulary.Normalize(a.vocabulary)
 	if err != nil {
-		a.fail(fmt.Errorf("could not load vocabulary: %w", err))
+		// Keep legacy conflicting terms visible so they can be repaired in Vocabulary.
+		a.fail(fmt.Errorf("open Vocabulary to resolve saved terms: %w", err))
 		return
 	}
+	a.vocabulary = normalizedVocabulary
 	if !a.development {
 		a.loginStart, err = startup.New()
 		if err == nil && a.loginStart != nil {

@@ -16,6 +16,19 @@ type Entry struct {
 	Enabled   bool     `json:"enabled"`
 }
 
+// RE2 (?i) and EqualFold use Unicode simple folding, not lowercase equality.
+func foldKey(text string) string {
+	return strings.Map(func(r rune) rune {
+		smallest := r
+		for next := unicode.SimpleFold(r); next != r; next = unicode.SimpleFold(next) {
+			if next < smallest {
+				smallest = next
+			}
+		}
+		return smallest
+	}, text)
+}
+
 func Normalize(entries []Entry) ([]Entry, error) {
 	if len(entries) > 100 {
 		return nil, fmt.Errorf("use at most 100 vocabulary entries")
@@ -40,12 +53,12 @@ func Normalize(entries []Entry) ([]Entry, error) {
 			if err := validPhrase(phrase); err != nil {
 				return nil, err
 			}
-			key := strings.ToLower(phrase)
+			key := foldKey(phrase)
 			if owner, found := phrases[key]; found && owner != entry.ID {
 				return nil, fmt.Errorf("%q is already assigned to another vocabulary term", phrase)
 			}
 			phrases[key] = entry.ID
-			if !own[key] && key != strings.ToLower(entry.Canonical) {
+			if !own[key] && key != foldKey(entry.Canonical) {
 				aliases = append(aliases, phrase)
 			}
 			own[key] = true
@@ -109,7 +122,7 @@ func Apply(text string, entries []Entry) string {
 			continue
 		}
 		for _, phrase := range append([]string{entry.Canonical}, entry.Aliases...) {
-			key := strings.ToLower(phrase)
+			key := foldKey(phrase)
 			if _, exists := replacements[key]; !exists {
 				phrases = append(phrases, phrase)
 				replacements[key] = entry.Canonical
@@ -160,7 +173,7 @@ func Apply(text string, entries []Entry) string {
 			continue
 		}
 		out.WriteString(text[last:start])
-		value, found := replacements[strings.ToLower(text[start:end])]
+		value, found := replacements[foldKey(text[start:end])]
 		if !found { // RE2 Unicode folding also matches forms such as long-s.
 			for phrase, canonical := range replacements {
 				if strings.EqualFold(phrase, text[start:end]) {

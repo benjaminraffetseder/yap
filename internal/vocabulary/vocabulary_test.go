@@ -30,6 +30,23 @@ func TestNormalizeAndValidate(t *testing.T) {
 	}
 }
 
+func TestUnicodeFoldAliasesHaveOneOwner(t *testing.T) {
+	for _, pair := range [][2]string{{"σ", "ς"}, {"s", "ſ"}, {"k", "K"}} {
+		if _, err := Normalize([]Entry{{ID: "a", Canonical: "Alpha", Aliases: []string{pair[0]}, Enabled: true}, {ID: "b", Canonical: "Beta", Aliases: []string{pair[1]}, Enabled: true}}); err == nil {
+			t.Fatalf("accepted equivalent owners %v", pair)
+		}
+		entries, err := Normalize([]Entry{{ID: "a", Canonical: "Alpha", Aliases: []string{pair[0], pair[1]}, Enabled: true}})
+		if err != nil || len(entries[0].Aliases) != 1 {
+			t.Fatalf("same-owner equivalence %v %v", entries, err)
+		}
+		for _, input := range pair {
+			if got := Apply(input, entries); got != "Alpha" {
+				t.Fatal(input, got)
+			}
+		}
+	}
+}
+
 func TestAliasesAreLiteralBoundedAndNonCascading(t *testing.T) {
 	entries := []Entry{
 		{ID: "a", Canonical: "PostgreSQL", Aliases: []string{"post gre SQL", "postgres"}, Enabled: true},
