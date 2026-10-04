@@ -126,7 +126,7 @@ export function SettingsPage() {
           <p className="text-xs text-muted-foreground">Automatically delete older transcripts and retained audio on startup, after dictation, and when saving settings.</p></div>
         {snapshot.status.historyError && <p role="alert" className="mt-3 text-xs text-destructive">{snapshot.status.historyError}</p>}
         {snapshot.dataDir && <p className="mt-5 break-all text-xs leading-5 text-muted-foreground">Data folder: <span className="font-mono">{snapshot.dataDir}</span></p>}</section>
-      <div className="flex items-center gap-4"><Button disabled={!dirty || saving || selectedMicrophoneMissing} className="rounded-lg" onClick={() => void save()}><Save className="size-4" />{saving ? "Saving…" : "Save settings"}</Button>{dirty && <span className="text-xs text-muted-foreground">Unsaved changes</span>}</div>
+      <div className="flex items-center gap-4"><Button disabled={!dirty || saving || (selectedMicrophoneMissing && settings.microphoneId !== snapshot.settings.microphoneId)} className="rounded-lg" onClick={() => void save()}><Save className="size-4" />{saving ? "Saving…" : "Save settings"}</Button>{dirty && <span className="text-xs text-muted-foreground">Unsaved changes</span>}</div>
     </fieldset>
     <BackupPanel disabled={controlsDisabled || dirty} unsaved={dirty} />
     <section className="settings-section"><h2 className="mb-4 font-semibold">Setup</h2><Button variant="outline" disabled={!isDesktop || busy || saving || dirty} onClick={() => void run(async () => { await backend.restartSetup(); navigate("/") })}>Run setup</Button>{dirty && <p className="mt-2 text-xs text-muted-foreground">Save settings before running setup.</p>}</section>

@@ -16,6 +16,17 @@ test("reset instructions preserves customized prompt names", async ({page}) => {
  }
 })
 
+test("disconnected saved microphone allows unrelated settings saves", async ({page}) => {
+ await page.addInitScript(()=>{window.dictationTest.snapshot.settings.microphoneId="unplugged"})
+ await page.goto("/#/settings")
+ await expect(page.getByText("Reconnect the selected microphone or choose another input.",{exact:true})).toBeVisible()
+ await page.getByRole("checkbox",{name:"Light cleanup"}).check()
+ await expect(page.getByRole("button",{name:"Save settings",exact:true})).toBeEnabled()
+ await page.getByRole("button",{name:"Save settings",exact:true}).click()
+ await expect.poll(()=>page.evaluate(()=>window.dictationTest.snapshot.settings.cleanText)).toBe(true)
+ await expect.poll(()=>page.evaluate(()=>window.dictationTest.snapshot.settings.microphoneId)).toBe("unplugged")
+})
+
 declare global {
   interface Window {
     dictationTest: {
