@@ -1,6 +1,21 @@
 import { expect, test, type Page } from "@playwright/test"
 import type { BackupPreview, BackupSummary, DiagnosticCheck, Settings, Snapshot, Status, VocabularyEntry, TextProcessing, GeneratedOutput, TextPrompt } from "../src/lib/backend"
 
+test("reset instructions preserves customized prompt names", async ({page}) => {
+ await page.goto("/#/prompts")
+ for (const name of ["Cleanup","Summary"]) {
+  await page.getByRole("combobox",{name:"Prompt",exact:true}).click()
+  await page.getByRole("option",{name,exact:true}).click()
+  await page.getByLabel("Name",{exact:true}).fill(`My ${name}`)
+  await page.getByLabel("Instructions",{exact:true}).fill("My special instructions")
+  await page.getByRole("button",{name:"Reset instructions",exact:true}).click()
+  await expect(page.getByLabel("Name",{exact:true})).toHaveValue(`My ${name}`)
+  await expect(page.getByLabel("Instructions",{exact:true})).not.toHaveValue("My special instructions")
+  await page.getByRole("button",{name:"Save prompts",exact:true}).click()
+  await expect.poll(()=>page.evaluate(id=>window.dictationTest.snapshot.textProcessing.prompts.find(p=>p.id===id)?.name,name.toLowerCase())).toBe(`My ${name}`)
+ }
+})
+
 declare global {
   interface Window {
     dictationTest: {
