@@ -41,7 +41,7 @@ func (a *App) saveVocabularyLocked(entries []vocabulary.Entry) ([]vocabulary.Ent
 	a.vocabulary = normalized
 	a.diagnostic = DiagnosticResult{}
 	a.event("setup:changed")
-	return normalized, nil
+	return vocabulary.Normalize(normalized)
 }
 
 // Microphone-only tests never invoke inference or retain their audio.

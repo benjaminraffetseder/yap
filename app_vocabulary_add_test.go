@@ -68,6 +68,31 @@ func TestAddVocabularyPreservesExistingTermsAndTranscripts(t *testing.T) {
 	}
 }
 
+func TestVocabularyResponsesDoNotShareApplicationMemory(t *testing.T) {
+	for _, method := range []string{"save", "add"} {
+		t.Run(method, func(t *testing.T) {
+			a := testApp(t)
+			var entries []vocabulary.Entry
+			var err error
+			if method == "save" {
+				entries, err = a.SaveVocabulary([]vocabulary.Entry{{ID: "one", Canonical: "SQLite", Aliases: []string{"sequel"}, Enabled: true}})
+			} else {
+				entries, err = a.AddVocabularyTerm("SQLite", []string{"sequel"})
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			entries[0].Canonical = "mutated"
+			entries[0].Enabled = false
+			entries[0].Aliases[0] = "mutated"
+			stored, err := a.store.Vocabulary()
+			if err != nil || !reflect.DeepEqual(a.vocabulary, stored) || a.vocabulary[0].Canonical != "SQLite" {
+				t.Fatal("response mutated app or saved state", a.vocabulary, stored, err)
+			}
+		})
+	}
+}
+
 func TestConcurrentVocabularyAddsKeepBothTerms(t *testing.T) {
 	a := testApp(t)
 	var wg sync.WaitGroup
