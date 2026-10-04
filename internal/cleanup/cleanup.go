@@ -49,17 +49,23 @@ func standalone(text string, start, end int) bool {
 
 func Apply(text, language string, protected ...string) string {
 	var spans [][]int
-	phrases := []string{}
 	for _, term := range protected {
-		if term != "" {
-			phrases = append(phrases, regexp.QuoteMeta(term))
+		if term == "" {
+			continue
 		}
-	}
-	if len(phrases) > 0 {
-		for _, span := range regexp.MustCompile("(?i)("+strings.Join(phrases, "|")+")").FindAllStringIndex(text, -1) {
-			if standalone(text, span[0], span[1]) {
-				spans = append(spans, span)
+		pattern := regexp.MustCompile("(?i)" + regexp.QuoteMeta(term))
+		for search := 0; search < len(text); {
+			match := pattern.FindStringIndex(text[search:])
+			if match == nil {
+				break
 			}
+			start, end := search+match[0], search+match[1]
+			if standalone(text, start, end) {
+				spans = append(spans, []int{start, end})
+			}
+			// Advance from the start to retain overlapping protected occurrences.
+			_, width := utf8.DecodeRuneInString(text[start:])
+			search = start + width
 		}
 	}
 	var out strings.Builder

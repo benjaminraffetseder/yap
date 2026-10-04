@@ -2,6 +2,21 @@ package cleanup
 
 import "testing"
 
+// Protection must not depend on order or non-overlapping regex alternatives.
+func TestVocabularyProtectionIncludesEveryValidOverlap(t *testing.T) {
+	for _, terms := range [][]string{{"hello", "hello um"}, {"hello um", "hello"}} {
+		if got := Apply("hello um", "en", terms...); got != "Hello um." {
+			t.Fatalf("%v: %q", terms, got)
+		}
+	}
+	if got := Apply("hi um um um there", "en", "um um"); got != "Hi um um um there." {
+		t.Fatal(got)
+	}
+	if got := Apply("alum um there", "en", "um um", "um there"); got != "Alum um there." {
+		t.Fatal(got)
+	}
+}
+
 func TestConservativeCleanup(t *testing.T) {
 	for _, tc := range []struct{ name, input, lang, want string }{
 		{"english", "um,  hello ,world! uh we can ship", "en", "Hello, world! We can ship."},
