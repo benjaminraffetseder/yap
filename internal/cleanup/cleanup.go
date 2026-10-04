@@ -181,7 +181,7 @@ func Apply(text, language string, protected ...string) string {
 			capitalize = false
 		} else if r == '\n' || ((r == '.' || r == '?' || r == '!') && i+1 < len(runes) && unicode.IsSpace(runes[i+1])) {
 			capitalize = true
-		} else if !unicode.IsSpace(r) && r != '"' && r != '\'' && r != '(' {
+		} else if !unicode.IsSpace(r) && r != '"' && r != '\'' && !unicode.Is(unicode.Pi, r) && !unicode.Is(unicode.Ps, r) {
 			capitalize = false
 		}
 	}

@@ -2,6 +2,20 @@ package cleanup
 
 import "testing"
 
+func TestCleanupCapitalizesAfterOpeningQuotes(t *testing.T) {
+	for _, tc := range []struct{ in, lang, want string }{
+		{"„hallo welt“", "de", "„Hallo welt“"},
+		{"“hello world”", "en", "“Hello world”"},
+		{"‘hello world’", "en", "‘Hello world’"},
+		{"«hello world»", "en", "«Hello world»"},
+		{"[hello]", "en", "[Hello]"},
+	} {
+		if got := Apply(tc.in, tc.lang); got != tc.want {
+			t.Fatalf("%q => %q", tc.in, got)
+		}
+	}
+}
+
 // Protection must not depend on order or non-overlapping regex alternatives.
 func TestVocabularyProtectionIncludesEveryValidOverlap(t *testing.T) {
 	for _, terms := range [][]string{{"hello", "hello um"}, {"hello um", "hello"}} {
