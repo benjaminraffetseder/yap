@@ -18,6 +18,7 @@ func TestVocabularyProtectionIncludesEveryValidOverlap(t *testing.T) {
 }
 
 func TestConservativeCleanup(t *testing.T) {
+
 	for _, tc := range []struct{ name, input, lang, want string }{
 		{"english", "um,  hello ,world! uh we can ship", "en", "Hello, world! We can ship."},
 		{"german", "ähm, wir treffen uns um fünf Uhr", "de", "Wir treffen uns um fünf Uhr."},
@@ -43,6 +44,21 @@ func TestConservativeCleanup(t *testing.T) {
 				t.Fatalf("cleanup changed on second pass: %q", twice)
 			}
 		})
+	}
+}
+
+func TestCleanupPreservesHyphenatedMeaning(t *testing.T) {
+	for _, tc := range []struct{ in, want string }{
+		{"uh-huh, that is correct", "Uh-huh, that is correct."},
+		{"uh-oh, something broke", "Uh-oh, something broke."},
+		{"uh‑huh, yes", "Uh‑huh, yes."},
+		{"uh—huh, yes", "Uh—huh, yes."},
+		{"uh, hello", "Hello."},
+		{"uh - hello", "- hello."},
+	} {
+		if got := Apply(tc.in, "en"); got != tc.want {
+			t.Fatalf("%q => %q", tc.in, got)
+		}
 	}
 }
 

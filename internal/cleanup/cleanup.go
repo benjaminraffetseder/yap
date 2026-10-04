@@ -47,6 +47,28 @@ func standalone(text string, start, end int) bool {
 	return true
 }
 
+func hyphenJoined(text string, start, end int) bool {
+	if start > 0 {
+		r, width := utf8.DecodeLastRuneInString(text[:start])
+		if unicode.Is(unicode.Pd, r) && start > width {
+			previous, _ := utf8.DecodeLastRuneInString(text[:start-width])
+			if identifier(previous) {
+				return true
+			}
+		}
+	}
+	if end < len(text) {
+		r, width := utf8.DecodeRuneInString(text[end:])
+		if unicode.Is(unicode.Pd, r) && end+width < len(text) {
+			next, _ := utf8.DecodeRuneInString(text[end+width:])
+			if identifier(next) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func Apply(text, language string, protected ...string) string {
 	var spans [][]int
 	for _, term := range protected {
@@ -90,7 +112,7 @@ func Apply(text, language string, protected ...string) string {
 		if match[0] < last {
 			continue
 		}
-		if !standalone(text, match[0], match[1]) {
+		if !standalone(text, match[0], match[1]) || hyphenJoined(text, match[0], match[1]) {
 			continue
 		}
 		start := strings.LastIndexFunc(text[:match[0]], unicode.IsSpace) + 1
