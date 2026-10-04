@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -10,6 +11,32 @@ import (
 	"yap/internal/inference/speech"
 	"yap/internal/vocabulary"
 )
+
+func TestFailedMicrophoneRetestPublishesInvalidatedReadiness(t *testing.T) {
+	a := testApp(t)
+	if err := a.StartMicrophoneTest(); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.StopMicrophoneTest(); err != nil {
+		t.Fatal(err)
+	}
+	if !a.microphoneTested {
+		t.Fatal("initial test failed")
+	}
+	notifications := 0
+	a.notify = func(topic string, _ ...interface{}) {
+		if topic == "setup:changed" {
+			notifications++
+		}
+	}
+	a.recorder = &selectedCapture{failure: errors.New("input disconnected")}
+	if err := a.StartMicrophoneTest(); err == nil {
+		t.Fatal("retest unexpectedly succeeded")
+	}
+	if a.microphoneTested || notifications == 0 {
+		t.Fatal("failed retest did not publish readiness reset")
+	}
+}
 
 type silentCapture struct{ fakeCapture }
 

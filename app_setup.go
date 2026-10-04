@@ -73,6 +73,7 @@ func (a *App) startCaptureTest(transcription bool) error {
 		}
 		a.event("dictation:level", level)
 	}); err != nil {
+		a.event("setup:changed")
 		return errors.Join(err, a.discardAudioLocked(path))
 	}
 	a.path = path
