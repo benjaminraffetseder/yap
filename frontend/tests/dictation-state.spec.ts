@@ -60,6 +60,23 @@ test("setup ignores an older microphone enumeration reply", async ({page}) => {
  await expect(page.getByRole("option",{name:"Old input",exact:true})).toHaveCount(0)
 })
 
+test("obsolete snapshot failures cannot undo connection recovery", async ({page}) => {
+ await page.goto("/")
+ await expect(page.getByRole("button",{name:"Start recording",exact:true})).toBeEnabled()
+ await page.evaluate(()=>{
+  const s=window.dictationTest
+  s.deferSnapshots=true;s.legacySnapshot=true;s.history()
+  s.legacySnapshot=false;s.history()
+  s.pendingSnapshots[1]()
+ })
+ await expect(page.getByRole("button",{name:"Start recording",exact:true})).toBeEnabled()
+ await page.evaluate(()=>window.dictationTest.pendingSnapshots[0]())
+ await settle(page)
+ await expect(page.getByRole("heading",{name:"Connection recovery",exact:true})).toHaveCount(0)
+ await expect(page.getByText("Couldn’t connect to Yap",{exact:true})).toHaveCount(0)
+ await expect(page.getByRole("button",{name:"Start recording",exact:true})).toBeEnabled()
+})
+
 declare global {
   interface Window {
     dictationTest: {

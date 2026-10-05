@@ -24,7 +24,14 @@ export function DictationProvider({ children }: { children: ReactNode }) {
     if (!isDesktop) return
     const request = ++snapshotRequest.current
     const revision = statusRevision.current
-    const value = await backend.snapshot()
+    let value: Snapshot
+    try {
+      value = await backend.snapshot()
+    } catch (cause) {
+      // An obsolete failure is as stale as an obsolete successful snapshot.
+      if (request !== snapshotRequest.current) return
+      throw cause
+    }
     if (request !== snapshotRequest.current) return
     // Bridge replies may arrive out of order or after a newer status event.
     setSnapshot(old => request !== snapshotRequest.current ? old : {
