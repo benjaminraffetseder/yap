@@ -27,6 +27,16 @@ test("disconnected saved microphone allows unrelated settings saves", async ({pa
  await expect.poll(()=>page.evaluate(()=>window.dictationTest.snapshot.settings.microphoneId)).toBe("unplugged")
 })
 
+test("unchanged enabled startup registration can refresh its path", async ({page}) => {
+ await page.addInitScript(()=>{window.dictationTest.snapshot.settings.launchAtLogin=true})
+ await page.goto("/#/settings")
+ await expect(page.getByRole("button",{name:"Save settings",exact:true})).toBeEnabled()
+ await page.evaluate(()=>{window.dictationTest.failSave=true})
+ await page.getByRole("button",{name:"Save settings",exact:true}).click()
+ await expect(page.getByText("Settings save failed",{exact:true})).toBeVisible()
+ await expect.poll(()=>page.evaluate(()=>window.dictationTest.snapshot.settings.launchAtLogin)).toBe(true)
+})
+
 declare global {
   interface Window {
     dictationTest: {
