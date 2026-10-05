@@ -1,0 +1,5 @@
+package storage
+
+import "os"
+
+func openPlaybackFile(root *os.Root, name string) (*os.File, error) { return root.Open(name) }

@@ -962,28 +962,17 @@ func (a *App) DeleteSession(id string) error {
 }
 func (a *App) GetAudio(id string) (string, error) {
 	a.mu.Lock()
-	defer a.mu.Unlock()
 	if err := a.historyAvailableLocked(); err != nil {
+		a.mu.Unlock()
 		return "", err
 	}
 	v, err := a.store.Session(id)
+	store := a.store
+	a.mu.Unlock()
 	if err != nil {
 		return "", err
 	}
-	if v.AudioPath == "" {
-		return "", errors.New("audio was not retained")
-	}
-	if filepath.Dir(v.AudioPath) != filepath.Join(a.store.Dir, "recordings") {
-		return "", errors.New("invalid audio path")
-	}
-	info, err := os.Stat(v.AudioPath)
-	if err != nil {
-		return "", err
-	}
-	if info.Size() > 20*1024*1024 {
-		return "", errors.New("audio file is too large")
-	}
-	data, err := os.ReadFile(v.AudioPath)
+	data, err := store.ReadAudio(v.AudioPath)
 	if err != nil {
 		return "", err
 	}
