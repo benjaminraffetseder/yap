@@ -37,6 +37,29 @@ test("unchanged enabled startup registration can refresh its path", async ({page
  await expect.poll(()=>page.evaluate(()=>window.dictationTest.snapshot.settings.launchAtLogin)).toBe(true)
 })
 
+test("setup ignores an older microphone enumeration reply", async ({page}) => {
+ await page.addInitScript(()=>{
+  window.dictationTest.snapshot.settings.setupComplete=false
+  const app=Reflect.get(window,"go").main.App
+  const pending: ((devices:{id:string,name:string}[])=>void)[]=[]
+  Reflect.set(window,"micReplies",pending)
+  app.GetMicrophones=()=>new Promise(resolve=>pending.push(resolve))
+ })
+ await page.goto("/")
+ await page.getByRole("button",{name:"Next",exact:true}).click()
+ await expect.poll(()=>page.evaluate(()=>Reflect.get(window,"micReplies").length)).toBe(1)
+ await page.getByRole("button",{name:"Refresh microphones",exact:true}).click()
+ await expect.poll(()=>page.evaluate(()=>Reflect.get(window,"micReplies").length)).toBe(2)
+ await page.evaluate(()=>Reflect.get(window,"micReplies")[1]([{id:"new",name:"New input"}]))
+ await page.getByRole("combobox",{name:"Microphone",exact:true}).click()
+ await expect(page.getByRole("option",{name:"New input",exact:true})).toBeVisible()
+ await page.keyboard.press("Escape")
+ await page.evaluate(()=>Reflect.get(window,"micReplies")[0]([{id:"old",name:"Old input"}]))
+ await page.getByRole("combobox",{name:"Microphone",exact:true}).click()
+ await expect(page.getByRole("option",{name:"New input",exact:true})).toBeVisible()
+ await expect(page.getByRole("option",{name:"Old input",exact:true})).toHaveCount(0)
+})
+
 declare global {
   interface Window {
     dictationTest: {

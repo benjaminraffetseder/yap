@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { Check, RefreshCw } from "lucide-react"
 import { Link } from "react-router"
 import { Button } from "@/components/ui/button"
@@ -16,9 +16,22 @@ export function SetupPage() {
   const [mic, setMic] = useState(snapshot.settings.microphoneId)
   const [shortcut, setShortcut] = useState(snapshot.settings.shortcut)
   const [pending, setPending] = useState(false)
+  const microphoneRequest = useRef(0)
+  const refreshMicrophones = useCallback(async () => {
+    const request = ++microphoneRequest.current
+    try {
+      const devices = await backend.microphones()
+      if (request === microphoneRequest.current) setMicrophones(devices)
+    } catch (cause) {
+      if (request === microphoneRequest.current) throw cause
+    }
+  }, [])
   const testing = snapshot.status.phase === "mic-test"
   const busy = isBusy(snapshot.status.phase)
-  useEffect(() => { if (step === 1) void run(async () => setMicrophones(await backend.microphones()), false) }, [step]) // Fetch only when this step opens.
+  useEffect(() => {
+    if (step === 1) void run(refreshMicrophones, false)
+    return () => { microphoneRequest.current++ }
+  }, [step, refreshMicrophones]) // Fetch only when this step opens.
   const options = [{ value: "", label: "System default" }, ...microphones.map(device => ({ value: device.id, label: device.name })), ...(mic && !microphones.some(device => device.id === mic) ? [{ value: mic, label: "Selected microphone (disconnected)" }] : [])]
   async function action(work: () => Promise<unknown>) { setPending(true); await run(work); setPending(false) }
   const micPassed = snapshot.microphoneTested && mic === snapshot.settings.microphoneId
@@ -31,7 +44,7 @@ export function SetupPage() {
       <h2 className="font-semibold">Test your microphone</h2>
       <div className="max-w-xl space-y-2"><Label htmlFor="setup-microphone">Microphone</Label><div className="flex gap-2">
         <Select items={options} value={mic} disabled={busy || pending} onValueChange={value => { if (value !== null) setMic(value) }}><SelectTrigger id="setup-microphone" className="data-[size=default]:h-9 w-full"><SelectValue /></SelectTrigger><SelectContent alignItemWithTrigger={false}>{options.map(option => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}</SelectContent></Select>
-        <Button variant="outline" size="icon" aria-label="Refresh microphones" disabled={busy || pending} onClick={() => void action(async () => setMicrophones(await backend.microphones()))}><RefreshCw className="size-4" /></Button>
+        <Button variant="outline" size="icon" aria-label="Refresh microphones" disabled={busy || pending} onClick={() => void action(refreshMicrophones)}><RefreshCw className="size-4" /></Button>
       </div></div>
       <p className="text-sm text-muted-foreground">Speak for a few seconds. Test audio is deleted and never transcribed.</p>
       <p className="text-xs text-muted-foreground">To test transcription too, open <Link className="text-primary underline" to="/settings">dictation diagnostics in Settings</Link>.</p>
