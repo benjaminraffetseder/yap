@@ -4,11 +4,11 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"os"
 	"strings"
 	"time"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
+	"yap/internal/fileutil"
 	"yap/internal/storage"
 )
 
@@ -79,7 +79,7 @@ func (a *App) ExportSessions(ids []string) error {
 	if err != nil || path == "" {
 		return err
 	}
-	return os.WriteFile(path, []byte(formatHistoryExport(entries)), 0600)
+	return fileutil.WriteAtomic(path, []byte(formatHistoryExport(entries)))
 }
 
 // Retention failures must be visible without turning a saved dictation into a

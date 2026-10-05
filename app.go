@@ -17,6 +17,7 @@ import (
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 	"yap/internal/audio"
 	"yap/internal/cleanup"
+	"yap/internal/fileutil"
 	"yap/internal/indicator"
 	"yap/internal/inference/speech"
 	textmodel "yap/internal/inference/text"
@@ -1003,5 +1004,5 @@ func (a *App) ExportSession(id string) error {
 	if err != nil || path == "" {
 		return err
 	}
-	return os.WriteFile(path, []byte(v.FinalTranscript+"\n"), 0600)
+	return fileutil.WriteAtomic(path, []byte(v.FinalTranscript+"\n"))
 }
