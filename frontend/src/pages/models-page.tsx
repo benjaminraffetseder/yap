@@ -36,6 +36,8 @@ export function ModelsPage({ embedded = false }: { embedded?: boolean }) {
         <h2 className="font-semibold">{model.name}</h2><p className="mt-2 text-xs leading-5 text-muted-foreground">{model.description}</p><p className="my-5 text-xs text-muted-foreground">{model.diskBytes ? `${megabytes(model.diskBytes)} on disk` : `${megabytes(model.size)} download`}</p>
         <Button className="mt-auto rounded-lg" variant={selected ? "outline" : "default"} disabled={!isDesktop || busy || pending || selected} onClick={() => void run(() => model.installed ? backend.settings({ ...settings, modelPath: model.path }) : backend.install(model.id))}>{selected ? <><Check className="size-4" />Active</> : model.installed ? "Use model" : <><Download className="size-4" />{repair ? "Repair & use" : "Download & use"}</>}</Button>
         {model.removable && <Button size="sm" variant="ghost" className="mt-2 text-muted-foreground" aria-label={`Remove ${model.name}`} disabled={!isDesktop || busy || pending || active} title={active ? "Switch to another model before removing this one" : undefined} onClick={() => { setError(""); setRemoving(model) }}><Trash2 className="size-3.5" />Remove</Button>}
+
+        {selected && <Button size="sm" variant="ghost" className="mt-2" disabled={!isDesktop || busy || pending} onClick={() => void run(() => backend.install(model.id))}>Check &amp; repair runtime</Button>}
       </section>
     })}</div>
     <p className="text-xs text-muted-foreground">For custom models or an existing installation, select local files in <Link className="text-primary underline" to="/settings">Settings</Link>.</p>

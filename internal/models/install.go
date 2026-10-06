@@ -204,7 +204,12 @@ func InstallRuntime(ctx context.Context, dir string, report func(int64, int64)) 
 		return "", err
 	}
 	if path := RuntimePath(dir); path != "" {
-		return path, nil
+		if ValidateRuntime(ctx, path) == nil {
+			return path, nil
+		}
+		if err := ctx.Err(); err != nil {
+			return "", err
+		}
 	}
 	archive := filepath.Join(root, "whisper.zip")
 	validate := func() error {

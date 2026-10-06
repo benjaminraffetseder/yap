@@ -878,10 +878,7 @@ func (a *App) InstallModel(id string) error {
 		a.mu.Lock()
 		executable := a.settings.WhisperPath
 		a.mu.Unlock()
-		var err error
-		if executable == "" {
-			executable, err = models.InstallRuntime(ctx, a.store.Dir, progress)
-		}
+		executable, err := models.EnsureRuntime(ctx, a.store.Dir, executable, progress)
 		var model string
 		if err == nil {
 			a.mu.Lock()

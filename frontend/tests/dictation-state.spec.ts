@@ -77,6 +77,19 @@ test("obsolete snapshot failures cannot undo connection recovery", async ({page}
  await expect(page.getByRole("button",{name:"Start recording",exact:true})).toBeEnabled()
 })
 
+test("active valid models offer runtime verification and repair",async({page})=>{
+ await page.addInitScript(()=>{
+  const s=window.dictationTest.snapshot
+  s.settings.modelPath="/base"
+  s.models=[{id:"base",name:"Whisper Base",description:"Everyday",size:100,path:"/base",installed:true,diskBytes:100,removable:true}]
+ })
+ await page.goto("/#/models")
+ await expect(page.getByRole("button",{name:"Active",exact:true})).toBeDisabled()
+ await page.getByRole("button",{name:"Check & repair runtime",exact:true}).click()
+ await expect.poll(()=>page.evaluate(()=>window.dictationTest.installedModelIDs)).toEqual(["base"])
+ await expect.poll(()=>page.evaluate(()=>window.dictationTest.snapshot.settings.modelPath)).toBe("/base")
+})
+
 declare global {
   interface Window {
     dictationTest: {

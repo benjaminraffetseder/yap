@@ -117,7 +117,8 @@ when you save that setting, start Yap, and finish a dictation. Turning it off
 doesn't recover deleted entries, so export anything you want to keep first.
 
 In Models, switch away from a model before removing it. Yap only removes managed
-downloads, not custom files. **Repair & use** replaces a damaged model.
+downloads, not custom files. **Repair & use** replaces a damaged model;
+**Check & repair runtime** checks the managed Windows runtime.
 
 Settings → Backup & restore exports a `.yap-backup.zip` with history, edited
 text, generated outputs, prompts, vocabulary, and portable preferences.
