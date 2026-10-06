@@ -122,6 +122,10 @@ func readBackupValue(ctx context.Context, tx *sql.Tx, table string, value any) e
 }
 
 func backupSnapshot(ctx context.Context, tx *sql.Tx) (backupManifest, error) {
+	return backupSnapshotBounded(ctx, tx, maxManifestBytes)
+}
+
+func backupSnapshotBounded(ctx context.Context, tx *sql.Tx, limit int64) (backupManifest, error) {
 	m := backupManifest{Format: "yap-backup", Version: backupVersion, CreatedAt: time.Now().UTC().Format(time.RFC3339Nano), Sessions: []Session{}, Outputs: []GeneratedOutput{}, Vocabulary: []vocabulary.Entry{}}
 	settings, config := Defaults(), textmodel.Defaults()
 	if err := readBackupValue(ctx, tx, "settings", &settings); err != nil {
@@ -135,6 +139,29 @@ func backupSnapshot(ctx context.Context, tx *sql.Tx) (backupManifest, error) {
 	}
 	m.Preferences = BackupPreferences{settings.Language, settings.Interaction, settings.AutoPaste, settings.SaveAudio, settings.CleanText}
 	m.Prompts = config.Prompts
+	base, err := json.Marshal(m)
+	if err != nil {
+		return m, err
+	}
+	used := int64(len(base))
+	if used > limit {
+		return m, errors.New("backup metadata exceeds 64 MiB")
+	}
+	account := func(value any, previous int) error {
+		encoded, err := json.Marshal(value)
+		if err != nil {
+			return err
+		}
+		size := int64(len(encoded))
+		if previous > 0 {
+			size++
+		}
+		if size > limit-used {
+			return errors.New("backup metadata exceeds 64 MiB")
+		}
+		used += size
+		return nil
+	}
 	rows, err := tx.QueryContext(ctx, `SELECT r.id,r.created_at,r.duration_ms,r.transcript,r.model,r.language,r.audio_path,COALESCE(o.transcript,r.transcript) FROM recordings r LEFT JOIN recording_outputs o ON r.id=o.id ORDER BY r.created_at COLLATE yap_datetime DESC,r.id DESC`)
 	if err != nil {
 		return m, err
@@ -142,6 +169,20 @@ func backupSnapshot(ctx context.Context, tx *sql.Tx) (backupManifest, error) {
 	for rows.Next() {
 		var v Session
 		if err = rows.Scan(&v.ID, &v.CreatedAt, &v.DurationMS, &v.RawTranscript, &v.SpeechModel, &v.Language, &v.AudioPath, &v.FinalTranscript); err != nil {
+			break
+		}
+		budgetValue := v
+		// Audio names may lengthen during export. Account for the larger encoding
+		// before retaining rows or touching audio; missing/unselected audio shrinks it.
+		if v.AudioPath != "" {
+			archived := archiveAudioName(v.ID)
+			originalJSON, _ := json.Marshal(v.AudioPath)
+			archivedJSON, _ := json.Marshal(archived)
+			if len(archivedJSON) > len(originalJSON) {
+				budgetValue.AudioPath = archived
+			}
+		}
+		if err = account(budgetValue, len(m.Sessions)); err != nil {
 			break
 		}
 		m.Sessions = append(m.Sessions, v)
@@ -164,6 +205,9 @@ func backupSnapshot(ctx context.Context, tx *sql.Tx) (backupManifest, error) {
 	for rows.Next() {
 		var v GeneratedOutput
 		if err = rows.Scan(&v.ID, &v.SessionID, &v.CreatedAt, &v.Prompt.ID, &v.Prompt.Name, &v.Prompt.Instruction, &v.Model, &v.Endpoint, &v.Input, &v.Text); err != nil {
+			break
+		}
+		if err = account(v, len(m.Outputs)); err != nil {
 			break
 		}
 		m.Outputs = append(m.Outputs, v)

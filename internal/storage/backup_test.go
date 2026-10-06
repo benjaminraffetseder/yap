@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -14,6 +15,57 @@ import (
 	textmodel "yap/internal/inference/text"
 	"yap/internal/vocabulary"
 )
+
+func TestBackupMetadataBudgetStopsSnapshotCollection(t *testing.T) {
+	s := backupStore(t)
+	for i := 0; i < 10; i++ {
+		if err := s.Add(NewSession(fmt.Sprint(i), 1000, strings.Repeat("\t", 1000), "tiny", "en", "")); err != nil {
+			t.Fatal(err)
+		}
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback()
+	m, err := backupSnapshotBounded(context.Background(), tx, 10000)
+	if err == nil || !strings.Contains(err.Error(), "metadata exceeds") || len(m.Sessions) >= 10 {
+		t.Fatal("snapshot was not bounded before loading library", len(m.Sessions), err)
+	}
+	encoded, _ := json.Marshal(m)
+	if len(encoded) > 10000 {
+		t.Fatal("retained snapshot exceeded encoded budget")
+	}
+}
+
+func TestOversizedBackupMetadataPreservesDestinationBeforeAudio(t *testing.T) {
+	s := backupStore(t)
+	badAudio := filepath.Join(s.Dir, "recordings", "directory.wav")
+	os.Mkdir(badAudio, 0700)
+	tx, err := s.db.Begin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := strings.Repeat("a", 100000)
+	for i := 0; i < 350; i++ {
+		if _, err = tx.Exec("INSERT INTO recordings VALUES(?,?,?,?,?,?,?)", fmt.Sprint(i), "2026-10-08T00:00:00Z", 1000, text, "tiny", "en", badAudio); err != nil {
+			tx.Rollback()
+			t.Fatal(err)
+		}
+	}
+	if err = tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "keep.zip")
+	os.WriteFile(path, []byte("previous backup"), 0600)
+	if _, err = s.ExportBackup(context.Background(), path, true); err == nil || !strings.Contains(err.Error(), "metadata exceeds") {
+		t.Fatal("did not reject before audio processing", err)
+	}
+	bytes, err := os.ReadFile(path)
+	if err != nil || string(bytes) != "previous backup" {
+		t.Fatal("previous destination changed", err)
+	}
+}
 
 func TestBackupPreviewPlanningHonorsCancellation(t *testing.T) {
 	source, path := backupFixture(t)
