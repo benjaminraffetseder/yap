@@ -24,6 +24,8 @@ type platformHotkey struct {
 	registered bool
 	funcs      chan func()
 	canceled   chan struct{}
+	hook       uintptr
+	edges      *keyboardEdges
 }
 
 var hotkeyId uint64 // atomic
@@ -55,6 +57,14 @@ func (hk *Hotkey) register() error {
 	)
 	hk.funcs <- func() {
 		ok, err = win.RegisterHotKey(0, uintptr(hk.hotkeyId), uintptr(mod), uintptr(hk.key))
+		if ok {
+			hk.edges = newKeyboardEdges(uint32(hk.key), mod)
+			hk.hook, err = hk.installKeyboardHook()
+			if hk.hook == 0 {
+				win.UnregisterHotKey(0, uintptr(hk.hotkeyId))
+				ok = false
+			}
+		}
 		done <- struct{}{}
 	}
 	<-done
@@ -78,6 +88,7 @@ func (hk *Hotkey) unregister() error {
 
 	done := make(chan struct{})
 	hk.funcs <- func() {
+		hk.removeKeyboardHook()
 		win.UnregisterHotKey(0, uintptr(hk.hotkeyId))
 		done <- struct{}{}
 		close(hk.canceled)
@@ -103,35 +114,38 @@ func (hk *Hotkey) handle() {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 
-	isKeyDown := false
-	tk := time.NewTicker(time.Second / 100)
-	for range tk.C {
-		msg := win.MSG{}
-		if !win.PeekMessage(&msg, 0, 0, 0) {
-			select {
-			case f := <-hk.funcs:
-				f()
-			case <-hk.canceled:
-				return
-			default:
-				// If the latest status is KeyDown, and AsyncKeyState is 0, consider key is up.
-				if win.GetAsyncKeyState(int(hk.key)) == 0 && isKeyDown {
+	defer hk.removeKeyboardHook()
+	tk := time.NewTicker(2 * time.Millisecond)
+	defer tk.Stop()
+	for {
+		select {
+		case f := <-hk.funcs:
+			f()
+		case <-hk.canceled:
+			return
+		case <-tk.C:
+			for i := 0; i < 64; i++ {
+				msg := win.MSG{}
+				if !win.PeekMessage(&msg, 0, 0, 0) {
+					break
+				}
+				if !win.GetMessage(&msg, 0, 0, 0) || msg.Message == wmQuit {
+					return
+				}
+				// WM_HOTKEY reserves/conflict-checks the combination. Actual edges
+				// come from the hook, including releases between queued presses.
+			}
+		}
+		if hk.edges != nil {
+			pending := hk.edges.pending
+			hk.edges.pending = nil
+			for _, edge := range pending {
+				if edge.down {
+					hk.keydownIn <- hk.nextEvent()
+				} else {
 					hk.keyupIn <- hk.nextEvent()
-					isKeyDown = false
 				}
 			}
-			continue
-		}
-		if !win.GetMessage(&msg, 0, 0, 0) {
-			return
-		}
-
-		switch msg.Message {
-		case wmHotkey:
-			hk.keydownIn <- hk.nextEvent()
-			isKeyDown = true
-		case wmQuit:
-			return
 		}
 	}
 }
