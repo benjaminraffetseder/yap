@@ -5,8 +5,9 @@ package platform
 /*
 #cgo CFLAGS: -x objective-c -fobjc-arc
 #cgo LDFLAGS: -framework AppKit -framework ApplicationServices
-int yap_frontmost_pid(void);
-int yap_paste(int target);
+#include <stdint.h>
+uint64_t yap_paste_target(void);
+int yap_paste(uint64_t target);
 */
 import "C"
 
@@ -16,19 +17,19 @@ import (
 )
 
 func Target() string {
-	pid := int(C.yap_frontmost_pid())
-	if pid <= 0 {
+	target := uint64(C.yap_paste_target())
+	if target == 0 {
 		return ""
 	}
-	return strconv.Itoa(pid)
+	return strconv.FormatUint(target, 10)
 }
 
 func Paste(target string) error {
-	pid, err := strconv.Atoi(target)
-	if err != nil || pid <= 0 {
+	identity, err := strconv.ParseUint(target, 10, 64)
+	if err != nil || identity == 0 {
 		return fmt.Errorf("target application unavailable; paste from the clipboard")
 	}
-	switch C.yap_paste(C.int(pid)) {
+	switch C.yap_paste(C.uint64_t(identity)) {
 	case 0:
 		return nil
 	case 1:
