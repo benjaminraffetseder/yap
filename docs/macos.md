@@ -75,7 +75,7 @@ when launched from Finder. Reopen Yap after installing. See
 The desktop behavior still needs testing, particularly:
 
 - Microphone permission on first launch, denial, and retry.
-- Shortcut hold/release and toggle mode.
+- Shortcut hold/release and toggle mode, including non-US keyboard layouts.
 - Paste into another app, and clipboard fallback after switching windows.
 - The floating panel's focus, dragging, and position after disconnecting a display.
 - Closing to the menu bar, reopening, and quitting during recording.

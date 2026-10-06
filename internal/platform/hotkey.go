@@ -33,7 +33,7 @@ func Register(value string, down, up func()) (*Shortcut, error) {
 	for i, k := range fkeys {
 		keys[fmt.Sprintf("F%d", i+1)] = k
 	}
-	h := hotkey.New(m, keys[key])
+	h := hotkey.New(m, layoutKey(key, keys[key]))
 	if err = h.Register(); err != nil {
 		return nil, err
 	}

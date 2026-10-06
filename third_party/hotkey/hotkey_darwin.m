@@ -9,6 +9,7 @@
 #include <stdint.h>
 #import <ApplicationServices/ApplicationServices.h>
 #import <Cocoa/Cocoa.h>
+#import <Carbon/Carbon.h>
 
 extern void keydownCallback(uintptr_t handle);
 extern void keyupCallback(uintptr_t handle);
@@ -56,11 +57,37 @@ typedef struct {
 	uintptr_t handle;
 	int isMedia;       // 1: NSSystemDefined media key; 0: regular key
 	int code;          // NX_KEYTYPE code (media) or CG keycode (regular)
+	int logicalLetter; // ASCII A-Z, translated through the active layout
+	int heldCode;      // preserve physical release across an input-source change
 	uint64_t flags;    // required modifier mask (regular keys only)
 	int down;          // a keydown was delivered and not yet matched by keyup
 	CFMachPortRef tap;
 	CFRunLoopSourceRef source;
 } eventTap;
+
+static int resolveLogicalLetter(int letter) {
+	TISInputSourceRef source = TISCopyCurrentKeyboardLayoutInputSource();
+	if (!source) { return -1; }
+	CFDataRef data = TISGetInputSourceProperty(source, kTISPropertyUnicodeKeyLayoutData);
+	int found = -1;
+	if (data) {
+		const UCKeyboardLayout *layout = (const UCKeyboardLayout *)CFDataGetBytePtr(data);
+		for (UInt16 code = 0; code < 128; code++) {
+			UInt32 dead = 0;
+			UniChar chars[4];
+			UniCharCount count = 0;
+			OSStatus result = UCKeyTranslate(layout, code, kUCKeyActionDown, 0, LMGetKbdType(), kUCKeyTranslateNoDeadKeysMask, &dead, 4, &count, chars);
+			if (result == noErr && count == 1 && (chars[0] == letter || chars[0] == letter + ('a' - 'A'))) { found = code; break; }
+		}
+	}
+	CFRelease(source);
+	return found;
+}
+
+static void layoutChanged(CFNotificationCenterRef center, void *observer, CFStringRef name, const void *object, CFDictionaryRef info) {
+	eventTap *t = (eventTap *)observer;
+	t->code = resolveLogicalLetter(t->logicalLetter);
+}
 
 static CGEventRef tapCallback(CGEventTapProxy proxy, CGEventType type,
                               CGEventRef event, void *userInfo) {
@@ -101,6 +128,11 @@ static CGEventRef tapCallback(CGEventTapProxy proxy, CGEventType type,
 	}
 	int keycode =
 		(int)CGEventGetIntegerValueField(event, kCGKeyboardEventKeycode);
+	if (type == kCGEventKeyUp && t->down && keycode == t->heldCode) {
+		t->down = 0;
+		keyupCallback(t->handle);
+		return NULL;
+	}
 	if (keycode != t->code) {
 		return event;
 	}
@@ -112,6 +144,7 @@ static CGEventRef tapCallback(CGEventTapProxy proxy, CGEventType type,
 		// The tap repeats keyDown while the key is held; fire once.
 		if (!t->down) {
 			t->down = 1;
+			t->heldCode = keycode;
 			keydownCallback(t->handle);
 		}
 		return NULL; // consume
@@ -125,9 +158,9 @@ static CGEventRef tapCallback(CGEventTapProxy proxy, CGEventType type,
 	return event;
 }
 
-// registerTap installs a CGEventTap. When isMedia is non-zero it taps the
-// NSSystemDefined stream and code is an NX_KEYTYPE; otherwise it taps the key
-// stream, code is a CG keycode and flags is the required modifier mask.
+// registerTap installs a CGEventTap. isMedia 1 selects NSSystemDefined;
+// -1 resolves an ASCII letter through the active layout; 0 uses a physical
+// CG keycode. Regular keys match the required modifier mask.
 // Returns NULL if the process is not trusted for Accessibility (Input
 // Monitoring) or the tap cannot be created.
 void* registerTap(uintptr_t handle, int isMedia, int code, uint64_t flags) {
@@ -140,15 +173,21 @@ void* registerTap(uintptr_t handle, int isMedia, int code, uint64_t flags) {
 
 	eventTap *t = malloc(sizeof(eventTap));
 	t->handle = handle;
-	t->isMedia = isMedia;
+	t->isMedia = isMedia == 1;
+	t->logicalLetter = isMedia == -1 ? code : 0;
+	t->heldCode = -1;
 	t->code = code;
 	t->flags = flags;
 	t->down = 0;
 	t->tap = NULL;
 	t->source = NULL;
 	onMain(^{
+		if (t->logicalLetter) {
+			t->code = resolveLogicalLetter(t->logicalLetter);
+			if (t->code < 0) { return; }
+		}
 		CGEventMask mask =
-			isMedia ? CGEventMaskBit(NX_SYSDEFINED)
+			t->isMedia ? CGEventMaskBit(NX_SYSDEFINED)
 			        : (CGEventMaskBit(kCGEventKeyDown) |
 			           CGEventMaskBit(kCGEventKeyUp));
 		CFMachPortRef tap = CGEventTapCreate(
@@ -163,6 +202,9 @@ void* registerTap(uintptr_t handle, int isMedia, int code, uint64_t flags) {
 		CFRunLoopAddSource(CFRunLoopGetMain(), t->source,
 		                   kCFRunLoopCommonModes);
 		CGEventTapEnable(tap, true);
+		if (t->logicalLetter) {
+			CFNotificationCenterAddObserver(CFNotificationCenterGetDistributedCenter(), t, layoutChanged, kTISNotifySelectedKeyboardInputSourceChanged, NULL, CFNotificationSuspensionBehaviorDeliverImmediately);
+		}
 	});
 	if (t->tap == NULL) {
 		free(t);
@@ -177,6 +219,7 @@ void unregisterTap(void* p) {
 	}
 	eventTap *t = (eventTap *)p;
 	onMain(^{
+		if (t->logicalLetter) { CFNotificationCenterRemoveEveryObserver(CFNotificationCenterGetDistributedCenter(), t); }
 		if (t->tap != NULL) {
 			CGEventTapEnable(t->tap, false);
 		}

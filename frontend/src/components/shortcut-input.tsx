@@ -79,6 +79,10 @@ function ShortcutCapture({ returnFocus, onFinish }: { returnFocus: RefObject<HTM
         if (event.nativeEvent.isComposing || event.key === "Dead" || event.key === "Process") { setCandidate(""); setPreview(""); setError("Finish composing text, then press a shortcut."); return }
         const modifiers = [event.ctrlKey && "Ctrl", event.altKey && "Alt", event.shiftKey && "Shift"].filter(Boolean) as string[]
         if (["Control", "Alt", "Shift", "Meta"].includes(event.key)) { setCandidate(""); setPreview(modifiers.length ? `${modifiers.join("+")}+…` : ""); setError(""); return }
+        // macOS registers logical letters through the active layout. A US
+        // physical code cannot identify an Option-generated base letter.
+        const ambiguousMacLetter = /Mac/.test(navigator.platform) && !/^[a-z]$/i.test(event.key) && /^Key[A-Z]$/.test(event.code)
+        if (ambiguousMacLetter) { setCandidate(""); setPreview(""); setError("Enter this shortcut manually using the base letter, or record Space or F1–F12."); return }
         const key = event.code === "Space" || event.key === " " ? "Space" : /^[a-z]$/i.test(event.key) ? event.key.toUpperCase() : /^F([1-9]|1[0-2])$/.test(event.key) ? event.key : (event.ctrlKey || event.altKey) && /^Key[A-Z]$/.test(event.code) ? event.code.slice(3) : ""
         if (!modifiers.length || !key) { setCandidate(""); setPreview(""); setError(!modifiers.length ? "Include at least one modifier: Ctrl, Alt, or Shift." : "Use Space, A–Z, or F1–F12."); return }
         const captured = [...modifiers, key].join("+")

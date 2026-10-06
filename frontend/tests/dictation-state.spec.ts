@@ -1298,6 +1298,22 @@ async function recordShortcut(page: Page) {
   return dialog
 }
 
+test("Mac recorder keeps layout letters and rejects ambiguous Option characters", async ({ page }) => {
+  await page.addInitScript(() => Object.defineProperty(navigator, "platform", { value: "MacIntel" }))
+  await page.goto("/#/settings")
+  const dialog = await recordShortcut(page)
+  const area = dialog.getByRole("group", { name: "Shortcut capture" })
+  for (const [key, code] of [["z", "KeyY"], ["y", "KeyZ"]]) {
+    await area.dispatchEvent("keydown", { key, code, ctrlKey: true })
+    await expect(dialog.getByText(`Ctrl+${key.toUpperCase()}`, { exact: true })).toBeVisible()
+    await area.dispatchEvent("keyup", { key, code })
+    await expect(dialog.getByRole("button", { name: "Use shortcut", exact: true })).toBeEnabled()
+  }
+  await area.dispatchEvent("keydown", { key: "Ω", code: "KeyZ", altKey: true })
+  await expect(dialog.getByRole("alert")).toHaveText("Enter this shortcut manually using the base letter, or record Space or F1–F12.")
+  await expect(dialog.getByRole("button", { name: "Use shortcut", exact: true })).toBeDisabled()
+})
+
 test("shortcut capture waits for key release, changes only the draft and preserves other settings edits", async ({ page }) => {
   await page.goto("/#/settings")
   await page.getByRole("checkbox", { name: /Keep recordings/ }).check()

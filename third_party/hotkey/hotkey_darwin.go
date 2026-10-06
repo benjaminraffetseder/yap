@@ -10,7 +10,7 @@ package hotkey
 
 /*
 #cgo CFLAGS: -x objective-c
-#cgo LDFLAGS: -framework Cocoa -framework CoreGraphics -framework ApplicationServices
+#cgo LDFLAGS: -framework Cocoa -framework CoreGraphics -framework ApplicationServices -framework Carbon
 #include <stdint.h>
 #import <Cocoa/Cocoa.h>
 
@@ -75,6 +75,10 @@ func (hk *Hotkey) register() error {
 		code = C.int(hk.key &^ mediaKeyBit)
 	} else {
 		code = C.int(hk.key)
+		if hk.key&logicalKeyBit != 0 {
+			isMedia = -1
+			code = C.int(hk.key &^ logicalKeyBit)
+		}
 		var f C.uint64_t
 		for _, m := range hk.mods {
 			switch m {
@@ -95,7 +99,7 @@ func (hk *Hotkey) register() error {
 	tap := C.registerTap(C.uintptr_t(h), isMedia, code, flags)
 	if tap == nil {
 		h.Delete()
-		return errors.New("hotkey: failed to register, grant the application Accessibility (Input Monitoring) permission")
+		return errors.New("hotkey: failed to register; grant Accessibility permission and check the keyboard layout, or choose Space/F1–F12")
 	}
 	hk.tap = tap
 	hk.handle = h
@@ -152,6 +156,12 @@ const (
 // Key represents a key.
 // See: /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/System/Library/Frameworks/Carbon.framework/Versions/A/Frameworks/HIToolbox.framework/Versions/A/Headers/Events.h
 type Key uint32
+
+const logicalKeyBit Key = 1 << 17
+
+// LogicalLetterKey follows the active keyboard layout instead of US positions.
+// Existing physical Key constants and media keys retain their original semantics.
+func LogicalLetterKey(letter byte) Key { return logicalKeyBit | Key(letter) }
 
 // All kinds of keys
 const (
