@@ -56,12 +56,19 @@ void *yap_capture_start(const char *path, const char *deviceID, char **error) {
     @autoreleasepool {
         AVAuthorizationStatus status = [AVCaptureDevice authorizationStatusForMediaType:AVMediaTypeAudio];
         if (status == AVAuthorizationStatusNotDetermined) {
-            dispatch_semaphore_t answer = dispatch_semaphore_create(0);
-            [AVCaptureDevice requestAccessForMediaType:AVMediaTypeAudio completionHandler:^(BOOL granted) {
-                dispatch_semaphore_signal(answer);
-            }];
-            dispatch_semaphore_wait(answer, DISPATCH_TIME_FOREVER);
-            status = [AVCaptureDevice authorizationStatusForMediaType:AVMediaTypeAudio];
+            // Never wait for a person while Go owns the app lock. Completing
+            // this prompt changes permission only; it cannot start late capture.
+            static BOOL permissionRequested = NO;
+            @synchronized([YapAudioCapture class]) {
+                if (!permissionRequested) {
+                    permissionRequested = YES;
+                    [AVCaptureDevice requestAccessForMediaType:AVMediaTypeAudio completionHandler:^(BOOL granted) {
+                        @synchronized([YapAudioCapture class]) { permissionRequested = NO; }
+                    }];
+                }
+            }
+            captureError(error, @"Complete the macOS microphone permission prompt, then try recording or testing again.");
+            return NULL;
         }
         if (status != AVAuthorizationStatusAuthorized) {
             captureError(error, @"Allow Yap in System Settings → Privacy & Security → Microphone, then try again.");

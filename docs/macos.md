@@ -44,7 +44,8 @@ Once you have a native build:
 
 1. Open Yap, select your local Whisper executable in Settings, and download a
    speech model from Models.
-2. Allow microphone access when prompted.
+2. Allow microphone access when prompted. Finish the permission prompt before
+   retrying a recording.
 3. Allow Yap under **System Settings → Privacy & Security → Accessibility** for
    shortcuts and paste. Input Monitoring may also be needed. Quit and reopen
    Yap after changing these permissions.
