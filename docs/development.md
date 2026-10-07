@@ -10,6 +10,10 @@ root, run `wails dev` and leave the terminal open. It rebuilds Go changes and
 serves the frontend with Vite. Ctrl+C stops the watcher; closing the app window
 only hides it to the tray.
 
+Run one dev session per checkout. If port 5173 is occupied, stop the previous
+Vite process before starting another. Restart `wails dev` if the frontend reports
+that its backend bindings are out of date.
+
 For frontend work in a browser, first run `wails build` to generate bindings:
 
 ```powershell

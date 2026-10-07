@@ -16,5 +16,5 @@ export default defineConfig(({ mode }) => ({
       "@wails": fileURLToPath(new URL("./wailsjs", import.meta.url)),
     },
   },
-  server: { host: "127.0.0.1" },
+  server: { host: "127.0.0.1", strictPort: true },
 }))
