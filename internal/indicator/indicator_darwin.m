@@ -140,7 +140,11 @@ void *yap_indicator_new(uintptr_t callback) {
 void yap_indicator_update(void *pointer, const char *label, const char *stop, const char *cancel, int visible, int move, int working, double level) {
     YapStatusController *controller = (__bridge YapStatusController *)pointer;
     onIndicatorMain(^{
-        if (!visible) { [controller.panel orderOut:nil]; return; }
+        NSWindow *focused = NSApp.keyWindow;
+        BOOL appFocused = NSApp.active && focused && focused != controller.panel && focused.visible && !focused.miniaturized;
+        // This only hides the panel: Go keeps recording state and expiry, and
+        // subsequent refreshes show it again when the app loses focus.
+        if (!visible || appFocused) { [controller.panel orderOut:nil]; return; }
         controller.label.stringValue = [NSString stringWithUTF8String:label];
         controller.stop.hidden = stop[0] == '\0';
         controller.stop.title = [NSString stringWithUTF8String:stop];

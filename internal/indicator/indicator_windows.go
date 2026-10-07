@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"math"
+	"os"
 	"path/filepath"
 	"runtime"
 	"sync"
@@ -36,6 +37,9 @@ var killTimer = user.NewProc("KillTimer")
 var monitorFromWindow = user.NewProc("MonitorFromWindow")
 var getMonitorInfo = user.NewProc("GetMonitorInfoW")
 var getForeground = user.NewProc("GetForegroundWindow")
+var getWindowProcessID = user.NewProc("GetWindowThreadProcessId")
+var isWindowVisible = user.NewProc("IsWindowVisible")
+var isIconic = user.NewProc("IsIconic")
 var getDPI = user.NewProc("GetDpiForWindow")
 var beginPaint = user.NewProc("BeginPaint")
 var endPaint = user.NewProc("EndPaint")
@@ -118,6 +122,7 @@ type native struct {
 	changed      bool
 	level        float64
 	actions      Actions
+	foreground   func() uintptr
 	positionPath string
 	handle       atomic.Uintptr
 	closed       atomic.Bool
@@ -149,7 +154,11 @@ func windowLongProc(name string) *windows.LazyProc {
 }
 
 func New(actions Actions, dataDir string) (Controller, error) {
-	n := &native{actions: actions, done: make(chan struct{}), dpi: 96}
+	return newNative(actions, dataDir, func() uintptr { hwnd, _, _ := getForeground.Call(); return hwnd })
+}
+
+func newNative(actions Actions, dataDir string, foreground func() uintptr) (Controller, error) {
+	n := &native{actions: actions, foreground: foreground, done: make(chan struct{}), dpi: 96}
 	if dataDir != "" {
 		n.positionPath = filepath.Join(dataDir, "indicator-position.json")
 	}
@@ -368,6 +377,22 @@ func (n *native) place() {
 	}
 }
 
+// The foreground window can also be a native Yap dialog. The non-activating
+// indicator itself never counts as the foreground application window.
+func appWindowFocused(foreground, panel uintptr) bool {
+	if foreground == 0 || foreground == panel {
+		return false
+	}
+	var pid uint32
+	getWindowProcessID.Call(foreground, uintptr(unsafe.Pointer(&pid)))
+	if pid != uint32(os.Getpid()) {
+		return false
+	}
+	visible, _, _ := isWindowVisible.Call(foreground)
+	minimized, _, _ := isIconic.Call(foreground)
+	return visible != 0 && minimized == 0
+}
+
 func (n *native) refresh() {
 	n.mu.Lock()
 	s := n.state
@@ -382,11 +407,8 @@ func (n *native) refresh() {
 		if v.dismissAfter > 0 {
 			n.expires = now.Add(v.dismissAfter)
 		}
-		if v.visible && !n.dragging && (!n.visible || s.Phase == "recording") {
-			n.place()
-		}
 	}
-	if !v.visible || n.dismissed || !n.expires.IsZero() && !now.Before(n.expires) {
+	if !v.visible || n.dismissed || !n.expires.IsZero() && !now.Before(n.expires) || appWindowFocused(n.foreground(), n.handle.Load()) {
 		if n.visible {
 			n.endDrag()
 			showWindow.Call(n.handle.Load(), 0)
@@ -406,6 +428,10 @@ func (n *native) refresh() {
 	}
 	setWindowText.Call(n.cancel, uintptr(unsafe.Pointer(utf16(v.cancel))))
 	showWindow.Call(n.cancel, 4)
+	// Reappearing after a focus change retains the state and notification expiry.
+	if !n.visible || changed && s.Phase == "recording" && !n.dragging {
+		n.place()
+	}
 	invalidate.Call(n.handle.Load(), 0, 0)
 }
 

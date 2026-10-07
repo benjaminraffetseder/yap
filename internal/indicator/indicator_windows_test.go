@@ -4,12 +4,86 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
 )
+
+func TestNativeIndicatorFollowsForegroundWindowState(t *testing.T) {
+	if os.Getenv("YAP_INDICATOR_SMOKE") != "1" {
+		t.Skip("set YAP_INDICATOR_SMOKE=1 on an unlocked Windows desktop")
+	}
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	host, _, err := createWindow.Call(exNoActivate|exToolWindow,
+		uintptr(unsafe.Pointer(utf16("STATIC"))), uintptr(unsafe.Pointer(utf16("Yap focus test host"))),
+		0x00CF0000, 0, 0, 320, 200, 0, 0, 0, 0)
+	if host == 0 {
+		t.Fatal(err)
+	}
+	defer destroyWindow.Call(host)
+	showWindow.Call(host, 4)
+	// Only foreground selection is controlled: visibility, minimization, process
+	// ownership, the indicator window, and its timer/message loop use real Win32.
+	// This avoids stealing the user's focus or relying on activation permission.
+	var foreground atomic.Uintptr
+	foreground.Store(host)
+	controller, err := newNative(Actions{}, t.TempDir(), foreground.Load)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer controller.Close()
+	hwnd := controller.(*native).handle.Load()
+	visible := func() bool { result, _, _ := isWindowVisible.Call(hwnd); return result != 0 }
+	wait := func(label string, check func() bool) {
+		t.Helper()
+		until := time.Now().Add(3 * time.Second)
+		for !check() {
+			if time.Now().After(until) {
+				t.Fatal(label)
+			}
+			time.Sleep(20 * time.Millisecond)
+		}
+	}
+	controller.Update(State{Phase: "recording", StartedAt: time.Now().Add(-65 * time.Second).UnixMilli()})
+	time.Sleep(150 * time.Millisecond)
+	if visible() {
+		t.Fatal("recording indicator visible over the focused app")
+	}
+	foreground.Store(0) // Another application has focus; the main window stays visible.
+	wait("background app did not show the indicator", visible)
+	foreground.Store(host)
+	wait("returning focus did not hide the indicator", func() bool { return !visible() })
+	showWindow.Call(host, 7) // Minimize without activating the indicator.
+	wait("minimized recording did not show the indicator", visible)
+	var text [128]uint16
+	getWindowText.Call(controller.(*native).label, uintptr(unsafe.Pointer(&text[0])), uintptr(len(text)))
+	if !strings.HasPrefix(windows.UTF16ToString(text[:]), "Recording  1:") {
+		t.Fatal("focus change reset the recording timer")
+	}
+	showWindow.Call(host, 4)
+	wait("returning to the app did not hide the indicator", func() bool { return !visible() })
+	controller.Update(State{Phase: "transcribing"})
+	time.Sleep(150 * time.Millisecond)
+	if visible() {
+		t.Fatal("processing indicator visible over the focused app")
+	}
+	showWindow.Call(host, 0) // Close-to-tray / hidden main window, with no state update.
+	wait("hidden processing did not show the indicator", visible)
+	showWindow.Call(host, 4)
+	wait("restoring the app did not hide the indicator", func() bool { return !visible() })
+	controller.Update(State{Phase: "done", Message: "Copied to clipboard"})
+	time.Sleep(2800 * time.Millisecond)
+	showWindow.Call(host, 0)
+	time.Sleep(150 * time.Millisecond)
+	if visible() {
+		t.Fatal("focus change replayed an expired completion notification")
+	}
+}
 
 // Opt-in because this test displays real desktop windows. It uses no microphone,
 // clipboard, global shortcut, model, or user data.
