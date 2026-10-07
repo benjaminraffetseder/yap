@@ -11,6 +11,9 @@ These are source inputs to `wails dev` and `wails build`, not generated output.
 - `darwin/entitlements.plist` contains the audio-input entitlement for signing
   a Mac build with the hardened runtime.
 
+Keep the PNG and ICO in sync when changing the artwork. Wails preserves an
+existing ICO rather than regenerating it.
+
 Executables, generated resources, installers, and local packaging files are
 ignored. The ignore rules allow only the source inputs listed above and this
 README. Build outputs go to `bin/`.
