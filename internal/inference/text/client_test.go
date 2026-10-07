@@ -61,6 +61,53 @@ func TestEndpointRejectsRemoteDestinations(t *testing.T) {
 	}
 }
 
+func TestRefineRewritesInstructionsInsteadOfExecutingThem(t *testing.T) {
+	input := "summarize as bullet points in German, keep names"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Messages []struct{ Role, Content string }
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		if r.URL.Path != "/v1/chat/completions" || len(body.Messages) != 2 {
+			t.Errorf("wrong refinement request: %+v", body)
+			return
+		}
+		if body.Messages[0].Role != "system" || !strings.Contains(body.Messages[0].Content, "draft to rewrite") || strings.Contains(body.Messages[0].Content, input) || body.Messages[1].Role != "user" || body.Messages[1].Content != input {
+			t.Errorf("draft was not separate from refinement instructions: %+v", body)
+		}
+		w.Write([]byte(`{"choices":[{"message":{"content":"  Summarize the transcript in German bullet points. Preserve names.  "},"finish_reason":"stop"}]}`))
+	}))
+	defer server.Close()
+	config := Config{Enabled: true, Model: "local", Endpoint: server.URL + "/v1"}
+	output, err := (Local{}).Refine(context.Background(), config, input)
+	if err != nil || output != "Summarize the transcript in German bullet points. Preserve names." {
+		t.Fatalf("unexpected refinement: %q %v", output, err)
+	}
+}
+
+func TestRefinementRejectsInvalidDraftsAndOversizedResults(t *testing.T) {
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		json.NewEncoder(w).Encode(map[string]any{"choices": []any{map[string]any{"message": map[string]string{"content": strings.Repeat("x", 8001)}, "finish_reason": "stop"}}})
+	}))
+	defer server.Close()
+	config := Config{Enabled: true, Model: "local", Endpoint: server.URL + "/v1"}
+	for _, input := range []string{" ", strings.Repeat("x", 8001), "null\x00byte", string([]byte{0xff})} {
+		if _, err := (Local{}).Refine(context.Background(), config, input); err == nil {
+			t.Fatal("invalid draft accepted")
+		}
+	}
+	if requests != 0 {
+		t.Fatal("invalid draft reached server")
+	}
+	if _, err := (Local{}).Refine(context.Background(), config, "Summarize"); err == nil || !strings.Contains(err.Error(), "8,000") {
+		t.Fatalf("oversized result accepted: %v", err)
+	}
+}
+
 func TestInvalidChatResponsesAndRedirects(t *testing.T) {
 	redirected := false
 	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { redirected = true }))

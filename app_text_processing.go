@@ -35,24 +35,37 @@ func (a *App) SaveTextProcessing(config textmodel.Config) (textmodel.Config, err
 // Manual transformations return a preview only. They do not save a recording,
 // change a draft, or touch the clipboard. The frontend explicitly applies it.
 func (a *App) ProcessText(requestID, input, promptID string) (string, error) {
-	return a.processTextRequest(requestID, input, promptID, false, nil)
+	return a.processTextRequest(requestID, textRequest{input: input, promptID: promptID})
 }
 
 func (a *App) TestTextModel(requestID string) (string, error) {
-	return a.processTextRequest(requestID, "Connection test.", "", true, nil)
+	return a.processTextRequest(requestID, textRequest{input: "Connection test.", test: true})
 }
 
 type outputTarget struct{ sessionID, outputID string }
+type promptRefinement struct{ endpoint, model string }
+type textRequest struct {
+	input, promptID string
+	test            bool
+	target          *outputTarget
+	refinement      *promptRefinement
+}
+
+// Refinement uses the chosen draft connection and returns a preview. It does
+// not require valid saved prompts or persist any settings or generated outputs.
+func (a *App) RefinePrompt(requestID, endpoint, model, instruction string) (string, error) {
+	return a.processTextRequest(requestID, textRequest{input: instruction, refinement: &promptRefinement{endpoint: endpoint, model: model}})
+}
 
 func (a *App) GenerateSessionOutput(requestID, sessionID, promptID string) (string, error) {
-	return a.processTextRequest(requestID, "", promptID, false, &outputTarget{sessionID: sessionID})
+	return a.processTextRequest(requestID, textRequest{promptID: promptID, target: &outputTarget{sessionID: sessionID}})
 }
 
 func (a *App) RegenerateSessionOutput(requestID, sessionID, outputID string) (string, error) {
 	if outputID == "" {
 		return "", errors.New("choose a saved output")
 	}
-	return a.processTextRequest(requestID, "", "", false, &outputTarget{sessionID: sessionID, outputID: outputID})
+	return a.processTextRequest(requestID, textRequest{target: &outputTarget{sessionID: sessionID, outputID: outputID}})
 }
 
 func (a *App) GetSessionOutputs(sessionID string) ([]storage.GeneratedOutput, error) {
@@ -120,7 +133,8 @@ func (a *App) ListTextModels(requestID, endpoint string) ([]string, error) {
 	return models, err
 }
 
-func (a *App) processTextRequest(requestID, input, promptID string, test bool, target *outputTarget) (string, error) {
+func (a *App) processTextRequest(requestID string, request textRequest) (string, error) {
+	input, target := request.input, request.target
 	a.mu.Lock()
 	if err := a.available(); err != nil {
 		a.mu.Unlock()
@@ -139,7 +153,15 @@ func (a *App) processTextRequest(requestID, input, promptID string, test bool, t
 		a.mu.Unlock()
 		return "", errors.New("finish the current operation before processing text")
 	}
-	config, err := textmodel.Normalize(a.textConfig)
+	configSource := a.textConfig
+	if request.refinement != nil {
+		configSource = textmodel.Config{Enabled: true, Endpoint: request.refinement.endpoint, Model: request.refinement.model}
+		if err := textmodel.ValidateInstruction(input); err != nil {
+			a.mu.Unlock()
+			return "", err
+		}
+	}
+	config, err := textmodel.Normalize(configSource)
 	if err != nil {
 		a.mu.Unlock()
 		return "", err
@@ -168,8 +190,8 @@ func (a *App) processTextRequest(requestID, input, promptID string, test bool, t
 			input, prompt = prior.Input, prior.Prompt
 		}
 	}
-	if !test && (target == nil || target.outputID == "") {
-		prompt, err = config.Prompt(promptID)
+	if !request.test && request.refinement == nil && (target == nil || target.outputID == "") {
+		prompt, err = config.Prompt(request.promptID)
 		if err != nil {
 			a.mu.Unlock()
 			return "", err
@@ -198,7 +220,12 @@ func (a *App) processTextRequest(requestID, input, promptID string, test bool, t
 	a.mu.Unlock()
 	defer a.wg.Done()
 	defer cancel()
-	output, err := a.textEngine.Process(ctx, config, prompt, input)
+	var output string
+	if request.refinement != nil {
+		output, err = a.textEngine.Refine(ctx, config, input)
+	} else {
+		output, err = a.textEngine.Process(ctx, config, prompt, input)
+	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.textJobID, a.textCancel = "", nil

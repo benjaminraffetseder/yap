@@ -16,6 +16,80 @@ test("reset instructions preserves customized prompt names", async ({page}) => {
  }
 })
 
+test("prompt refinement previews an unsaved draft and saves only after applying", async ({ page }, testInfo) => {
+  await page.goto("/#/prompts")
+  await expect(page.getByRole("button", { name: "Refine prompt", exact: true })).toBeDisabled()
+  await page.getByLabel("Model identifier", { exact: true }).fill("draft-model")
+  await page.getByLabel("Local server URL", { exact: true }).fill("http://127.0.0.1:1234/v1")
+  await page.getByLabel("Instructions", { exact: true }).fill("summarize in bullets, keep names")
+  await page.getByRole("button", { name: "Refine prompt", exact: true }).click()
+  const dialog = page.getByRole("dialog", { name: "Refine prompt", exact: true })
+  await expect(dialog.getByLabel("Your instructions", { exact: true })).toHaveValue("summarize in bullets, keep names")
+  await expect(dialog.getByRole("button", { name: "Use instructions", exact: true })).toBeDisabled()
+  await expect.poll(() => page.evaluate(() => window.dictationTest.refinements.map(({ endpoint, model, input }) => ({ endpoint, model, input })))).toEqual([{ endpoint: "http://127.0.0.1:1234/v1", model: "draft-model", input: "summarize in bullets, keep names" }])
+  await page.evaluate(() => window.dictationTest.processing!.resolve("Summarize in bullet points. Preserve all names."))
+  await expect(dialog.getByLabel("Refined instructions", { exact: true })).toHaveValue("Summarize in bullet points. Preserve all names.")
+  await page.screenshot({ path: testInfo.outputPath("prompt-refinement.png"), animations: "disabled" })
+  await expect.poll(() => page.evaluate(() => window.dictationTest.snapshot.textProcessing.prompts[0].instruction)).toBe("Clean up text.")
+  await dialog.getByRole("button", { name: "Use instructions", exact: true }).click()
+  await expect(dialog).toBeHidden()
+  await expect(page.getByLabel("Instructions", { exact: true })).toHaveValue("Summarize in bullet points. Preserve all names.")
+  await expect(page.getByRole("status").filter({ hasText: "Refined instructions applied" })).toBeVisible()
+  await expect.poll(() => page.evaluate(() => window.dictationTest.snapshot.textProcessing.prompts[0].instruction)).toBe("Clean up text.")
+  await page.getByRole("button", { name: "Save prompts", exact: true }).click()
+  await expect.poll(() => page.evaluate(() => window.dictationTest.snapshot.textProcessing.prompts[0].instruction)).toBe("Summarize in bullet points. Preserve all names.")
+  expect(await page.evaluate(() => ({ enabled: window.dictationTest.snapshot.textProcessing.enabled, outputs: window.dictationTest.outputs.length, clipboard: window.dictationTest.clipboard }))).toEqual({ enabled: false, outputs: 0, clipboard: "" })
+})
+
+test("discarding prompt refinement preserves draft and cancels late results", async ({ page }) => {
+  await page.goto("/#/prompts")
+  await page.getByLabel("Model identifier", { exact: true }).fill("local")
+  await page.getByLabel("Instructions", { exact: true }).fill("My rough draft")
+  await page.getByRole("button", { name: "Refine prompt", exact: true }).click()
+  await expect.poll(() => page.evaluate(() => !!window.dictationTest.processing)).toBe(true)
+  await page.getByRole("button", { name: "Discard preview", exact: true }).click()
+  await expect.poll(() => page.evaluate(() => window.dictationTest.cancelledProcessing.length)).toBe(1)
+  await page.evaluate(() => window.dictationTest.processing!.resolve("Late result"))
+  await expect(page.getByLabel("Instructions", { exact: true })).toHaveValue("My rough draft")
+  await page.getByRole("button", { name: "Refine prompt", exact: true }).click()
+  await page.evaluate(() => window.dictationTest.processing!.resolve("Fresh result"))
+  await expect(page.getByLabel("Refined instructions", { exact: true })).toHaveValue("Fresh result")
+  await page.getByRole("button", { name: "Discard preview", exact: true }).click()
+  await expect(page.getByLabel("Instructions", { exact: true })).toHaveValue("My rough draft")
+})
+
+test("prompt refinement can cancel and retry after a model failure", async ({ page }) => {
+  await page.goto("/#/prompts")
+  await page.getByLabel("Model identifier", { exact: true }).fill("local")
+  await page.evaluate(() => { window.dictationTest.failProcessing = true })
+  await page.getByRole("button", { name: "Refine prompt", exact: true }).click()
+  await expect(page.getByRole("alert")).toHaveText("Model unavailable")
+  await page.evaluate(() => { window.dictationTest.failProcessing = false })
+  await page.getByRole("button", { name: "Refine again", exact: true }).click()
+  await page.getByRole("button", { name: "Cancel refinement", exact: true }).click()
+  await page.evaluate(() => window.dictationTest.processing!.resolve("Cancelled late result"))
+  await expect(page.getByRole("alert")).toHaveText("Processing cancelled")
+  await expect(page.getByRole("button", { name: "Use instructions", exact: true })).toBeDisabled()
+  await page.getByRole("button", { name: "Refine again", exact: true }).click()
+  await page.evaluate(() => window.dictationTest.processing!.resolve("New instructions"))
+  await expect(page.getByLabel("Refined instructions", { exact: true })).toHaveValue("New instructions")
+})
+
+test("leaving prompts cancels refinement and old backends show recovery guidance", async ({ page }) => {
+  await page.goto("/#/prompts")
+  await page.getByLabel("Model identifier", { exact: true }).fill("local")
+  await page.getByRole("button", { name: "Refine prompt", exact: true }).click()
+  await expect.poll(() => page.evaluate(() => !!window.dictationTest.processing)).toBe(true)
+  await page.evaluate(() => { location.hash = "#/history" })
+  await expect.poll(() => page.evaluate(() => window.dictationTest.cancelledProcessing.length)).toBe(1)
+  await page.evaluate(() => window.dictationTest.processing!.resolve("Late instructions"))
+  await page.goto("/#/prompts")
+  await page.getByLabel("Model identifier", { exact: true }).fill("local")
+  await page.evaluate(() => { Reflect.deleteProperty(Reflect.get(window, "go").main.App, "RefinePrompt") })
+  await page.getByRole("button", { name: "Refine prompt", exact: true }).click()
+  await expect(page.getByRole("alert")).toContainText("Prompt refinement needs the current backend")
+})
+
 test("disconnected saved microphone allows unrelated settings saves", async ({page}) => {
  await page.addInitScript(()=>{window.dictationTest.snapshot.settings.microphoneId="unplugged"})
  await page.goto("/#/settings")
@@ -124,6 +198,7 @@ declare global {
       modelListRequests: { id: string; endpoint: string }[]
       pendingModelLists: { id: string; endpoint: string; resolve: (models: string[]) => void }[]
       cancelledProcessing: string[]
+      refinements: { id: string; endpoint: string; model: string; input: string }[]
       exportedText: string
       clipboard: string
       failClipboard: boolean
@@ -158,7 +233,7 @@ test.beforeEach(async ({ page }) => {
         state.snapshot.status = { ...state.snapshot.status, phase, message: phase === "transcribing" ? "Transcribing…" : "Ready", startedAt: Date.now() }
         state.callbacks["dictation:status"](structuredClone(state.snapshot.status))
       },
-      outputs: [], failOutputs: false, processing: null, failProcessing: false, cancelledProcessing: [], textModels: [], modelListError: "", deferModelList: false, modelListRequests: [], pendingModelLists: [],
+      outputs: [], failOutputs: false, processing: null, failProcessing: false, cancelledProcessing: [], refinements: [], textModels: [], modelListError: "", deferModelList: false, modelListRequests: [], pendingModelLists: [],
       backupExports: [], backupRestores: [], discardedBackups: [], backupPreview: null, failBackup: false, deferBackup: false, resolveBackup: null,
       audioImports: 0, cancelAudioDialog: false, failAudioImport: false,
       history() { state.callbacks["dictation:history"]() },
@@ -323,6 +398,11 @@ test.beforeEach(async ({ page }) => {
         ProcessText: async (id: string, input: string, prompt: string) => {
           if (state.failProcessing) throw new Error("Model unavailable")
           return new Promise<string>((resolve, reject) => { state.processing = { id, input, prompt, resolve: result => { state.processing = null; resolve(result) }, reject } })
+        },
+        RefinePrompt: async (id: string, endpoint: string, model: string, input: string) => {
+          state.refinements.push({ id, endpoint, model, input })
+          if (state.failProcessing) throw new Error("Model unavailable")
+          return new Promise<string>((resolve, reject) => { state.processing = { id, input, prompt: "refine", resolve: result => { state.processing = null; resolve(result) }, reject } })
         },
         CancelTextProcessing: async (id: string) => {
           state.cancelledProcessing.push(id)

@@ -38,6 +38,13 @@ func ValidateText(value string) error {
 	return nil
 }
 
+func ValidateInstruction(value string) error {
+	if strings.TrimSpace(value) == "" || !utf8.ValidString(value) || utf8.RuneCountInString(value) > 8000 || strings.ContainsRune(value, 0) {
+		return errors.New("instructions must contain between 1 and 8,000 characters without null bytes")
+	}
+	return nil
+}
+
 // Only literal loopback addresses and localhost are accepted. localhost is
 // pinned to 127.0.0.1 so DNS/hosts changes cannot send text to a remote address.
 func Endpoint(value string) (*url.URL, error) {
@@ -94,7 +101,7 @@ func Normalize(v Config) (Config, error) {
 		if !utf8.ValidString(p.Name) || p.Name == "" || utf8.RuneCountInString(p.Name) > 80 || strings.ContainsAny(p.Name, "\r\n\x00") {
 			return Config{}, errors.New("give each prompt a name of up to 80 characters")
 		}
-		if !utf8.ValidString(p.Instruction) || p.Instruction == "" || utf8.RuneCountInString(p.Instruction) > 8000 || strings.ContainsRune(p.Instruction, 0) {
+		if ValidateInstruction(p.Instruction) != nil {
 			return Config{}, fmt.Errorf("%s needs instructions of up to 8,000 characters", p.Name)
 		}
 		ids[p.ID] = true

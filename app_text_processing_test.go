@@ -25,6 +25,10 @@ type fakeTextEngine struct {
 	release chan struct{}
 }
 
+func (f *fakeTextEngine) Refine(ctx context.Context, config textmodel.Config, input string) (string, error) {
+	return f.Process(ctx, config, textmodel.Prompt{ID: "refine"}, input)
+}
+
 func (f *fakeTextEngine) Process(ctx context.Context, config textmodel.Config, prompt textmodel.Prompt, input string) (string, error) {
 	if f.started != nil {
 		f.started <- textCall{config, prompt, input}

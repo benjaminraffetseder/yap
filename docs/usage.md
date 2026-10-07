@@ -89,7 +89,9 @@ ID manually if the server doesn't list models.
 
 Cleanup and Summary prompts are included. Edit them or add your own; there can
 be up to 30 prompts, each with up to 8,000 characters of instructions. The text
-is supplied separately, so you don't need placeholders.
+is supplied separately, so you don't need placeholders. **Refine prompt** uses
+the selected model to suggest clearer instructions. Review and save the suggestion
+if you want to keep it.
 
 There are three ways to process text:
 

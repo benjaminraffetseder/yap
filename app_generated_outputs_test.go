@@ -80,6 +80,10 @@ type lateOutputEngine struct {
 	release chan struct{}
 }
 
+func (f *lateOutputEngine) Refine(ctx context.Context, config textmodel.Config, input string) (string, error) {
+	return f.Process(ctx, config, textmodel.Prompt{}, input)
+}
+
 func (f *lateOutputEngine) Process(context.Context, textmodel.Config, textmodel.Prompt, string) (string, error) {
 	close(f.started)
 	<-f.release

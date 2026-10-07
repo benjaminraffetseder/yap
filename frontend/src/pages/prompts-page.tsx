@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react"
-import { Plus, RefreshCw, Trash2 } from "lucide-react"
+import { Plus, RefreshCw, Sparkles, Trash2 } from "lucide-react"
 import { useDictation } from "@/components/dictation-provider"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -9,6 +9,7 @@ import { backend, defaultTextProcessing, isBusy, isDesktop, type TextProcessing,
 import { useTextRequest } from "@/lib/use-text-request"
 import { useModelDiscovery } from "@/lib/use-model-discovery"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 
 const localServers = [
   { value: "ollama", label: "Ollama", endpoint: "http://127.0.0.1:11434/v1" },
@@ -24,6 +25,10 @@ export function PromptsPage() {
   const [saving, setSaving] = useState(false)
   const baseline = useRef(saved)
   const modelTest = useTextRequest()
+  const refinement = useTextRequest()
+  const [refining, setRefining] = useState<{ prompt: TextPrompt; endpoint: string; model: string } | null>(null)
+  const [refinementNotice, setRefinementNotice] = useState("")
+  const refineButton = useRef<HTMLButtonElement>(null)
   const discovery = useModelDiscovery(draft.endpoint, isDesktop && !loading)
   const [manualModel, setManualModel] = useState(false)
   const [customServer, setCustomServer] = useState(false)
@@ -39,13 +44,24 @@ export function PromptsPage() {
   }, [saved])
   useEffect(() => { if (!draft.prompts.some(p => p.id === selected)) setSelected(draft.prompts[0]?.id ?? "") }, [draft.prompts, selected])
   const dirty = JSON.stringify(draft) !== JSON.stringify(saved)
-  const busy = isBusy(snapshot.status.phase) || saving || modelTest.pending
+  const busy = isBusy(snapshot.status.phase) || saving || modelTest.pending || refinement.pending
   const controlsDisabled = !isDesktop || busy || loading
   const promptOptions = draft.prompts.map(prompt => ({ value: prompt.id, label: prompt.name || "Untitled prompt" }))
   const automaticOptions = [{ value: "", label: "No automatic processing" }, ...promptOptions]
   const prompt = draft.prompts.find(p => p.id === selected)
-  function update(value: Partial<TextProcessing>) { setDraft(old => ({ ...old, ...value })); modelTest.clear() }
+  const refinementCurrent = !!refining && draft.prompts.some(p => p.id === refining.prompt.id && p.instruction === refining.prompt.instruction) && draft.endpoint === refining.endpoint && draft.model === refining.model
+  function update(value: Partial<TextProcessing>) { setDraft(old => ({ ...old, ...value })); modelTest.clear(); setRefinementNotice("") }
   function updatePrompt(value: Partial<TextPrompt>) { update({ prompts: draft.prompts.map(p => p.id === selected ? { ...p, ...value } : p) }) }
+  function refine() {
+    if (!prompt || busy || loading) return
+    const value = { prompt: { ...prompt }, endpoint: draft.endpoint, model: draft.model }
+    setRefining(value); setRefinementNotice("")
+    void refinement.request(id => backend.refinePrompt(id, value.endpoint, value.model, value.prompt.instruction))
+  }
+  function closeRefinement() {
+    if (refinement.pending) void refinement.cancel()
+    setRefining(null)
+  }
   async function save() {
     setSaving(true)
     await run(async () => { const value = await backend.textProcessing(draft); setDraft(value); modelTest.clear() })
@@ -105,7 +121,8 @@ export function PromptsPage() {
           </div>
           {prompt && <>
             <div className="space-y-2"><Label htmlFor="prompt-name">Name</Label><Input id="prompt-name" value={prompt.name} maxLength={80} onChange={event => updatePrompt({ name: event.target.value })} /></div>
-            <div className="space-y-2"><Label htmlFor="prompt-instruction">Instructions</Label><textarea id="prompt-instruction" rows={5} maxLength={8000} value={prompt.instruction} onChange={event => updatePrompt({ instruction: event.target.value })} className="w-full resize-y rounded-md border border-input bg-background px-3 py-2 text-sm leading-6 focus-visible:outline-ring" /><p className="text-xs text-muted-foreground">The transcript is supplied separately. Describe how to transform it.</p></div>
+            <div className="space-y-2"><div className="flex items-center justify-between gap-3"><Label htmlFor="prompt-instruction">Instructions</Label><Button ref={refineButton} variant="outline" size="sm" disabled={!draft.model.trim() || !prompt.instruction.trim()} onClick={refine}><Sparkles aria-hidden="true" className="size-3.5" />Refine prompt</Button></div><textarea id="prompt-instruction" rows={5} maxLength={8000} value={prompt.instruction} onChange={event => updatePrompt({ instruction: event.target.value })} className="w-full resize-y rounded-md border border-input bg-background px-3 py-2 text-sm leading-6 focus-visible:outline-ring" /><p className="text-xs text-muted-foreground">The transcript is supplied separately. Describe how to transform it.{!draft.model.trim() && " Choose a text model to refine instructions."}</p></div>
+            {refinementNotice && <p role="status" className="text-xs text-primary">{refinementNotice}</p>}
             <div className="flex flex-wrap gap-2"><Button variant="outline" size="sm" onClick={() => update({ prompts: draft.prompts.filter(p => p.id !== selected), autoPromptId: draft.autoPromptId === selected ? "" : draft.autoPromptId })}><Trash2 className="size-4" />Delete prompt</Button>{defaultTextProcessing.prompts.some(p => p.id === selected) && <Button variant="ghost" size="sm" onClick={() => updatePrompt({ instruction: defaultTextProcessing.prompts.find(p => p.id === selected)!.instruction })}>Reset instructions</Button>}</div>
           </>}
         </> : <Button variant="outline" onClick={() => update({ prompts: defaultTextProcessing.prompts.map(p => ({ ...p })) })}>Restore default prompts</Button>}
@@ -121,5 +138,25 @@ export function PromptsPage() {
     {modelTest.pending && <div className="flex items-center gap-3" role="status"><span className="text-sm">Testing model…</span><Button variant="outline" size="sm" onClick={() => void modelTest.cancel()}>Cancel test</Button></div>}
     {modelTest.result && <p role="status" className="text-sm text-primary">Model responded successfully.</p>}
     {modelTest.error && <p role="alert" className="text-sm text-destructive">{modelTest.error}</p>}
+    <Dialog open={!!refining} disablePointerDismissal onOpenChange={open => { if (!open) closeRefinement() }}>
+      <DialogContent finalFocus={refineButton} className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-4xl">
+        {refining && <>
+          <DialogHeader><DialogTitle>Refine prompt</DialogTitle><DialogDescription>Review the refined instructions before applying them to your draft.</DialogDescription></DialogHeader>
+          <div className="grid items-start gap-4 md:grid-cols-2">
+            <section className="min-w-0 space-y-2"><Label htmlFor="refine-original">Your instructions</Label><textarea id="refine-original" readOnly rows={9} value={refining.prompt.instruction} className="max-h-[40vh] w-full resize-y rounded-md border bg-muted/20 px-3 py-2 text-sm leading-6" /></section>
+            <section className="min-w-0 space-y-2"><Label htmlFor="refine-preview">Refined instructions</Label><textarea id="refine-preview" readOnly rows={9} value={refinement.result} placeholder={refinement.pending ? "Refining instructions…" : "No refined instructions yet."} className="max-h-[40vh] w-full resize-y rounded-md border border-primary/25 bg-primary/5 px-3 py-2 text-sm leading-6" /></section>
+          </div>
+          <p className="break-words text-xs text-muted-foreground">{refining.model}</p>
+          {refinement.pending && <div role="status" className="flex items-center gap-3"><span className="text-sm">Refining instructions…</span><Button variant="outline" size="sm" onClick={() => void refinement.cancel()}>Cancel refinement</Button></div>}
+          {refinement.error && <p role="alert" className="text-sm text-destructive">{refinement.error}</p>}
+          {!refinementCurrent && <p role="alert" className="text-sm text-destructive">Prompt or model settings changed. Close this preview and refine again.</p>}
+          <DialogFooter><Button variant="outline" onClick={closeRefinement}>Discard preview</Button>{!refinement.pending && <Button variant="outline" disabled={!refinementCurrent || isBusy(snapshot.status.phase)} onClick={() => void refinement.request(id => backend.refinePrompt(id, refining.endpoint, refining.model, refining.prompt.instruction))}>Refine again</Button>}<Button disabled={!refinement.result || refinement.pending || !refinementCurrent || Array.from(refinement.result).length > 8000} onClick={() => {
+            if (!refinementCurrent) return
+            update({ prompts: draft.prompts.map(p => p.id === refining.prompt.id ? { ...p, instruction: refinement.result } : p) })
+            setRefining(null); setRefinementNotice("Refined instructions applied. Save prompts to keep them.")
+          }}>Use instructions</Button></DialogFooter>
+        </>}
+      </DialogContent>
+    </Dialog>
   </div>
 }

@@ -1,7 +1,7 @@
 import { AddVocabularyTerm, Cancel, CompleteSetup, CopyText, DeleteSession, ExportSession, GetAudio, GetDiagnosticChecks, GetMicrophones, GetSnapshot, InstallModel, RestartSetup, SaveSettings, SaveTranscript, SaveVocabulary, SelectFile, StartDiagnosticTest, StartMicrophoneTest, StartRecording, StopDiagnosticTest, StopMicrophoneTest, StopRecording } from "@wails/go/main/App"
 import { DeleteSessions, ExportSessions, GetHistory, GetSession, RemoveModel } from "@wails/go/main/App"
 import { BeginShortcutCapture, EndShortcutCapture } from "@wails/go/main/App"
-import { SaveTextProcessing, ProcessText, CancelTextProcessing, TestTextModel, ListTextModels } from "@wails/go/main/App"
+import { SaveTextProcessing, ProcessText, RefinePrompt, CancelTextProcessing, TestTextModel, ListTextModels } from "@wails/go/main/App"
 import { GetSessionOutputs, GenerateSessionOutput, RegenerateSessionOutput, DeleteSessionOutput } from "@wails/go/main/App"
 import { ExportBackup, PreviewBackup, RestoreBackup, DiscardBackupPreview } from "@wails/go/main/App"
 import { ImportAudio } from "@wails/go/main/App"
@@ -73,6 +73,11 @@ export const backend = {
   beginShortcutCapture: BeginShortcutCapture, endShortcutCapture: EndShortcutCapture,
   textProcessing: async (config: TextProcessing): Promise<TextProcessing> => SaveTextProcessing(text.Config.createFrom(config)),
   processText: ProcessText, cancelTextProcessing: CancelTextProcessing, testTextModel: TestTextModel,
+  refinePrompt: async (id: string, endpoint: string, model: string, instruction: string): Promise<string> => {
+    const api = (window as unknown as { go?: { main?: { App?: Record<string, unknown> } } }).go?.main?.App
+    if (typeof api?.RefinePrompt !== "function") throw new Error("Prompt refinement needs the current backend. Quit and reopen Yap; in development, restart wails dev.")
+    return RefinePrompt(id, endpoint, model, instruction)
+  },
   listTextModels: async (id: string, endpoint: string): Promise<string[]> => {
     const api = (window as unknown as { go?: { main?: { App?: Record<string, unknown> } } }).go?.main?.App
     if (typeof api?.ListTextModels !== "function") {
