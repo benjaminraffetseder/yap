@@ -5,19 +5,19 @@ so treat this as work in progress. Build reports and fixes from Apple Silicon
 or Intel Macs would be helpful.
 
 The source includes native microphone capture, shortcuts, paste, a menu-bar item,
-and a floating recording panel. The target is macOS 12.0 or newer, including its
+and a floating recording panel. The target is macOS 13.3 or newer, including its
 system WebKit. Installing a newer standalone browser doesn't update Yap's webview.
 
 ## Build with Wails
 
-Use a Mac with Xcode Command Line Tools (`xcode-select --install`), Go 1.26+,
+Use a Mac with Xcode Command Line Tools (`xcode-select --install`), Go 1.26.x,
 Node 22.12+, and Wails 2.16.0. From a clone of the repository:
 
 ```bash
 go install github.com/wailsapp/wails/v2/cmd/wails@v2.16.0
-export MACOSX_DEPLOYMENT_TARGET=12.0
-export CGO_CFLAGS="${CGO_CFLAGS:-} -mmacosx-version-min=12.0"
-export CGO_LDFLAGS="${CGO_LDFLAGS:-} -mmacosx-version-min=12.0"
+export MACOSX_DEPLOYMENT_TARGET=13.3
+export CGO_CFLAGS="${CGO_CFLAGS:-} -mmacosx-version-min=13.3"
+export CGO_LDFLAGS="${CGO_LDFLAGS:-} -mmacosx-version-min=13.3"
 wails doctor
 wails build
 ```
@@ -80,7 +80,7 @@ The desktop behavior still needs testing, particularly:
 - The floating panel's focus, dragging, and position after disconnecting a display.
 - Closing to the menu bar, reopening, and quitting during recording.
 - Launch at login, including after moving the app.
-- Setup, History, Settings, and both themes on the system WebKit.
+- Setup, History, Settings, and both themes on macOS 13.3's system WebKit.
 
 Test on both Apple Silicon and Intel before calling a release universal. A
 successful run on one doesn't verify the other.

@@ -15,7 +15,20 @@
     </script>
   </head>
   <body>
+    <main id="unsupported-engine" hidden style="max-width: 34rem; margin: 4rem auto; padding: 2rem; background: #fff; color: #171717; border-radius: 12px; font: 16px/1.6 system-ui, sans-serif;">
+      <h1 style="font-size: 24px; font-weight: 600; margin-bottom: 1rem;">Update your system to open Yap</h1>
+      <p>Yap requires macOS 13.3 or newer. On Windows, update the Microsoft Edge WebView2 Runtime.</p>
+      <p style="margin-top: 1rem;">Your saved dictations and settings remain on this computer. Reopen Yap after updating.</p>
+    </main>
     <div id="root"></div>
+    <script>
+      // Runs before the module bundle; this screen does not depend on Tailwind.
+      if (typeof CSS === "undefined" || !CSS.supports("color", "oklch(0.5 0.1 120)") ||
+          !CSS.supports("color", "color-mix(in srgb, red, blue)") ||
+          !CSS.supports("height", "1lh") || typeof CSSLayerBlockRule === "undefined") {
+        document.getElementById("unsupported-engine").hidden = false;
+      }
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
