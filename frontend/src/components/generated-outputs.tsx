@@ -49,7 +49,7 @@ export function GeneratedOutputs({ sessionID, unavailable }: { sessionID: string
   return <section aria-label="Generated outputs" className="space-y-4 border-t pt-6">
     <h2 className="text-base font-semibold">Generated outputs</h2>
     <div className="flex flex-wrap items-end gap-3">
-      <div className="w-full max-w-sm space-y-2"><Label htmlFor="output-prompt">Output prompt</Label><Select items={options} value={selected || null} disabled={!canGenerate || !prompts.length} onValueChange={value => { if (value) { setSelected(value); generation.clear() } }}>
+      <div className="grid w-full max-w-sm gap-2"><Label htmlFor="output-prompt">Output prompt</Label><Select items={options} value={selected || null} disabled={!canGenerate || !prompts.length} onValueChange={value => { if (value) { setSelected(value); generation.clear() } }}>
         <SelectTrigger id="output-prompt" className="data-[size=default]:h-9 w-full bg-background"><SelectValue placeholder="Choose a prompt" /></SelectTrigger>
         <SelectContent alignItemWithTrigger={false} align="start"><div className="p-1">{options.map(option => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}</div></SelectContent>
       </Select></div>
