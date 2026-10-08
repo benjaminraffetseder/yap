@@ -2,6 +2,7 @@
   "$schema": "https://wails.io/schemas/config.v2.json",
   "name": "yap",
   "info": {
+    "companyName": "Benjamin Raffetseder",
     "productName": "Yap",
     "productVersion": "0.1.0",
     "copyright": "",
