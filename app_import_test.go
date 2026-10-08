@@ -230,3 +230,135 @@ func TestAudioImportRejectsRedirectedStorage(t *testing.T) {
 		t.Fatal("import changed external directory", err)
 	}
 }
+
+func TestAudioSupportRequiresConfirmationAndResumesOriginalImport(t *testing.T) {
+	for _, choice := range []string{"decline", "close", "accept", "installed", "unsupported", "busy"} {
+		t.Run(choice, func(t *testing.T) {
+			a := testApp(t)
+			a.engine = importedSpeech{}
+			source := importedWAV(t)
+			confirmed, downloads := 0, 0
+			panel := &fakeIndicator{}
+			a.indicator = panel
+			err := a.prepareAudioImport(source, audioImportSupport{
+				supported: choice != "unsupported",
+				resolve: func(ctx context.Context, got, managed string) (string, error) {
+					if got != source {
+						t.Error("lost selected file")
+					}
+					if choice == "installed" {
+						return "", nil
+					}
+					return "", audio.ErrFFmpegMissing
+				},
+				confirm: func() (bool, error) {
+					confirmed++
+					if choice == "close" {
+						return false, errors.New("dialog closed")
+					}
+					if choice == "busy" {
+						a.mu.Lock()
+						a.status.Phase = "backup"
+						a.mu.Unlock()
+					}
+					return choice != "decline", nil
+				},
+				install: func(ctx context.Context, dir string, progress func(int64, int64)) (string, error) {
+					downloads++
+					if dir != a.store.Dir {
+						t.Error("wrong install destination")
+					}
+					progress(1, 2)
+					if err := a.StartRecording(); err == nil {
+						t.Error("recording allowed during download")
+					}
+					return "", nil // WAV fixture exercises continuation without executing a binary.
+				},
+			})
+			a.wg.Wait()
+			wantError := choice == "unsupported" || choice == "close" || choice == "busy"
+			if (err != nil) != wantError {
+				t.Fatal("unexpected result", err)
+			}
+			if (confirmed == 1) != (choice != "installed" && choice != "unsupported") {
+				t.Fatal("wrong consent calls", confirmed)
+			}
+			if (downloads == 1) != (choice == "accept") {
+				t.Fatal("download without consent", downloads)
+			}
+			history, _ := a.store.History()
+			if (len(history) == 1) != (choice == "accept" || choice == "installed") {
+				t.Fatal("unexpected import history", history)
+			}
+			if choice == "accept" {
+				resumed := false
+				for _, state := range panel.states {
+					if state.Phase == "transcribing" {
+						resumed = true
+					}
+				}
+				if !resumed {
+					t.Fatal("floating cancel control did not resume after download")
+				}
+			}
+		})
+	}
+}
+
+func TestAudioSupportFailureAndCancellationDoNotResume(t *testing.T) {
+	for _, outcome := range []string{"cancel", "failure", "shutdown"} {
+		t.Run(outcome, func(t *testing.T) {
+			a := testApp(t)
+			a.engine = importedSpeech{}
+			source := importedWAV(t)
+			started := make(chan struct{})
+			install := func(ctx context.Context, dir string, progress func(int64, int64)) (string, error) {
+				close(started)
+				if outcome == "failure" {
+					return "", errors.New("download checksum mismatch")
+				}
+				<-ctx.Done()
+				return "", ctx.Err()
+			}
+			if err := a.importAudioWithDecoder(source, "", install); err != nil {
+				t.Fatal(err)
+			}
+			<-started
+			if outcome == "cancel" {
+				if err := a.Cancel(); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if outcome == "shutdown" {
+				a.shutdown(a.ctx)
+			}
+			a.wg.Wait()
+			if _, err := os.Stat(source); err != nil {
+				t.Fatal("source changed", err)
+			}
+			if _, err := os.Stat(a.path); !os.IsNotExist(err) {
+				t.Fatal("partial recording leaked")
+			}
+			if outcome == "shutdown" {
+				return
+			}
+			if entries, _ := a.store.History(); len(entries) != 0 {
+				t.Fatal("failed download imported audio")
+			}
+			if outcome == "cancel" && a.status.Phase != "idle" {
+				t.Fatal(a.status)
+			}
+			if outcome == "failure" && (a.status.Phase != "error" || a.status.Message != "download checksum mismatch") {
+				t.Fatal(a.status)
+			}
+			// A new import is possible after either failure or cancellation.
+			if err := a.importAudio(source); err != nil {
+				t.Fatal(err)
+			}
+			a.wg.Wait()
+			if a.status.Phase != "done" {
+				t.Fatal("retry failed", a.status)
+			}
+		})
+	}
+}

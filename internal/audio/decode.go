@@ -26,6 +26,46 @@ const ImportFilePattern = "*.wav;*.mp3;*.m4a;*.aac;*.flac;*.ogg;*.opus;*.aif;*.a
 const maxDecodedBytes int64 = 16000 * 2 * 600
 
 var errImportDuration = errors.New("choose audio between 0.3 seconds and 10 minutes")
+var ErrFFmpegMissing = errors.New("this audio format requires local FFmpeg. Install FFmpeg, add it to PATH, and reopen Yap. On macOS, Homebrew's default install is also detected. WAV import works without FFmpeg")
+
+// ImportDecoder checks the selected file before offering a download. Local
+// installations take precedence; managed is the application's private decoder.
+func ImportDecoder(ctx context.Context, source, managed string) (string, error) {
+	ext := strings.ToLower(filepath.Ext(source))
+	if ext != ".wav" && importFormats[ext] == "" {
+		return "", errors.New("choose WAV, MP3, M4A, AAC, FLAC, OGG, Opus, AIFF, or WMA audio")
+	}
+	info, err := os.Stat(source)
+	if err != nil {
+		return "", err
+	}
+	if !info.Mode().IsRegular() || info.Size() > maxImportBytes {
+		return "", errors.New("choose a regular audio file smaller than 256 MiB")
+	}
+	if ext == ".wav" {
+		return "", nil
+	}
+	return FindFFmpeg(ctx, managed)
+}
+
+// FindFFmpeg uses the same discovery order for imports and Settings.
+func FindFFmpeg(ctx context.Context, managed string) (string, error) {
+	path, err := findFFmpeg(ctx)
+	if errors.Is(err, ErrFFmpegMissing) && managed != "" {
+		return managed, nil
+	}
+	return path, err
+}
+
+// NormalizeImportWithFFmpeg uses a preselected decoder, keeping WAV independent.
+func NormalizeImportWithFFmpeg(ctx context.Context, source string, destination io.WriteSeeker, executable string) (int64, error) {
+	return normalizeImport(ctx, source, destination, func() (string, error) {
+		if executable != "" {
+			return executable, nil
+		}
+		return findFFmpeg(ctx)
+	})
+}
 
 // NormalizeImport preserves the dependency-free WAV path. Other formats use a
 // locally installed decoder and stream bounded PCM into the owned recording.
@@ -134,7 +174,7 @@ func locateFFmpeg(platform, executable string, lookPath func(string) (string, er
 			return path, nil
 		}
 	}
-	return "", errors.New("this audio format requires local FFmpeg. Install FFmpeg, add it to PATH, and reopen Yap. On macOS, Homebrew's default install is also detected. WAV import works without FFmpeg")
+	return "", ErrFFmpegMissing
 }
 
 func snapshotImport(ctx context.Context, source, destination string) error {

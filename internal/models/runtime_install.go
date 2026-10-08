@@ -95,6 +95,10 @@ func managedRuntimeRoot(dir string) (string, error) {
 }
 
 func publishRuntimeDirectory(ctx context.Context, dir, temp string, rename func(string, string) error) error {
+	return publishManagedRuntimeDirectory(ctx, dir, temp, "whisper-1.9.2", rename)
+}
+
+func publishManagedRuntimeDirectory(ctx context.Context, dir, temp, name string, rename func(string, string) error) error {
 	root, err := managedRuntimeRoot(dir)
 	if err != nil {
 		return err
@@ -109,7 +113,7 @@ func publishRuntimeDirectory(ctx context.Context, dir, temp string, rename func(
 	if err = ctx.Err(); err != nil {
 		return err
 	}
-	dest := filepath.Join(root, "whisper-1.9.2")
+	dest := filepath.Join(root, name)
 	backup := ""
 	if info, statErr := os.Lstat(dest); statErr == nil {
 		actual, err := filepath.EvalSymlinks(dest)

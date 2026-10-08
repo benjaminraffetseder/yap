@@ -45,7 +45,7 @@ See [Using Yap](docs/usage.md) for imports, prompts, backups, and troubleshootin
 ## Privacy
 
 Speech recognition runs on your computer. Yap has no analytics and doesn't
-upload audio. Models and the speech runtime download only when requested.
+upload audio. Models and optional audio support download only when requested.
 
 History is saved locally. Keeping audio recordings is off by default; temporary
 audio is removed after use, though a forced shutdown can leave files behind.

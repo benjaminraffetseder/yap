@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import { FolderOpen, Monitor, Moon, RefreshCw, Save, Sun } from "lucide-react"
-import { Link, useNavigate } from "react-router"
+import { Link, useNavigate, useSearchParams } from "react-router"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
@@ -12,13 +12,18 @@ import { useDictation } from "@/components/dictation-provider"
 import { backend, isBusy, isDesktop, message, type Microphone } from "@/lib/backend"
 import { DiagnosticsPanel } from "@/components/diagnostics-panel"
 import { BackupPanel } from "@/components/backup-panel"
+import { AudioSupportPanel } from "@/components/audio-support-panel"
 import { ShortcutInput } from "@/components/shortcut-input"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+const sections = [{ value: "dictation", label: "Dictation" }, { value: "general", label: "General" }, { value: "history", label: "History & data" }, { value: "advanced", label: "Advanced" }]
 const themes = [{ value: "light", label: "Light", icon: Sun }, { value: "dark", label: "Dark", icon: Moon }, { value: "system", label: "System", icon: Monitor }] as const
 const recordingModes = [{ value: "hold", label: "Hold to talk" }, { value: "toggle", label: "Press to start / press to stop" }]
 const languages = [{ value: "auto", label: "Detect automatically" }, { value: "en", label: "English" }, { value: "de", label: "German" }, { value: "fr", label: "French" }, { value: "es", label: "Spanish" }, { value: "it", label: "Italian" }, { value: "pt", label: "Portuguese" }, { value: "nl", label: "Dutch" }, { value: "pl", label: "Polish" }, { value: "ja", label: "Japanese" }, { value: "zh", label: "Chinese" }, { value: "uk", label: "Ukrainian" }]
 const retentionOptions = [{ value: "0", label: "Keep forever" }, { value: "7", label: "7 days" }, { value: "30", label: "30 days" }, { value: "90", label: "90 days" }]
 export function SettingsPage() {
   const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const section = sections.some(item => item.value === searchParams.get("section")) ? searchParams.get("section")! : "dictation"
   const { theme, setTheme } = useTheme()
   const { snapshot, run, loading } = useDictation()
   const [settings, setSettings] = useState(snapshot.settings)
@@ -73,64 +78,103 @@ export function SettingsPage() {
     if (!confirmed && settings.historyRetentionDays > 0 && settings.historyRetentionDays !== snapshot.settings.historyRetentionDays) { setConfirmRetention(true); return }
     setSaving(true); setConfirmRetention(false); await run(() => backend.settings(settings)); setSaving(false)
   }
-  return <div className="space-y-7">
-    <header><h1 className="text-2xl font-semibold tracking-tight">Settings</h1></header>
-    <DiagnosticsPanel disabled={dirty || saving || loading} />
-    <fieldset disabled={controlsDisabled} className="space-y-6 disabled:opacity-60">
-      <section className="settings-section"><h2 className="font-semibold">Text processing</h2><label className="mt-5 flex cursor-pointer items-start gap-3"><Checkbox className="mt-1" disabled={controlsDisabled} checked={settings.cleanText} onCheckedChange={checked => setSettings({ ...settings, cleanText: checked })} /><span className="text-sm">Light cleanup<span className="mt-1 block text-xs text-muted-foreground">Apply local spacing, capitalization, and punctuation rules; remove common English/German filler words. Original transcripts stay in History.</span></span></label></section>
-      <section className="settings-section"><h2 className="font-semibold">Startup</h2>
-        <label className={`mt-5 flex items-start gap-3 ${snapshot.launchAtLoginAvailable ? "cursor-pointer" : "opacity-60"}`}><Checkbox className="mt-1" disabled={controlsDisabled || !snapshot.launchAtLoginAvailable} checked={settings.launchAtLogin} onCheckedChange={checked => setSettings({ ...settings, launchAtLogin: checked })} /><span className="text-sm">Launch at login</span></label>
-        <label className={`mt-5 flex items-start gap-3 ${snapshot.startInTrayAvailable || settings.startInTray ? "cursor-pointer" : "opacity-60"}`}><Checkbox className="mt-1" disabled={controlsDisabled || (!snapshot.startInTrayAvailable && !settings.startInTray)} checked={settings.startInTray} onCheckedChange={checked => setSettings({ ...settings, startInTray: checked })} /><span className="text-sm">Start in tray / menu bar<span className="mt-1 block text-xs text-muted-foreground">Keep the main window hidden on the next launch.</span></span></label>
-        {snapshot.status.startupError ? <p role="alert" className="mt-4 text-xs text-destructive">{snapshot.status.startupError}</p> : !snapshot.launchAtLoginAvailable && !snapshot.startInTrayAvailable && <p className="mt-4 text-xs text-muted-foreground">Startup options require a packaged Windows or macOS app.</p>}
-      </section>
-      <section className="settings-section"><h2 className="font-semibold">Audio input</h2>
-        <div className="mt-5 max-w-xl space-y-2"><Label htmlFor="microphone">Microphone</Label>
-          <div className="flex gap-2">
-            <Select items={microphoneOptions} value={settings.microphoneId} disabled={!isDesktop || busy || saving || loading} onValueChange={value => { if (value !== null) setSettings(old => ({ ...old, microphoneId: value })) }}>
-              <SelectTrigger id="microphone" className="data-[size=default]:h-9 w-full min-w-0 rounded-md bg-background px-3" aria-describedby="microphone-status"><SelectValue /></SelectTrigger>
-              <SelectContent alignItemWithTrigger={false} align="start"><div className="p-1">{microphoneOptions.map(option => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}</div></SelectContent>
-            </Select>
-            <Button variant="outline" size="icon" disabled={loadingMicrophones} onClick={() => void refreshMicrophones()} aria-label="Refresh microphones"><RefreshCw className={`size-4 ${loadingMicrophones ? "animate-spin" : ""}`} aria-hidden="true" /></Button>
-          </div>
-          <p id="microphone-status" role={microphoneError || selectedMicrophoneMissing ? "status" : undefined} className={`text-xs ${microphoneError || selectedMicrophoneMissing ? "text-destructive" : "text-muted-foreground"}`}>
-            {microphoneError || (loadingMicrophones ? "Checking microphones…" : selectedMicrophoneMissing ? "Reconnect the selected microphone or choose another input." : microphonesLoaded && microphones.length === 0 ? "No microphones found. Connect one and refresh." : "System default follows your computer’s input setting.")}
-          </p>
-        </div>
-      </section>
-      <section className="settings-section"><h2 className="font-semibold">Keyboard & delivery</h2>
-        <div className="mt-6 grid gap-5 sm:grid-cols-2"><div className="space-y-2"><Label htmlFor="shortcut">Global shortcut</Label><ShortcutInput id="shortcut" value={settings.shortcut} disabled={controlsDisabled} onChange={shortcut => setSettings(old => ({ ...old, shortcut }))} /><p className="text-xs text-muted-foreground">Ctrl, Alt, Shift + Space, A–Z, or F1–F12.</p></div><div className="space-y-2"><Label htmlFor="interaction">Recording mode</Label>
-          <Select items={recordingModes} value={settings.interaction} disabled={controlsDisabled} onValueChange={value => { if (value !== null) setSettings(old => ({ ...old, interaction: value })) }}>
-            <SelectTrigger id="interaction" className="data-[size=default]:h-9 w-full min-w-0 rounded-md bg-background"><SelectValue /></SelectTrigger>
-            <SelectContent alignItemWithTrigger={false} align="start">{recordingModes.map(option => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}</SelectContent>
-          </Select>
-        </div></div>
-        <label className="mt-6 flex cursor-pointer items-start gap-3"><Checkbox className="mt-1" disabled={controlsDisabled} checked={settings.autoPaste} onCheckedChange={checked => setSettings({ ...settings, autoPaste: checked })} /><span className="text-sm">Paste automatically<span className="mt-1 block text-xs text-muted-foreground">Paste into the focused app after shortcut dictation. Otherwise, copy only.</span></span></label>
-        {snapshot.status.shortcutError && <p role="alert" className="mt-4 text-xs text-destructive">{snapshot.status.shortcutError}</p>}
-      </section>
-      <section className="settings-section"><h2 className="font-semibold">Speech recognition</h2><p className="mt-1 text-xs text-muted-foreground">Manage downloads in <Link to="/models" className="text-primary underline">Models</Link>, or select local files below.</p>
-        <div className="mt-6 space-y-5">{([{ key: "whisperPath", kind: "runtime", title: "Whisper executable", placeholder: "Select whisper-cli" }, { key: "modelPath", kind: "model", title: "Speech model", placeholder: "Select a ggml Whisper .bin model" }] as const).map(field => <div key={field.key} className="space-y-2"><Label htmlFor={field.key}>{field.title}</Label><div className="flex gap-2"><Input id={field.key} placeholder={field.placeholder} value={settings[field.key]} onChange={event => setSettings({ ...settings, [field.key]: event.target.value })} /><Button variant="outline" aria-label={`Browse ${field.title}`} onClick={() => void browse(field.kind)}><FolderOpen className="size-4" /></Button></div></div>)}
-          <div className="max-w-sm space-y-2"><Label htmlFor="language">Spoken language</Label>
-            <Select items={languages} value={settings.language} disabled={controlsDisabled} onValueChange={value => { if (value !== null) setSettings(old => ({ ...old, language: value })) }}>
-              <SelectTrigger id="language" className="data-[size=default]:h-9 w-full min-w-0 rounded-md bg-background"><SelectValue /></SelectTrigger>
-              <SelectContent alignItemWithTrigger={false} align="start">{languages.map(option => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}</SelectContent>
-            </Select>
-          </div>
-        </div>
-      </section>
-      <section className="settings-section"><h2 className="font-semibold">History & storage</h2><label className="mt-5 flex cursor-pointer items-start gap-3"><Checkbox className="mt-1" disabled={controlsDisabled} checked={settings.saveAudio} onCheckedChange={checked => setSettings({ ...settings, saveAudio: checked })} /><span className="text-sm">Keep recordings<span className="mt-1 block text-xs text-muted-foreground">Save audio for playback in History. Otherwise, delete it after processing.</span></span></label>
-        <div className="mt-5 max-w-sm space-y-2"><Label htmlFor="history-retention">History retention</Label>
-          <Select items={retentionOptions} value={String(settings.historyRetentionDays ?? 0)} disabled={controlsDisabled} onValueChange={value => { if (value !== null) setSettings(old => ({ ...old, historyRetentionDays: Number(value) })) }}>
-            <SelectTrigger id="history-retention" className="data-[size=default]:h-9 w-full min-w-0 rounded-md bg-background"><SelectValue /></SelectTrigger>
-            <SelectContent alignItemWithTrigger={false} align="start">{retentionOptions.map(option => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}</SelectContent>
-          </Select>
-          <p className="text-xs text-muted-foreground">Automatically delete older transcripts and retained audio on startup, after dictation, and when saving settings.</p></div>
-        {snapshot.status.historyError && <p role="alert" className="mt-3 text-xs text-destructive">{snapshot.status.historyError}</p>}
-        {snapshot.dataDir && <p className="mt-5 break-all text-xs leading-5 text-muted-foreground">Data folder: <span className="font-mono">{snapshot.dataDir}</span></p>}</section>
-      <div className="flex items-center gap-4"><Button disabled={(!dirty && !(settings.launchAtLogin && snapshot.launchAtLoginAvailable)) || saving || (selectedMicrophoneMissing && settings.microphoneId !== snapshot.settings.microphoneId)} className="rounded-lg" onClick={() => void save()}><Save className="size-4" />{saving ? "Saving…" : "Save settings"}</Button>{dirty && <span className="text-xs text-muted-foreground">Unsaved changes</span>}</div>
-    </fieldset>
-    <BackupPanel disabled={controlsDisabled || dirty} unsaved={dirty} />
-    <section className="settings-section"><h2 className="mb-4 font-semibold">Setup</h2><Button variant="outline" disabled={!isDesktop || busy || saving || dirty} onClick={() => void run(async () => { await backend.restartSetup(); navigate("/") })}>Run setup</Button>{dirty && <p className="mt-2 text-xs text-muted-foreground">Save settings before running setup.</p>}</section>
-    <section className="settings-section"><h2 className="mb-4 font-semibold">Appearance</h2><div className="flex gap-3" role="group" aria-label="Color theme">{themes.map(({ value, label, icon: Icon }) => <Button key={value} variant={theme === value ? "default" : "outline"} onClick={() => setTheme(value)} aria-pressed={theme === value}><Icon className="size-4" />{label}</Button>)}</div></section>
-    <Dialog open={confirmRetention} disablePointerDismissal onOpenChange={setConfirmRetention}><DialogContent><DialogHeader><DialogTitle>Enable automatic deletion?</DialogTitle><DialogDescription>Saving removes transcripts and retained audio older than {settings.historyRetentionDays} days now and during future cleanup. Deletion is permanent.</DialogDescription></DialogHeader><DialogFooter><Button variant="outline" onClick={() => setConfirmRetention(false)}>Cancel</Button><Button variant="destructive" disabled={busy || saving} onClick={() => void save(true)}>Save and delete older history</Button></DialogFooter></DialogContent></Dialog>
+  return <div className="@container space-y-5">
+    <Tabs value={section} onValueChange={value => { if (typeof value === "string") setSearchParams(previous => { const next = new URLSearchParams(previous); next.set("section", value); return next }, { replace: true }) }} className="gap-5">
+      <header aria-label="Settings" className="sticky top-0 z-20 flex min-h-16 flex-wrap items-center gap-3 bg-background py-2">
+        <TabsList aria-label="Settings sections" className="max-w-full group-data-[orientation=horizontal]/tabs:h-10">{sections.map(item => <TabsTrigger key={item.value} value={item.value} className="px-2.5">{item.label}</TabsTrigger>)}</TabsList>
+        <div className="ml-auto flex flex-wrap items-center justify-end gap-2">{dirty && <><span role="status" className="text-xs text-muted-foreground">Unsaved changes</span><Button variant="ghost" disabled={controlsDisabled} onClick={() => setSettings(snapshot.settings)}>Discard changes</Button></>}<Button disabled={controlsDisabled || (!dirty && !(settings.launchAtLogin && snapshot.launchAtLoginAvailable)) || (selectedMicrophoneMissing && settings.microphoneId !== snapshot.settings.microphoneId)} onClick={() => void save()}><Save aria-hidden="true" className="size-4" />{saving ? "Saving…" : "Save settings"}</Button></div>
+      </header>
+      <TabsContent value="dictation" keepMounted>
+        <fieldset disabled={controlsDisabled} className="space-y-5 disabled:opacity-60">
+          <SettingsSection title="Recording">
+            <SettingRow title="Microphone" htmlFor="microphone">
+              <div className="flex gap-2">
+                <Select items={microphoneOptions} value={settings.microphoneId} disabled={controlsDisabled} onValueChange={value => { if (value !== null) setSettings(old => ({ ...old, microphoneId: value })) }}>
+                  <SelectTrigger id="microphone" className="h-9 w-full min-w-0 bg-background" aria-describedby="microphone-status"><SelectValue /></SelectTrigger>
+                  <SelectContent alignItemWithTrigger={false} align="start">{microphoneOptions.map(option => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}</SelectContent>
+                </Select>
+                <Button variant="outline" size="icon" disabled={loadingMicrophones} onClick={() => void refreshMicrophones()} aria-label="Refresh microphones"><RefreshCw className={`size-4 ${loadingMicrophones ? "animate-spin" : ""}`} aria-hidden="true" /></Button>
+              </div>
+              <p id="microphone-status" role={microphoneError || selectedMicrophoneMissing ? "status" : undefined} className={`mt-2 text-xs ${microphoneError || selectedMicrophoneMissing ? "text-destructive" : "text-muted-foreground"}`}>
+                {microphoneError || (loadingMicrophones ? "Checking microphones…" : selectedMicrophoneMissing ? "Reconnect the selected microphone or choose another input." : microphonesLoaded && microphones.length === 0 ? "No microphones found. Connect one and refresh." : "System default follows your computer’s input setting.")}
+              </p>
+            </SettingRow>
+            <SettingRow title="Spoken language" htmlFor="language">
+              <Select items={languages} value={settings.language} disabled={controlsDisabled} onValueChange={value => { if (value !== null) setSettings(old => ({ ...old, language: value })) }}>
+                <SelectTrigger id="language" className="h-9 w-full min-w-0 bg-background"><SelectValue /></SelectTrigger>
+                <SelectContent alignItemWithTrigger={false} align="start">{languages.map(option => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}</SelectContent>
+              </Select>
+            </SettingRow>
+            <SettingRow title="Global shortcut" htmlFor="shortcut" description="Use Ctrl, Alt, or Shift with Space, a letter, or F1–F12.">
+              <ShortcutInput id="shortcut" value={settings.shortcut} disabled={controlsDisabled} onChange={shortcut => setSettings(old => ({ ...old, shortcut }))} />
+              {snapshot.status.shortcutError && <p role="alert" className="mt-2 text-xs text-destructive">{snapshot.status.shortcutError}</p>}
+            </SettingRow>
+            <SettingRow title="Recording mode" htmlFor="interaction">
+              <Select items={recordingModes} value={settings.interaction} disabled={controlsDisabled} onValueChange={value => { if (value !== null) setSettings(old => ({ ...old, interaction: value })) }}>
+                <SelectTrigger id="interaction" className="h-9 w-full min-w-0 bg-background"><SelectValue /></SelectTrigger>
+                <SelectContent alignItemWithTrigger={false} align="start">{recordingModes.map(option => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}</SelectContent>
+              </Select>
+            </SettingRow>
+          </SettingsSection>
+          <SettingsSection title="Text & delivery">
+            <ToggleSetting title="Light cleanup" description="Fix spacing, capitalization, and punctuation; remove common English/German fillers. Keep the original in History." checked={settings.cleanText} disabled={controlsDisabled} onCheckedChange={cleanText => setSettings(old => ({ ...old, cleanText }))} />
+            <ToggleSetting title="Paste automatically" description="Paste into the focused app after shortcut dictation. Otherwise, copy only." checked={settings.autoPaste} disabled={controlsDisabled} onCheckedChange={autoPaste => setSettings(old => ({ ...old, autoPaste }))} />
+            <div className="flex flex-wrap items-center justify-between gap-3 py-4"><span className="text-sm text-muted-foreground">LLM instructions and generated outputs</span><Link to="/prompts" className="text-sm font-medium text-primary underline underline-offset-4">Manage prompts</Link></div>
+          </SettingsSection>
+        </fieldset>
+      </TabsContent>
+      <TabsContent value="general" keepMounted className="space-y-5">
+        <SettingsSection title="Appearance">
+          <SettingRow title="Color theme" description="Applies immediately."><div className="flex flex-wrap gap-2" role="group" aria-label="Color theme">{themes.map(({ value, label, icon: Icon }) => <Button key={value} variant={theme === value ? "default" : "outline"} onClick={() => setTheme(value)} aria-pressed={theme === value}><Icon aria-hidden="true" className="size-4" />{label}</Button>)}</div></SettingRow>
+        </SettingsSection>
+        <fieldset disabled={controlsDisabled} className="disabled:opacity-60">
+          <SettingsSection title="Startup">
+            <ToggleSetting title="Launch at login" checked={settings.launchAtLogin} disabled={controlsDisabled || !snapshot.launchAtLoginAvailable} onCheckedChange={launchAtLogin => setSettings(old => ({ ...old, launchAtLogin }))} />
+            <ToggleSetting title="Start in tray / menu bar" description="Keep the main window hidden on the next launch." checked={settings.startInTray} disabled={controlsDisabled || (!snapshot.startInTrayAvailable && !settings.startInTray)} onCheckedChange={startInTray => setSettings(old => ({ ...old, startInTray }))} />
+            {snapshot.status.startupError ? <p role="alert" className="py-4 text-xs text-destructive">{snapshot.status.startupError}</p> : !snapshot.launchAtLoginAvailable && !snapshot.startInTrayAvailable && <p className="py-4 text-xs text-muted-foreground">Startup options require a packaged Windows or macOS app.</p>}
+          </SettingsSection>
+        </fieldset>
+      </TabsContent>
+      <TabsContent value="history" keepMounted className="space-y-5">
+        <fieldset disabled={controlsDisabled} className="disabled:opacity-60">
+          <SettingsSection title="History">
+            <ToggleSetting title="Keep recordings" description="Save audio for playback in History. Otherwise, delete it after processing." checked={settings.saveAudio} disabled={controlsDisabled} onCheckedChange={saveAudio => setSettings(old => ({ ...old, saveAudio }))} />
+            <SettingRow title="History retention" htmlFor="history-retention" description="Automatically delete older transcripts and retained audio.">
+              <Select items={retentionOptions} value={String(settings.historyRetentionDays ?? 0)} disabled={controlsDisabled} onValueChange={value => { if (value !== null) setSettings(old => ({ ...old, historyRetentionDays: Number(value) })) }}>
+                <SelectTrigger id="history-retention" className="h-9 w-full min-w-0 bg-background"><SelectValue /></SelectTrigger>
+                <SelectContent alignItemWithTrigger={false} align="start">{retentionOptions.map(option => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}</SelectContent>
+              </Select>
+            </SettingRow>
+            {snapshot.status.historyError && <p role="alert" className="py-4 text-xs text-destructive">{snapshot.status.historyError}</p>}
+          </SettingsSection>
+        </fieldset>
+        <BackupPanel disabled={controlsDisabled || dirty} unsaved={dirty} />
+        {snapshot.dataDir && <SettingsSection title="Local storage"><SettingRow title="Data folder"><p className="break-all font-mono text-xs leading-5 text-muted-foreground">{snapshot.dataDir}</p></SettingRow></SettingsSection>}
+      </TabsContent>
+      <TabsContent value="advanced" keepMounted className="space-y-5">
+        <fieldset disabled={controlsDisabled} className="disabled:opacity-60">
+          <SettingsSection title="Local speech files">
+            <div className="flex flex-wrap items-center justify-between gap-3 py-4"><span className="text-sm text-muted-foreground">Download and switch speech models</span><Link to="/models" className="text-sm font-medium text-primary underline underline-offset-4">Manage models</Link></div>
+            {([{ key: "whisperPath", kind: "runtime", title: "Whisper executable", placeholder: "Select whisper-cli" }, { key: "modelPath", kind: "model", title: "Speech model", placeholder: "Select a ggml Whisper .bin model" }] as const).map(field => <SettingRow key={field.key} title={field.title} htmlFor={field.key}><div className="flex gap-2"><Input id={field.key} placeholder={field.placeholder} value={settings[field.key]} onChange={event => setSettings(old => ({ ...old, [field.key]: event.target.value }))} /><Button variant="outline" size="icon" aria-label={`Browse ${field.title}`} onClick={() => void browse(field.kind)}><FolderOpen aria-hidden="true" className="size-4" /></Button></div></SettingRow>)}
+          </SettingsSection>
+        </fieldset>
+        <AudioSupportPanel active={section === "advanced"} disabled={saving || loading} />
+        <DiagnosticsPanel disabled={dirty || saving || loading} />
+        <SettingsSection title="Setup"><SettingRow title="Run setup again" description="Revisit model installation, microphone testing, and your shortcut."><Button variant="outline" disabled={controlsDisabled || dirty} onClick={() => void run(async () => { await backend.restartSetup(); navigate("/") })}>Run setup</Button>{dirty && <p className="mt-2 text-xs text-muted-foreground">Save settings before running setup.</p>}</SettingRow></SettingsSection>
+      </TabsContent>
+    </Tabs>
+    <Dialog open={confirmRetention} disablePointerDismissal onOpenChange={setConfirmRetention}><DialogContent><DialogHeader><DialogTitle>Enable automatic deletion?</DialogTitle><DialogDescription>Saving removes transcripts and retained audio older than {settings.historyRetentionDays} days now and during future cleanup. Deletion is permanent.</DialogDescription></DialogHeader><DialogFooter><Button variant="outline" onClick={() => setConfirmRetention(false)}>Cancel</Button><Button variant="destructive" disabled={busy || saving || loading} onClick={() => void save(true)}>Save and delete older history</Button></DialogFooter></DialogContent></Dialog>
   </div>
+}
+
+function SettingsSection({ title, children }: { title: string; children: ReactNode }) {
+  return <section className="rounded-xl border bg-card"><h2 className="border-b px-5 py-4 text-sm font-semibold">{title}</h2><div className="divide-y px-5">{children}</div></section>
+}
+
+function SettingRow({ title, htmlFor, description, children }: { title: string; htmlFor?: string; description?: string; children: ReactNode }) {
+  return <div className="grid items-start gap-3 py-4 @xl:grid-cols-[minmax(0,1fr)_minmax(0,22rem)] @xl:gap-6"><div className="min-w-0 pt-1.5">{htmlFor ? <Label htmlFor={htmlFor}>{title}</Label> : <p className="text-sm font-medium">{title}</p>}{description && <p className="mt-1 text-xs leading-5 text-muted-foreground">{description}</p>}</div><div className="min-w-0">{children}</div></div>
+}
+
+function ToggleSetting({ title, description, checked, disabled, onCheckedChange }: { title: string; description?: string; checked: boolean; disabled: boolean; onCheckedChange: (value: boolean) => void }) {
+  return <label className={`flex items-start justify-between gap-6 py-4 ${disabled ? "opacity-60" : "cursor-pointer"}`}><span className="min-w-0"><span className="text-sm font-medium">{title}</span>{description && <span className="mt-1 block text-xs leading-5 text-muted-foreground">{description}</span>}</span><Checkbox className="mt-0.5 shrink-0" checked={checked} disabled={disabled} onCheckedChange={onCheckedChange} /></label>
 }

@@ -1,6 +1,52 @@
 import { expect, test, type Page } from "@playwright/test"
 import type { BackupPreview, BackupSummary, DiagnosticCheck, Settings, Snapshot, Status, VocabularyEntry, TextProcessing, GeneratedOutput, TextPrompt } from "../src/lib/backend"
 
+test("settings sections keep navigation above full-width content and preserve edits", async ({ page }, testInfo) => {
+  await page.addInitScript(() => {
+    localStorage.setItem("desktop-theme", "dark")
+    localStorage.setItem("yap-sidebar-collapsed", "true")
+  })
+  await page.setViewportSize({ width: 1080, height: 720 })
+  await page.goto("/#/settings")
+  const tabs = page.getByRole("tablist", { name: "Settings sections" })
+  const panel = page.getByRole("tabpanel")
+  await expect(panel).toHaveCount(1)
+  const navBounds = await tabs.boundingBox()
+  const contentBounds = await panel.boundingBox()
+  expect(contentBounds!.y).toBeGreaterThan(navBounds!.y + navBounds!.height)
+  expect(contentBounds!.width).toBeGreaterThan(850)
+  await expect(page.getByRole("button", { name: "Test dictation", exact: true })).toBeHidden()
+  await page.getByLabel("Global shortcut", { exact: true }).fill("Ctrl+Alt+J")
+  await page.screenshot({ path: testInfo.outputPath("settings-dictation.png"), animations: "disabled" })
+  await page.getByRole("tab", { name: "General", exact: true }).click()
+  await page.getByRole("checkbox", { name: "Launch at login", exact: true }).check()
+  await page.screenshot({ path: testInfo.outputPath("settings-general.png"), animations: "disabled" })
+  await page.getByRole("tab", { name: "History & data", exact: true }).click()
+  await page.getByRole("checkbox", { name: /^Keep recordings/ }).check()
+  await page.getByRole("button", { name: "Save settings", exact: true }).click()
+  await expect.poll(() => page.evaluate(() => ({ shortcut: window.dictationTest.snapshot.settings.shortcut, login: window.dictationTest.snapshot.settings.launchAtLogin, audio: window.dictationTest.snapshot.settings.saveAudio }))).toEqual({ shortcut: "Ctrl+Alt+J", login: true, audio: true })
+  await page.screenshot({ path: testInfo.outputPath("settings-history.png"), animations: "disabled" })
+  await page.getByRole("tab", { name: "Advanced", exact: true }).click()
+  await expect(page.getByRole("button", { name: "Test dictation", exact: true })).toBeEnabled()
+  await page.screenshot({ path: testInfo.outputPath("settings-advanced.png"), animations: "disabled" })
+  await page.getByRole("tab", { name: "Dictation", exact: true }).click()
+  await page.getByLabel("Global shortcut", { exact: true }).fill("Ctrl+Alt+K")
+  await page.getByRole("tab", { name: "General", exact: true }).click()
+  await page.getByRole("button", { name: "Discard changes", exact: true }).click()
+  await page.getByRole("tab", { name: "Dictation", exact: true }).click()
+  await expect(page.getByLabel("Global shortcut", { exact: true })).toHaveValue("Ctrl+Alt+J")
+  await page.setViewportSize({ width: 760, height: 680 })
+  await page.getByRole("button", { name: "Expand sidebar", exact: true }).click()
+  await page.evaluate(() => window.scrollTo(0, 0))
+  await expect(page.getByLabel("Global shortcut", { exact: true })).toBeVisible()
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+  await page.screenshot({ path: testInfo.outputPath("settings-narrow.png"), animations: "disabled" })
+  await page.getByRole("tab", { name: "Dictation", exact: true }).focus()
+  await page.keyboard.press("ArrowRight")
+  await page.keyboard.press("Enter")
+  await expect(page.getByRole("tab", { name: "General", exact: true })).toHaveAttribute("aria-selected", "true")
+})
+
 test("reset instructions preserves customized prompt names", async ({page}) => {
  await page.goto("/#/prompts")
  for (const name of ["Cleanup","Summary"]) {
@@ -450,7 +496,7 @@ async function settle(page: Page) {
 }
 
 test("startup options apply only on save and survive refreshes and failed saves", async ({ page }) => {
-  await page.goto("/#/settings")
+  await page.goto("/#/settings?section=general")
   const login = page.getByRole("checkbox", { name: "Launch at login", exact: true })
   const background = page.getByRole("checkbox", { name: /Start in tray \/ menu bar/ })
   await expect(login).toBeEnabled()
@@ -479,7 +525,7 @@ test("startup options apply only on save and survive refreshes and failed saves"
 })
 
 test("unsupported startup controls are disabled and registration errors are visible", async ({ page }) => {
-  await page.goto("/#/settings")
+  await page.goto("/#/settings?section=general")
   const login = page.getByRole("checkbox", { name: "Launch at login", exact: true })
   await expect(login).toBeEnabled()
   await page.evaluate(() => {
@@ -652,6 +698,7 @@ test("first run guides installation, mic testing and shortcut verification", asy
   await expect(page.getByRole("heading", { name: "Dictate", exact: true })).toBeVisible()
   await expect.poll(() => page.evaluate(() => window.dictationTest.snapshot.history.length)).toBe(0)
   await page.getByRole("link", { name: "Settings", exact: true }).click()
+  await page.getByRole("tab", { name: "Advanced", exact: true }).click()
   await page.getByRole("button", { name: "Run setup" }).click()
   await expect(page.getByRole("heading", { name: "Set up Yap" })).toBeVisible()
   await page.getByRole("button", { name: "Skip setup" }).click()
@@ -967,7 +1014,7 @@ test("microphone test remains stoppable after navigating away from setup", async
 })
 
 test("diagnostics show microphone activity and an isolated transcript preview", async ({ page }) => {
-  await page.goto("/#/settings")
+  await page.goto("/#/settings?section=advanced")
   await expect(page.getByText("Executable found", { exact: true })).toBeVisible()
   await page.getByRole("button", { name: "Test dictation", exact: true }).click()
   await expect(page.getByRole("meter", { name: "Dictation test microphone level" })).toHaveAttribute("value", "0.6")
@@ -989,10 +1036,12 @@ test("diagnostics show microphone activity and an isolated transcript preview", 
 })
 
 test("diagnostics block unsaved settings and unavailable files until refreshed", async ({ page }) => {
-  await page.goto("/#/settings")
+  await page.goto("/#/settings?section=advanced")
   const testDictation = page.getByRole("button", { name: "Test dictation", exact: true })
   await expect(testDictation).toBeEnabled()
+  await page.getByRole("tab", { name: "Dictation", exact: true }).click()
   await page.getByLabel("Global shortcut", { exact: true }).fill("Ctrl+Alt+P")
+  await page.getByRole("tab", { name: "Advanced", exact: true }).click()
   await expect(testDictation).toBeDisabled()
   await expect(page.getByText("Save settings before testing the changes.", { exact: true })).toBeVisible()
   await page.getByRole("button", { name: "Save settings", exact: true }).click()
@@ -1007,7 +1056,7 @@ test("diagnostics block unsaved settings and unavailable files until refreshed",
 })
 
 test("diagnostic errors include recovery guidance and expandable details", async ({ page }) => {
-  await page.goto("/#/settings")
+  await page.goto("/#/settings?section=advanced")
   await page.getByRole("button", { name: "Test dictation", exact: true }).click()
   await page.getByRole("button", { name: "Stop dictation test", exact: true }).click()
   await page.evaluate(() => {
@@ -1026,13 +1075,14 @@ test("diagnostic errors include recovery guidance and expandable details", async
 })
 
 test("test capture and transcription remain cancellable across navigation", async ({ page }) => {
-  await page.goto("/#/settings")
+  await page.goto("/#/settings?section=advanced")
   await page.getByRole("button", { name: "Test dictation", exact: true }).click()
   await page.getByRole("navigation", { name: "Main navigation" }).getByRole("link", { name: "Models", exact: true }).click()
   await page.getByRole("button", { name: "Stop test recording", exact: true }).click()
   await expect(page.getByText("Transcribing test…", { exact: true })).toBeVisible()
   await page.getByRole("button", { name: "Cancel", exact: true }).click()
   await page.getByRole("navigation", { name: "Main navigation" }).getByRole("link", { name: "Settings", exact: true }).click()
+  await page.getByRole("tab", { name: "Advanced", exact: true }).click()
   await expect(page.getByText("Test cancelled", { exact: true })).toBeVisible()
   await expect(page.getByRole("button", { name: "Test dictation", exact: true })).toBeEnabled()
 })
@@ -1309,6 +1359,7 @@ test("retention defaults to forever and requires confirmation before saving or d
   await page.getByRole("option", { name: "Press to start / press to stop", exact: true }).click()
   await page.getByRole("combobox", { name: "Spoken language", exact: true }).click()
   await page.getByRole("option", { name: "German", exact: true }).click()
+  await page.getByRole("tab", { name: "History & data", exact: true }).click()
   const retention = page.getByRole("combobox", { name: "History retention", exact: true })
   await expect(retention.locator('[data-slot="select-value"]')).toHaveText("Keep forever")
   await retention.click()
@@ -1395,8 +1446,9 @@ test("Mac recorder keeps layout letters and rejects ambiguous Option characters"
 })
 
 test("shortcut capture waits for key release, changes only the draft and preserves other settings edits", async ({ page }) => {
-  await page.goto("/#/settings")
+  await page.goto("/#/settings?section=history")
   await page.getByRole("checkbox", { name: /Keep recordings/ }).check()
+  await page.getByRole("tab", { name: "Dictation", exact: true }).click()
   const dialog = await recordShortcut(page)
   const area = dialog.getByRole("group", { name: "Shortcut capture" })
   await expect(area).toBeFocused()
@@ -1411,6 +1463,7 @@ test("shortcut capture waits for key release, changes only the draft and preserv
   await expect(page.getByLabel("Global shortcut", { exact: true })).toHaveValue("Ctrl+Alt+P")
   await page.evaluate(() => window.dictationTest.history())
   await settle(page)
+  await page.getByRole("tab", { name: "History & data", exact: true }).click()
   await expect(page.getByRole("checkbox", { name: /Keep recordings/ })).toBeChecked()
   await expect.poll(() => page.evaluate(() => window.dictationTest.snapshot.settings.shortcut)).toBe("Ctrl+Alt+Space")
   await expect.poll(() => page.evaluate(() => window.dictationTest.captureToken)).toBe("")
@@ -1673,7 +1726,7 @@ for (const route of ["vocabulary", "settings"]) {
       state.snapshot.vocabulary = [{ id: "existing", canonical: "PostgreSQL", aliases: ["postgres"], enabled: true }]
       state.snapshot.settings.language = "de"
     })
-    await page.goto(`/#/${route}`)
+    await page.goto(`/#/${route}${route === "settings" ? "?section=history" : ""}`)
     const control = route === "vocabulary" ? page.getByRole("button", { name: "Add term", exact: true }) : page.getByRole("checkbox", { name: /^Keep recordings/ })
     await expect(control).toBeDisabled()
     await expect.poll(() => page.evaluate(() => window.dictationTest.pendingSnapshots.length)).toBeGreaterThan(0)
@@ -1696,7 +1749,7 @@ for (const route of ["vocabulary", "settings"]) {
 
   test(`${route} stays protected after a failed initial snapshot and can retry`, async ({ page }) => {
     await page.addInitScript(() => { window.dictationTest.failSnapshot = true })
-    await page.goto(`/#/${route}`)
+    await page.goto(`/#/${route}${route === "settings" ? "?section=history" : ""}`)
     const control = route === "vocabulary" ? page.getByRole("button", { name: "Add term", exact: true }) : page.getByRole("checkbox", { name: /^Keep recordings/ })
     await expect(page.getByText("Snapshot unavailable", { exact: true })).toBeVisible()
     await expect(control).toBeDisabled()
@@ -1859,7 +1912,7 @@ test("endpoint changes and navigation cancel discovery and ignore late model lis
   await page.getByRole("link", { name: "Settings", exact: true }).click()
   await expect.poll(() => page.evaluate(() => window.dictationTest.cancelledProcessing.includes(window.dictationTest.pendingModelLists[2].id))).toBe(true)
   await page.evaluate(() => { window.dictationTest.pendingModelLists[2].resolve(["late-after-navigation"]) })
-  await expect(page.getByRole("heading", { name: "Settings", exact: true })).toBeVisible()
+  await expect(page.getByRole("tablist", { name: "Settings sections", exact: true })).toBeVisible()
   await expect.poll(() => page.evaluate(() => window.dictationTest.snapshot.textProcessing.model)).toBe("")
 })
 
@@ -1933,6 +1986,7 @@ test("persistent crashes stay recoverable and window reload keeps persisted pref
   await expect(page.getByRole("button", { name: "Expand sidebar", exact: true })).toBeVisible()
   await page.getByRole("link", { name: "Settings", exact: true }).click()
   await expect(page.getByRole("combobox", { name: "Spoken language", exact: true }).locator('[data-slot="select-value"]')).toHaveText("German")
+  await page.getByRole("tab", { name: "History & data", exact: true }).click()
   await expect(page.getByRole("checkbox", { name: /^Keep recordings/ })).toBeChecked()
 })
 
@@ -1991,7 +2045,7 @@ async function setupBackupPreview(page: Page) {
 
 test("backups export optional audio and require a preview before a merge restore", async ({ page }, testInfo) => {
   await setupBackupPreview(page)
-  await page.goto("/#/settings")
+  await page.goto("/#/settings?section=history")
   const panel = page.getByRole("region", { name: "Backup & restore", exact: true })
   await panel.getByRole("button", { name: "Export backup", exact: true }).click()
   await expect(panel.getByRole("status")).toContainText("12 dictations, 3 outputs, and 0 recordings")
@@ -2021,11 +2075,11 @@ test("backups export optional audio and require a preview before a merge restore
   await dialog.getByRole("button", { name: "Restore backup", exact: true }).click()
   await expect(panel.getByRole("status")).toContainText("Restored 10 dictations, 3 outputs, 1 prompts, and 4 terms")
   await expect.poll(() => page.evaluate(() => window.dictationTest.backupRestores)).toEqual([{ id: "preview-token", preferences: false }])
-  await expect(page.getByRole("combobox", { name: "Spoken language", exact: true })).toContainText("Detect automatically")
+  await expect(page.getByLabel("Spoken language", { exact: true })).toContainText("Detect automatically")
   await panel.getByRole("button", { name: "Restore backup", exact: true }).click()
   await dialog.getByRole("checkbox", { name: "Restore portable preferences", exact: true }).check()
   await dialog.getByRole("button", { name: "Restore backup", exact: true }).click()
-  await expect(page.getByRole("combobox", { name: "Spoken language", exact: true })).toContainText("German")
+  await expect(page.getByLabel("Spoken language", { exact: true })).toContainText("German")
   await expect(page.getByRole("button", { name: "Save settings", exact: true })).toBeDisabled()
   await page.getByRole("link", { name: "History", exact: true }).click()
   await expect(page.getByRole("link", { name: /Restored transcription/ }).first()).toBeVisible()
@@ -2033,7 +2087,7 @@ test("backups export optional audio and require a preview before a merge restore
 
 test("backup errors, busy state, unsaved settings and native cancellation preserve data", async ({ page }) => {
   await setupBackupPreview(page)
-  await page.goto("/#/settings")
+  await page.goto("/#/settings?section=history")
   const panel = page.getByRole("region", { name: "Backup & restore", exact: true })
   await page.getByRole("checkbox", { name: /^Keep recordings/ }).check()
   await expect(panel.getByRole("button", { name: "Restore backup", exact: true })).toBeDisabled()
@@ -2053,7 +2107,7 @@ test("backup errors, busy state, unsaved settings and native cancellation preser
 
 test("failed restores keep the preview for retry and navigation discards late previews", async ({ page }) => {
   await setupBackupPreview(page)
-  await page.goto("/#/settings")
+  await page.goto("/#/settings?section=history")
   const panel = page.getByRole("region", { name: "Backup & restore", exact: true })
   await panel.getByRole("button", { name: "Restore backup", exact: true }).click()
   const dialog = page.getByRole("dialog", { name: "Restore backup?", exact: true })
@@ -2074,16 +2128,16 @@ test("failed restores keep the preview for retry and navigation discards late pr
 
 test("an outdated backup backend provides restart guidance without hiding Settings", async ({ page }) => {
   await page.addInitScript(() => { Reflect.deleteProperty(Reflect.get(window, "go").main.App, "PreviewBackup") })
-  await page.goto("/#/settings")
+  await page.goto("/#/settings?section=history")
   const panel = page.getByRole("region", { name: "Backup & restore", exact: true })
   await panel.getByRole("button", { name: "Restore backup", exact: true }).click()
   await expect(panel.getByRole("alert")).toContainText("restart wails dev")
-  await expect(page.getByRole("heading", { name: "Settings", exact: true })).toBeVisible()
+  await expect(page.getByRole("tablist", { name: "Settings sections", exact: true })).toBeVisible()
 })
 
 test("backup cancellation remains available after navigating back to Settings", async ({ page }) => {
   await setupBackupPreview(page)
-  await page.goto("/#/settings")
+  await page.goto("/#/settings?section=history")
   const panel = page.getByRole("region", { name: "Backup & restore", exact: true })
   await page.evaluate(() => { window.dictationTest.deferBackup = true })
   await panel.getByRole("button", { name: "Restore backup", exact: true }).click()
@@ -2096,6 +2150,7 @@ test("backup cancellation remains available after navigating back to Settings", 
   })
   await page.getByRole("link", { name: "History", exact: true }).click()
   await page.getByRole("link", { name: "Settings", exact: true }).click()
+  await page.getByRole("tab", { name: "History & data", exact: true }).click()
   await expect(panel.getByRole("status")).toContainText("Checking backup…")
   await expect(panel.getByRole("button", { name: "Export backup", exact: true })).toBeDisabled()
   await panel.getByRole("button", { name: "Cancel operation", exact: true }).click()

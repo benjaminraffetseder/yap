@@ -65,8 +65,10 @@ Imports use your saved speech and text-processing settings. The result goes into
 History without changing the source file or clipboard. **Keep recordings** saves
 a converted copy for playback and backup.
 
-WAV works without extra software. Other formats need a local FFmpeg
-installation. See [Audio support](audio-support.md) for setup details.
+WAV works without extra software. Other formats need FFmpeg. On Windows x64,
+Yap offers to download it if missing; nothing downloads until you confirm.
+You can also install it from Settings → Advanced → Audio support (FFmpeg).
+See [Audio support](audio-support.md) for manual setup and download details.
 
 ## Local text models
 

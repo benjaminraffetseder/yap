@@ -1,0 +1,31 @@
+Optional FFmpeg audio support for Yap (Windows x64)
+
+FFmpeg is copyright (c) 2000-2026 the FFmpeg developers.
+https://ffmpeg.org/
+
+Build: BtbN FFmpeg n9.0.2-17-g2a571b6068-20260930, win64-lgpl-shared-9.0
+Release: https://github.com/BtbN/FFmpeg-Builds/releases/tag/autobuild-2026-09-30-13-08
+Archive: ffmpeg-n9.0.2-17-g2a571b6068-win64-lgpl-shared-9.0.zip
+Size: 76972461 bytes
+SHA-256: 7157177b8a6cb2174c1650ba8c71b363f2c78cba5330f88c4c02cf5b2b880646
+
+This build uses --enable-version3 --enable-shared --disable-static, without
+--enable-gpl or --enable-nonfree. Its FFmpeg licence is LGPL version 3 or later,
+not LGPL 2.1. Read LICENSE.txt and COPYING.GPLv3 in this directory for the terms.
+There is no warranty. Yap runs the separate command-line program; it does not
+link FFmpeg into Yap. The DLLs can be replaced with compatible modified builds.
+
+FFmpeg source for this exact binary:
+https://github.com/FFmpeg/FFmpeg/tree/2a571b606854520cf89804d8030c8b328e621689
+https://github.com/FFmpeg/FFmpeg/archive/2a571b606854520cf89804d8030c8b328e621689.tar.gz
+
+Build scripts, dependency source locations, patches, and configurations:
+https://github.com/BtbN/FFmpeg-Builds/tree/6c9aec5fc9a72ec3abedd1fa84db141fa18cf52b
+https://github.com/BtbN/FFmpeg-Builds/tree/6c9aec5fc9a72ec3abedd1fa84db141fa18cf52b/scripts.d
+Build target: ./build.sh win64 lgpl-shared 9.0
+Run bin/ffmpeg.exe -buildconf for the complete compiled configuration and
+bin/ffmpeg.exe -L for the executable's licence statement.
+
+Yap downloads the original upstream archive directly after confirmation and
+preserves its contents, including documentation and licence. Audio stays local.
+Licensing information: https://ffmpeg.org/legal.html

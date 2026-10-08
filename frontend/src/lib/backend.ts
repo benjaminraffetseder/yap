@@ -5,6 +5,7 @@ import { SaveTextProcessing, ProcessText, RefinePrompt, CancelTextProcessing, Te
 import { GetSessionOutputs, GenerateSessionOutput, RegenerateSessionOutput, DeleteSessionOutput } from "@wails/go/main/App"
 import { ExportBackup, PreviewBackup, RestoreBackup, DiscardBackupPreview } from "@wails/go/main/App"
 import { ImportAudio } from "@wails/go/main/App"
+import { GetAudioSupport, InstallAudioSupport } from "@wails/go/main/App"
 import { text } from "@wails/go/models"
 export type TextPrompt = { id: string; name: string; instruction: string }
 export type TextProcessing = { enabled: boolean; endpoint: string; model: string; autoPromptId: string; prompts: TextPrompt[] }
@@ -16,6 +17,7 @@ export type VocabularyEntry = { id: string; canonical: string; aliases: string[]
 export type DiagnosticResult = { phase: string; message: string; details: string; transcript: string; durationMs: number }
 export type DiagnosticCheck = { id: string; name: string; ready: boolean; message: string }
 export type Microphone = { id: string; name: string }
+export type AudioSupport = { installed: boolean; managed: boolean; path: string; canDownload: boolean; size: number; message: string }
 export type Session = { id: string; createdAt: string; durationMs: number; rawTranscript: string; finalTranscript: string; speechModel: string; language: string; audioPath: string }
 export type GeneratedOutput = { id: string; sessionId: string; createdAt: string; prompt: TextPrompt; model: string; endpoint: string; input: string; text: string }
 export type HistoryPageResult = { entries: Session[]; total: number; page: number; pageSize: number }
@@ -34,6 +36,8 @@ function requireOutputAPI(name: string) {
   if (typeof api?.[name] !== "function") throw new Error("Saved outputs need the current backend. Quit and reopen Yap; in development, restart wails dev.")
 }
 export const backend = {
+  audioSupport: async (): Promise<AudioSupport> => { requireAudioSupportAPI("GetAudioSupport"); return GetAudioSupport() },
+  installAudioSupport: async (): Promise<void> => { requireAudioSupportAPI("InstallAudioSupport"); return InstallAudioSupport() },
   importAudio: async (): Promise<void> => {
     const api = (window as unknown as { go?: { main?: { App?: Record<string, unknown> } } }).go?.main?.App
     if (typeof api?.ImportAudio !== "function") throw new Error("Audio import needs the current backend. Quit and reopen Yap; in development, restart wails dev.")
@@ -85,6 +89,10 @@ export const backend = {
     }
     return ListTextModels(id, endpoint)
   },
+}
+function requireAudioSupportAPI(name: string) {
+  const api = (window as unknown as { go?: { main?: { App?: Record<string, unknown> } } }).go?.main?.App
+  if (typeof api?.[name] !== "function") throw new Error("Audio support settings need the current backend. Quit and reopen Yap; in development, restart wails dev.")
 }
 export function isBusy(phase: string) { return ["backup", "recording", "transcribing", "text-processing", "downloading", "mic-test", "diagnostic-recording", "diagnostic-transcribing"].includes(phase) }
 export function message(cause: unknown) { return cause instanceof Error ? cause.message : String(cause) }

@@ -170,6 +170,30 @@ func TestFFmpegDiscoveryIncludesFinderPaths(t *testing.T) {
 	}
 }
 
+func TestImportDecoderPreflight(t *testing.T) {
+	t.Setenv("PATH", "")
+	source := filepath.Join(t.TempDir(), "audio.MP3")
+	if err := os.WriteFile(source, []byte("audio fixture"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ImportDecoder(context.Background(), source, ""); !errors.Is(err, ErrFFmpegMissing) {
+		t.Fatalf("missing decoder: %v", err)
+	}
+	if path, err := ImportDecoder(context.Background(), source, "private-ffmpeg.exe"); err != nil || path != "private-ffmpeg.exe" {
+		t.Fatal(path, err)
+	}
+	wav := filepath.Join(t.TempDir(), "audio.WAV")
+	os.WriteFile(wav, []byte("validated during decode"), 0600)
+	if path, err := ImportDecoder(context.Background(), wav, ""); err != nil || path != "" {
+		t.Fatal("WAV requested support", path, err)
+	}
+	for _, bad := range []string{filepath.Join(t.TempDir(), "missing.mp3"), t.TempDir(), "unsupported.txt"} {
+		if _, err := ImportDecoder(context.Background(), bad, ""); err == nil || errors.Is(err, ErrFFmpegMissing) {
+			t.Fatal("offered support for invalid file", bad, err)
+		}
+	}
+}
+
 func TestFFmpegShimTargetValidation(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "shim.exe")
 	target := filepath.Join(t.TempDir(), "actual ffmpeg.exe")

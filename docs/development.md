@@ -87,6 +87,7 @@ Native and download tests are opt-in. Run them from the repo root on Windows:
 | `YAP_INDICATOR_SMOKE=1` | `go test ./internal/indicator -run '^TestNativeIndicator' -v -count=1` | Real floating windows, focus, and dragging |
 | `YAP_TRAY_SMOKE=1` | `go test ./internal/tray -run TestNativeTray -v -count=1` | Real tray controls |
 | `YAP_INTEGRATION=1` | `go test ./internal/models -run TestRealWhisper -v -count=1` | Downloads Whisper and Tiny, then transcribes a sample |
+| `YAP_FFMPEG_INTEGRATION=1` | `go test ./internal/models -run TestFFmpegDownloadIntegration -v -count=1` | Downloads and verifies the pinned FFmpeg archive |
 
 In PowerShell, set the variable with `$env:YAP_TRAY_SMOKE = '1'` and remove it
 afterward with `Remove-Item Env:YAP_TRAY_SMOKE` (substitute the variable you need).
