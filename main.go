@@ -18,7 +18,7 @@ var trayIcon []byte
 func main() {
 	app := NewApp()
 	config := &options.App{
-		Title:              "Yap — Local dictation",
+		Title:              "Yap",
 		Width:              1100,
 		Height:             760,
 		MinWidth:           760,
