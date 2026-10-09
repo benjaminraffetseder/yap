@@ -3271,6 +3271,53 @@ test("History pages select and export only the current page, and recover after d
   await expect(page.getByRole("navigation", { name: "History pages" })).toHaveCount(0);
 });
 
+test("History keeps its header, search and selection controls visible while scrolling", async ({
+  page,
+}, testInfo) => {
+  await page.addInitScript(() => {
+    window.dictationTest.snapshot.history = Array.from({ length: 40 }, (_, index) => ({
+      id: `sticky-${index}`,
+      createdAt: "2026-10-09",
+      durationMs: 1000,
+      rawTranscript: `Dictation ${index + 1}`,
+      finalTranscript: `Dictation ${index + 1}`,
+      speechModel: "base",
+      language: "en",
+      audioPath: "",
+    }));
+  });
+  await page.goto("/#/history");
+  await expect(page.getByText("40 dictations", { exact: true })).toBeVisible();
+  await page.getByRole("checkbox", { name: "Select dictation 1", exact: true }).check();
+  for (const width of [1280, 760]) {
+    await page.setViewportSize({ width, height: 720 });
+    await page.evaluate(() => window.scrollTo(0, 900));
+    const title = page.getByRole("heading", { name: "History", exact: true });
+    await expect.poll(async () => (await title.boundingBox())!.y).toBeLessThan(30);
+    const search = page.getByLabel("Search transcripts", { exact: true });
+    const controls = [
+      title,
+      search,
+      page.getByRole("button", { name: "Import audio", exact: true }),
+      page.getByRole("button", { name: "Export selected", exact: true }),
+      page.getByRole("button", { name: "Delete selected", exact: true }),
+    ];
+    for (const control of controls) {
+      const bounds = await control.boundingBox();
+      expect(bounds!.y).toBeGreaterThanOrEqual(0);
+      expect(bounds!.y + bounds!.height).toBeLessThan(300);
+    }
+    expect(await page.evaluate(() => window.scrollY)).toBeGreaterThan(800);
+    await page.screenshot({
+      path: testInfo.outputPath(`history-sticky-${width}.png`),
+      animations: "disabled",
+    });
+  }
+  await page.getByLabel("Search transcripts", { exact: true }).fill("Dictation 39");
+  await expect(page.getByText("1 dictation", { exact: true })).toBeVisible();
+  await expect(page.getByRole("link", { name: /Dictation 39/ })).toBeVisible();
+});
+
 test("History searches all entries beyond 500 and ignores older search replies", async ({
   page,
 }) => {

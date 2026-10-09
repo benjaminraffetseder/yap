@@ -1,4 +1,24 @@
-import { useEffect, useRef, useState } from "react";
+import { AudioImportButton } from "@/components/audio-import-button";
+import { useDictation } from "@/components/dictation-provider";
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import {
+  backend,
+  duration,
+  isDesktop,
+  message,
+  type HistoryPageResult,
+  type Session,
+} from "@/lib/backend";
 import {
   AudioLines,
   ChevronRight,
@@ -8,28 +28,8 @@ import {
   Search,
   Trash2,
 } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router";
-import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Input } from "@/components/ui/input";
-import { AudioImportButton } from "@/components/audio-import-button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { useDictation } from "@/components/dictation-provider";
-import {
-  backend,
-  duration,
-  isDesktop,
-  message,
-  type HistoryPageResult,
-  type Session,
-} from "@/lib/backend";
 
 function historyGroups(entries: Session[]) {
   const today = new Date();
@@ -170,92 +170,94 @@ export function HistoryPage() {
   }
   return (
     <div className="space-y-7">
-      <header className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-2xl font-semibold tracking-tight">History</h1>
-        <AudioImportButton />
-      </header>
-      {snapshot.status.phase === "transcribing" && (
-        <div role="status" className="flex flex-wrap items-center gap-3 text-sm">
-          <span>{snapshot.status.message}</span>
-          <Button size="sm" variant="outline" onClick={() => void run(backend.cancel, false)}>
-            Cancel transcription
-          </Button>
-        </div>
-      )}
-      {snapshot.status.phase === "error" && (
-        <p role="alert" className="text-sm text-destructive">
-          {snapshot.status.message}
-        </p>
-      )}
-      <div className="relative">
-        <Search className="absolute left-3 top-3 size-4 text-muted-foreground" />
-        <Input
-          aria-label="Search transcripts"
-          maxLength={250}
-          className="h-10 rounded-xl bg-card pl-10"
-          placeholder="Search transcripts…"
-          value={query}
-          onChange={(event) => {
-            setLoading(true);
-            setSelected([]);
-            setParams(event.target.value ? { q: event.target.value } : {}, { replace: true });
-          }}
-        />
-      </div>
-      {snapshot.status.historyError && (
-        <p role="alert" className="text-sm text-destructive">
-          {snapshot.status.historyError}
-        </p>
-      )}
-      {error && (
-        <div role="alert" className="flex items-center gap-3 text-sm text-destructive">
-          {error}
-          <Button variant="outline" size="sm" onClick={() => setReload((old) => old + 1)}>
-            Retry
-          </Button>
-        </div>
-      )}
-      <div className="flex flex-wrap items-center gap-3">
-        <p role="status" className="mr-auto text-xs text-muted-foreground">
-          {loading ? "Loading History…" : `${total} ${total === 1 ? "dictation" : "dictations"}`}
-        </p>
-        {!!entries.length && (
-          <label className="flex items-center gap-2 text-xs">
-            <Checkbox
-              disabled={unavailable}
-              checked={entries.every((entry) => selected.includes(entry.id))}
-              indeterminate={selected.length > 0 && selected.length < entries.length}
-              onCheckedChange={(checked) =>
-                setSelected(checked ? entries.map((entry) => entry.id) : [])
-              }
-            />
-            Select page
-          </label>
-        )}
-        {!!selected.length && (
-          <>
-            <span className="text-xs text-muted-foreground">{selected.length} selected</span>
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={unavailable}
-              onClick={() => void exportSelected()}
-            >
-              <Download className="size-3.5" />
-              Export selected
+      <div className="sticky top-0 z-20 space-y-5 bg-background py-4">
+        <header className="flex flex-wrap items-center justify-between gap-3">
+          <h1 className="text-2xl font-semibold tracking-tight">History</h1>
+          <AudioImportButton />
+        </header>
+        {snapshot.status.phase === "transcribing" && (
+          <div role="status" className="flex flex-wrap items-center gap-3 text-sm">
+            <span>{snapshot.status.message}</span>
+            <Button size="sm" variant="outline" onClick={() => void run(backend.cancel, false)}>
+              Cancel transcription
             </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              className="text-destructive"
-              disabled={unavailable}
-              onClick={() => confirmDelete(selected)}
-            >
-              <Trash2 className="size-3.5" />
-              Delete selected
-            </Button>
-          </>
+          </div>
         )}
+        {snapshot.status.phase === "error" && (
+          <p role="alert" className="text-sm text-destructive">
+            {snapshot.status.message}
+          </p>
+        )}
+        <div className="relative">
+          <Search className="absolute left-3 top-3 size-4 text-muted-foreground" />
+          <Input
+            aria-label="Search transcripts"
+            maxLength={250}
+            className="h-10 rounded-xl bg-card pl-10"
+            placeholder="Search transcripts…"
+            value={query}
+            onChange={(event) => {
+              setLoading(true);
+              setSelected([]);
+              setParams(event.target.value ? { q: event.target.value } : {}, { replace: true });
+            }}
+          />
+        </div>
+        {snapshot.status.historyError && (
+          <p role="alert" className="text-sm text-destructive">
+            {snapshot.status.historyError}
+          </p>
+        )}
+        {error && (
+          <div role="alert" className="flex items-center gap-3 text-sm text-destructive">
+            {error}
+            <Button variant="outline" size="sm" onClick={() => setReload((old) => old + 1)}>
+              Retry
+            </Button>
+          </div>
+        )}
+        <div className="flex flex-wrap items-center gap-3">
+          <p role="status" className="mr-auto text-xs text-muted-foreground">
+            {loading ? "Loading History…" : `${total} ${total === 1 ? "dictation" : "dictations"}`}
+          </p>
+          {!!entries.length && (
+            <label className="flex items-center gap-2 text-xs">
+              <Checkbox
+                disabled={unavailable}
+                checked={entries.every((entry) => selected.includes(entry.id))}
+                indeterminate={selected.length > 0 && selected.length < entries.length}
+                onCheckedChange={(checked) =>
+                  setSelected(checked ? entries.map((entry) => entry.id) : [])
+                }
+              />
+              Select page
+            </label>
+          )}
+          {!!selected.length && (
+            <>
+              <span className="text-xs text-muted-foreground">{selected.length} selected</span>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={unavailable}
+                onClick={() => void exportSelected()}
+              >
+                <Download className="size-3.5" />
+                Export selected
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                className="text-destructive"
+                disabled={unavailable}
+                onClick={() => confirmDelete(selected)}
+              >
+                <Trash2 className="size-3.5" />
+                Delete selected
+              </Button>
+            </>
+          )}
+        </div>
       </div>
       {!entries.length && !loading && !error ? (
         <div className="rounded-2xl border border-dashed py-12 text-center">
