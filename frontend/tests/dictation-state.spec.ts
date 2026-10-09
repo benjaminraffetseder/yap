@@ -1026,6 +1026,178 @@ test("obsolete snapshot failures cannot undo connection recovery", async ({ page
   await expect(page.getByRole("button", { name: "Start recording", exact: true })).toBeEnabled();
 });
 
+test("Models compares models, updates the current selection, and fits narrow screens", async ({
+  page,
+}, testInfo) => {
+  await page.addInitScript(() => {
+    if (!localStorage.getItem("desktop-theme")) localStorage.setItem("desktop-theme", "dark");
+    localStorage.setItem("yap-sidebar-collapsed", "true");
+    const s = window.dictationTest.snapshot;
+    s.settings.modelPath = "/small";
+    s.models = [
+      {
+        id: "tiny",
+        name: "Whisper Tiny",
+        description: "Fastest · short dictation",
+        size: 77691713,
+        installed: true,
+        path: "/tiny",
+        diskBytes: 77691713,
+        removable: true,
+      },
+      {
+        id: "base",
+        name: "Whisper Base",
+        description: "Lightweight · everyday dictation",
+        size: 147951465,
+        installed: true,
+        path: "/base",
+        diskBytes: 147951465,
+        removable: true,
+      },
+      {
+        id: "small",
+        name: "Whisper Small",
+        description: "Balanced · better accuracy",
+        size: 487601967,
+        installed: true,
+        path: "/small",
+        diskBytes: 487601967,
+        removable: true,
+      },
+    ];
+  });
+  await page.setViewportSize({ width: 1347, height: 840 });
+  await page.goto("/#/models");
+  const current = page.getByRole("region", { name: "Current speech model" });
+  await expect(current).toContainText("Whisper Small");
+  await expect(page.getByRole("group", { name: "Model storage" })).toContainText("713.2 MB");
+  await page.screenshot({ path: testInfo.outputPath("models-redesign-dark.png"), fullPage: true });
+  await page
+    .getByRole("region", { name: "Whisper Base", exact: true })
+    .getByRole("button", { name: "Use model", exact: true })
+    .click();
+  await expect(current).toContainText("Whisper Base");
+  await expect(
+    page.getByRole("button", { name: "Remove Whisper Base", exact: true }),
+  ).toBeDisabled();
+  await expect(
+    page.getByRole("button", { name: "Remove Whisper Small", exact: true }),
+  ).toBeEnabled();
+  await page.evaluate(() => {
+    localStorage.setItem("desktop-theme", "light");
+  });
+  await page.reload();
+  await expect(current).toContainText("Whisper Small");
+  await expect(page.locator("html")).not.toHaveClass(/dark/);
+  await page.screenshot({ path: testInfo.outputPath("models-redesign-light.png"), fullPage: true });
+  await page.setViewportSize({ width: 480, height: 900 });
+  await expect(page.getByRole("link", { name: "Open Settings" })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
+    true,
+  );
+  await page.screenshot({
+    path: testInfo.outputPath("models-redesign-narrow.png"),
+    fullPage: true,
+  });
+});
+
+test("model downloads stay inside the matching card across navigation and cancellation", async ({
+  page,
+}, testInfo) => {
+  await homeModelScenario(page);
+  await simulateModelDownload(page);
+  await page.getByRole("combobox", { name: "Speech model", exact: true }).click();
+  await page.getByRole("option", { name: /Whisper Small/ }).click();
+  await page.getByRole("link", { name: "Models", exact: true }).click();
+  const small = page.getByRole("region", { name: "Whisper Small", exact: true });
+  const progress = small.getByRole("progressbar", { name: "Model download progress" });
+  await expect(progress).toBeVisible();
+  await page.evaluate(() => {
+    const state = window.dictationTest;
+    state.snapshot.status.message = "Downloading Whisper runtime…";
+    state.snapshot.status.progress = 0.42;
+    state.callbacks["dictation:status"](structuredClone(state.snapshot.status));
+  });
+  await expect(progress).toHaveAttribute("aria-valuenow", "42");
+  await expect(small).toContainText("Downloading Whisper runtime…");
+  await expect(page.getByRole("progressbar", { name: "Model download progress" })).toHaveCount(1);
+  await expect(
+    page
+      .getByRole("region", { name: "Whisper Tiny", exact: true })
+      .getByRole("button", { name: "Active", exact: true }),
+  ).toBeDisabled();
+  await expect(
+    page
+      .getByRole("region", { name: "Whisper Base", exact: true })
+      .getByRole("button", { name: "Use model", exact: true }),
+  ).toBeDisabled();
+  await page.evaluate(() => {
+    const state = window.dictationTest;
+    state.snapshot.status.message = "Checking or downloading Whisper small…";
+    state.snapshot.status.progress = 0.65;
+    state.callbacks["dictation:status"](structuredClone(state.snapshot.status));
+  });
+  await expect(progress).toHaveAttribute("aria-valuenow", "65");
+  await expect(small).toContainText("65%");
+  await page.screenshot({
+    path: testInfo.outputPath("model-download-in-card.png"),
+    fullPage: true,
+    animations: "disabled",
+  });
+  await page.getByRole("link", { name: "Settings", exact: true }).click();
+  await page.getByRole("link", { name: "Models", exact: true }).click();
+  await expect(progress).toHaveAttribute("aria-valuenow", "65");
+  await small.getByRole("button", { name: "Cancel download", exact: true }).click();
+  await expect(progress).toHaveCount(0);
+  await expect(small.getByRole("button", { name: "Download & use", exact: true })).toBeEnabled();
+  await expect(page.getByRole("region", { name: "Current speech model" })).toContainText(
+    "Whisper Tiny",
+  );
+  await small.getByRole("button", { name: "Download & use", exact: true }).click();
+  await expect(progress).toBeVisible();
+  await page.evaluate(() => {
+    const state = window.dictationTest;
+    const model = state.snapshot.models.find((model) => model.id === "small")!;
+    model.installed = true;
+    state.snapshot.settings.modelPath = model.path;
+    state.snapshot.status.phase = "idle";
+    state.snapshot.status.message = "Model installed. Ready to dictate.";
+    state.callbacks["dictation:status"](structuredClone(state.snapshot.status));
+    state.history();
+  });
+  await expect(progress).toHaveCount(0);
+  await expect(small.getByRole("button", { name: "Active", exact: true })).toBeDisabled();
+});
+
+test("Models handles custom selections and missing model files", async ({ page }) => {
+  await homeModelScenario(page, true);
+  await simulateModelDownload(page);
+  await page.goto("/#/models");
+  const current = page.getByRole("region", { name: "Current speech model" });
+  await expect(current).toContainText("Custom model");
+  await expect(current).toContainText("Active");
+  await expect(page.getByRole("button", { name: "Check & repair runtime" })).toHaveCount(0);
+  await page.evaluate(() => {
+    const state = window.dictationTest;
+    state.snapshot.settings.modelPath = "/small";
+    state.snapshot.models.find((model) => model.id === "small")!.removable = true;
+    state.history();
+  });
+  await expect(current).toContainText("Needs attention");
+  const repair = page.getByRole("button", { name: "Repair & use", exact: true });
+  await expect(repair).toBeEnabled();
+  await expect(
+    page.getByRole("button", { name: "Remove Whisper Small", exact: true }),
+  ).toBeDisabled();
+  await repair.click();
+  const card = page.getByRole("region", { name: "Whisper Small", exact: true });
+  await expect(card.getByRole("progressbar", { name: "Model download progress" })).toBeVisible();
+  await expect(repair).toHaveCount(0);
+  await card.getByRole("button", { name: "Cancel download", exact: true }).click();
+  await expect(repair).toBeEnabled();
+});
+
 test("active valid models offer runtime verification and repair", async ({ page }) => {
   await page.addInitScript(() => {
     const s = window.dictationTest.snapshot;
@@ -3589,14 +3761,17 @@ test("Models shows actual disk usage and protects the active model during remova
     ];
   });
   await page.goto("/#/models");
-  await expect(page.getByText("5 MB used by downloaded models", { exact: true })).toBeVisible();
+  await expect(page.getByRole("group", { name: "Model storage" })).toContainText("5 MB");
+  await expect(page.getByRole("group", { name: "Model storage" })).toContainText(
+    "2 models downloaded",
+  );
   await expect(
     page.getByRole("button", { name: "Remove Whisper Base", exact: true }),
   ).toBeDisabled();
   await page.getByRole("button", { name: "Remove Whisper Tiny", exact: true }).click();
   let dialog = page.getByRole("dialog", { name: "Remove Whisper Tiny?" });
   await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
-  await expect(page.getByText("5 MB used by downloaded models", { exact: true })).toBeVisible();
+  await expect(page.getByRole("group", { name: "Model storage" })).toContainText("5 MB");
   await page.getByRole("button", { name: "Remove Whisper Tiny", exact: true }).click();
   dialog = page.getByRole("dialog", { name: "Remove Whisper Tiny?" });
   await page.evaluate(() => {
@@ -3614,7 +3789,10 @@ test("Models shows actual disk usage and protects the active model during remova
   });
   await dialog.getByRole("button", { name: "Remove model", exact: true }).click();
   await expect(dialog).toHaveCount(0);
-  await expect(page.getByText("3 MB used by downloaded models", { exact: true })).toBeVisible();
+  await expect(page.getByRole("group", { name: "Model storage" })).toContainText("3 MB");
+  await expect(page.getByRole("group", { name: "Model storage" })).toContainText(
+    "1 model downloaded",
+  );
   await expect(page.getByRole("button", { name: "Remove Whisper Tiny", exact: true })).toHaveCount(
     0,
   );

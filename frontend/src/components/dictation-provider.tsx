@@ -103,6 +103,7 @@ type Context = {
   level: number;
   error: string;
   loading: boolean;
+  downloadingModelId: string | null;
   refresh: () => Promise<void>;
   run: (action: () => Promise<unknown>, reload?: boolean) => Promise<void>;
   installModel: (model: Model) => Promise<void>;
@@ -114,6 +115,7 @@ export function DictationProvider({ children }: { children: ReactNode }) {
   const [level, setLevel] = useState(0);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(isDesktop);
+  const [downloadingModelId, setDownloadingModelId] = useState<string | null>(null);
   const snapshotRequest = useRef(0);
   const statusRevision = useRef(0);
   const modelDownload = useRef<{ model: Model; started: boolean } | null>(null);
@@ -153,12 +155,14 @@ export function DictationProvider({ children }: { children: ReactNode }) {
   async function installModel(model: Model) {
     if (!isDesktop || loading || isBusy(snapshot.status.phase) || modelDownload.current) return;
     modelDownload.current = { model, started: false };
+    setDownloadingModelId(model.id);
     setError("");
     toastManager.close("speech-model-download");
     try {
       await backend.install(model.id);
     } catch (cause) {
       modelDownload.current = null;
+      setDownloadingModelId(null);
       toastManager.add({
         id: "speech-model-download",
         type: "error",
@@ -201,6 +205,7 @@ export function DictationProvider({ children }: { children: ReactNode }) {
       if (status.phase === "downloading") download.started = true;
       else if (download.started && (status.phase === "idle" || status.phase === "error")) {
         modelDownload.current = null;
+        setDownloadingModelId(null);
         // InstallModel ends with idle on success or cancellation, and error on failure.
         if (status.phase === "error")
           toastManager.add({
@@ -250,6 +255,7 @@ export function DictationProvider({ children }: { children: ReactNode }) {
         level,
         error,
         loading,
+        downloadingModelId,
         refresh,
         run,
         installModel,
