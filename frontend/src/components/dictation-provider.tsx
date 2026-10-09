@@ -121,6 +121,7 @@ export function DictationProvider({ children }: { children: ReactNode }) {
   const [microphoneTestVisible, setMicrophoneTestVisible] = useState(false);
   const snapshotRequest = useRef(0);
   const statusRevision = useRef(0);
+  const latestStatus = useRef(empty.status);
   const modelDownload = useRef<{ model: Model; started: boolean } | null>(null);
   const refresh = useCallback(async () => {
     if (!isDesktop) return;
@@ -135,6 +136,7 @@ export function DictationProvider({ children }: { children: ReactNode }) {
       throw cause;
     }
     if (request !== snapshotRequest.current) return;
+    if (revision === statusRevision.current) latestStatus.current = value.status;
     // Bridge replies may arrive out of order or after a newer status event.
     setSnapshot((old) =>
       request !== snapshotRequest.current
@@ -201,9 +203,28 @@ export function DictationProvider({ children }: { children: ReactNode }) {
     let active = true;
     const offStatus = EventsOn("dictation:status", (status: Status) => {
       if (!active) return;
+      const previous = latestStatus.current;
+      latestStatus.current = status;
       statusRevision.current++;
       setSnapshot((old) => ({ ...old, status }));
       const download = modelDownload.current;
+      // Notify on a completed operation, not on saved results loaded or restored
+      // after manually processing text. Status refreshes must not replay a toast.
+      if (status.phase === "done" && previous.phase === "transcribing") {
+        toastManager.add({
+          id: "transcription-complete",
+          type: "success",
+          title: "Transcription finished",
+          description: status.message,
+          timeout: 5000,
+        });
+      } else if (
+        status.phase === "error" &&
+        !download &&
+        (previous.phase !== "error" || previous.message !== status.message)
+      ) {
+        setError(status.message);
+      }
       if (!download) return;
       if (status.phase === "downloading") download.started = true;
       else if (download.started && (status.phase === "idle" || status.phase === "error")) {

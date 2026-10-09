@@ -12,7 +12,7 @@ import {
 } from "@/components/ui/select";
 import { backend, duration, isBusy, isDesktop } from "@/lib/backend";
 import { SetupPage } from "@/pages/setup-page";
-import { ArrowRight, Check, Copy, Download, Keyboard, Loader2, Mic, Square } from "lucide-react";
+import { ArrowRight, AudioLines, Download, Keyboard, Loader2, Mic, Square } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link } from "react-router";
 export function HomePage() {
@@ -81,38 +81,47 @@ export function HomePage() {
   if (isDesktop && !loading && !settings.setupComplete) return <SetupPage />;
   return (
     <div className="space-y-8">
-      <header className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-2xl font-semibold tracking-tight">Dictate</h1>
-        <AudioImportButton showDownloadProgress={false} />
-      </header>
-      <section className="rounded-2xl border bg-card px-6 py-6 text-center">
-        <div className="my-7 flex justify-center">
-          <div className="relative flex size-30 items-center justify-center">
+      <section
+        aria-label="Dictation recorder"
+        className={`overflow-hidden rounded-2xl border bg-card transition-colors ${recording ? "border-primary/40" : ""}`}
+      >
+        <header className="flex flex-wrap items-center justify-between gap-3 px-6 pt-5 sm:px-8">
+          <span className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
+            <AudioLines className="size-4 text-primary" aria-hidden="true" />
+            Voice to text
+          </span>
+          <AudioImportButton showDownloadProgress={false} />
+        </header>
+        <div className="flex flex-col items-center justify-center gap-7 px-6 py-10 text-center sm:flex-row sm:gap-10 sm:px-8 sm:py-12 sm:text-left">
+          <div className="relative flex size-40 shrink-0 items-center justify-center">
+            <span
+              aria-hidden="true"
+              className="absolute inset-0 rounded-full border border-primary/10 bg-primary/5"
+            />
+            <span
+              aria-hidden="true"
+              className="absolute inset-3 rounded-full border border-primary/15 transition-transform duration-150 motion-reduce:transition-none"
+              style={{ transform: recording ? `scale(${1 + level * 0.15})` : undefined }}
+            />
             {downloading && (
               <CircularProgress
                 aria-label="Download progress"
                 value={downloadPercent}
-                className="absolute inset-0"
+                className="absolute size-32"
               />
             )}
             <button
               disabled={!isDesktop || !ready || working || loading || pending || switchingModel}
               onClick={() => void record()}
               aria-label={recording ? "Stop recording" : "Start recording"}
-              className={`relative flex size-24 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg shadow-primary/15 transition-transform hover:scale-105 focus-visible:outline-4 focus-visible:outline-offset-4 focus-visible:outline-ring disabled:cursor-default ${downloading ? "disabled:opacity-100" : "disabled:opacity-50"}`}
+              className={`relative flex size-24 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg shadow-primary/15 transition-transform hover:scale-105 active:scale-95 focus-visible:outline-4 focus-visible:outline-offset-4 focus-visible:outline-ring motion-reduce:transition-none disabled:cursor-default disabled:hover:scale-100 ${downloading ? "disabled:opacity-100" : "disabled:opacity-50"}`}
             >
-              {recording && (
-                <span
-                  className="absolute inset-[-10px] rounded-full border-2 border-primary/25"
-                  style={{ transform: `scale(${1 + level * 0.15})` }}
-                />
-              )}
               {downloading ? (
                 <span className="font-mono text-xl font-medium tabular-nums">
                   {downloadPercent}%
                 </span>
               ) : working || pending ? (
-                <Loader2 className="size-8 animate-spin" />
+                <Loader2 className="size-8 animate-spin motion-reduce:animate-none" />
               ) : recording ? (
                 <Square className="size-7 fill-current" />
               ) : (
@@ -120,83 +129,112 @@ export function HomePage() {
               )}
             </button>
           </div>
-        </div>
-        <h2 className="text-lg font-medium">
-          {loading
-            ? "Connecting…"
-            : recording
-              ? "Recording"
-              : working
-                ? status.message
-                : ready
-                  ? "Ready to record"
-                  : "Install a speech model"}
-        </h2>
-        {downloading && (
-          <Button
-            variant="outline"
-            size="sm"
-            className="mt-4"
-            onClick={() => void run(backend.cancel, false)}
-          >
-            Cancel download
-          </Button>
-        )}
-        {recording ? (
-          <div className="mt-4 font-mono text-primary">
-            {duration(Math.max(0, now - status.startedAt))}
-          </div>
-        ) : !ready && !working && !loading ? (
-          <Link to="/models" className={buttonVariants({ className: "mt-5 rounded-lg" })}>
-            <Download className="size-4" />
-            Download model
-          </Link>
-        ) : (
-          ready &&
-          !working &&
-          !loading && (
-            <div className="mt-4 flex items-center justify-center gap-2 text-xs text-muted-foreground">
-              <Keyboard className="size-4" aria-hidden="true" />
-              {settings.interaction === "hold" ? "Hold" : "Press"}
-              {settings.shortcut.split("+").map((key) => (
-                <kbd
-                  key={key}
-                  className="rounded-md border bg-background px-2 py-1 font-mono text-[11px]"
-                >
-                  {key}
-                </kbd>
-              ))}
-            </div>
-          )
-        )}
-        {(ready || snapshot.models.length > 0) && (
-          <Select
-            items={modelOptions}
-            value={selectedModel}
-            disabled={!isDesktop || loading || pending || switchingModel || isBusy(status.phase)}
-            onValueChange={(value) => void selectModel(value)}
-          >
-            <SelectTrigger
-              aria-label="Speech model"
-              className="mx-auto mt-5 max-w-full min-w-48 bg-background"
-            >
-              <SelectValue placeholder="Select a model" />
-            </SelectTrigger>
-            <SelectContent alignItemWithTrigger={false}>
-              {modelOptions.map((model) => (
-                <SelectItem key={model.value} value={model.value}>
-                  {model.label}
-                  {model.download && (
-                    <Download
-                      role="img"
-                      aria-label="Download required"
-                      className="size-3.5 text-muted-foreground translate-y-0.5"
+          <div className="w-full min-w-0 space-y-3 sm:max-w-80">
+            <h2 className="text-2xl font-semibold tracking-tight sm:text-3xl">
+              {loading
+                ? "Connecting…"
+                : recording
+                  ? "Recording"
+                  : working
+                    ? status.message
+                    : ready
+                      ? "Ready to record"
+                      : "Install a speech model"}
+            </h2>
+            <p className="text-sm leading-6 text-muted-foreground">
+              {loading
+                ? "Getting your dictation tools ready."
+                : recording
+                  ? "Speak naturally. Click stop when you’re finished."
+                  : downloading
+                    ? "Your speech model is on its way."
+                    : working
+                      ? "You can start another dictation when this finishes."
+                      : ready
+                        ? "Click the microphone to start, or use your shortcut."
+                        : "Choose a model to turn your voice into text."}
+            </p>
+            {recording && (
+              <div className="flex items-center justify-center gap-4 pt-2 sm:justify-start">
+                <span className="font-mono text-sm tabular-nums text-primary">
+                  {duration(Math.max(0, now - status.startedAt))}
+                </span>
+                <div aria-hidden="true" className="flex h-8 items-center gap-1 text-primary">
+                  {Array.from({ length: 17 }, (_, index) => (
+                    <span
+                      key={index}
+                      className="w-1 rounded-full bg-current transition-[height] duration-150 motion-reduce:transition-none"
+                      style={{ height: `${4 + level * (12 + 16 * Math.sin(index * 1.7) ** 2)}px` }}
                     />
-                  )}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+                  ))}
+                </div>
+              </div>
+            )}
+            {downloading && (
+              <Button variant="outline" size="sm" onClick={() => void run(backend.cancel, false)}>
+                Cancel download
+              </Button>
+            )}
+            {!ready && !working && !loading && (
+              <Link to="/models" className={buttonVariants({ className: "rounded-lg" })}>
+                <Download className="size-4" />
+                Download model
+              </Link>
+            )}
+          </div>
+        </div>
+        {(ready || snapshot.models.length > 0) && (
+          <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-4 border-t bg-background/30 px-6 py-4 sm:px-8">
+            <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2">
+              <span className="text-xs text-muted-foreground">Speech model</span>
+              <Select
+                items={modelOptions}
+                value={selectedModel}
+                disabled={
+                  !isDesktop || loading || pending || switchingModel || isBusy(status.phase)
+                }
+                onValueChange={(value) => void selectModel(value)}
+              >
+                <SelectTrigger aria-label="Speech model" className="w-48 max-w-full bg-background">
+                  <SelectValue placeholder="Select a model" />
+                </SelectTrigger>
+                <SelectContent alignItemWithTrigger={false}>
+                  {modelOptions.map((model) => (
+                    <SelectItem key={model.value} value={model.value}>
+                      {model.label}
+                      {model.download && (
+                        <Download
+                          role="img"
+                          aria-label="Download required"
+                          className="size-3.5 text-muted-foreground translate-y-0.5"
+                        />
+                      )}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            {ready && !working && !loading && (
+              <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+                <Keyboard className="mr-1 size-4" aria-hidden="true" />
+                <span className="mr-1">{settings.interaction === "hold" ? "Hold" : "Press"}</span>
+                <span className="flex flex-wrap items-center gap-1.5">
+                  {settings.shortcut.split("+").map((key, index) => (
+                    <span key={key} className="flex items-center gap-1.5">
+                      {index > 0 && (
+                        <span aria-hidden="true" className="text-muted-foreground/60">
+                          +
+                        </span>
+                      )}
+                      <kbd className="rounded-md border bg-background px-1.5 py-1 font-mono text-[11px] text-foreground shadow-xs">
+                        {key}
+                      </kbd>
+                    </span>
+                  ))}
+                </span>
+              </div>
+            )}
+          </div>
         )}
       </section>
       {status.shortcutError && (
@@ -225,30 +263,6 @@ export function HomePage() {
         >
           {status.trayError}
         </p>
-      )}
-      {(status.phase === "done" || status.phase === "error") && (
-        <section aria-live="polite" className="rounded-2xl border bg-card p-5">
-          <p
-            className={`flex items-center gap-2 text-sm ${status.phase === "error" ? "text-destructive" : "text-primary"}`}
-          >
-            {status.phase === "done" && <Check className="size-4" />}
-            {status.message}
-          </p>
-          {status.transcript && (
-            <>
-              <p className="mt-4 whitespace-pre-wrap text-sm leading-7">{status.transcript}</p>
-              <Button
-                variant="outline"
-                size="sm"
-                className="mt-4"
-                onClick={() => void run(() => backend.copy(status.transcript), false)}
-              >
-                <Copy className="size-3" />
-                Copy
-              </Button>
-            </>
-          )}
-        </section>
       )}
       <section>
         <div className="mb-4 flex items-center justify-between">

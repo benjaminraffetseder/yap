@@ -30,6 +30,190 @@ async function homeModelScenario(page: Page, custom = false) {
   await page.goto("/");
 }
 
+test("transcription completion uses one toast across navigation without a result panel", async ({
+  page,
+}, testInfo) => {
+  await homeModelScenario(page);
+  await page.evaluate(() => window.dictationTest.status("transcribing"));
+  await page.getByRole("link", { name: "Settings", exact: true }).click();
+  await page.evaluate(() => {
+    const state = window.dictationTest;
+    state.snapshot.status = {
+      ...state.snapshot.status,
+      phase: "done",
+      message: "Copied to clipboard",
+      transcript: "Finished transcription.",
+      startedAt: 0,
+    };
+    state.callbacks["dictation:status"](structuredClone(state.snapshot.status));
+  });
+  const toast = page.locator('[data-slot="toast"]').filter({ hasText: "Transcription finished" });
+  await expect(toast).toBeVisible();
+  await expect(toast).toContainText("Copied to clipboard");
+  await page.getByRole("link", { name: "Dictate", exact: true }).click();
+  await expect(page.getByRole("region", { name: "Dictation recorder" })).toBeVisible();
+  await expect(page.locator("#main-content").getByText("Finished transcription.")).toHaveCount(0);
+  await expect(page.locator("#main-content").getByText("Copied to clipboard")).toHaveCount(0);
+  await page.screenshot({ path: testInfo.outputPath("transcription-finished-toast.png") });
+  await toast.getByRole("button", { name: "Dismiss notification" }).click();
+  await expect(toast).toHaveCount(0);
+  await page.evaluate(() => {
+    const state = window.dictationTest;
+    state.history();
+    state.callbacks["dictation:status"](structuredClone(state.snapshot.status));
+  });
+  await settle(page);
+  await page.getByRole("link", { name: "History", exact: true }).click();
+  await page.getByRole("link", { name: "Dictate", exact: true }).click();
+  await page.evaluate(() => {
+    const state = window.dictationTest;
+    const finished = structuredClone(state.snapshot.status);
+    state.status("text-processing");
+    state.snapshot.status = finished;
+    state.callbacks["dictation:status"](finished);
+  });
+  await settle(page);
+  await expect(toast).toHaveCount(0);
+  // A new transcription still notifies, including clipboard fallback messages.
+  await page.evaluate(() => {
+    const state = window.dictationTest;
+    state.status("transcribing");
+    state.snapshot.status.phase = "done";
+    state.snapshot.status.message = "Saved to history; clipboard failed: unavailable";
+    state.callbacks["dictation:status"](structuredClone(state.snapshot.status));
+  });
+  await expect(toast).toBeVisible();
+  await expect(toast).toContainText("clipboard failed: unavailable");
+  await expect(toast).toHaveCount(0, { timeout: 7000 });
+});
+
+test("transcription failures use an error toast and cancellations do not report completion", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    window.dictationTest.snapshot.status.phase = "done";
+    window.dictationTest.snapshot.status.message = "Copied to clipboard";
+    window.dictationTest.snapshot.status.transcript = "Old transcription.";
+  });
+  await homeModelScenario(page);
+  await expect(page.getByRole("region", { name: "Dictation recorder" })).toBeVisible();
+  await expect(page.locator('[data-slot="toast"]')).toHaveCount(0);
+  await expect(page.locator("#main-content").getByText("Old transcription.")).toHaveCount(0);
+  await page.evaluate(() => {
+    const state = window.dictationTest;
+    state.status("transcribing");
+    state.status("idle");
+  });
+  await settle(page);
+  await expect(page.locator('[data-slot="toast"]')).toHaveCount(0);
+  await page.evaluate(() => {
+    const state = window.dictationTest;
+    state.status("transcribing");
+    state.snapshot.status.phase = "error";
+    state.snapshot.status.message = "Transcription failed. Check the speech model.";
+    state.callbacks["dictation:status"](structuredClone(state.snapshot.status));
+  });
+  const toast = page.locator('[data-slot="toast"]').filter({ hasText: "Transcription failed." });
+  await expect(toast).toBeVisible();
+  await expect(
+    page.locator("#main-content").getByText("Transcription failed. Check the speech model."),
+  ).toHaveCount(0);
+  await expect(
+    page.locator('[data-slot="toast"]').filter({ hasText: "Transcription finished" }),
+  ).toHaveCount(0);
+  await page.keyboard.press("F6");
+  await toast.getByRole("button", { name: "Dismiss notification" }).click();
+  await page.evaluate(() =>
+    window.dictationTest.callbacks["dictation:status"](
+      structuredClone(window.dictationTest.snapshot.status),
+    ),
+  );
+  await settle(page);
+  await expect(toast).toHaveCount(0);
+});
+
+for (const theme of ["dark", "light"] as const) {
+  test(`dictation recorder ${theme} fits narrow windows and reflects recording activity`, async ({
+    page,
+  }, testInfo) => {
+    await page.addInitScript((theme) => {
+      localStorage.setItem("desktop-theme", theme);
+      localStorage.setItem("yap-sidebar-collapsed", "true");
+    }, theme);
+    await page.setViewportSize({ width: 1347, height: 800 });
+    await homeModelScenario(page);
+    const recorder = page.getByRole("region", { name: "Dictation recorder" });
+    const selector = recorder.getByRole("combobox", { name: "Speech model", exact: true });
+    await expect(recorder.getByRole("heading", { name: "Ready to record" })).toBeVisible();
+    await expect(selector).toContainText("Whisper Tiny");
+    await page.screenshot({ path: testInfo.outputPath("dictation-ready-desktop.png") });
+    await page.evaluate(() => {
+      Reflect.get(window, "go").main.App.StopRecording = async () => {
+        window.dictationTest.status("transcribing");
+      };
+    });
+    for (const width of [1347, 360]) {
+      await page.setViewportSize({ width, height: 800 });
+      await expect(recorder.getByRole("button", { name: "Start recording" })).toBeEnabled();
+      await expect(selector).toBeInViewport();
+      expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(width);
+      if (width === 360) {
+        await page.screenshot({ path: testInfo.outputPath("dictation-ready-narrow.png") });
+      }
+      await recorder.getByRole("button", { name: "Start recording" }).click();
+      await expect(recorder.getByRole("heading", { name: "Recording", exact: true })).toBeVisible();
+      await expect(selector).toBeDisabled();
+      const bars = recorder.locator('span[style*="height:"]');
+      await expect(bars).toHaveCount(17);
+      const quietHeight = await bars.nth(0).evaluate((bar) => bar.getBoundingClientRect().height);
+      await page.evaluate(() => window.dictationTest.callbacks["dictation:level"](0.8));
+      await expect
+        .poll(() => bars.nth(0).evaluate((bar) => bar.getBoundingClientRect().height))
+        .toBeGreaterThan(quietHeight);
+      const meterBounds = await bars.nth(0).evaluate((bar) => {
+        const meter = bar.parentElement!.getBoundingClientRect();
+        const content = bar.parentElement!.parentElement!.parentElement!.getBoundingClientRect();
+        return {
+          left: meter.left,
+          right: meter.right,
+          contentLeft: content.left,
+          contentRight: content.right,
+        };
+      });
+      expect(meterBounds.left).toBeGreaterThanOrEqual(meterBounds.contentLeft);
+      expect(meterBounds.right).toBeLessThanOrEqual(meterBounds.contentRight);
+      await page.screenshot({
+        path: testInfo.outputPath(`dictation-recording-${width}.png`),
+        animations: "disabled",
+      });
+      await recorder.getByRole("button", { name: "Stop recording" }).click();
+      await expect(recorder.getByRole("heading", { name: "Transcribing…" })).toBeVisible();
+      await expect(recorder.getByRole("button", { name: "Start recording" })).toBeDisabled();
+      await page.evaluate(() => {
+        window.dictationTest.status("idle");
+        window.dictationTest.callbacks["dictation:level"](0);
+      });
+    }
+    await simulateModelDownload(page);
+    await selector.click();
+    await page.getByRole("option", { name: /Whisper Small/ }).click();
+    await page.evaluate(() => {
+      const state = window.dictationTest;
+      state.snapshot.status.progress = 0.42;
+      state.snapshot.status.message = "Downloading Whisper Small…";
+      state.callbacks["dictation:status"](structuredClone(state.snapshot.status));
+    });
+    await expect(recorder.getByRole("progressbar", { name: "Download progress" })).toHaveAttribute(
+      "aria-valuenow",
+      "42",
+    );
+    await expect(recorder.getByRole("button", { name: "Cancel download" })).toBeInViewport();
+    await page.screenshot({ path: testInfo.outputPath("dictation-download-narrow.png") });
+    await recorder.getByRole("button", { name: "Cancel download" }).click();
+    await expect(selector).toBeEnabled();
+  });
+}
+
 test("home speech model selector shows the active model and saves installed selections", async ({
   page,
 }, testInfo) => {

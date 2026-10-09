@@ -162,11 +162,6 @@ export function HistoryPage() {
             </Button>
           </div>
         )}
-        {snapshot.status.phase === "error" && (
-          <p role="alert" className="text-sm text-destructive">
-            {snapshot.status.message}
-          </p>
-        )}
         <div className="relative">
           <Search className="absolute left-3 top-3 size-4 text-muted-foreground" />
           <Input
