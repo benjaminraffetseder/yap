@@ -3,15 +3,17 @@ package main
 import (
 	"context"
 	"errors"
+	"strings"
 	"time"
 
-	"github.com/google/uuid"
-	"github.com/wailsapp/wails/v2/pkg/runtime"
 	"yap/internal/audio"
 	"yap/internal/inference/speech"
 	textmodel "yap/internal/inference/text"
 	"yap/internal/models"
 	"yap/internal/vocabulary"
+
+	"github.com/google/uuid"
+	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 func (a *App) importAvailableLocked() error {
@@ -35,6 +37,18 @@ func (a *App) ImportAudio() error {
 	if err != nil || path == "" {
 		return err
 	}
+	return a.importSelectedAudio(path)
+}
+
+// ImportDroppedAudio shares the picker pipeline, including decoder setup.
+func (a *App) ImportDroppedAudio(paths []string) error {
+	if len(paths) != 1 || strings.TrimSpace(paths[0]) == "" {
+		return errors.New("drop one audio file at a time")
+	}
+	return a.importSelectedAudio(paths[0])
+}
+
+func (a *App) importSelectedAudio(path string) error {
 	return a.prepareAudioImport(path, audioImportSupport{
 		resolve: audio.ImportDecoder, supported: models.CanInstallFFmpeg(), install: models.InstallFFmpeg,
 		confirm: func() (bool, error) {

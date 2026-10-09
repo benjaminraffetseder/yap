@@ -94,6 +94,58 @@ func TestAudioImportUsesPipelineWithoutClipboardOrSourceChanges(t *testing.T) {
 	}
 }
 
+func TestDroppedAudioImportUsesSharedPipeline(t *testing.T) {
+	a := testApp(t)
+	a.engine = importedSpeech{}
+	a.copyText = func(string) error { t.Error("drop touched clipboard"); return nil }
+	source := importedWAV(t)
+	before, err := os.ReadFile(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := a.ImportDroppedAudio([]string{source}); err != nil {
+		t.Fatal(err)
+	}
+	a.wg.Wait()
+	entries, err := a.store.History()
+	if err != nil || len(entries) != 1 || entries[0].DurationMS != 1000 || entries[0].RawTranscript != "uh, hello postgres." {
+		t.Fatalf("dropped import pipeline: %+v %v", entries, err)
+	}
+	after, err := os.ReadFile(source)
+	if err != nil || string(before) != string(after) {
+		t.Fatalf("source changed: %v", err)
+	}
+}
+
+func TestDroppedAudioImportRejectsInvalidSelectionsAndUnavailableState(t *testing.T) {
+	a := testApp(t)
+	source := importedWAV(t)
+	unsupported := filepath.Join(t.TempDir(), "notes.txt")
+	if err := os.WriteFile(unsupported, []byte("not audio"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	for _, paths := range [][]string{nil, {}, {""}, {"  "}, {source, source}, {unsupported}, {filepath.Join(t.TempDir(), "missing.wav")}, {t.TempDir()}} {
+		if err := a.ImportDroppedAudio(paths); err == nil {
+			t.Fatalf("accepted invalid drop: %v", paths)
+		}
+	}
+	a.status.Phase = "recording"
+	if err := a.ImportDroppedAudio([]string{source}); err == nil {
+		t.Fatal("accepted drop while busy")
+	}
+	a.status.Phase = "idle"
+	a.settings.ModelPath = ""
+	if err := a.ImportDroppedAudio([]string{source}); err == nil {
+		t.Fatal("accepted drop without a speech model")
+	}
+	if entries, err := a.store.History(); err != nil || len(entries) != 0 {
+		t.Fatalf("rejected drop saved history: %+v %v", entries, err)
+	}
+	if files, err := os.ReadDir(filepath.Join(a.store.Dir, "recordings")); err != nil || len(files) != 0 {
+		t.Fatalf("rejected drop left audio: %v %v", files, err)
+	}
+}
+
 func TestAudioImportCancellationAndValidationLeaveNoPartialData(t *testing.T) {
 	a := testApp(t)
 	a.settings.SaveAudio = true

@@ -57,7 +57,8 @@ off by default. It doesn't need a text model or change older transcripts.
 
 ## Importing audio
 
-Choose **Import audio** in Dictate or History. Supported files are WAV, MP3, M4A,
+Choose **Import audio** in Dictate or History, or drag one audio file into the
+Yap window. Supported files are WAV, MP3, M4A,
 AAC, FLAC, OGG, Opus, AIFF, and WMA, from 0.3 seconds to 25 minutes long and up
 to 256 MiB. Longer files are rejected rather than cut short.
 

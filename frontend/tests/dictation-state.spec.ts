@@ -311,6 +311,7 @@ declare global {
       clipboard: string
       failClipboard: boolean
       audioImports: number
+      droppedAudio: string[][]
       cancelAudioDialog: boolean
       failAudioImport: boolean
       backupExports: boolean[]
@@ -343,7 +344,7 @@ test.beforeEach(async ({ page }) => {
       },
       outputs: [], failOutputs: false, processing: null, failProcessing: false, cancelledProcessing: [], refinements: [], textModels: [], modelListError: "", deferModelList: false, modelListRequests: [], pendingModelLists: [],
       backupExports: [], backupRestores: [], discardedBackups: [], backupPreview: null, failBackup: false, deferBackup: false, resolveBackup: null,
-      audioImports: 0, cancelAudioDialog: false, failAudioImport: false,
+      audioImports: 0, droppedAudio: [], cancelAudioDialog: false, failAudioImport: false,
       history() { state.callbacks["dictation:history"]() },
     }
     function beginOutput(id: string, sessionID: string, prompt: TextPrompt, input: string) {
@@ -368,6 +369,11 @@ test.beforeEach(async ({ page }) => {
     window.dictationTest = state
     Object.assign(window, {
       runtime: {
+        OnFileDrop(handler: (x: number, y: number, paths: string[]) => void, useDropTarget: boolean) {
+          if (useDropTarget) throw new Error("Expected window-wide audio drops")
+          state.callbacks["wails:file-drop"] = handler as (...args: unknown[]) => void
+        },
+        OnFileDropOff() { delete state.callbacks["wails:file-drop"] },
         ClipboardSetText: async (text: string) => { if (state.failClipboard) return false; state.clipboard = text; return true },
         EventsOnMultiple(topic: string, handler: (...args: unknown[]) => void) {
           state.callbacks[topic] = handler
@@ -375,6 +381,15 @@ test.beforeEach(async ({ page }) => {
         },
       },
       go: { main: { App: {
+        ImportDroppedAudio: async (paths: string[]) => {
+          if (paths.length !== 1) throw new Error("drop one audio file at a time")
+          if (!/\.(wav|mp3|m4a|aac|flac|ogg|opus|aif|aiff|wma)$/i.test(paths[0])) throw new Error("choose WAV, MP3, M4A, AAC, FLAC, OGG, Opus, AIFF, or WMA audio")
+          if (state.failAudioImport) throw new Error("choose audio between 0.3 seconds and 25 minutes")
+          state.droppedAudio.push(paths)
+          state.status("transcribing")
+          state.snapshot.status.message = "Transcribing imported audio…"
+          state.callbacks["dictation:status"](structuredClone(state.snapshot.status))
+        },
         ImportAudio: async () => {
           state.audioImports++
           if (state.failAudioImport) throw new Error("Choose an uncompressed mono or stereo WAV")
@@ -2222,6 +2237,105 @@ test("backup cancellation remains available after navigating back to Settings", 
   await page.evaluate(() => { window.dictationTest.resolveBackup!() })
   await expect.poll(() => page.evaluate(() => window.dictationTest.discardedBackups)).toEqual(["preview-token"])
   await expect(page.getByRole("dialog")).toHaveCount(0)
+})
+
+test("audio drag and drop shows feedback and imports across navigation", async ({ page }, testInfo) => {
+  await page.goto("/")
+  await expect(page.getByRole("button", { name: "Import audio", exact: true })).toBeEnabled()
+  await page.evaluate(() => {
+    const transfer = new DataTransfer()
+    transfer.items.add(new File(["audio"], "meeting.wav", { type: "audio/wav" }))
+    window.dispatchEvent(new DragEvent("dragenter", { dataTransfer: transfer, cancelable: true }))
+    document.getElementById("main-content")!.dispatchEvent(new DragEvent("dragenter", { dataTransfer: transfer, bubbles: true, cancelable: true }))
+    document.getElementById("main-content")!.dispatchEvent(new DragEvent("dragleave", { dataTransfer: transfer, bubbles: true }))
+  })
+  const overlay = page.getByRole("status").filter({ hasText: "Drop one audio file to import" })
+  await expect(overlay).toBeVisible()
+  await expect(overlay).toContainText("Up to 25 minutes · 256 MiB")
+  await page.screenshot({ path: testInfo.outputPath("audio-drop-overlay.png"), animations: "disabled" })
+  await page.evaluate(() => {
+    const transfer = new DataTransfer()
+    transfer.items.add(new File(["audio"], "meeting.wav"))
+    const event = new DragEvent("drop", { dataTransfer: transfer, cancelable: true })
+    window.dispatchEvent(event)
+    if (!event.defaultPrevented) throw new Error("File drop would navigate away")
+    window.dictationTest.callbacks["wails:file-drop"](100, 100, ["C:\\Audio\\meeting.wav"])
+  })
+  await expect(overlay).toBeHidden()
+  await expect.poll(() => page.evaluate(() => window.dictationTest.droppedAudio)).toEqual([["C:\\Audio\\meeting.wav"]])
+  await expect(page.getByRole("button", { name: "Import audio", exact: true })).toBeDisabled()
+  await page.getByRole("link", { name: "History", exact: true }).click()
+  await page.getByRole("button", { name: "Cancel transcription", exact: true }).click()
+  await expect(page.getByRole("button", { name: "Import audio", exact: true })).toBeEnabled()
+  await page.getByRole("link", { name: "Settings", exact: true }).click()
+  await page.evaluate(() => window.dictationTest.callbacks["wails:file-drop"](100, 100, ["C:\\Audio\\interview.mp3"]))
+  await expect.poll(() => page.evaluate(() => window.dictationTest.droppedAudio.length)).toBe(2)
+  expect(await page.evaluate(() => window.dictationTest.audioImports)).toBe(0)
+  await page.getByRole("link", { name: "History", exact: true }).click()
+  await expect(page.getByRole("status").filter({ hasText: "Transcribing imported audio…" })).toBeVisible()
+})
+
+test("audio drag and drop rejects invalid files and recovers for retry", async ({ page }) => {
+  await page.goto("/#/history")
+  await expect(page.getByRole("button", { name: "Import audio", exact: true })).toBeEnabled()
+  await page.evaluate(() => window.dictationTest.callbacks["wails:file-drop"](0, 0, ["C:\\one.wav", "C:\\two.mp3"]))
+  await expect(page.getByRole("alert")).toContainText("drop one audio file at a time")
+  await page.evaluate(() => window.dictationTest.callbacks["wails:file-drop"](0, 0, ["C:\\notes.txt"]))
+  await expect(page.getByRole("alert")).toContainText("choose WAV, MP3")
+  await page.evaluate(() => {
+    window.dictationTest.failAudioImport = true
+    window.dictationTest.callbacks["wails:file-drop"](0, 0, ["C:\\long.wav"])
+  })
+  await expect(page.getByRole("alert")).toContainText("25 minutes")
+  expect(await page.evaluate(() => window.dictationTest.droppedAudio.length)).toBe(0)
+  await page.evaluate(() => {
+    window.dictationTest.failAudioImport = false
+    window.dictationTest.callbacks["wails:file-drop"](0, 0, ["C:\\retry.flac"])
+  })
+  await expect.poll(() => page.evaluate(() => window.dictationTest.droppedAudio)).toEqual([["C:\\retry.flac"]])
+  await expect(page.getByRole("alert")).toHaveCount(0)
+})
+
+test("audio drag and drop respects busy and unavailable models and clears drag feedback", async ({ page }) => {
+  await page.goto("/#/history")
+  await expect(page.getByRole("button", { name: "Import audio", exact: true })).toBeEnabled()
+  await page.evaluate(() => {
+    const transfer = new DataTransfer()
+    transfer.setData("text/plain", "ordinary text")
+    window.dispatchEvent(new DragEvent("dragenter", { dataTransfer: transfer }))
+  })
+  await expect(page.getByText("Drop one audio file to import", { exact: true })).toBeHidden()
+  await page.evaluate(() => window.dictationTest.status("recording"))
+  await page.evaluate(() => {
+    const transfer = new DataTransfer()
+    transfer.items.add(new File(["audio"], "meeting.wav"))
+    window.dispatchEvent(new DragEvent("dragenter", { dataTransfer: transfer }))
+  })
+  const overlay = page.getByRole("status").filter({ hasText: "Finish the current operation before importing audio" })
+  await expect(overlay).toBeVisible()
+  await page.evaluate(() => window.dispatchEvent(new Event("blur")))
+  await expect(overlay).toBeHidden()
+  await page.evaluate(() => window.dictationTest.callbacks["wails:file-drop"](0, 0, ["C:\\meeting.wav"]))
+  await expect(page.getByRole("alert")).toContainText("Finish the current operation")
+  await page.evaluate(() => {
+    window.dictationTest.status("idle")
+    window.dictationTest.snapshot.ready = false
+    window.dictationTest.history()
+  })
+  await expect(page.getByRole("button", { name: "Import audio", exact: true })).toBeDisabled()
+  await page.evaluate(() => window.dictationTest.callbacks["wails:file-drop"](0, 0, ["C:\\meeting.wav"]))
+  await expect(page.getByRole("alert")).toContainText("Choose a speech model")
+  expect(await page.evaluate(() => window.dictationTest.droppedAudio.length)).toBe(0)
+})
+
+test("audio drag and drop reports an outdated backend", async ({ page }) => {
+  await page.goto("/#/history")
+  await expect(page.getByRole("button", { name: "Import audio", exact: true })).toBeEnabled()
+  await page.evaluate(() => {
+    Reflect.deleteProperty(Reflect.get(window, "go").main.App, "ImportDroppedAudio")
+    window.dictationTest.callbacks["wails:file-drop"](0, 0, ["C:\\meeting.wav"])
+  })
+  await expect(page.getByRole("alert")).toContainText("Audio import needs the current backend")
 })
 
 test("audio import is cancellable across navigation and results open from History", async ({ page }) => {
