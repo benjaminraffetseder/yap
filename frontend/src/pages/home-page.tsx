@@ -1,5 +1,6 @@
 import { AudioImportButton } from "@/components/audio-import-button";
 import { useDictation } from "@/components/dictation-provider";
+import { DictationRow } from "@/components/dictation-row";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { CircularProgress } from "@/components/ui/progress";
 import {
@@ -261,18 +262,14 @@ export function HomePage() {
           </Link>
         </div>
         {history.length ? (
-          <div className="divide-y rounded-2xl border bg-card">
+          <div className="overflow-hidden rounded-xl border bg-card/60">
             {history.slice(0, 3).map((entry) => (
-              <Link
+              <DictationRow
+                entry={entry}
                 to={`/history/${encodeURIComponent(entry.id)}`}
                 key={entry.id}
-                className="block px-5 py-4 hover:bg-accent/50"
-              >
-                <p className="truncate text-sm">{entry.finalTranscript ?? entry.rawTranscript}</p>
-                <p className="mt-2 text-xs text-muted-foreground">
-                  {new Date(entry.createdAt).toLocaleString()} · {duration(entry.durationMs)}
-                </p>
-              </Link>
+                showDate
+              />
             ))}
           </div>
         ) : (

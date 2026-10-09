@@ -2200,7 +2200,31 @@ test("History opens a dictation page with comparison panels that stack on narrow
     ];
   });
   await page.setViewportSize({ width: 1280, height: 900 });
-  await page.goto("/#/history");
+  await page.goto("/");
+  const recent = page.locator("section").filter({
+    has: page.getByRole("heading", { name: "Recent dictations", exact: true }),
+  });
+  await expect(recent.getByRole("article")).toHaveCount(3);
+  await expect(recent.getByRole("article").first()).toContainText("Result");
+  await expect(recent.getByRole("article").first()).toContainText("Whisper Small");
+  await expect(recent.getByRole("article").nth(1)).toContainText("Transcription");
+  await expect(recent.getByRole("checkbox")).toHaveCount(0);
+  for (const width of [1280, 600]) {
+    await page.setViewportSize({ width, height: 900 });
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+    ).toBe(true);
+    await recent.screenshot({
+      path: testInfo.outputPath(`recent-dictations-${width}.png`),
+      animations: "disabled",
+    });
+  }
+  await recent.getByRole("link", { name: /A Paris-based AI lab/ }).click();
+  await expect(page).toHaveURL(/#\/history\/summary$/);
+  await page.goto("/");
+  await page.getByRole("link", { name: "View all", exact: true }).click();
+  await expect(page).toHaveURL(/#\/history$/);
+  await page.setViewportSize({ width: 1280, height: 900 });
   const cards = page.getByRole("article");
   await expect(cards.first()).toContainText("Result");
   await expect(cards.nth(1)).toContainText("Transcription");

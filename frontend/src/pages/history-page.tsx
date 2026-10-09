@@ -1,5 +1,6 @@
 import { AudioImportButton } from "@/components/audio-import-button";
 import { useDictation } from "@/components/dictation-provider";
+import { DictationRow } from "@/components/dictation-row";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -11,25 +12,10 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import {
-  backend,
-  duration,
-  isDesktop,
-  message,
-  type HistoryPageResult,
-  type Session,
-} from "@/lib/backend";
-import {
-  AudioLines,
-  ChevronRight,
-  Download,
-  FileText,
-  History,
-  Search,
-  Trash2,
-} from "lucide-react";
+import { backend, isDesktop, message, type HistoryPageResult, type Session } from "@/lib/backend";
+import { Download, History, Search, Trash2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { Link, useSearchParams } from "react-router";
+import { useSearchParams } from "react-router";
 
 function historyGroups(entries: Session[]) {
   const today = new Date();
@@ -55,13 +41,6 @@ function historyGroups(entries: Session[]) {
     groups.get(key)!.entries.push({ entry, index });
   });
   return [...groups.entries()];
-}
-
-function speechModelLabel(model: string) {
-  const match = /^(?:ggml-)?(tiny|base|small)(\.en)?(?:\.bin)?$/i.exec(model);
-  return match
-    ? `Whisper ${match[1][0].toUpperCase()}${match[1].slice(1).toLowerCase()}${match[2] ? " · English" : ""}`
-    : model;
 }
 
 export function HistoryPage() {
@@ -273,68 +252,22 @@ export function HistoryPage() {
             <section key={date} aria-label={group.label} className="space-y-2.5">
               <h2 className="px-1 text-xs font-medium text-muted-foreground">{group.label}</h2>
               <div className="overflow-hidden rounded-xl border bg-card/60">
-                {group.entries.map(({ entry, index }) => {
-                  const text = entry.finalTranscript ?? entry.rawTranscript;
-                  const changed = text !== entry.rawTranscript;
-                  const Icon = changed ? FileText : AudioLines;
-                  const checked = selected.includes(entry.id);
-                  return (
-                    <article
-                      key={entry.id}
-                      data-selected={checked || undefined}
-                      className="group flex items-stretch border-b last:border-b-0 transition-colors hover:bg-accent/35 data-[selected=true]:bg-primary/8"
-                    >
-                      <label className="flex w-11 shrink-0 cursor-pointer items-start justify-center pt-5 sm:w-14">
-                        <Checkbox
-                          aria-label={`Select dictation ${page * pageSize + index + 1}`}
-                          checked={checked}
-                          disabled={unavailable}
-                          onCheckedChange={(checked) =>
-                            setSelected((old) =>
-                              checked ? [...old, entry.id] : old.filter((id) => id !== entry.id),
-                            )
-                          }
-                        />
-                      </label>
-                      <Link
-                        to={`/history/${encodeURIComponent(entry.id)}${detailSearch}`}
-                        aria-disabled={unavailable}
-                        onClick={(event) => {
-                          if (unavailable) event.preventDefault();
-                        }}
-                        className="flex min-w-0 flex-1 items-center gap-3 py-4 pr-4 text-left outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:pr-5"
-                      >
-                        <div className="min-w-0 flex-1 space-y-2.5">
-                          <p className="line-clamp-2 break-words text-sm font-medium leading-6">
-                            {text}
-                          </p>
-                          <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-[11px] text-muted-foreground">
-                            <span
-                              className={`inline-flex items-center gap-1.5 rounded-md px-1.5 py-0.5 ${changed ? "bg-primary/10 text-primary" : "bg-muted/60"}`}
-                            >
-                              <Icon aria-hidden="true" className="size-3.5" />
-                              {changed ? "Result" : "Transcription"}
-                            </span>
-                            <time dateTime={entry.createdAt} className="tabular-nums">
-                              {new Date(entry.createdAt).toLocaleTimeString(undefined, {
-                                hour: "numeric",
-                                minute: "2-digit",
-                              })}
-                            </time>
-                            <span className="tabular-nums">{duration(entry.durationMs)}</span>
-                            <span className="min-w-0 truncate" title={entry.speechModel}>
-                              {speechModelLabel(entry.speechModel)}
-                            </span>
-                          </div>
-                        </div>
-                        <ChevronRight
-                          aria-hidden="true"
-                          className="size-4 shrink-0 text-muted-foreground/60 transition-colors group-hover:text-foreground"
-                        />
-                      </Link>
-                    </article>
-                  );
-                })}
+                {group.entries.map(({ entry, index }) => (
+                  <DictationRow
+                    key={entry.id}
+                    entry={entry}
+                    to={`/history/${encodeURIComponent(entry.id)}${detailSearch}`}
+                    disabled={unavailable}
+                    selection={{
+                      label: `Select dictation ${page * pageSize + index + 1}`,
+                      checked: selected.includes(entry.id),
+                      onCheckedChange: (checked) =>
+                        setSelected((old) =>
+                          checked ? [...old, entry.id] : old.filter((id) => id !== entry.id),
+                        ),
+                    }}
+                  />
+                ))}
               </div>
             </section>
           ))}
