@@ -3,12 +3,7 @@ import { useDictation } from "@/components/dictation-provider";
 import { RecordingStatus } from "@/components/recording-status";
 import { RecoveryActions } from "@/components/recovery-actions";
 import { Button } from "@/components/ui/button";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { backendVersionMismatchMessage, isDesktop } from "@/lib/backend";
 import { cn } from "@/lib/utils";
 import {
@@ -48,8 +43,7 @@ export function AppLayout() {
   const { error, clearError, loading, run, refresh } = useDictation();
   const [collapsed, setCollapsed] = useState(readCollapsed);
   const toggleLabel = collapsed ? "Expand sidebar" : "Collapse sidebar";
-  const connectionFailure =
-    !!error && (loading || error === backendVersionMismatchMessage);
+  const connectionFailure = !!error && (loading || error === backendVersionMismatchMessage);
 
   function toggleSidebar() {
     const next = !collapsed;
@@ -77,28 +71,15 @@ export function AppLayout() {
         >
           <div className="mb-6 flex h-11 items-center justify-between">
             {!collapsed && (
-              <NavLink
-                to="/"
-                className="flex items-center gap-2.5 pl-3"
-                aria-label="Yap home"
-              >
-                <AudioLines
-                  className="size-5 text-primary"
-                  aria-hidden="true"
-                />
-                <span className="text-xl font-semibold tracking-tight">
-                  yap.
-                </span>
+              <NavLink to="/" className="flex items-center gap-2.5 pl-3" aria-label="Yap home">
+                <AudioLines className="size-5 text-primary" aria-hidden="true" />
+                <span className="text-xl font-semibold tracking-tight">yap.</span>
               </NavLink>
             )}
             <Tooltip>
               <TooltipTrigger
                 render={
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="size-11 shrink-0 rounded-lg"
-                  />
+                  <Button variant="ghost" size="icon" className="size-11 shrink-0 rounded-lg" />
                 }
                 onClick={toggleSidebar}
                 aria-label={toggleLabel}
@@ -114,10 +95,7 @@ export function AppLayout() {
               <TooltipContent side="right">{toggleLabel}</TooltipContent>
             </Tooltip>
           </div>
-          <nav
-            aria-label="Main navigation"
-            className="flex flex-1 flex-col gap-1"
-          >
+          <nav aria-label="Main navigation" className="flex flex-1 flex-col gap-1">
             {navigation.map(({ to, label, icon: Icon }) => (
               <Tooltip key={`${to}-${collapsed}`} disabled={!collapsed}>
                 <TooltipTrigger
@@ -128,9 +106,7 @@ export function AppLayout() {
                   )}
                 >
                   <Icon className="size-5 shrink-0" aria-hidden="true" />
-                  <span className={collapsed ? "sr-only" : "truncate"}>
-                    {label}
-                  </span>
+                  <span className={collapsed ? "sr-only" : "truncate"}>{label}</span>
                 </TooltipTrigger>
                 <TooltipContent side="right">{label}</TooltipContent>
               </Tooltip>
@@ -150,9 +126,7 @@ export function AppLayout() {
                 className="mb-6 space-y-4 rounded-lg border border-destructive/30 bg-card p-4"
               >
                 <div className="space-y-2">
-                  <h2 className="text-sm font-semibold">
-                    Couldn’t connect to Yap
-                  </h2>
+                  <h2 className="text-sm font-semibold">Couldn’t connect to Yap</h2>
                   <p role="alert" className="text-sm text-destructive">
                     {error}
                   </p>
@@ -188,11 +162,7 @@ export function AppLayout() {
                 className="mt-6 flex items-center gap-3 text-sm text-muted-foreground"
               >
                 <span>Loading app…</span>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => void run(refresh, false)}
-                >
+                <Button variant="outline" size="sm" onClick={() => void run(refresh, false)}>
                   Retry loading
                 </Button>
               </div>

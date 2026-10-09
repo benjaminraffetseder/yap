@@ -11,16 +11,7 @@ import {
 } from "@/components/ui/select";
 import { backend, duration, isBusy, isDesktop } from "@/lib/backend";
 import { SetupPage } from "@/pages/setup-page";
-import {
-  ArrowRight,
-  Check,
-  Copy,
-  Download,
-  Keyboard,
-  Loader2,
-  Mic,
-  Square,
-} from "lucide-react";
+import { ArrowRight, Check, Copy, Download, Keyboard, Loader2, Mic, Square } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link } from "react-router";
 export function HomePage() {
@@ -73,16 +64,12 @@ export function HomePage() {
       value === selectedModel
     )
       return;
-    const model = snapshot.models.find(
-      (model) => `model:${model.id}` === value,
-    );
+    const model = snapshot.models.find((model) => `model:${model.id}` === value);
     if (!model) return;
     setSwitchingModel(true);
     try {
       if (model.installed) {
-        await run(() =>
-          backend.settings({ ...settings, modelPath: model.path }),
-        );
+        await run(() => backend.settings({ ...settings, modelPath: model.path }));
       } else {
         await installModel(model);
       }
@@ -107,35 +94,30 @@ export function HomePage() {
                 className="absolute inset-0"
               />
             )}
-          <button
-            disabled={
-              !isDesktop ||
-              !ready ||
-              working ||
-              loading ||
-              pending ||
-              switchingModel
-            }
-            onClick={() => void record()}
-            aria-label={recording ? "Stop recording" : "Start recording"}
-            className={`relative flex size-24 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg shadow-primary/15 transition-transform hover:scale-105 focus-visible:outline-4 focus-visible:outline-offset-4 focus-visible:outline-ring disabled:cursor-default ${downloading ? "disabled:opacity-100" : "disabled:opacity-50"}`}
-          >
-            {recording && (
-              <span
-                className="absolute inset-[-10px] rounded-full border-2 border-primary/25"
-                style={{ transform: `scale(${1 + level * 0.15})` }}
-              />
-            )}
-            {downloading ? (
-              <span className="font-mono text-xl font-medium tabular-nums">{downloadPercent}%</span>
-            ) : working || pending ? (
-              <Loader2 className="size-8 animate-spin" />
-            ) : recording ? (
-              <Square className="size-7 fill-current" />
-            ) : (
-              <Mic className="size-9" />
-            )}
-          </button>
+            <button
+              disabled={!isDesktop || !ready || working || loading || pending || switchingModel}
+              onClick={() => void record()}
+              aria-label={recording ? "Stop recording" : "Start recording"}
+              className={`relative flex size-24 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg shadow-primary/15 transition-transform hover:scale-105 focus-visible:outline-4 focus-visible:outline-offset-4 focus-visible:outline-ring disabled:cursor-default ${downloading ? "disabled:opacity-100" : "disabled:opacity-50"}`}
+            >
+              {recording && (
+                <span
+                  className="absolute inset-[-10px] rounded-full border-2 border-primary/25"
+                  style={{ transform: `scale(${1 + level * 0.15})` }}
+                />
+              )}
+              {downloading ? (
+                <span className="font-mono text-xl font-medium tabular-nums">
+                  {downloadPercent}%
+                </span>
+              ) : working || pending ? (
+                <Loader2 className="size-8 animate-spin" />
+              ) : recording ? (
+                <Square className="size-7 fill-current" />
+              ) : (
+                <Mic className="size-9" />
+              )}
+            </button>
           </div>
         </div>
         <h2 className="text-lg font-medium">
@@ -164,10 +146,7 @@ export function HomePage() {
             {duration(Math.max(0, now - status.startedAt))}
           </div>
         ) : !ready && !working && !loading ? (
-          <Link
-            to="/models"
-            className={buttonVariants({ className: "mt-5 rounded-lg" })}
-          >
+          <Link to="/models" className={buttonVariants({ className: "mt-5 rounded-lg" })}>
             <Download className="size-4" />
             Download model
           </Link>
@@ -193,13 +172,7 @@ export function HomePage() {
           <Select
             items={modelOptions}
             value={selectedModel}
-            disabled={
-              !isDesktop ||
-              loading ||
-              pending ||
-              switchingModel ||
-              isBusy(status.phase)
-            }
+            disabled={!isDesktop || loading || pending || switchingModel || isBusy(status.phase)}
             onValueChange={(value) => void selectModel(value)}
           >
             <SelectTrigger
@@ -262,16 +235,12 @@ export function HomePage() {
           </p>
           {status.transcript && (
             <>
-              <p className="mt-4 whitespace-pre-wrap text-sm leading-7">
-                {status.transcript}
-              </p>
+              <p className="mt-4 whitespace-pre-wrap text-sm leading-7">{status.transcript}</p>
               <Button
                 variant="outline"
                 size="sm"
                 className="mt-4"
-                onClick={() =>
-                  void run(() => backend.copy(status.transcript), false)
-                }
+                onClick={() => void run(() => backend.copy(status.transcript), false)}
               >
                 <Copy className="size-3" />
                 Copy
@@ -299,12 +268,9 @@ export function HomePage() {
                 key={entry.id}
                 className="block px-5 py-4 hover:bg-accent/50"
               >
-                <p className="truncate text-sm">
-                  {entry.finalTranscript ?? entry.rawTranscript}
-                </p>
+                <p className="truncate text-sm">{entry.finalTranscript ?? entry.rawTranscript}</p>
                 <p className="mt-2 text-xs text-muted-foreground">
-                  {new Date(entry.createdAt).toLocaleString()} ·{" "}
-                  {duration(entry.durationMs)}
+                  {new Date(entry.createdAt).toLocaleString()} · {duration(entry.durationMs)}
                 </p>
               </Link>
             ))}

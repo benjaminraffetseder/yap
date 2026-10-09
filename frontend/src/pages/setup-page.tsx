@@ -53,8 +53,7 @@ export function SetupPage() {
     await run(work);
     setPending(false);
   }
-  const micPassed =
-    snapshot.microphoneTested && mic === snapshot.settings.microphoneId;
+  const micPassed = snapshot.microphoneTested && mic === snapshot.settings.microphoneId;
   const shortcutPassed =
     snapshot.shortcutTested &&
     shortcut === snapshot.settings.shortcut &&
@@ -69,11 +68,7 @@ export function SetupPage() {
           <li
             key={title}
             aria-current={index === step ? "step" : undefined}
-            className={
-              index === step
-                ? "font-semibold text-primary"
-                : "text-muted-foreground"
-            }
+            className={index === step ? "font-semibold text-primary" : "text-muted-foreground"}
           >
             {index + 1}. {title}
           </li>
@@ -83,10 +78,7 @@ export function SetupPage() {
         <>
           <ModelsPage embedded />
           {snapshot.ready && (
-            <p
-              role="status"
-              className="flex items-center gap-2 text-sm text-primary"
-            >
+            <p role="status" className="flex items-center gap-2 text-sm text-primary">
               <Check className="size-4" />
               Speech model ready
             </p>
@@ -107,10 +99,7 @@ export function SetupPage() {
                   if (value !== null) setMic(value);
                 }}
               >
-                <SelectTrigger
-                  id="setup-microphone"
-                  className="data-[size=default]:h-9 w-full"
-                >
+                <SelectTrigger id="setup-microphone" className="data-[size=default]:h-9 w-full">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent alignItemWithTrigger={false}>
@@ -133,8 +122,7 @@ export function SetupPage() {
             </div>
           </div>
           <p className="text-sm text-muted-foreground">
-            Speak for a few seconds. Test audio is deleted and never
-            transcribed.
+            Speak for a few seconds. Test audio is deleted and never transcribed.
           </p>
           <p className="text-xs text-muted-foreground">
             To test transcription too, open{" "}
@@ -201,13 +189,9 @@ export function SetupPage() {
               />
               <Button
                 variant="outline"
-                disabled={
-                  busy || pending || shortcut === snapshot.settings.shortcut
-                }
+                disabled={busy || pending || shortcut === snapshot.settings.shortcut}
                 onClick={() =>
-                  void action(() =>
-                    backend.settings({ ...snapshot.settings, shortcut }),
-                  )
+                  void action(() => backend.settings({ ...snapshot.settings, shortcut }))
                 }
               >
                 Apply shortcut
@@ -215,12 +199,8 @@ export function SetupPage() {
             </div>
           </div>
           <p className="text-sm text-muted-foreground">
-            Press{" "}
-            <kbd className="rounded border px-2 py-1">
-              {snapshot.settings.shortcut}
-            </kbd>{" "}
-            once. During setup, the shortcut confirms it works without starting
-            a recording.
+            Press <kbd className="rounded border px-2 py-1">{snapshot.settings.shortcut}</kbd> once.
+            During setup, the shortcut confirms it works without starting a recording.
           </p>
           <p className="text-xs text-muted-foreground">
             Ctrl, Alt, Shift + Space, A–Z, or F1–F12. Change hold/toggle mode in{" "}
@@ -239,19 +219,13 @@ export function SetupPage() {
       )}
       <div className="flex flex-wrap items-center gap-3">
         {step > 0 && (
-          <Button
-            variant="outline"
-            disabled={busy || pending}
-            onClick={() => setStep(step - 1)}
-          >
+          <Button variant="outline" disabled={busy || pending} onClick={() => setStep(step - 1)}>
             Back
           </Button>
         )}
         {step < 2 ? (
           <Button
-            disabled={
-              busy || pending || (step === 0 ? !snapshot.ready : !micPassed)
-            }
+            disabled={busy || pending || (step === 0 ? !snapshot.ready : !micPassed)}
             onClick={() => setStep(step + 1)}
           >
             Next

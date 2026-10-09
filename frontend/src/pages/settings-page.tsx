@@ -2,11 +2,7 @@ import { AudioSupportPanel } from "@/components/audio-support-panel";
 import { BackupPanel } from "@/components/backup-panel";
 import { DiagnosticsPanel } from "@/components/diagnostics-panel";
 import { useDictation } from "@/components/dictation-provider";
-import {
-  SettingRow,
-  SettingsSection,
-  ToggleSetting,
-} from "@/components/settings-section";
+import { SettingRow, SettingsSection, ToggleSetting } from "@/components/settings-section";
 import { ShortcutInput } from "@/components/shortcut-input";
 import { ShortcutStatus } from "@/components/shortcut-status";
 import { useTheme } from "@/components/theme-provider";
@@ -29,13 +25,7 @@ import {
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toastManager } from "@/components/ui/toast";
-import {
-  backend,
-  isBusy,
-  isDesktop,
-  message,
-  type Microphone,
-} from "@/lib/backend";
+import { backend, isBusy, isDesktop, message, type Microphone } from "@/lib/backend";
 import { FolderOpen, Monitor, Moon, RefreshCw, Save, Sun } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
@@ -77,9 +67,7 @@ const retentionOptions = [
 export function SettingsPage() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  const section = sections.some(
-    (item) => item.value === searchParams.get("section"),
-  )
+  const section = sections.some((item) => item.value === searchParams.get("section"))
     ? searchParams.get("section")!
     : "dictation";
   const { theme, setTheme } = useTheme();
@@ -104,8 +92,7 @@ export function SettingsPage() {
   const microphoneOptions = [
     { value: "", label: "System default" },
     ...microphones.map((mic) => ({ value: mic.id, label: mic.name })),
-    ...(settings.microphoneId &&
-    !microphones.some((mic) => mic.id === settings.microphoneId)
+    ...(settings.microphoneId && !microphones.some((mic) => mic.id === settings.microphoneId)
       ? [
           {
             value: settings.microphoneId,
@@ -128,8 +115,7 @@ export function SettingsPage() {
         setMicrophonesLoaded(true);
       }
     } catch (cause) {
-      if (request === microphoneRequest.current)
-        setMicrophoneError(message(cause));
+      if (request === microphoneRequest.current) setMicrophoneError(message(cause));
     } finally {
       if (request === microphoneRequest.current) setLoadingMicrophones(false);
     }
@@ -150,9 +136,7 @@ export function SettingsPage() {
     savedSettings.current = snapshot.settings;
     // Adopt backend changes only while the draft still matches its saved baseline.
     setSettings((draft) =>
-      JSON.stringify(draft) === JSON.stringify(previous)
-        ? snapshot.settings
-        : draft,
+      JSON.stringify(draft) === JSON.stringify(previous) ? snapshot.settings : draft,
     );
   }, [snapshot.settings]);
   async function browse(kind: "model" | "runtime") {
@@ -225,11 +209,7 @@ export function SettingsPage() {
             className="max-w-full group-data-[orientation=horizontal]/tabs:h-10"
           >
             {sections.map((item) => (
-              <TabsTrigger
-                key={item.value}
-                value={item.value}
-                className="px-2.5"
-              >
+              <TabsTrigger key={item.value} value={item.value} className="px-2.5">
                 {item.label}
               </TabsTrigger>
             ))}
@@ -252,10 +232,7 @@ export function SettingsPage() {
             <Button
               disabled={
                 controlsDisabled ||
-                (!dirty &&
-                  !(
-                    settings.launchAtLogin && snapshot.launchAtLoginAvailable
-                  )) ||
+                (!dirty && !(settings.launchAtLogin && snapshot.launchAtLoginAvailable)) ||
                 (selectedMicrophoneMissing &&
                   settings.microphoneId !== snapshot.settings.microphoneId)
               }
@@ -267,10 +244,7 @@ export function SettingsPage() {
           </div>
         </header>
         <TabsContent value="dictation" keepMounted>
-          <fieldset
-            disabled={controlsDisabled}
-            className="space-y-5 disabled:opacity-60"
-          >
+          <fieldset disabled={controlsDisabled} className="space-y-5 disabled:opacity-60">
             <SettingsSection title="Recording">
               <SettingRow title="Microphone" htmlFor="microphone">
                 <div className="flex gap-2">
@@ -279,8 +253,7 @@ export function SettingsPage() {
                     value={settings.microphoneId}
                     disabled={controlsDisabled}
                     onValueChange={(value) => {
-                      if (value !== null)
-                        setSettings((old) => ({ ...old, microphoneId: value }));
+                      if (value !== null) setSettings((old) => ({ ...old, microphoneId: value }));
                     }}
                   >
                     <SelectTrigger
@@ -313,11 +286,7 @@ export function SettingsPage() {
                 </div>
                 <p
                   id="microphone-status"
-                  role={
-                    microphoneError || selectedMicrophoneMissing
-                      ? "status"
-                      : undefined
-                  }
+                  role={microphoneError || selectedMicrophoneMissing ? "status" : undefined}
                   className={`mt-2 text-xs ${microphoneError || selectedMicrophoneMissing ? "text-destructive" : "text-muted-foreground"}`}
                 >
                   {microphoneError ||
@@ -336,14 +305,10 @@ export function SettingsPage() {
                   value={settings.language}
                   disabled={controlsDisabled}
                   onValueChange={(value) => {
-                    if (value !== null)
-                      setSettings((old) => ({ ...old, language: value }));
+                    if (value !== null) setSettings((old) => ({ ...old, language: value }));
                   }}
                 >
-                  <SelectTrigger
-                    id="language"
-                    className="h-9 w-full min-w-0 bg-background"
-                  >
+                  <SelectTrigger id="language" className="h-9 w-full min-w-0 bg-background">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent alignItemWithTrigger={false} align="start">
@@ -364,9 +329,7 @@ export function SettingsPage() {
                   id="shortcut"
                   value={settings.shortcut}
                   disabled={controlsDisabled}
-                  onChange={(shortcut) =>
-                    setSettings((old) => ({ ...old, shortcut }))
-                  }
+                  onChange={(shortcut) => setSettings((old) => ({ ...old, shortcut }))}
                 />
                 <ShortcutStatus disabled={controlsDisabled} />
               </SettingRow>
@@ -376,14 +339,10 @@ export function SettingsPage() {
                   value={settings.interaction}
                   disabled={controlsDisabled}
                   onValueChange={(value) => {
-                    if (value !== null)
-                      setSettings((old) => ({ ...old, interaction: value }));
+                    if (value !== null) setSettings((old) => ({ ...old, interaction: value }));
                   }}
                 >
-                  <SelectTrigger
-                    id="interaction"
-                    className="h-9 w-full min-w-0 bg-background"
-                  >
+                  <SelectTrigger id="interaction" className="h-9 w-full min-w-0 bg-background">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent alignItemWithTrigger={false} align="start">
@@ -402,18 +361,14 @@ export function SettingsPage() {
                 description="Fix spacing, capitalization, and punctuation; remove common English/German fillers. Keep the original in History."
                 checked={settings.cleanText}
                 disabled={controlsDisabled}
-                onCheckedChange={(cleanText) =>
-                  setSettings((old) => ({ ...old, cleanText }))
-                }
+                onCheckedChange={(cleanText) => setSettings((old) => ({ ...old, cleanText }))}
               />
               <ToggleSetting
                 title="Paste automatically"
                 description="Paste into the focused app after shortcut dictation. Otherwise, copy only."
                 checked={settings.autoPaste}
                 disabled={controlsDisabled}
-                onCheckedChange={(autoPaste) =>
-                  setSettings((old) => ({ ...old, autoPaste }))
-                }
+                onCheckedChange={(autoPaste) => setSettings((old) => ({ ...old, autoPaste }))}
               />
               <div className="flex flex-wrap items-center justify-between gap-3 py-4">
                 <span className="text-sm text-muted-foreground">
@@ -432,11 +387,7 @@ export function SettingsPage() {
         <TabsContent value="general" keepMounted className="space-y-5">
           <SettingsSection title="Appearance">
             <SettingRow title="Color theme" description="Applies immediately.">
-              <div
-                className="flex flex-wrap gap-2"
-                role="group"
-                aria-label="Color theme"
-              >
+              <div className="flex flex-wrap gap-2" role="group" aria-label="Color theme">
                 {themes.map(({ value, label, icon: Icon }) => (
                   <Button
                     key={value}
@@ -466,12 +417,9 @@ export function SettingsPage() {
                 description="Keep the main window hidden on the next launch."
                 checked={settings.startInTray}
                 disabled={
-                  controlsDisabled ||
-                  (!snapshot.startInTrayAvailable && !settings.startInTray)
+                  controlsDisabled || (!snapshot.startInTrayAvailable && !settings.startInTray)
                 }
-                onCheckedChange={(startInTray) =>
-                  setSettings((old) => ({ ...old, startInTray }))
-                }
+                onCheckedChange={(startInTray) => setSettings((old) => ({ ...old, startInTray }))}
               />
               {snapshot.status.startupError ? (
                 <p role="alert" className="py-4 text-xs text-destructive">
@@ -496,9 +444,7 @@ export function SettingsPage() {
                 description="Save audio for playback in History. Otherwise, delete it after processing."
                 checked={settings.saveAudio}
                 disabled={controlsDisabled}
-                onCheckedChange={(saveAudio) =>
-                  setSettings((old) => ({ ...old, saveAudio }))
-                }
+                onCheckedChange={(saveAudio) => setSettings((old) => ({ ...old, saveAudio }))}
               />
               <SettingRow
                 title="History retention"
@@ -580,11 +526,7 @@ export function SettingsPage() {
                   },
                 ] as const
               ).map((field) => (
-                <SettingRow
-                  key={field.key}
-                  title={field.title}
-                  htmlFor={field.key}
-                >
+                <SettingRow key={field.key} title={field.title} htmlFor={field.key}>
                   <div className="flex gap-2">
                     <Input
                       id={field.key}
@@ -610,10 +552,7 @@ export function SettingsPage() {
               ))}
             </SettingsSection>
           </fieldset>
-          <AudioSupportPanel
-            active={section === "advanced"}
-            disabled={saving || loading}
-          />
+          <AudioSupportPanel active={section === "advanced"} disabled={saving || loading} />
           <DiagnosticsPanel disabled={dirty || saving || loading} />
           <SettingsSection title="Setup">
             <SettingRow
@@ -641,25 +580,18 @@ export function SettingsPage() {
           </SettingsSection>
         </TabsContent>
       </Tabs>
-      <Dialog
-        open={confirmRetention}
-        disablePointerDismissal
-        onOpenChange={setConfirmRetention}
-      >
+      <Dialog open={confirmRetention} disablePointerDismissal onOpenChange={setConfirmRetention}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Enable automatic deletion?</DialogTitle>
             <DialogDescription>
               Saving removes transcripts and retained audio older than{" "}
-              {settings.historyRetentionDays} days now and during future
-              cleanup. Deletion is permanent.
+              {settings.historyRetentionDays} days now and during future cleanup. Deletion is
+              permanent.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setConfirmRetention(false)}
-            >
+            <Button variant="outline" onClick={() => setConfirmRetention(false)}>
               Cancel
             </Button>
             <Button

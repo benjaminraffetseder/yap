@@ -135,8 +135,7 @@ export function DictationProvider({ children }: { children: ReactNode }) {
         ? old
         : {
             ...value,
-            status:
-              revision === statusRevision.current ? value.status : old.status,
+            status: revision === statusRevision.current ? value.status : old.status,
           },
     );
     setLoading(false);
@@ -151,13 +150,7 @@ export function DictationProvider({ children }: { children: ReactNode }) {
     }
   }
   async function installModel(model: Model) {
-    if (
-      !isDesktop ||
-      loading ||
-      isBusy(snapshot.status.phase) ||
-      modelDownload.current
-    )
-      return;
+    if (!isDesktop || loading || isBusy(snapshot.status.phase) || modelDownload.current) return;
     modelDownload.current = { model, started: false };
     setError("");
     toastManager.close("speech-model-download");
@@ -177,12 +170,7 @@ export function DictationProvider({ children }: { children: ReactNode }) {
     await refresh().catch((cause) => setError(message(cause)));
   }
   useEffect(() => {
-    if (
-      !isDesktop ||
-      !snapshot.status.shortcutError ||
-      isBusy(snapshot.status.phase)
-    )
-      return;
+    if (!isDesktop || !snapshot.status.shortcutError || isBusy(snapshot.status.phase)) return;
     let pending = false;
     const retry = () => {
       if (pending) return;
@@ -210,10 +198,7 @@ export function DictationProvider({ children }: { children: ReactNode }) {
       const download = modelDownload.current;
       if (!download) return;
       if (status.phase === "downloading") download.started = true;
-      else if (
-        download.started &&
-        (status.phase === "idle" || status.phase === "error")
-      ) {
+      else if (download.started && (status.phase === "idle" || status.phase === "error")) {
         modelDownload.current = null;
         // InstallModel ends with idle on success or cancellation, and error on failure.
         if (status.phase === "error")

@@ -1,0 +1,8 @@
+dist
+wailsjs
+node_modules
+.playwright
+playwright-report
+test-results
+coverage
+package-lock.json

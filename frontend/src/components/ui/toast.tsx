@@ -31,15 +31,9 @@ function ToastList() {
     >
       <Toast.Content className="flex items-start gap-3">
         {toast.type === "error" ? (
-          <CircleAlert
-            className="mt-0.5 size-5 shrink-0 text-destructive"
-            aria-hidden="true"
-          />
+          <CircleAlert className="mt-0.5 size-5 shrink-0 text-destructive" aria-hidden="true" />
         ) : (
-          <CircleCheck
-            className="mt-0.5 size-5 shrink-0 text-primary"
-            aria-hidden="true"
-          />
+          <CircleCheck className="mt-0.5 size-5 shrink-0 text-primary" aria-hidden="true" />
         )}
         <div className="min-w-0 flex-1">
           <Toast.Title className="break-words text-sm font-medium leading-6" />
@@ -50,9 +44,7 @@ function ToastList() {
         <Toast.Close
           aria-label="Dismiss notification"
           aria-hidden={false}
-          render={
-            <Button variant="ghost" size="icon-sm" className="-mt-1 -mr-1" />
-          }
+          render={<Button variant="ghost" size="icon-sm" className="-mt-1 -mr-1" />}
         >
           <X aria-hidden="true" className="size-4" />
         </Toast.Close>

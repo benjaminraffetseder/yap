@@ -46,9 +46,7 @@ export function SettingRow({
           <p className="text-sm font-medium">{title}</p>
         )}
         {description && (
-          <p className="mt-1 text-xs leading-5 text-muted-foreground">
-            {description}
-          </p>
+          <p className="mt-1 text-xs leading-5 text-muted-foreground">{description}</p>
         )}
       </div>
       <div className="min-w-0">{children}</div>
@@ -76,9 +74,7 @@ export function ToggleSetting({
       <span className="min-w-0">
         <span className="text-sm font-medium">{title}</span>
         {description && (
-          <span className="mt-1 block text-xs leading-5 text-muted-foreground">
-            {description}
-          </span>
+          <span className="mt-1 block text-xs leading-5 text-muted-foreground">{description}</span>
         )}
       </span>
       <Checkbox

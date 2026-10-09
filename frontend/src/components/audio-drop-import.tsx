@@ -19,18 +19,13 @@ export function AudioDropImport() {
   current.current = { unavailable, run };
 
   useEffect(() => {
-    if (
-      !isDesktop ||
-      typeof Reflect.get(window, "runtime")?.OnFileDrop !== "function"
-    )
-      return;
+    if (!isDesktop || typeof Reflect.get(window, "runtime")?.OnFileDrop !== "function") return;
     let depth = 0;
     const reset = () => {
       depth = 0;
       setDragging(false);
     };
-    const isFileDrag = (event: DragEvent) =>
-      event.dataTransfer?.types.includes("Files");
+    const isFileDrag = (event: DragEvent) => event.dataTransfer?.types.includes("Files");
     const enter = (event: DragEvent) => {
       if (!isFileDrag(event)) return;
       event.preventDefault();
@@ -61,8 +56,7 @@ export function AudioDropImport() {
       pending.current = true;
       void current.current
         .run(async () => {
-          if (current.current.unavailable)
-            throw new Error(current.current.unavailable);
+          if (current.current.unavailable) throw new Error(current.current.unavailable);
           await backend.importDroppedAudio(paths);
         })
         .finally(() => {
@@ -92,13 +86,9 @@ export function AudioDropImport() {
     >
       <div className="space-y-3 px-6 text-center">
         <Upload className="mx-auto size-10 text-primary" aria-hidden="true" />
-        <p className="text-lg font-medium">
-          {unavailable || "Drop one audio file to import"}
-        </p>
+        <p className="text-lg font-medium">{unavailable || "Drop one audio file to import"}</p>
         {!unavailable && (
-          <p className="text-sm text-muted-foreground">
-            Up to 25 minutes · 256 MiB
-          </p>
+          <p className="text-sm text-muted-foreground">Up to 25 minutes · 256 MiB</p>
         )}
       </div>
     </div>

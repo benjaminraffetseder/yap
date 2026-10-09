@@ -23,10 +23,7 @@ export function ModelsPage({ embedded = false }: { embedded?: boolean }) {
   const busy = isBusy(status.phase) || loading;
   const megabytes = (bytes: number) =>
     `${new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 }).format(bytes / 1_000_000)} MB`;
-  const diskBytes = models.reduce(
-    (sum, model) => sum + (model.diskBytes ?? 0),
-    0,
-  );
+  const diskBytes = models.reduce((sum, model) => sum + (model.diskBytes ?? 0), 0);
   async function remove() {
     if (!removing || pending) return;
     setPending(true);
@@ -58,11 +55,7 @@ export function ModelsPage({ embedded = false }: { embedded?: boolean }) {
               <Loader2 className="size-4 animate-spin text-primary" />
               {status.message}
             </span>
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() => void run(backend.cancel)}
-            >
+            <Button size="sm" variant="ghost" onClick={() => void run(backend.cancel)}>
               <X className="size-3" />
               Cancel
             </Button>
@@ -72,9 +65,7 @@ export function ModelsPage({ embedded = false }: { embedded?: boolean }) {
             className="mt-4 w-full"
             value={status.progress * 100}
           />
-          <p className="mt-2 text-xs text-muted-foreground">
-            {Math.round(status.progress * 100)}%
-          </p>
+          <p className="mt-2 text-xs text-muted-foreground">{Math.round(status.progress * 100)}%</p>
         </section>
       )}
       {status.phase === "error" && (
@@ -95,14 +86,9 @@ export function ModelsPage({ embedded = false }: { embedded?: boolean }) {
               key={model.id}
               className={`flex flex-col rounded-2xl border bg-card p-5 ${selected ? "border-primary/40 ring-1 ring-primary/15" : ""}`}
             >
-              <HardDrive
-                className="mb-5 size-6 text-primary"
-                aria-hidden="true"
-              />
+              <HardDrive className="mb-5 size-6 text-primary" aria-hidden="true" />
               <h2 className="font-semibold">{model.name}</h2>
-              <p className="mt-2 text-xs leading-5 text-muted-foreground">
-                {model.description}
-              </p>
+              <p className="mt-2 text-xs leading-5 text-muted-foreground">{model.description}</p>
               <p className="my-5 text-xs text-muted-foreground">
                 {model.diskBytes
                   ? `${megabytes(model.diskBytes)} on disk`
@@ -141,11 +127,7 @@ export function ModelsPage({ embedded = false }: { embedded?: boolean }) {
                   className="mt-2 text-muted-foreground"
                   aria-label={`Remove ${model.name}`}
                   disabled={!isDesktop || busy || pending || active}
-                  title={
-                    active
-                      ? "Switch to another model before removing this one"
-                      : undefined
-                  }
+                  title={active ? "Switch to another model before removing this one" : undefined}
                   onClick={() => {
                     setError("");
                     setRemoving(model);
@@ -189,8 +171,8 @@ export function ModelsPage({ embedded = false }: { embedded?: boolean }) {
           <DialogHeader>
             <DialogTitle>Remove {removing?.name}?</DialogTitle>
             <DialogDescription>
-              This removes {megabytes(removing?.diskBytes ?? 0)} from this
-              device. You can download the model again.
+              This removes {megabytes(removing?.diskBytes ?? 0)} from this device. You can download
+              the model again.
             </DialogDescription>
           </DialogHeader>
           {error && (
@@ -199,18 +181,10 @@ export function ModelsPage({ embedded = false }: { embedded?: boolean }) {
             </p>
           )}
           <DialogFooter>
-            <Button
-              variant="outline"
-              disabled={pending}
-              onClick={() => setRemoving(null)}
-            >
+            <Button variant="outline" disabled={pending} onClick={() => setRemoving(null)}>
               Cancel
             </Button>
-            <Button
-              variant="destructive"
-              disabled={pending || busy}
-              onClick={() => void remove()}
-            >
+            <Button variant="destructive" disabled={pending || busy} onClick={() => void remove()}>
               {pending ? "Removing…" : "Remove model"}
             </Button>
           </DialogFooter>

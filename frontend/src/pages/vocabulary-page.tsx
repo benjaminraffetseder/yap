@@ -3,12 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  backend,
-  isBusy,
-  isDesktop,
-  type VocabularyEntry,
-} from "@/lib/backend";
+import { backend, isBusy, isDesktop, type VocabularyEntry } from "@/lib/backend";
 import { Plus, Save, Trash2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
@@ -24,16 +19,11 @@ export function VocabularyPage() {
   useEffect(() => {
     const previous = baseline.current;
     baseline.current = draftOf(snapshot.vocabulary);
-    setDraft((old) =>
-      JSON.stringify(old) === JSON.stringify(previous) ? baseline.current : old,
-    );
+    setDraft((old) => (JSON.stringify(old) === JSON.stringify(previous) ? baseline.current : old));
   }, [snapshot.vocabulary]);
-  const dirty =
-    JSON.stringify(draft) !== JSON.stringify(draftOf(snapshot.vocabulary));
+  const dirty = JSON.stringify(draft) !== JSON.stringify(draftOf(snapshot.vocabulary));
   function update(id: string, value: Partial<Draft>) {
-    setDraft((old) =>
-      old.map((entry) => (entry.id === id ? { ...entry, ...value } : entry)),
-    );
+    setDraft((old) => old.map((entry) => (entry.id === id ? { ...entry, ...value } : entry)));
   }
   async function save() {
     if (loading || saving || busy) return;
@@ -57,8 +47,8 @@ export function VocabularyPage() {
       <header>
         <h1 className="text-2xl font-semibold tracking-tight">Vocabulary</h1>
         <p className="mt-2 text-sm text-muted-foreground">
-          Preferred spellings hint speech recognition. Aliases replace exact
-          words or phrases in the result.
+          Preferred spellings hint speech recognition. Aliases replace exact words or phrases in the
+          result.
         </p>
       </header>
       <fieldset
@@ -77,9 +67,7 @@ export function VocabularyPage() {
                 <Checkbox
                   disabled={!isDesktop || busy || saving || loading}
                   checked={entry.enabled}
-                  onCheckedChange={(checked) =>
-                    update(entry.id, { enabled: checked })
-                  }
+                  onCheckedChange={(checked) => update(entry.id, { enabled: checked })}
                 />
                 Enabled
               </label>
@@ -87,9 +75,7 @@ export function VocabularyPage() {
                 variant="ghost"
                 size="icon"
                 aria-label={`Remove ${entry.canonical || "term"}`}
-                onClick={() =>
-                  setDraft((old) => old.filter((item) => item.id !== entry.id))
-                }
+                onClick={() => setDraft((old) => old.filter((item) => item.id !== entry.id))}
               >
                 <Trash2 className="size-4" />
               </Button>
@@ -102,22 +88,16 @@ export function VocabularyPage() {
                   maxLength={80}
                   placeholder="e.g. PostgreSQL"
                   value={entry.canonical}
-                  onChange={(event) =>
-                    update(entry.id, { canonical: event.target.value })
-                  }
+                  onChange={(event) => update(entry.id, { canonical: event.target.value })}
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor={`aliases-${entry.id}`}>
-                  Aliases (comma-separated)
-                </Label>
+                <Label htmlFor={`aliases-${entry.id}`}>Aliases (comma-separated)</Label>
                 <Input
                   id={`aliases-${entry.id}`}
                   placeholder="e.g. postgres, post gre SQL"
                   value={entry.aliases}
-                  onChange={(event) =>
-                    update(entry.id, { aliases: event.target.value })
-                  }
+                  onChange={(event) => update(entry.id, { aliases: event.target.value })}
                 />
               </div>
             </div>
@@ -147,10 +127,7 @@ export function VocabularyPage() {
             {saving ? "Saving…" : "Save vocabulary"}
           </Button>
           {dirty && (
-            <Button
-              variant="ghost"
-              onClick={() => setDraft(draftOf(snapshot.vocabulary))}
-            >
+            <Button variant="ghost" onClick={() => setDraft(draftOf(snapshot.vocabulary))}>
               Discard changes
             </Button>
           )}

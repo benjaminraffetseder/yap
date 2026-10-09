@@ -211,18 +211,16 @@ export type BackupPreview = {
   summary: BackupSummary;
 };
 function requireBackupAPI(name: string) {
-  const api = (
-    window as unknown as { go?: { main?: { App?: Record<string, unknown> } } }
-  ).go?.main?.App;
+  const api = (window as unknown as { go?: { main?: { App?: Record<string, unknown> } } }).go?.main
+    ?.App;
   if (typeof api?.[name] !== "function")
     throw new Error(
       "Backups need the current backend. Quit and reopen Yap; in development, restart wails dev.",
     );
 }
 function requireOutputAPI(name: string) {
-  const api = (
-    window as unknown as { go?: { main?: { App?: Record<string, unknown> } } }
-  ).go?.main?.App;
+  const api = (window as unknown as { go?: { main?: { App?: Record<string, unknown> } } }).go?.main
+    ?.App;
   if (typeof api?.[name] !== "function")
     throw new Error(
       "Saved outputs need the current backend. Quit and reopen Yap; in development, restart wails dev.",
@@ -230,9 +228,8 @@ function requireOutputAPI(name: string) {
 }
 export const backend = {
   importDroppedAudio: async (paths: string[]): Promise<void> => {
-    const api = (
-      window as unknown as { go?: { main?: { App?: Record<string, unknown> } } }
-    ).go?.main?.App;
+    const api = (window as unknown as { go?: { main?: { App?: Record<string, unknown> } } }).go
+      ?.main?.App;
     if (typeof api?.ImportDroppedAudio !== "function")
       throw new Error(
         "Audio import needs the current backend. Quit and reopen Yap; in development, restart wails dev.",
@@ -248,9 +245,8 @@ export const backend = {
     return InstallAudioSupport();
   },
   importAudio: async (): Promise<void> => {
-    const api = (
-      window as unknown as { go?: { main?: { App?: Record<string, unknown> } } }
-    ).go?.main?.App;
+    const api = (window as unknown as { go?: { main?: { App?: Record<string, unknown> } } }).go
+      ?.main?.App;
     if (typeof api?.ImportAudio !== "function")
       throw new Error(
         "Audio import needs the current backend. Quit and reopen Yap; in development, restart wails dev.",
@@ -265,10 +261,7 @@ export const backend = {
     requireBackupAPI("PreviewBackup");
     return PreviewBackup();
   },
-  restoreBackup: async (
-    id: string,
-    preferences: boolean,
-  ): Promise<BackupSummary> => {
+  restoreBackup: async (id: string, preferences: boolean): Promise<BackupSummary> => {
     requireBackupAPI("RestoreBackup");
     return RestoreBackup(id, preferences);
   },
@@ -297,8 +290,7 @@ export const backend = {
   stopMicTest: StopMicrophoneTest,
   completeSetup: CompleteSetup,
   restartSetup: RestartSetup,
-  diagnosticChecks: async (): Promise<DiagnosticCheck[]> =>
-    GetDiagnosticChecks(),
+  diagnosticChecks: async (): Promise<DiagnosticCheck[]> => GetDiagnosticChecks(),
   testDictation: StartDiagnosticTest,
   stopDictationTest: StopDiagnosticTest,
   copy: CopyText,
@@ -310,9 +302,8 @@ export const backend = {
   history: async (query: string, page: number): Promise<HistoryPageResult> =>
     GetHistory(query, page),
   session: async (id: string): Promise<Session | null> => {
-    const api = (
-      window as unknown as { go?: { main?: { App?: Record<string, unknown> } } }
-    ).go?.main?.App;
+    const api = (window as unknown as { go?: { main?: { App?: Record<string, unknown> } } }).go
+      ?.main?.App;
     if (typeof api?.GetSession !== "function")
       throw new Error(
         "Dictation pages need the current backend. Quit and reopen Yap; in development, restart wails dev.",
@@ -349,11 +340,9 @@ export const backend = {
   beginShortcutCapture: BeginShortcutCapture,
   endShortcutCapture: EndShortcutCapture,
   retryShortcut: async (): Promise<void> => {
-    const api = (
-      window as unknown as { go?: { main?: { App?: Record<string, unknown> } } }
-    ).go?.main?.App;
-    if (typeof api?.RetryShortcut !== "function")
-      throw new Error(backendVersionMismatchMessage);
+    const api = (window as unknown as { go?: { main?: { App?: Record<string, unknown> } } }).go
+      ?.main?.App;
+    if (typeof api?.RetryShortcut !== "function") throw new Error(backendVersionMismatchMessage);
     return RetryShortcut();
   },
   textProcessing: async (config: TextProcessing): Promise<TextProcessing> =>
@@ -367,9 +356,8 @@ export const backend = {
     model: string,
     instruction: string,
   ): Promise<string> => {
-    const api = (
-      window as unknown as { go?: { main?: { App?: Record<string, unknown> } } }
-    ).go?.main?.App;
+    const api = (window as unknown as { go?: { main?: { App?: Record<string, unknown> } } }).go
+      ?.main?.App;
     if (typeof api?.RefinePrompt !== "function")
       throw new Error(
         "Prompt refinement needs the current backend. Quit and reopen Yap; in development, restart wails dev.",
@@ -377,9 +365,8 @@ export const backend = {
     return RefinePrompt(id, endpoint, model, instruction);
   },
   listTextModels: async (id: string, endpoint: string): Promise<string[]> => {
-    const api = (
-      window as unknown as { go?: { main?: { App?: Record<string, unknown> } } }
-    ).go?.main?.App;
+    const api = (window as unknown as { go?: { main?: { App?: Record<string, unknown> } } }).go
+      ?.main?.App;
     if (typeof api?.ListTextModels !== "function") {
       throw new Error(
         "Model discovery needs the current backend. Quit and reopen Yap; in development, restart wails dev.",
@@ -389,9 +376,8 @@ export const backend = {
   },
 };
 function requireAudioSupportAPI(name: string) {
-  const api = (
-    window as unknown as { go?: { main?: { App?: Record<string, unknown> } } }
-  ).go?.main?.App;
+  const api = (window as unknown as { go?: { main?: { App?: Record<string, unknown> } } }).go?.main
+    ?.App;
   if (typeof api?.[name] !== "function")
     throw new Error(
       "Audio support settings need the current backend. Quit and reopen Yap; in development, restart wails dev.",

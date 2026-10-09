@@ -1,9 +1,5 @@
 import { useDictation } from "@/components/dictation-provider";
-import {
-  SettingRow,
-  SettingsSection,
-  ToggleSetting,
-} from "@/components/settings-section";
+import { SettingRow, SettingsSection, ToggleSetting } from "@/components/settings-section";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -59,9 +55,7 @@ const sections = [
 ];
 export function PromptsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const section = sections.some(
-    (item) => item.value === searchParams.get("section"),
-  )
+  const section = sections.some((item) => item.value === searchParams.get("section"))
     ? searchParams.get("section")!
     : "models";
   const { snapshot, refresh, clearError, loading } = useDictation();
@@ -91,8 +85,7 @@ export function PromptsPage() {
     .replace("://localhost:", "://127.0.0.1:");
   const server = customServer
     ? "custom"
-    : (localServers.find((item) => item.endpoint === presetEndpoint)?.value ??
-      "custom");
+    : (localServers.find((item) => item.endpoint === presetEndpoint)?.value ?? "custom");
   const listed = discovery.models.includes(draft.model);
   const manual = manualModel || !listed;
   const modelOptions = [
@@ -102,13 +95,10 @@ export function PromptsPage() {
   useEffect(() => {
     const previous = baseline.current;
     baseline.current = saved;
-    setDraft((old) =>
-      JSON.stringify(old) === JSON.stringify(previous) ? saved : old,
-    );
+    setDraft((old) => (JSON.stringify(old) === JSON.stringify(previous) ? saved : old));
   }, [saved]);
   useEffect(() => {
-    if (!draft.prompts.some((p) => p.id === selected))
-      setSelected(draft.prompts[0]?.id ?? "");
+    if (!draft.prompts.some((p) => p.id === selected)) setSelected(draft.prompts[0]?.id ?? "");
   }, [draft.prompts, selected]);
   useEffect(() => {
     if (modelTest.pending) {
@@ -131,27 +121,18 @@ export function PromptsPage() {
       });
   }, [modelTest.pending, modelTest.result, modelTest.error]);
   const dirty = JSON.stringify(draft) !== JSON.stringify(saved);
-  const busy =
-    isBusy(snapshot.status.phase) ||
-    saving ||
-    modelTest.pending ||
-    refinement.pending;
+  const busy = isBusy(snapshot.status.phase) || saving || modelTest.pending || refinement.pending;
   const controlsDisabled = !isDesktop || busy || loading;
   const promptOptions = draft.prompts.map((prompt) => ({
     value: prompt.id,
     label: prompt.name || "Untitled prompt",
   }));
-  const automaticOptions = [
-    { value: "", label: "No automatic processing" },
-    ...promptOptions,
-  ];
+  const automaticOptions = [{ value: "", label: "No automatic processing" }, ...promptOptions];
   const prompt = draft.prompts.find((p) => p.id === selected);
   const refinementCurrent =
     !!refining &&
     draft.prompts.some(
-      (p) =>
-        p.id === refining.prompt.id &&
-        p.instruction === refining.prompt.instruction,
+      (p) => p.id === refining.prompt.id && p.instruction === refining.prompt.instruction,
     ) &&
     draft.endpoint === refining.endpoint &&
     draft.model === refining.model;
@@ -162,22 +143,14 @@ export function PromptsPage() {
   }
   function updatePrompt(value: Partial<TextPrompt>) {
     update({
-      prompts: draft.prompts.map((p) =>
-        p.id === selected ? { ...p, ...value } : p,
-      ),
+      prompts: draft.prompts.map((p) => (p.id === selected ? { ...p, ...value } : p)),
     });
   }
   function deletePrompt() {
-    if (
-      !deleting ||
-      controlsDisabled ||
-      !draft.prompts.some((p) => p.id === deleting.id)
-    )
-      return;
+    if (!deleting || controlsDisabled || !draft.prompts.some((p) => p.id === deleting.id)) return;
     update({
       prompts: draft.prompts.filter((p) => p.id !== deleting.id),
-      autoPromptId:
-        draft.autoPromptId === deleting.id ? "" : draft.autoPromptId,
+      autoPromptId: draft.autoPromptId === deleting.id ? "" : draft.autoPromptId,
     });
     setDeleting(null);
   }
@@ -191,12 +164,7 @@ export function PromptsPage() {
     setRefining(value);
     setRefinementNotice("");
     void refinement.request((id) =>
-      backend.refinePrompt(
-        id,
-        value.endpoint,
-        value.model,
-        value.prompt.instruction,
-      ),
+      backend.refinePrompt(id, value.endpoint, value.model, value.prompt.instruction),
     );
   }
   function closeRefinement() {
@@ -257,11 +225,7 @@ export function PromptsPage() {
             className="max-w-full group-data-[orientation=horizontal]/tabs:h-10"
           >
             {sections.map((item) => (
-              <TabsTrigger
-                key={item.value}
-                value={item.value}
-                className="px-2.5"
-              >
+              <TabsTrigger key={item.value} value={item.value} className="px-2.5">
                 {item.label}
               </TabsTrigger>
             ))}
@@ -286,10 +250,7 @@ export function PromptsPage() {
                 </Button>
               </>
             )}
-            <Button
-              disabled={controlsDisabled || !dirty}
-              onClick={() => void save()}
-            >
+            <Button disabled={controlsDisabled || !dirty} onClick={() => void save()}>
               <Save aria-hidden="true" className="size-4" />
               {saving ? "Saving…" : "Save prompts"}
             </Button>
@@ -297,10 +258,7 @@ export function PromptsPage() {
         </header>
         <TabsContent value="models" keepMounted>
           <SettingsSection title="Text model">
-            <fieldset
-              disabled={controlsDisabled}
-              className="divide-y disabled:opacity-60"
-            >
+            <fieldset disabled={controlsDisabled} className="divide-y disabled:opacity-60">
               <ToggleSetting
                 title="Enable LLM processing"
                 checked={draft.enabled}
@@ -320,9 +278,7 @@ export function PromptsPage() {
                   onValueChange={(value) => {
                     if (value === "custom") setCustomServer(true);
                     else {
-                      const preset = localServers.find(
-                        (item) => item.value === value,
-                      );
+                      const preset = localServers.find((item) => item.value === value);
                       if (preset) {
                         setCustomServer(false);
                         update({ endpoint: preset.endpoint });
@@ -355,10 +311,7 @@ export function PromptsPage() {
                   aria-describedby="llm-endpoint-help"
                   onChange={(event) => update({ endpoint: event.target.value })}
                 />
-                <p
-                  id="llm-endpoint-help"
-                  className="mt-2 text-xs text-muted-foreground"
-                >
+                <p id="llm-endpoint-help" className="mt-2 text-xs text-muted-foreground">
                   Use the local /v1 base URL, without /models or /api.
                 </p>
               </SettingRow>
@@ -445,16 +398,9 @@ export function PromptsPage() {
             </fieldset>
             <SettingRow title="Connection test">
               {modelTest.pending ? (
-                <div
-                  className="flex flex-wrap items-center gap-3"
-                  role="status"
-                >
+                <div className="flex flex-wrap items-center gap-3" role="status">
                   <span className="text-sm">Testing model…</span>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => void modelTest.cancel()}
-                  >
+                  <Button variant="outline" size="sm" onClick={() => void modelTest.cancel()}>
                     Cancel test
                   </Button>
                 </div>
@@ -463,16 +409,12 @@ export function PromptsPage() {
                   <Button
                     variant="outline"
                     disabled={controlsDisabled || dirty || !saved.enabled}
-                    onClick={() =>
-                      void modelTest.request(backend.testTextModel)
-                    }
+                    onClick={() => void modelTest.request(backend.testTextModel)}
                   >
                     Test model
                   </Button>
                   {dirty && (
-                    <span className="text-xs text-muted-foreground">
-                      Save before testing.
-                    </span>
+                    <span className="text-xs text-muted-foreground">Save before testing.</span>
                   )}
                 </div>
               )}
@@ -480,10 +422,7 @@ export function PromptsPage() {
           </SettingsSection>
         </TabsContent>
         <TabsContent value="prompts" keepMounted>
-          <fieldset
-            disabled={controlsDisabled}
-            className="space-y-5 disabled:opacity-60"
-          >
+          <fieldset disabled={controlsDisabled} className="space-y-5 disabled:opacity-60">
             <SettingsSection
               title="Saved prompts"
               action={
@@ -494,10 +433,7 @@ export function PromptsPage() {
                   onClick={() => {
                     const id = crypto.randomUUID();
                     update({
-                      prompts: [
-                        ...draft.prompts,
-                        { id, name: "New prompt", instruction: "" },
-                      ],
+                      prompts: [...draft.prompts, { id, name: "New prompt", instruction: "" }],
                     });
                     setSelected(id);
                   }}
@@ -540,9 +476,7 @@ export function PromptsPage() {
                           id="prompt-name"
                           value={prompt.name}
                           maxLength={80}
-                          onChange={(event) =>
-                            updatePrompt({ name: event.target.value })
-                          }
+                          onChange={(event) => updatePrompt({ name: event.target.value })}
                         />
                       </SettingRow>
                       <SettingRow
@@ -556,18 +490,14 @@ export function PromptsPage() {
                             rows={7}
                             maxLength={8000}
                             value={prompt.instruction}
-                            onChange={(event) =>
-                              updatePrompt({ instruction: event.target.value })
-                            }
+                            onChange={(event) => updatePrompt({ instruction: event.target.value })}
                             className="w-full resize-y rounded-md border border-input bg-background px-3 py-2 text-sm leading-6 focus-visible:outline-ring"
                           />
                           <Button
                             ref={refineButton}
                             variant="outline"
                             size="sm"
-                            disabled={
-                              !draft.model.trim() || !prompt.instruction.trim()
-                            }
+                            disabled={!draft.model.trim() || !prompt.instruction.trim()}
                             onClick={refine}
                           >
                             <Sparkles aria-hidden="true" className="size-3.5" />
@@ -596,18 +526,15 @@ export function PromptsPage() {
                             <Trash2 className="size-4" />
                             Delete prompt
                           </Button>
-                          {defaultTextProcessing.prompts.some(
-                            (p) => p.id === selected,
-                          ) && (
+                          {defaultTextProcessing.prompts.some((p) => p.id === selected) && (
                             <Button
                               variant="ghost"
                               size="sm"
                               onClick={() =>
                                 updatePrompt({
-                                  instruction:
-                                    defaultTextProcessing.prompts.find(
-                                      (p) => p.id === selected,
-                                    )!.instruction,
+                                  instruction: defaultTextProcessing.prompts.find(
+                                    (p) => p.id === selected,
+                                  )!.instruction,
                                 })
                               }
                             >
@@ -684,27 +611,19 @@ export function PromptsPage() {
           <DialogHeader>
             <DialogTitle>Delete this prompt?</DialogTitle>
             <DialogDescription>
-              “{deleting?.name || "Untitled prompt"}” will be removed when you
-              save your changes.
+              “{deleting?.name || "Untitled prompt"}” will be removed when you save your changes.
               {deleting &&
                 draft.autoPromptId === deleting.id &&
                 " Automatic processing after dictation will be turned off."}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button
-              ref={cancelDeleteButton}
-              variant="outline"
-              onClick={() => setDeleting(null)}
-            >
+            <Button ref={cancelDeleteButton} variant="outline" onClick={() => setDeleting(null)}>
               Cancel
             </Button>
             <Button
               variant="destructive"
-              disabled={
-                controlsDisabled ||
-                !draft.prompts.some((p) => p.id === deleting?.id)
-              }
+              disabled={controlsDisabled || !draft.prompts.some((p) => p.id === deleting?.id)}
               onClick={deletePrompt}
             >
               Delete prompt
@@ -728,8 +647,7 @@ export function PromptsPage() {
               <DialogHeader>
                 <DialogTitle>Refine prompt</DialogTitle>
                 <DialogDescription>
-                  Review the refined instructions before applying them to your
-                  draft.
+                  Review the refined instructions before applying them to your draft.
                 </DialogDescription>
               </DialogHeader>
               <div className="grid items-start gap-4 md:grid-cols-2">
@@ -751,25 +669,17 @@ export function PromptsPage() {
                     rows={9}
                     value={refinement.result}
                     placeholder={
-                      refinement.pending
-                        ? "Refining instructions…"
-                        : "No refined instructions yet."
+                      refinement.pending ? "Refining instructions…" : "No refined instructions yet."
                     }
                     className="max-h-[40vh] w-full resize-y rounded-md border border-primary/25 bg-primary/5 px-3 py-2 text-sm leading-6"
                   />
                 </section>
               </div>
-              <p className="break-words text-xs text-muted-foreground">
-                {refining.model}
-              </p>
+              <p className="break-words text-xs text-muted-foreground">{refining.model}</p>
               {refinement.pending && (
                 <div role="status" className="flex items-center gap-3">
                   <span className="text-sm">Refining instructions…</span>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => void refinement.cancel()}
-                  >
+                  <Button variant="outline" size="sm" onClick={() => void refinement.cancel()}>
                     Cancel refinement
                   </Button>
                 </div>
@@ -781,8 +691,7 @@ export function PromptsPage() {
               )}
               {!refinementCurrent && (
                 <p role="alert" className="text-sm text-destructive">
-                  Prompt or model settings changed. Close this preview and
-                  refine again.
+                  Prompt or model settings changed. Close this preview and refine again.
                 </p>
               )}
               <DialogFooter>
@@ -792,9 +701,7 @@ export function PromptsPage() {
                 {!refinement.pending && (
                   <Button
                     variant="outline"
-                    disabled={
-                      !refinementCurrent || isBusy(snapshot.status.phase)
-                    }
+                    disabled={!refinementCurrent || isBusy(snapshot.status.phase)}
                     onClick={() =>
                       void refinement.request((id) =>
                         backend.refinePrompt(
@@ -820,15 +727,11 @@ export function PromptsPage() {
                     if (!refinementCurrent) return;
                     update({
                       prompts: draft.prompts.map((p) =>
-                        p.id === refining.prompt.id
-                          ? { ...p, instruction: refinement.result }
-                          : p,
+                        p.id === refining.prompt.id ? { ...p, instruction: refinement.result } : p,
                       ),
                     });
                     setRefining(null);
-                    setRefinementNotice(
-                      "Refined instructions applied. Save prompts to keep them.",
-                    );
+                    setRefinementNotice("Refined instructions applied. Save prompts to keep them.");
                   }}
                 >
                   Use instructions
