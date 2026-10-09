@@ -7,6 +7,7 @@ export function RecordingStatus() {
     snapshot: { status, floatingIndicator },
     level,
     run,
+    microphoneTestVisible,
   } = useDictation();
   const [now, setNow] = useState(Date.now());
   const recording = status.phase === "recording";
@@ -20,6 +21,7 @@ export function RecordingStatus() {
     return () => clearInterval(timer);
   }, [capturing]);
   if (
+    (status.phase === "mic-test" && microphoneTestVisible) ||
     (!testing && floatingIndicator) ||
     (!capturing && status.phase !== "transcribing" && status.phase !== "diagnostic-transcribing")
   )

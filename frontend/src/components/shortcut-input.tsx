@@ -32,8 +32,9 @@ export function ShortcutInput({
   }, [disabled]);
   return (
     <>
-      <div className="flex gap-2">
+      <div className="flex flex-wrap gap-2">
         <Input
+          className="min-w-0 flex-1 basis-32"
           id={id}
           value={value}
           disabled={disabled}

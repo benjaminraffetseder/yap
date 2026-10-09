@@ -104,6 +104,8 @@ type Context = {
   error: string;
   loading: boolean;
   downloadingModelId: string | null;
+  microphoneTestVisible: boolean;
+  setMicrophoneTestVisible: (visible: boolean) => void;
   refresh: () => Promise<void>;
   run: (action: () => Promise<unknown>, reload?: boolean) => Promise<void>;
   installModel: (model: Model) => Promise<void>;
@@ -116,6 +118,7 @@ export function DictationProvider({ children }: { children: ReactNode }) {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(isDesktop);
   const [downloadingModelId, setDownloadingModelId] = useState<string | null>(null);
+  const [microphoneTestVisible, setMicrophoneTestVisible] = useState(false);
   const snapshotRequest = useRef(0);
   const statusRevision = useRef(0);
   const modelDownload = useRef<{ model: Model; started: boolean } | null>(null);
@@ -256,6 +259,8 @@ export function DictationProvider({ children }: { children: ReactNode }) {
         error,
         loading,
         downloadingModelId,
+        microphoneTestVisible,
+        setMicrophoneTestVisible,
         refresh,
         run,
         installModel,

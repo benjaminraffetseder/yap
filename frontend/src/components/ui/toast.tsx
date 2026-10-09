@@ -10,7 +10,7 @@ export function Toaster() {
       <Toast.Portal>
         <Toast.Viewport
           aria-label="Notifications"
-          className="pointer-events-none fixed right-5 bottom-5 z-[100] flex w-96 max-w-[calc(100vw-2.5rem)] flex-col gap-3 outline-none"
+          className="pointer-events-none fixed right-5 bottom-[calc(var(--setup-footer-height,0px)+1.25rem)] z-[100] flex w-96 max-w-[calc(100vw-2.5rem)] flex-col gap-3 outline-none"
         >
           <ToastList />
         </Toast.Viewport>

@@ -3,6 +3,7 @@ import { useDictation } from "@/components/dictation-provider";
 import { RecordingStatus } from "@/components/recording-status";
 import { RecoveryActions } from "@/components/recovery-actions";
 import { Button } from "@/components/ui/button";
+import { toastManager } from "@/components/ui/toast";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { backendVersionMismatchMessage, isDesktop } from "@/lib/backend";
 import { cn } from "@/lib/utils";
@@ -16,9 +17,8 @@ import {
   PanelLeftOpen,
   Settings2,
   Sparkles,
-  X,
 } from "lucide-react";
-import { useState, type CSSProperties } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
 import { NavLink, Outlet } from "react-router";
 
 const navigation = [
@@ -44,6 +44,17 @@ export function AppLayout() {
   const [collapsed, setCollapsed] = useState(readCollapsed);
   const toggleLabel = collapsed ? "Expand sidebar" : "Collapse sidebar";
   const connectionFailure = !!error && (loading || error === backendVersionMismatchMessage);
+  useEffect(() => {
+    if (!error || connectionFailure) return;
+    toastManager.add({
+      id: "app-error",
+      type: "error",
+      title: error,
+      priority: "high",
+      timeout: 8000,
+    });
+    clearError();
+  }, [error, connectionFailure, clearError]);
 
   function toggleSidebar() {
     const next = !collapsed;
@@ -120,7 +131,7 @@ export function AppLayout() {
                 Browser preview. Native features require the desktop app.
               </div>
             )}
-            {connectionFailure ? (
+            {connectionFailure && (
               <section
                 aria-label="Connection recovery"
                 className="mb-6 space-y-4 rounded-lg border border-destructive/30 bg-card p-4"
@@ -138,23 +149,6 @@ export function AppLayout() {
                   onRetry={() => void run(refresh, false)}
                 />
               </section>
-            ) : (
-              error && (
-                <div
-                  role="alert"
-                  className="mb-6 flex items-start gap-3 rounded-lg border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive"
-                >
-                  <span className="flex-1 whitespace-pre-wrap">{error}</span>
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    onClick={clearError}
-                    aria-label="Dismiss error"
-                  >
-                    <X aria-hidden="true" />
-                  </Button>
-                </div>
-              )
             )}
             {isDesktop && loading && !connectionFailure && (
               <div

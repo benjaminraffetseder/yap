@@ -2105,7 +2105,9 @@ test("vocabulary drafts survive refresh and failed saves, normalize and persist"
   });
   await settle(page);
   await page.getByRole("button", { name: "Save vocabulary" }).click();
-  await expect(page.getByText("Vocabulary save failed", { exact: true })).toBeVisible();
+  await expect(
+    page.locator('[data-slot="toast"]').filter({ hasText: "Vocabulary save failed" }),
+  ).toBeVisible();
   await expect(page.getByLabel("Preferred spelling", { exact: true })).toHaveValue(" PostgreSQL ");
   await page.evaluate(() => {
     window.dictationTest.failSave = false;
@@ -2207,6 +2209,291 @@ test("light cleanup defaults off and applies only after settings save", async ({
   await expect
     .poll(() => page.evaluate(() => window.dictationTest.snapshot.settings.cleanText))
     .toBe(true);
+});
+
+for (const theme of ["dark", "light"] as const) {
+  test(`onboarding ${theme} guides each step and fits narrow screens`, async ({
+    page,
+  }, testInfo) => {
+    await page.addInitScript((theme) => {
+      localStorage.setItem("desktop-theme", theme);
+      localStorage.setItem("yap-sidebar-collapsed", "true");
+      const s = window.dictationTest.snapshot;
+      s.settings.setupComplete = false;
+      s.settings.modelPath = "";
+      s.ready = false;
+      s.models = [
+        {
+          id: "tiny",
+          name: "Whisper Tiny",
+          description: "Fastest · short dictation",
+          size: 77691713,
+          installed: false,
+          path: "/tiny",
+          diskBytes: 0,
+          removable: false,
+        },
+        {
+          id: "base",
+          name: "Whisper Base",
+          description: "Lightweight · everyday dictation",
+          size: 147951465,
+          installed: false,
+          path: "/base",
+          diskBytes: 0,
+          removable: false,
+        },
+        {
+          id: "small",
+          name: "Whisper Small",
+          description: "Balanced · better accuracy",
+          size: 487601967,
+          installed: false,
+          path: "/small",
+          diskBytes: 0,
+          removable: false,
+        },
+      ];
+    }, theme);
+    await page.setViewportSize({ width: 1347, height: 900 });
+    await page.goto("/");
+    const next = page.getByRole("button", { name: "Next", exact: true });
+    const steps = page.getByRole("list", { name: "Setup steps" });
+    await expect(steps.locator('[aria-current="step"]')).toContainText("Speech model");
+    await expect(next).toBeDisabled();
+    await page.screenshot({
+      path: testInfo.outputPath("onboarding-model.png"),
+      fullPage: true,
+      animations: "disabled",
+    });
+    await page.setViewportSize({ width: 360, height: 900 });
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+    ).toBe(true);
+    await page.evaluate(() => {
+      const s = window.dictationTest.snapshot;
+      s.models[1].installed = true;
+      s.models[1].diskBytes = s.models[1].size;
+      s.settings.modelPath = "/base";
+      s.ready = true;
+      window.dictationTest.history();
+    });
+    await next.click();
+    await expect(page.getByRole("heading", { name: "Let’s hear you" })).toBeFocused();
+    await expect(next).toBeDisabled();
+    await page.getByRole("button", { name: "Test microphone", exact: true }).click();
+    await expect(page.getByRole("meter", { name: "Microphone level" })).toHaveAttribute(
+      "value",
+      "0.6",
+    );
+    await expect(page.getByText("Listening…", { exact: true })).toBeVisible();
+    await expect(next).toBeDisabled();
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+    ).toBe(true);
+    await page.screenshot({
+      path: testInfo.outputPath("onboarding-microphone-narrow.png"),
+      fullPage: true,
+      animations: "disabled",
+    });
+    await page.setViewportSize({ width: 1347, height: 900 });
+    await page.screenshot({
+      path: testInfo.outputPath("onboarding-microphone.png"),
+      fullPage: true,
+      animations: "disabled",
+    });
+    await page.getByRole("button", { name: "Stop test", exact: true }).click();
+    await expect(page.getByText("Microphone test passed", { exact: true })).toBeVisible();
+    await next.click();
+    await expect(steps.locator('[aria-current="step"]')).toContainText("Shortcut");
+    const finish = page.getByRole("button", { name: "Finish setup", exact: true });
+    await expect(finish).toBeDisabled();
+    await page.getByLabel("Global shortcut", { exact: true }).fill("Ctrl+Shift+J");
+    await expect(page.getByLabel("Saved shortcut: Ctrl+Alt+Space", { exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "Apply shortcut", exact: true }).click();
+    await expect(page.getByLabel("Saved shortcut: Ctrl+Shift+J", { exact: true })).toBeVisible();
+    await expect(finish).toBeDisabled();
+    await page.screenshot({
+      path: testInfo.outputPath("onboarding-shortcut.png"),
+      fullPage: true,
+      animations: "disabled",
+    });
+    await page.setViewportSize({ width: 360, height: 900 });
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+    ).toBe(true);
+    await finish.scrollIntoViewIfNeeded();
+    await page.screenshot({
+      path: testInfo.outputPath("onboarding-shortcut-narrow.png"),
+      fullPage: true,
+      animations: "disabled",
+    });
+    await page.evaluate(() => {
+      window.dictationTest.snapshot.shortcutTested = true;
+      window.dictationTest.callbacks["setup:changed"]();
+    });
+    await expect(page.getByText("Shortcut test passed", { exact: true })).toBeVisible();
+    await finish.click();
+    await expect(page.getByRole("heading", { name: "Dictate", exact: true })).toBeVisible();
+  });
+}
+
+test("setup footer stays at the viewport bottom while scrolling and resizing", async ({
+  page,
+}, testInfo) => {
+  await page.addInitScript(() => {
+    localStorage.setItem("desktop-theme", "dark");
+    localStorage.setItem("yap-sidebar-collapsed", "true");
+    window.dictationTest.snapshot.settings.setupComplete = false;
+  });
+  await page.setViewportSize({ width: 1347, height: 900 });
+  await page.goto("/");
+  const footer = page.locator("footer");
+  async function expectFooterAtBottom() {
+    await expect
+      .poll(async () => {
+        const bounds = await footer.boundingBox();
+        return bounds ? Math.abs(bounds.y + bounds.height - page.viewportSize()!.height) : Infinity;
+      })
+      .toBeLessThan(2);
+  }
+  await expectFooterAtBottom();
+  await expect(page.locator('[data-slot="toast"]')).toBeVisible();
+  await expect
+    .poll(async () => {
+      const toastBounds = await page.locator('[data-slot="toast"]').boundingBox();
+      const footerBounds = await footer.boundingBox();
+      return toastBounds && footerBounds
+        ? toastBounds.y + toastBounds.height - footerBounds.y
+        : Infinity;
+    })
+    .toBeLessThanOrEqual(0);
+  await page.getByRole("button", { name: "Next", exact: true }).click();
+  await expectFooterAtBottom();
+  for (const width of [1347, 480, 360]) {
+    await page.setViewportSize({ width, height: 600 });
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await expectFooterAtBottom();
+    await expect(footer.getByRole("button", { name: "Next", exact: true })).toBeInViewport();
+    await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+    await expectFooterAtBottom();
+    const testButton = page.getByRole("button", { name: "Test microphone", exact: true });
+    await testButton.scrollIntoViewIfNeeded();
+    const buttonBounds = (await testButton.boundingBox())!;
+    const footerBounds = (await footer.boundingBox())!;
+    expect(buttonBounds.y + buttonBounds.height).toBeLessThanOrEqual(footerBounds.y);
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+    ).toBe(true);
+    await page.screenshot({
+      path: testInfo.outputPath(`setup-sticky-footer-${width}.png`),
+      animations: "disabled",
+    });
+  }
+});
+
+test("speech model readiness uses one success toast across refreshes and setup steps", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const s = window.dictationTest.snapshot;
+    s.settings.setupComplete = false;
+    s.settings.modelPath = "/base";
+    s.models = [
+      {
+        id: "base",
+        name: "Whisper Base",
+        description: "Everyday dictation",
+        size: 147000000,
+        installed: true,
+        path: "/base",
+        diskBytes: 147000000,
+        removable: true,
+      },
+    ];
+  });
+  await page.goto("/");
+  const toast = page.locator('[data-slot="toast"]').filter({ hasText: "Speech model ready" });
+  await expect(toast).toBeVisible();
+  await expect(
+    page.locator("#main-content").getByText("Speech model ready", { exact: true }),
+  ).toHaveCount(0);
+  await page.evaluate(() => window.dictationTest.history());
+  await expect(toast).toHaveCount(1);
+  await toast.getByRole("button", { name: "Dismiss notification" }).click();
+  await expect(toast).toHaveCount(0);
+  await page.evaluate(() => window.dictationTest.history());
+  await page.getByRole("button", { name: "Next", exact: true }).click();
+  await page.getByRole("button", { name: "Back", exact: true }).click();
+  await expect(toast).toHaveCount(0);
+  await simulateModelDownload(page);
+  await page.getByRole("button", { name: "Check & repair runtime", exact: true }).click();
+  await page.evaluate(() => {
+    const state = window.dictationTest;
+    state.snapshot.ready = false;
+    state.history();
+  });
+  await expect(page.getByRole("button", { name: "Next", exact: true })).toBeDisabled();
+  await page.evaluate(() => {
+    const state = window.dictationTest;
+    state.snapshot.ready = true;
+    state.snapshot.status.phase = "idle";
+    state.snapshot.status.message = "Model installed. Ready to dictate.";
+    state.callbacks["dictation:status"](structuredClone(state.snapshot.status));
+    state.history();
+  });
+  await expect(toast).toBeVisible();
+  await expect(page.locator('[data-slot="toast"]')).toHaveCount(1);
+  await expect(page.getByRole("button", { name: "Next", exact: true })).toBeEnabled();
+});
+
+test("microphone errors use a dismissible toast without adding a page banner", async ({
+  page,
+}, testInfo) => {
+  await page.clock.install();
+  await page.addInitScript(() => {
+    localStorage.setItem("desktop-theme", "dark");
+    const state = window.dictationTest;
+    state.snapshot.settings.setupComplete = false;
+    Reflect.get(window, "go").main.App.StopMicrophoneTest = async () => {
+      const error =
+        "no microphone signal detected; check microphone access and choose another input";
+      state.snapshot.microphoneTested = false;
+      state.snapshot.status.phase = "idle";
+      state.snapshot.status.message = error;
+      state.callbacks["dictation:status"](structuredClone(state.snapshot.status));
+      state.history();
+      throw new Error(error);
+    };
+  });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Next", exact: true }).click();
+  const error = "no microphone signal detected; check microphone access and choose another input";
+  const toast = page.locator('[data-slot="toast"]').filter({ hasText: error });
+  async function failTest() {
+    await page.getByRole("button", { name: "Test microphone", exact: true }).click();
+    await page.getByRole("button", { name: "Stop test", exact: true }).click();
+  }
+  await failTest();
+  await expect(toast).toBeVisible();
+  await expect(toast).toHaveCount(1);
+  await expect(page.locator("#main-content").getByText(error, { exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Next", exact: true })).toBeDisabled();
+  await page.evaluate(() => window.dictationTest.history());
+  await expect(toast).toHaveCount(1);
+  await page.screenshot({
+    path: testInfo.outputPath("microphone-error-toast.png"),
+    animations: "disabled",
+  });
+  await page.keyboard.press("F6");
+  await toast.getByRole("button", { name: "Dismiss notification" }).click();
+  await expect(toast).toHaveCount(0);
+  await failTest();
+  await expect(toast).toBeVisible();
+  await page.getByRole("link", { name: "Models", exact: true }).click();
+  await expect(toast).toBeVisible();
+  await page.clock.fastForward(8001);
+  await expect(toast).toHaveCount(0);
 });
 
 test("first run guides installation, mic testing and shortcut verification", async ({ page }) => {
@@ -2947,8 +3234,23 @@ test("microphone test remains stoppable after navigating away from setup", async
   await page.goto("/");
   await page.getByRole("button", { name: "Next", exact: true }).click();
   await page.getByRole("button", { name: "Test microphone", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Stop test", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Stop microphone test", exact: true })).toHaveCount(
+    0,
+  );
   await page.getByRole("link", { name: "Settings", exact: true }).click();
   await expect(page.getByRole("button", { name: "Save settings", exact: true })).toBeDisabled();
+  await expect(
+    page.getByRole("button", { name: "Stop microphone test", exact: true }),
+  ).toBeVisible();
+  await page.getByRole("link", { name: "Dictate", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "Choose your speech model", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Stop microphone test", exact: true }),
+  ).toBeVisible();
+  await page.getByRole("link", { name: "Settings", exact: true }).click();
   await page.getByRole("button", { name: "Stop microphone test", exact: true }).click();
   await expect(page.getByRole("button", { name: "Stop microphone test", exact: true })).toHaveCount(
     0,
@@ -5187,6 +5489,11 @@ test("audio drag and drop rejects invalid files and recovers for retry", async (
   });
   await expect(page.getByRole("alert")).toContainText("25 minutes");
   expect(await page.evaluate(() => window.dictationTest.droppedAudio.length)).toBe(0);
+  const errorToast = page.locator('[data-slot="toast"]').filter({ hasText: "25 minutes" });
+  await expect(errorToast).toHaveCount(1);
+  await page.keyboard.press("F6");
+  await errorToast.getByRole("button", { name: "Dismiss notification" }).click();
+  await expect(errorToast).toHaveCount(0);
   await page.evaluate(() => {
     window.dictationTest.failAudioImport = false;
     window.dictationTest.callbacks["wails:file-drop"](0, 0, ["C:\\retry.flac"]);
