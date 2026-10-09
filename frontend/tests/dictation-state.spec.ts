@@ -12,6 +12,166 @@ import type {
   VocabularyEntry,
 } from "../src/lib/backend";
 
+async function homeModelScenario(page: Page, custom = false) {
+  await page.addInitScript((custom) => {
+    const state = window.dictationTest;
+    state.snapshot.models = ["tiny", "base", "small"].map((id) => ({
+      id,
+      name: `Whisper ${id[0].toUpperCase()}${id.slice(1)}`,
+      description: "Speech model",
+      size: 100,
+      diskBytes: id === "small" ? 0 : 100,
+      removable: id !== "small",
+      installed: id !== "small",
+      path: `/${id}`,
+    }));
+    state.snapshot.settings.modelPath = custom ? "/models/custom-speech.bin" : "/tiny";
+  }, custom);
+  await page.goto("/");
+}
+
+test("home speech model selector shows the active model and saves installed selections", async ({ page }, testInfo) => {
+  await homeModelScenario(page);
+  const selector = page.getByRole("combobox", { name: "Speech model", exact: true });
+  await expect(selector).toContainText("Whisper Tiny");
+  const settings = await page.evaluate(() => structuredClone(window.dictationTest.snapshot.settings));
+  await page.evaluate(() => {
+    const app = Reflect.get(window, "go").main.App;
+    const save = app.SaveSettings;
+    app.SaveSettings = async (settings: Settings) => {
+      await new Promise<void>(resolve => Reflect.set(window, "finishModelSwitch", resolve));
+      return save(settings);
+    };
+  });
+  await selector.click();
+  await expect(page.getByRole("option", { name: "Whisper Tiny", exact: true })).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByRole("option", { name: /Whisper Small/ }).getByRole("img", { name: "Download required" })).toBeVisible();
+  await page.getByRole("option", { name: "Whisper Base", exact: true }).click();
+  await expect(selector).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Start recording", exact: true })).toBeDisabled();
+  await page.evaluate(() => Reflect.get(window, "finishModelSwitch")());
+  await expect(selector).toBeEnabled();
+  await expect(selector).toContainText("Whisper Base");
+  expect(await page.evaluate(() => window.dictationTest.snapshot.settings)).toEqual({ ...settings, modelPath: "/base" });
+  await page.screenshot({ path: testInfo.outputPath("home-model-selector.png"), animations: "disabled" });
+  await page.getByRole("link", { name: "Models", exact: true }).click();
+  await expect(page.locator("section").filter({ has: page.getByRole("heading", { name: "Whisper Base", exact: true }) }).getByRole("button", { name: "Active", exact: true })).toBeVisible();
+  await page.getByRole("link", { name: "Dictate", exact: true }).click();
+  await expect(selector).toContainText("Whisper Base");
+})
+
+test("home speech model selector retains custom and failed selections and blocks active work", async ({ page }) => {
+  await homeModelScenario(page, true);
+  const selector = page.getByRole("combobox", { name: "Speech model", exact: true });
+  await expect(selector).toContainText("custom-speech.bin");
+  await page.evaluate(() => { window.dictationTest.failSave = true });
+  await selector.click();
+  await page.getByRole("option", { name: "Whisper Base", exact: true }).click();
+  await expect(page.getByRole("alert").filter({ hasText: "Settings save failed" })).toBeVisible();
+  await expect(selector).toBeEnabled();
+  await expect(selector).toContainText("custom-speech.bin");
+  expect(await page.evaluate(() => window.dictationTest.snapshot.settings.modelPath)).toBe("/models/custom-speech.bin");
+  await page.evaluate(() => { window.dictationTest.failSave = false });
+  await selector.click();
+  await page.getByRole("option", { name: "Whisper Base", exact: true }).click();
+  await expect(selector).toContainText("Whisper Base");
+  for (const phase of ["recording", "transcribing", "downloading"]) {
+    await page.evaluate(phase => window.dictationTest.status(phase), phase);
+    await expect(selector).toBeDisabled();
+  }
+  await page.evaluate(() => window.dictationTest.status("idle"));
+  await expect(selector).toBeEnabled();
+  await page.evaluate(() => { window.dictationTest.snapshot.ready = false; window.dictationTest.history() });
+  await expect(selector).toBeEnabled();
+  await expect(page.getByRole("link", { name: "Download model", exact: true })).toBeVisible();
+})
+
+async function simulateModelDownload(page: Page) {
+  await page.evaluate(() => {
+    Reflect.get(window, "go").main.App.InstallModel = async (id: string) => {
+      const state = window.dictationTest;
+      if (state.failSave) throw new Error("Download could not start");
+      state.installedModelIDs.push(id);
+      state.status("downloading");
+    };
+  });
+}
+
+test("home model downloads notify only on completion even after navigation", async ({ page }, testInfo) => {
+  await homeModelScenario(page);
+  await simulateModelDownload(page);
+  const selector = page.getByRole("combobox", { name: "Speech model", exact: true });
+  await selector.click();
+  const small = page.getByRole("option", { name: /Whisper Small/ });
+  await expect(small.getByRole("img", { name: "Download required" })).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath("home-download-options.png"), animations: "disabled" });
+  await small.click();
+  await expect.poll(() => page.evaluate(() => window.dictationTest.installedModelIDs)).toEqual(["small"]);
+  await expect(selector).toBeDisabled();
+  await expect(selector).toContainText("Whisper Tiny");
+  await expect(page.getByRole("button", { name: "Cancel download", exact: true })).toBeVisible();
+  await expect(page.locator('[data-slot="toast"]')).toHaveCount(0);
+  await page.getByRole("link", { name: "Settings", exact: true }).click();
+  await page.evaluate(() => {
+    const state = window.dictationTest;
+    const model = state.snapshot.models.find(model => model.id === "small")!;
+    model.installed = true;
+    state.snapshot.settings.modelPath = model.path;
+    state.snapshot.status.message = "Model installed. Ready to dictate.";
+    state.snapshot.status.phase = "idle";
+    state.callbacks["dictation:status"](structuredClone(state.snapshot.status));
+    state.history();
+  });
+  const success = page.locator('[data-slot="toast"]').filter({ hasText: "Whisper Small downloaded and ready to use." });
+  await expect(success).toBeVisible();
+  await page.evaluate(() => window.dictationTest.history());
+  await expect(success).toHaveCount(1);
+  await page.getByRole("link", { name: "Dictate", exact: true }).click();
+  await expect(selector).toContainText("Whisper Small");
+  await selector.click();
+  await expect(page.getByRole("option", { name: "Whisper Small", exact: true }).getByRole("img", { name: "Download required" })).toHaveCount(0);
+})
+
+test("home model download errors and cancellation preserve the active model and allow retry", async ({ page }) => {
+  await homeModelScenario(page);
+  await simulateModelDownload(page);
+  const selector = page.getByRole("combobox", { name: "Speech model", exact: true });
+  async function download() {
+    await selector.click();
+    await page.getByRole("option", { name: /Whisper Small/ }).click();
+  }
+  await page.evaluate(() => { window.dictationTest.failSave = true });
+  await download();
+  await expect(page.locator('[data-slot="toast"]').filter({ hasText: "Download could not start" })).toBeVisible();
+  await expect(selector).toBeEnabled();
+  await expect(selector).toContainText("Whisper Tiny");
+  await page.evaluate(() => { window.dictationTest.failSave = false });
+  await download();
+  await expect(selector).toBeDisabled();
+  await page.evaluate(() => {
+    const state = window.dictationTest;
+    state.snapshot.status.phase = "error";
+    state.snapshot.status.message = "Download failed";
+    state.callbacks["dictation:status"](structuredClone(state.snapshot.status));
+  });
+  await expect(page.locator('[data-slot="toast"]').filter({ hasText: "Download failed" })).toBeVisible();
+  await expect(selector).toBeEnabled();
+  await download();
+  await expect(selector).toBeDisabled();
+  await page.evaluate(() => {
+    const state = window.dictationTest;
+    state.snapshot.status.phase = "idle";
+    state.snapshot.status.message = "Download cancelled";
+    state.callbacks["dictation:status"](structuredClone(state.snapshot.status));
+  });
+  await expect(selector).toBeEnabled();
+  await expect(selector).toContainText("Whisper Tiny");
+  await expect(page.locator('[data-slot="toast"]')).toHaveCount(0);
+  await download();
+  await expect.poll(() => page.evaluate(() => window.dictationTest.installedModelIDs.length)).toBe(3);
+  await expect(selector).toBeDisabled();
+})
+
 async function shortcutPermissionScenario(page: Page, setup = false) {
   await page.addInitScript((setup) => {
     const state = window.dictationTest;

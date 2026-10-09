@@ -13,8 +13,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/google/uuid"
-	"github.com/wailsapp/wails/v2/pkg/runtime"
 	"yap/internal/audio"
 	"yap/internal/cleanup"
 	"yap/internal/fileutil"
@@ -27,6 +25,9 @@ import (
 	"yap/internal/storage"
 	"yap/internal/tray"
 	"yap/internal/vocabulary"
+
+	"github.com/google/uuid"
+	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 type Status struct {

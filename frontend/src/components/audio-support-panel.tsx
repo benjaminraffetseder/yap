@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import { Download, RefreshCw } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { Progress } from "@/components/ui/progress"
 import { useDictation } from "@/components/dictation-provider"
 import { backend, isBusy, isDesktop, message, type AudioSupport } from "@/lib/backend"
 
@@ -48,7 +49,7 @@ export function AudioSupportPanel({ active, disabled = false }: { active: boolea
           <Button variant="outline" disabled={disabled || busy || pending || checking} onClick={() => void install()}><Download aria-hidden="true" className="size-4" />Download audio support · {(support.size / (1 << 20)).toFixed(1)} MiB</Button>
           <p className="text-xs leading-5 text-muted-foreground">You’ll confirm before downloading. Yap verifies and saves FFmpeg in its data folder without administrator access or PATH changes.</p>
         </div> : <p className="text-xs leading-5 text-muted-foreground">Install FFmpeg manually, then refresh. Automatic downloads are available on Windows x64.</p>)}
-        {downloading && <div className="space-y-2"><div className="flex flex-wrap items-center justify-between gap-3"><p role="status" className="text-sm">{status.message} {Math.round(status.progress * 100)}%</p><Button size="sm" variant="outline" onClick={() => void run(backend.cancel, false)}>Cancel download</Button></div><progress aria-label="Audio support download progress" className="h-2 w-full accent-[var(--primary)]" max={1} value={status.progress} /></div>}
+        {downloading && <div className="space-y-2"><div className="flex flex-wrap items-center justify-between gap-3"><p role="status" className="text-sm">{status.message} {Math.round(status.progress * 100)}%</p><Button size="sm" variant="outline" onClick={() => void run(backend.cancel, false)}>Cancel download</Button></div><Progress aria-label="Audio support download progress" className="w-full" value={status.progress * 100} /></div>}
         {status.phase === "error" && <p role="alert" className="text-sm text-destructive">{status.message}</p>}
       </>}
       <p className="text-xs leading-5 text-muted-foreground">Yap’s Windows download uses LGPL v3 or later; the bundled Mac version uses LGPL v2.1 or later. Licence and source information accompany these copies. <a className="text-primary underline underline-offset-4" href="https://ffmpeg.org/legal.html" target="_blank" rel="noreferrer">FFmpeg licensing</a></p>

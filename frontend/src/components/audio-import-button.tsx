@@ -1,10 +1,11 @@
 import { useDictation } from "@/components/dictation-provider";
 import { Button } from "@/components/ui/button";
+import { Progress } from "@/components/ui/progress";
 import { backend, isBusy, isDesktop } from "@/lib/backend";
 import { Upload } from "lucide-react";
 import { useState } from "react";
 
-export function AudioImportButton() {
+export function AudioImportButton({ showDownloadProgress = true }: { showDownloadProgress?: boolean }) {
   const { snapshot, loading, run } = useDictation();
   const [pending, setPending] = useState(false);
   async function importAudio() {
@@ -32,17 +33,16 @@ export function AudioImportButton() {
         <Upload className="size-4" />
         Import audio
       </Button>
-      {snapshot.status.phase === "downloading" && (
+      {showDownloadProgress && snapshot.status.phase === "downloading" && (
         <div className="flex flex-wrap items-center gap-2 text-sm">
           <span role="status">
             {snapshot.status.message}{" "}
             {Math.round(snapshot.status.progress * 100)}%
           </span>
-          <progress
+          <Progress
             aria-label="Download progress"
-            className="h-2 w-24 accent-[var(--primary)]"
-            max={1}
-            value={snapshot.status.progress}
+            className="w-24"
+            value={snapshot.status.progress * 100}
           />
           <Button
             size="sm"
