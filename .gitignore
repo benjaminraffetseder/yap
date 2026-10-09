@@ -20,7 +20,9 @@ frontend/.playwright/
 !/build/windows/icon.ico
 !/build/windows/info.json
 !/build/windows/wails.exe.manifest
-/scripts/
+/scripts/*
+!/scripts/build-macos.sh
+!/scripts/smoke-macos.sh
 *.tsbuildinfo
 *.exe
 *.pfx

@@ -14,6 +14,7 @@ import { DiagnosticsPanel } from "@/components/diagnostics-panel"
 import { BackupPanel } from "@/components/backup-panel"
 import { AudioSupportPanel } from "@/components/audio-support-panel"
 import { ShortcutInput } from "@/components/shortcut-input"
+import { ShortcutStatus } from "@/components/shortcut-status"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 const sections = [{ value: "dictation", label: "Dictation" }, { value: "general", label: "General" }, { value: "history", label: "History & data" }, { value: "advanced", label: "Advanced" }]
 const themes = [{ value: "light", label: "Light", icon: Sun }, { value: "dark", label: "Dark", icon: Moon }, { value: "system", label: "System", icon: Monitor }] as const
@@ -107,7 +108,7 @@ export function SettingsPage() {
             </SettingRow>
             <SettingRow title="Global shortcut" htmlFor="shortcut" description="Use Ctrl, Alt, or Shift with Space, a letter, or F1–F12.">
               <ShortcutInput id="shortcut" value={settings.shortcut} disabled={controlsDisabled} onChange={shortcut => setSettings(old => ({ ...old, shortcut }))} />
-              {snapshot.status.shortcutError && <p role="alert" className="mt-2 text-xs text-destructive">{snapshot.status.shortcutError}</p>}
+              <ShortcutStatus disabled={controlsDisabled} />
             </SettingRow>
             <SettingRow title="Recording mode" htmlFor="interaction">
               <Select items={recordingModes} value={settings.interaction} disabled={controlsDisabled} onValueChange={value => { if (value !== null) setSettings(old => ({ ...old, interaction: value })) }}>

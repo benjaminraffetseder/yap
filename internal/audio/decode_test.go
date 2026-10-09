@@ -170,6 +170,22 @@ func TestFFmpegDiscoveryIncludesFinderPaths(t *testing.T) {
 	}
 }
 
+func TestFFmpegDiscoveryPrefersMovedMacBundle(t *testing.T) {
+	for _, app := range []string{"/Applications/Yap.app", "/Users/test/Moved Apps/Yap.app"} {
+		executable := filepath.Join(app, "Contents", "MacOS", "Yap")
+		bundled := filepath.Join(app, "Contents", "Resources", "ffmpeg", "ffmpeg")
+		var searched []string
+		path, err := locateFFmpeg("darwin", executable, func(candidate string) (string, error) {
+			searched = append(searched, candidate)
+			// Both bundle and PATH would succeed; the bundle must win.
+			return candidate, nil
+		})
+		if err != nil || path != bundled || len(searched) != 1 {
+			t.Fatalf("bundle discovery: %s %v %v", path, err, searched)
+		}
+	}
+}
+
 func TestImportDecoderPreflight(t *testing.T) {
 	t.Setenv("PATH", "")
 	source := filepath.Join(t.TempDir(), "audio.MP3")

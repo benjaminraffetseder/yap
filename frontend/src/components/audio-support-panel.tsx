@@ -51,7 +51,7 @@ export function AudioSupportPanel({ active, disabled = false }: { active: boolea
         {downloading && <div className="space-y-2"><div className="flex flex-wrap items-center justify-between gap-3"><p role="status" className="text-sm">{status.message} {Math.round(status.progress * 100)}%</p><Button size="sm" variant="outline" onClick={() => void run(backend.cancel, false)}>Cancel download</Button></div><progress aria-label="Audio support download progress" className="h-2 w-full accent-[var(--primary)]" max={1} value={status.progress} /></div>}
         {status.phase === "error" && <p role="alert" className="text-sm text-destructive">{status.message}</p>}
       </>}
-      <p className="text-xs leading-5 text-muted-foreground">Yap’s download uses LGPL v3 or later. Licence and source information are included in its installation folder. <a className="text-primary underline underline-offset-4" href="https://ffmpeg.org/legal.html" target="_blank" rel="noreferrer">FFmpeg licensing</a></p>
+      <p className="text-xs leading-5 text-muted-foreground">Yap’s Windows download uses LGPL v3 or later; the bundled Mac version uses LGPL v2.1 or later. Licence and source information accompany these copies. <a className="text-primary underline underline-offset-4" href="https://ffmpeg.org/legal.html" target="_blank" rel="noreferrer">FFmpeg licensing</a></p>
     </div>
   </section>
 }

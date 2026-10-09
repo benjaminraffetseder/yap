@@ -16,4 +16,8 @@ existing ICO rather than regenerating it.
 
 Executables, generated resources, installers, and local packaging files are
 ignored. The ignore rules allow only the source inputs listed above and this
-README. Build outputs go to `bin/`.
+README under `build/`. Build outputs go to `bin/`.
+
+The checked-in `scripts/build-macos.sh` packages Whisper and FFmpeg inside the
+Mac app, and `scripts/smoke-macos.sh` verifies those bundled tools. See
+[Mac packaging](../docs/macos.md#build-a-self-contained-mac-package).

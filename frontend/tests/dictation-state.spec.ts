@@ -1,6 +1,68 @@
 import { expect, test, type Page } from "@playwright/test"
 import type { BackupPreview, BackupSummary, DiagnosticCheck, Settings, Snapshot, Status, VocabularyEntry, TextProcessing, GeneratedOutput, TextPrompt } from "../src/lib/backend"
 
+async function shortcutPermissionScenario(page: Page, setup = false) {
+  await page.addInitScript(setup => {
+    const state = window.dictationTest
+    state.snapshot.status.shortcutError = "Yap needs Accessibility access for global shortcuts and automatic paste. Enable Yap in System Settings, then retry."
+    state.snapshot.settings.setupComplete = !setup
+    state.snapshot.microphoneTested = true
+    const permission = { granted: false, attempts: 0 }
+    Reflect.set(window, "shortcutPermissionTest", permission)
+    Reflect.set(Reflect.get(window, "go").main.App, "RetryShortcut", async () => {
+      permission.attempts++
+      if (permission.granted) state.snapshot.status.shortcutError = ""
+      state.callbacks["dictation:status"](structuredClone(state.snapshot.status))
+    })
+  }, setup)
+}
+
+for (const recovery of ["button", "focus"] as const) {
+  test(`shortcut permission recovery via ${recovery} preserves unsaved settings`, async ({ page }) => {
+    await shortcutPermissionScenario(page)
+    await page.goto("/#/settings")
+    const retry = page.getByRole("button", { name: "Retry shortcut", exact: true })
+    await expect(retry).toBeVisible()
+    await page.getByLabel("Global shortcut", { exact: true }).fill("Ctrl+Alt+J")
+    await retry.click()
+    await expect(retry).toBeEnabled()
+    await expect(page.getByRole("alert").filter({ hasText: "Accessibility access" })).toBeVisible()
+    await page.evaluate(() => { Reflect.get(window, "shortcutPermissionTest").granted = true })
+    if (recovery === "button") await retry.click()
+    else await page.evaluate(() => window.dispatchEvent(new Event("focus")))
+    await expect(retry).toBeHidden()
+    await expect(page.getByLabel("Global shortcut", { exact: true })).toHaveValue("Ctrl+Alt+J")
+    expect(await page.evaluate(() => window.dictationTest.snapshot.settings.shortcut)).toBe("Ctrl+Alt+Space")
+    expect(await page.evaluate(() => window.dictationTest.snapshot.status.phase)).toBe("idle")
+  })
+}
+
+test("setup retries shortcut permission and still requires a real shortcut test", async ({ page }) => {
+  await shortcutPermissionScenario(page, true)
+  await page.goto("/")
+  await page.getByRole("button", { name: "Next", exact: true }).click()
+  await page.getByRole("button", { name: "Next", exact: true }).click()
+  const retry = page.getByRole("button", { name: "Retry shortcut", exact: true })
+  await expect(retry).toBeVisible()
+  await page.evaluate(() => window.dictationTest.status("recording"))
+  await expect(retry).toBeDisabled()
+  const attempts = await page.evaluate(() => Reflect.get(window, "shortcutPermissionTest").attempts)
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")))
+  expect(await page.evaluate(() => Reflect.get(window, "shortcutPermissionTest").attempts)).toBe(attempts)
+  await page.evaluate(() => {
+    window.dictationTest.status("idle")
+    Reflect.get(window, "shortcutPermissionTest").granted = true
+  })
+  await retry.click()
+  await expect(retry).toBeHidden()
+  await expect(page.getByRole("button", { name: "Finish setup", exact: true })).toBeDisabled()
+  await page.evaluate(() => {
+    window.dictationTest.snapshot.shortcutTested = true
+    window.dictationTest.callbacks["setup:changed"]()
+  })
+  await expect(page.getByRole("button", { name: "Finish setup", exact: true })).toBeEnabled()
+})
+
 test("settings sections keep navigation above full-width content and preserve edits", async ({ page }, testInfo) => {
   await page.addInitScript(() => {
     localStorage.setItem("desktop-theme", "dark")
@@ -390,6 +452,7 @@ test.beforeEach(async ({ page }) => {
             state.history()
           }
         },
+        RetryShortcut: async () => {},
         BeginShortcutCapture: async () => {
           if (state.failCapture) throw new Error("Could not start shortcut capture")
           if (state.captureToken) throw new Error("finish the current operation before recording a shortcut")

@@ -17,9 +17,26 @@ or something fails, select the file again to retry. A completed installation
 stays available even if you cancel the subsequent import.
 
 You can also supply FFmpeg yourself. On Windows, an executable beside Yap or on
-PATH takes precedence over the managed copy. On a Mac, Yap checks PATH and the
-usual Homebrew locations; see [Mac setup](macos.md#optional-audio-formats).
+PATH takes precedence over the managed copy. On a Mac, Yap checks its bundled
+copy first, then PATH and the usual Homebrew locations; see
+[Mac setup](macos.md#optional-audio-formats).
 Other platforms require manual installation.
+
+## The Mac bundle
+
+`bash scripts/build-macos.sh` builds FFmpeg 9.0.2 from its pinned upstream source
+and includes it at `Contents/Resources/ffmpeg/ffmpeg`. This standalone executable
+uses LGPL v2.1 or later, with GPL/nonfree/version3 components disabled and no
+external codec libraries. Yap runs it as a separate process. The bundle contains
+the exact source archive, licence texts, build script, source notice, and each
+architecture's configuration. Keep these files when distributing the app.
+The source SHA-256 is
+`8c3850283eb25fa026482078a04051e0be17347b09ef81a0849bec15a96e002e`.
+
+The build enables local-file audio decoding and PCM output for Yap. FLAC and
+AAC encoding are included for the packaging smoke test. It is not a general
+FFmpeg installation for network inputs or arbitrary output formats. A plain
+`wails build` does not run this packaging step.
 
 ## The Windows download
 

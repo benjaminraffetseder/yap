@@ -23,6 +23,7 @@ extern void keyupCallback(uintptr_t handle);
 void* registerTap(uintptr_t handle, int isMedia, int code, uint64_t flags);
 void unregisterTap(void* tap);
 int isAXTrusted();
+int requestAXTrust();
 int onMainProbe();
 */
 import "C"
@@ -37,7 +38,8 @@ import (
 //
 // On macOS every hotkey is served by a CGEventTap, which requires the
 // application to be trusted for Accessibility (Input Monitoring). Register
-// returns an error when that permission is missing.
+// requests the system prompt once per process and returns an error until
+// Accessibility access is granted.
 type platformHotkey struct {
 	mu         sync.Mutex
 	registered bool
@@ -59,6 +61,9 @@ func (hk *Hotkey) register() error {
 	defer hk.mu.Unlock()
 	if hk.registered {
 		return errAlreadyRegistered
+	}
+	if C.requestAXTrust() == 0 {
+		return errors.New("Yap needs Accessibility access for global shortcuts and automatic paste. Open System Settings → Privacy & Security → Accessibility, add or enable Yap, then return to Yap or click Retry shortcut.")
 	}
 
 	var (
@@ -99,7 +104,7 @@ func (hk *Hotkey) register() error {
 	tap := C.registerTap(C.uintptr_t(h), isMedia, code, flags)
 	if tap == nil {
 		h.Delete()
-		return errors.New("hotkey: failed to register; grant Accessibility permission and check the keyboard layout, or choose Space/F1–F12")
+		return errors.New("hotkey: could not register despite Accessibility access; check Input Monitoring permission and the keyboard layout, or choose Space/F1–F12, then retry")
 	}
 	hk.tap = tap
 	hk.handle = h

@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react"
 import { EventsOn } from "@wails/runtime/runtime"
-import { backend, defaultTextProcessing, isDesktop, message, type Snapshot, type Status } from "@/lib/backend"
+import { backend, defaultTextProcessing, isBusy, isDesktop, message, type Snapshot, type Status } from "@/lib/backend"
 const empty: Snapshot = {
   textProcessing: defaultTextProcessing,
   settings: { microphoneId: "", whisperPath: "", modelPath: "", language: "auto", shortcut: "Ctrl+Alt+Space", interaction: "hold", autoPaste: true, saveAudio: false, launchAtLogin: false, startInTray: false, cleanText: false, setupComplete: false, historyRetentionDays: 0 },
@@ -42,6 +42,19 @@ export function DictationProvider({ children }: { children: ReactNode }) {
   async function run(action: () => Promise<unknown>, reload = true) {
     setError(""); try { await action(); if (reload) await refresh() } catch (cause) { setError(message(cause)) }
   }
+  useEffect(() => {
+    if (!isDesktop || !snapshot.status.shortcutError || isBusy(snapshot.status.phase)) return
+    let pending = false
+    const retry = () => {
+      if (pending) return
+      pending = true
+      // Returning from macOS Settings should recover without a restart. The
+      // backend protects recording/capture and preserves registration errors.
+      void backend.retryShortcut().then(refresh).catch(() => {}).finally(() => { pending = false })
+    }
+    window.addEventListener("focus", retry)
+    return () => window.removeEventListener("focus", retry)
+  }, [snapshot.status.shortcutError, snapshot.status.phase, refresh])
   useEffect(() => {
     if (!isDesktop) return
     let active = true

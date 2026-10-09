@@ -18,6 +18,24 @@ extern void keyupCallback(uintptr_t handle);
 // (Input Monitoring), which a keyboard event tap requires.
 int isAXTrusted() { return AXIsProcessTrusted() ? 1 : 0; }
 
+// Ask macOS to guide the user to Accessibility settings. The prompt is
+// asynchronous: registration must still fail until trust is actually granted.
+// Retry/focus events must not repeatedly interrupt a user who declines access.
+int requestAXTrust() {
+	if (AXIsProcessTrusted()) { return 1; }
+	static dispatch_once_t once;
+	dispatch_once(&once, ^{
+		const void *keys[] = { kAXTrustedCheckOptionPrompt };
+		const void *values[] = { kCFBooleanTrue };
+		CFDictionaryRef options = CFDictionaryCreate(kCFAllocatorDefault,
+			keys, values, 1, &kCFTypeDictionaryKeyCallBacks,
+			&kCFTypeDictionaryValueCallBacks);
+		AXIsProcessTrustedWithOptions(options);
+		CFRelease(options);
+	});
+	return AXIsProcessTrusted() ? 1 : 0;
+}
+
 // onMain runs block on the main thread and waits for it. On the main thread
 // it runs block at once: a dispatch_sync onto the queue one is already on
 // never returns, and libdispatch traps it, which crashed a Register or
