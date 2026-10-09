@@ -22,6 +22,7 @@ type Settings struct {
 	Language             string `json:"language"`
 	Shortcut             string `json:"shortcut"`
 	Interaction          string `json:"interaction"`
+	AutoCopy             bool   `json:"autoCopy"`
 	AutoPaste            bool   `json:"autoPaste"`
 	SaveAudio            bool   `json:"saveAudio"`
 	LaunchAtLogin        bool   `json:"launchAtLogin"`
@@ -32,7 +33,7 @@ type Settings struct {
 }
 
 func Defaults() Settings {
-	return Settings{Language: "auto", Shortcut: "Ctrl+Alt+Space", Interaction: "hold", AutoPaste: true}
+	return Settings{Language: "auto", Shortcut: "Ctrl+Alt+Space", Interaction: "hold", AutoCopy: true, AutoPaste: true}
 }
 
 type Session struct {

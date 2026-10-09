@@ -1146,6 +1146,7 @@ test.beforeEach(async ({ page }) => {
           language: "auto",
           shortcut: "Ctrl+Alt+Space",
           interaction: "hold",
+          autoCopy: true,
           autoPaste: true,
           saveAudio: false,
           launchAtLogin: false,
@@ -1953,6 +1954,70 @@ test("vocabulary drafts survive refresh and failed saves, normalize and persist"
   await expect
     .poll(() => page.evaluate(() => window.dictationTest.snapshot.vocabulary.length))
     .toBe(0);
+});
+
+test("automatic clipboard copying defaults on and persists with manual copying available", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    window.dictationTest.snapshot.history = [
+      {
+        id: "clipboard-setting",
+        createdAt: new Date().toISOString(),
+        durationMs: 2000,
+        rawTranscript: "A private thought.",
+        finalTranscript: "A private thought.",
+        speechModel: "base",
+        language: "en",
+        audioPath: "",
+      },
+    ];
+  });
+  await page.goto("/#/settings");
+  const copy = page.getByRole("checkbox", { name: /Copy automatically to clipboard/ });
+  const paste = page.getByRole("checkbox", { name: /Paste automatically/ });
+  await expect(copy).toBeChecked();
+  await expect(paste).toBeEnabled();
+  await copy.uncheck();
+  await expect(paste).toBeDisabled();
+  await expect
+    .poll(() => page.evaluate(() => window.dictationTest.snapshot.settings.autoCopy))
+    .toBe(true);
+  await page.getByRole("button", { name: "Discard changes", exact: true }).click();
+  await expect(copy).toBeChecked();
+  await copy.uncheck();
+  await page.evaluate(() => {
+    window.dictationTest.failSave = true;
+  });
+  await page.getByRole("button", { name: "Save settings", exact: true }).click();
+  await expect(
+    page.locator('[data-slot="toast"]').filter({ hasText: "Settings save failed" }),
+  ).toBeVisible();
+  await expect(copy).not.toBeChecked();
+  await expect
+    .poll(() => page.evaluate(() => window.dictationTest.snapshot.settings.autoCopy))
+    .toBe(true);
+  await page.evaluate(() => {
+    window.dictationTest.failSave = false;
+  });
+  await page.getByRole("button", { name: "Save settings", exact: true }).click();
+  await expect
+    .poll(() => page.evaluate(() => window.dictationTest.snapshot.settings.autoCopy))
+    .toBe(false);
+  await page.goto("/#/history");
+  await page.getByRole("link", { name: /A private thought/ }).click();
+  await page.getByRole("button", { name: "Copy transcription", exact: true }).click();
+  await expect
+    .poll(() => page.evaluate(() => window.dictationTest.snapshot.status.transcript))
+    .toBe("A private thought.");
+  await page.goto("/#/settings");
+  await expect(copy).not.toBeChecked();
+  await copy.check();
+  await expect(paste).toBeEnabled();
+  await page.getByRole("button", { name: "Save settings", exact: true }).click();
+  await expect
+    .poll(() => page.evaluate(() => window.dictationTest.snapshot.settings.autoCopy))
+    .toBe(true);
 });
 
 test("light cleanup defaults off and applies only after settings save", async ({ page }) => {
@@ -4616,6 +4681,7 @@ async function setupBackupPreview(page: Page) {
         language: "de",
         interaction: "toggle",
         autoPaste: false,
+        autoCopy: true,
         saveAudio: true,
         cleanText: true,
       },

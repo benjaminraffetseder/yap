@@ -87,6 +87,7 @@ export type Settings = {
   language: string;
   shortcut: string;
   interaction: string;
+  autoCopy: boolean;
   autoPaste: boolean;
   saveAudio: boolean;
   launchAtLogin: boolean;
@@ -201,7 +202,7 @@ export type BackupSummary = {
 };
 export type BackupPreferences = Pick<
   Settings,
-  "language" | "interaction" | "autoPaste" | "saveAudio" | "cleanText"
+  "language" | "interaction" | "autoCopy" | "autoPaste" | "saveAudio" | "cleanText"
 >;
 export type BackupPreview = {
   id: string;

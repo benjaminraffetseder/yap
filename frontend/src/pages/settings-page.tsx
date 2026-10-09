@@ -364,10 +364,17 @@ export function SettingsPage() {
                 onCheckedChange={(cleanText) => setSettings((old) => ({ ...old, cleanText }))}
               />
               <ToggleSetting
-                title="Paste automatically"
-                description="Paste into the focused app after shortcut dictation. Otherwise, copy only."
-                checked={settings.autoPaste}
+                title="Copy automatically to clipboard"
+                description="Copy completed dictation to the clipboard. When off, save only to History."
+                checked={settings.autoCopy}
                 disabled={controlsDisabled}
+                onCheckedChange={(autoCopy) => setSettings((old) => ({ ...old, autoCopy }))}
+              />
+              <ToggleSetting
+                title="Paste automatically"
+                description="Paste into the focused app after shortcut dictation. Requires automatic clipboard copying."
+                checked={settings.autoPaste}
+                disabled={controlsDisabled || !settings.autoCopy}
                 onCheckedChange={(autoPaste) => setSettings((old) => ({ ...old, autoPaste }))}
               />
               <div className="flex flex-wrap items-center justify-between gap-3 py-4">

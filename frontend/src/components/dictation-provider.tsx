@@ -28,6 +28,7 @@ const empty: Snapshot = {
     language: "auto",
     shortcut: "Ctrl+Alt+Space",
     interaction: "hold",
+    autoCopy: true,
     autoPaste: true,
     saveAudio: false,
     launchAtLogin: false,

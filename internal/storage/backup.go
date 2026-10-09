@@ -32,6 +32,7 @@ const maxBackupEntries = 100000
 type BackupPreferences struct {
 	Language    string `json:"language"`
 	Interaction string `json:"interaction"`
+	AutoCopy    bool   `json:"autoCopy"`
 	AutoPaste   bool   `json:"autoPaste"`
 	SaveAudio   bool   `json:"saveAudio"`
 	CleanText   bool   `json:"cleanText"`
@@ -137,7 +138,7 @@ func backupSnapshotBounded(ctx context.Context, tx *sql.Tx, limit int64) (backup
 	if err := readBackupValue(ctx, tx, "vocabulary", &m.Vocabulary); err != nil {
 		return m, err
 	}
-	m.Preferences = BackupPreferences{settings.Language, settings.Interaction, settings.AutoPaste, settings.SaveAudio, settings.CleanText}
+	m.Preferences = BackupPreferences{settings.Language, settings.Interaction, settings.AutoCopy, settings.AutoPaste, settings.SaveAudio, settings.CleanText}
 	m.Prompts = config.Prompts
 	base, err := json.Marshal(m)
 	if err != nil {
@@ -485,6 +486,7 @@ func ReadBackup(ctx context.Context, path string) (_ *BackupArchive, err error) 
 	if err != nil || int64(len(data)) > maxManifestBytes {
 		return nil, errors.New("backup metadata is damaged or too large")
 	}
+	b.manifest.Preferences.AutoCopy = true
 	if err = json.Unmarshal(data, &b.manifest); err != nil {
 		return nil, errors.New("invalid backup metadata")
 	}
@@ -706,6 +708,7 @@ func (s *Store) RestoreBackup(ctx context.Context, b *BackupArchive, preferences
 	if preferences {
 		v := b.manifest.Preferences
 		p.settings.Language, p.settings.Interaction, p.settings.AutoPaste, p.settings.SaveAudio, p.settings.CleanText = v.Language, v.Interaction, v.AutoPaste, v.SaveAudio, v.CleanText
+		p.settings.AutoCopy = v.AutoCopy
 	}
 	for _, value := range []struct {
 		table string

@@ -15,6 +15,7 @@ func TestPersistenceAndAudioDeletion(t *testing.T) {
 	settings := Defaults()
 	settings.Language = "de"
 	settings.SaveAudio = true
+	settings.AutoCopy = false
 	settings.MicrophoneID = "persistent-usb-device"
 	settings.LaunchAtLogin, settings.StartInTray = true, true
 	if err = s.SaveSettings(settings); err != nil {
@@ -74,6 +75,9 @@ func TestExistingSettingsKeepSystemDefaultMicrophone(t *testing.T) {
 	}
 	if settings.LaunchAtLogin || settings.StartInTray {
 		t.Fatal("existing settings unexpectedly enabled background startup")
+	}
+	if !settings.AutoCopy {
+		t.Fatal("existing settings must enable automatic copying by default")
 	}
 }
 func TestDeletionDoesNotRemoveExternalFile(t *testing.T) {

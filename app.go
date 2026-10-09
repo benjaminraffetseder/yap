@@ -511,7 +511,7 @@ func (a *App) start(external bool) error {
 	a.id = uuid.NewString()
 	a.path = path
 	a.target = ""
-	if external && a.settings.AutoPaste {
+	if external && a.settings.AutoCopy && a.settings.AutoPaste {
 		a.target = platform.Target()
 	}
 	if err := a.recorder.Start(a.path, a.settings.MicrophoneID, func(level float64) {
@@ -575,7 +575,7 @@ func (a *App) stop() {
 	go func() {
 		defer a.wg.Done()
 		defer cancel()
-		a.transcribe(ctx, id, path, target, duration, settings, entries, textConfig, true)
+		a.transcribe(ctx, id, path, target, duration, settings, entries, textConfig, settings.AutoCopy)
 	}()
 }
 func (a *App) transcribe(ctx context.Context, id, path, target string, duration int64, settings storage.Settings, entries []vocabulary.Entry, textConfig textmodel.Config, copyToClipboard bool) {

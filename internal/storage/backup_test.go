@@ -141,6 +141,7 @@ func backupFixture(t *testing.T) (*Store, string) {
 	s := backupStore(t)
 	settings := Defaults()
 	settings.Language, settings.Interaction, settings.CleanText = "de", "toggle", true
+	settings.AutoCopy = false
 	settings.ModelPath, settings.WhisperPath, settings.MicrophoneID, settings.Shortcut = "SOURCE_MODEL", "SOURCE_RUNTIME", "SOURCE_MIC", "Ctrl+Shift+F1"
 	settings.LaunchAtLogin, settings.StartInTray, settings.SetupComplete, settings.HistoryRetentionDays = true, true, true, 7
 	if err := s.SaveSettings(settings); err != nil {
@@ -218,6 +219,7 @@ func TestBackupRoundTripAllHistoryAndPortableSettings(t *testing.T) {
 	}
 	want := local
 	want.Language, want.Interaction, want.CleanText = "de", "toggle", true
+	want.AutoCopy = false
 	if result.Settings != want {
 		t.Fatalf("device settings changed: %+v", result.Settings)
 	}
@@ -327,7 +329,7 @@ func TestBackupRestoreRollsBackDatabaseAndAudio(t *testing.T) {
 	}
 }
 
-func writeBackupArchive(t *testing.T, path string, manifest backupManifest, extra map[string][]byte) {
+func writeBackupArchive(t *testing.T, path string, manifest any, extra map[string][]byte) {
 	t.Helper()
 	f, err := os.Create(path)
 	if err != nil {

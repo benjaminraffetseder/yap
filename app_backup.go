@@ -211,6 +211,7 @@ func (a *App) RestoreBackup(id string, preferences bool) (storage.BackupSummary,
 		if preferences {
 			v := result.Settings
 			a.settings.Language, a.settings.Interaction, a.settings.AutoPaste, a.settings.SaveAudio, a.settings.CleanText = v.Language, v.Interaction, v.AutoPaste, v.SaveAudio, v.CleanText
+			a.settings.AutoCopy = v.AutoCopy
 		}
 		a.textConfig, a.vocabulary = result.TextProcessing, result.Vocabulary
 		a.diagnostic = DiagnosticResult{}
