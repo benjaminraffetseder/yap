@@ -58,7 +58,7 @@ off by default. It doesn't need a text model or change older transcripts.
 ## Importing audio
 
 Choose **Import audio** in Dictate or History. Supported files are WAV, MP3, M4A,
-AAC, FLAC, OGG, Opus, AIFF, and WMA, from 0.3 seconds to ten minutes long and up
+AAC, FLAC, OGG, Opus, AIFF, and WMA, from 0.3 seconds to 25 minutes long and up
 to 256 MiB. Longer files are rejected rather than cut short.
 
 Imports use your saved speech and text-processing settings. The result goes into

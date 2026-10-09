@@ -2262,6 +2262,7 @@ test("audio import handles file-picker cancellation, unavailable models, invalid
   await page.goto("/#/history")
   const button = page.getByRole("button", { name: "Import audio", exact: true })
   await expect(button).toHaveAttribute("title", /WAV, MP3, M4A, AAC, FLAC, OGG, Opus, AIFF, WMA/)
+  await expect(button).toHaveAttribute("title", /up to 25 minutes/)
   await page.evaluate(() => { window.dictationTest.cancelAudioDialog = true })
   await button.click()
   await expect(button).toBeEnabled()

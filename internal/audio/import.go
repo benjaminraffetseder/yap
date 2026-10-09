@@ -12,6 +12,7 @@ import (
 )
 
 const maxImportBytes int64 = 256 << 20
+const maxImportSeconds int64 = 25 * 60
 
 type importWaveFormat struct {
 	codec, channels, bits, align uint16
@@ -42,8 +43,8 @@ func NormalizeFile(ctx context.Context, path string, destination io.Writer) (int
 		return 0, err
 	}
 	frames := format.size / int64(format.align)
-	if frames < int64(format.rate)*3/10 || frames > int64(format.rate)*600 {
-		return 0, errors.New("choose audio between 0.3 seconds and 10 minutes")
+	if frames < int64(format.rate)*3/10 || frames > int64(format.rate)*maxImportSeconds {
+		return 0, errImportDuration
 	}
 	if _, err = f.Seek(format.offset, io.SeekStart); err != nil {
 		return 0, err

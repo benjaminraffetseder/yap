@@ -44,6 +44,8 @@ func TestMain(m *testing.M) {
 			os.Exit(2)
 		case "overlong":
 			io.CopyN(os.Stdout, zeroAudioReader{}, maxDecodedBytes+2)
+		case "max-length":
+			io.CopyN(os.Stdout, zeroAudioReader{}, 16000*2*25*60)
 		case "short":
 			os.Stdout.Write(make([]byte, 100))
 		default:
@@ -73,7 +75,7 @@ func TestCompressedImportProcessAndCleanup(t *testing.T) {
 	os.WriteFile(source, []byte("compressed fixture"), 0600)
 	executable, _ := os.Executable()
 	resolve := func() (string, error) { return executable, nil }
-	for _, mode := range []string{"normal", "fail", "overlong", "short", "wait"} {
+	for _, mode := range []string{"normal", "max-length", "fail", "overlong", "short", "wait"} {
 		t.Run(mode, func(t *testing.T) {
 			t.Setenv("YAP_TEST_AUDIO_DECODER", mode)
 			inputLog := filepath.Join(t.TempDir(), "input.txt")
@@ -94,6 +96,15 @@ func TestCompressedImportProcessAndCleanup(t *testing.T) {
 				data, _ := io.ReadAll(out)
 				if len(data) != 32044 || binary.LittleEndian.Uint32(data[40:]) != 32000 || binary.LittleEndian.Uint16(data[22:]) != 1 {
 					t.Fatal("invalid normalized WAV")
+				}
+			} else if mode == "max-length" {
+				if err != nil || duration != 25*60*1000 {
+					t.Fatalf("25-minute decode: %d %v", duration, err)
+				}
+				out.Seek(0, io.SeekStart)
+				header := make([]byte, 44)
+				if _, err := io.ReadFull(out, header); err != nil || binary.LittleEndian.Uint32(header[40:]) != 16000*2*25*60 {
+					t.Fatalf("invalid 25-minute WAV header: %v", err)
 				}
 			} else if err == nil {
 				t.Fatal("accepted failed or out-of-bounds decoding")

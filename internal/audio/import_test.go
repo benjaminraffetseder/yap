@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"io"
 	"math"
 	"os"
 	"path/filepath"
@@ -206,9 +207,9 @@ func TestImportRejectsInvalidAndOversizedAudio(t *testing.T) {
 	if _, err := NormalizeFile(context.Background(), path, &bytes.Buffer{}); err == nil {
 		t.Fatal("accepted oversized file")
 	}
-	// A sparse valid WAV over ten minutes must fail before conversion starts.
+	// A sparse valid WAV over 25 minutes must fail before conversion starts.
 	long := bytes.Clone(valid[:44])
-	size := uint32(16000 * 2 * 601)
+	size := uint32(16000 * 2 * 1501)
 	binary.LittleEndian.PutUint32(long[4:], size+36)
 	binary.LittleEndian.PutUint32(long[40:], size)
 	f, _ = os.Create(path)
@@ -217,6 +218,34 @@ func TestImportRejectsInvalidAndOversizedAudio(t *testing.T) {
 	f.Close()
 	if _, err := NormalizeFile(context.Background(), path, &bytes.Buffer{}); err == nil {
 		t.Fatal("accepted overlong WAV")
+	}
+}
+
+func TestImportDurationBoundary(t *testing.T) {
+	for _, frames := range []uint32{16000 * 25 * 60, 16000*25*60 + 1} {
+		t.Run(fmt.Sprint(frames), func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "boundary.wav")
+			file, err := os.Create(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			err = Header(file, frames*2)
+			if err == nil {
+				err = file.Truncate(int64(frames)*2 + 44)
+			}
+			err = errors.Join(err, file.Close())
+			if err != nil {
+				t.Fatal(err)
+			}
+			duration, err := NormalizeFile(context.Background(), path, io.Discard)
+			if frames == 16000*25*60 {
+				if err != nil || duration != 25*60*1000 {
+					t.Fatalf("25-minute import: duration=%d, err=%v", duration, err)
+				}
+			} else if err == nil || err.Error() != "choose audio between 0.3 seconds and 25 minutes" {
+				t.Fatalf("overlong import: %v", err)
+			}
+		})
 	}
 }
 

@@ -23,9 +23,9 @@ var importFormats = map[string]string{
 }
 
 const ImportFilePattern = "*.wav;*.mp3;*.m4a;*.aac;*.flac;*.ogg;*.opus;*.aif;*.aiff;*.wma"
-const maxDecodedBytes int64 = 16000 * 2 * 600
+const maxDecodedBytes int64 = 16000 * 2 * maxImportSeconds
 
-var errImportDuration = errors.New("choose audio between 0.3 seconds and 10 minutes")
+var errImportDuration = errors.New("choose audio between 0.3 seconds and 25 minutes")
 var ErrFFmpegMissing = errors.New("this audio format requires local FFmpeg. Install FFmpeg, add it to PATH, and reopen Yap. On macOS, Homebrew's default install is also detected. WAV import works without FFmpeg")
 
 // ImportDecoder checks the selected file before offering a download. Local
