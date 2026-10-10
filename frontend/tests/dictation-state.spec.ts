@@ -2760,28 +2760,31 @@ test("history uses processed text for copy and exposes searchable originals", as
   await page.goto("/#/history");
   await page.getByLabel("Search transcripts").fill("um,");
   await page.getByRole("link", { name: /Send PostgreSQL/ }).click();
+  await expect(page.getByRole("region", { name: "Result", exact: true })).toContainText(
+    "Send PostgreSQL.",
+  );
+  await page.getByRole("tab", { name: "Original", exact: true }).click();
   await expect(
     page.getByRole("region", { name: "Original transcription", exact: true }),
   ).toBeVisible();
   await expect(page.getByText("um, send postgres", { exact: true })).toBeVisible();
-  await expect(page.getByRole("region", { name: "Result", exact: true })).toContainText(
-    "Send PostgreSQL.",
-  );
   await page.getByRole("button", { name: "Copy original", exact: true }).click();
   await expect
     .poll(() => page.evaluate(() => window.dictationTest.snapshot.status.transcript))
     .toBe("um, send postgres");
+  await page.getByRole("tab", { name: "Transcription", exact: true }).click();
   await page.getByRole("button", { name: "Copy result", exact: true }).click();
   await expect
     .poll(() => page.evaluate(() => window.dictationTest.snapshot.status.transcript))
     .toBe("Send PostgreSQL.");
 });
 
-test("History opens a dictation page with comparison panels that stack on narrow windows", async ({
+test("History opens a dictation page with content tabs that fit narrow windows", async ({
   page,
 }, testInfo) => {
   await page.addInitScript(() => {
     localStorage.setItem("desktop-theme", "dark");
+    localStorage.setItem("yap-sidebar-collapsed", "true");
     window.dictationTest.snapshot.history = [
       {
         id: "summary",
@@ -2919,28 +2922,37 @@ test("History opens a dictation page with comparison panels that stack on narrow
     exact: true,
   });
   await expect(result).toBeVisible();
-  await expect(original).toBeVisible();
-  let left = (await result.boundingBox())!;
-  let right = (await original.boundingBox())!;
-  expect(right.x).toBeGreaterThan(left.x + left.width);
-  await page.screenshot({
-    path: testInfo.outputPath("history-comparison-desktop.png"),
-    fullPage: true,
-    animations: "disabled",
-  });
-  await page.setViewportSize({ width: 600, height: 900 });
-  left = (await result.boundingBox())!;
-  right = (await original.boundingBox())!;
-  expect(right.y).toBeGreaterThan(left.y + left.height);
-  expect(right.x).toBe(left.x);
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
-    true,
+  await expect(original).not.toBeVisible();
+  const contents = page.getByRole("tablist", { name: "Dictation contents" });
+  for (const width of [1280, 600, 360]) {
+    await page.setViewportSize({ width, height: 900 });
+    for (const name of ["Transcription", "Original", "Outputs"]) {
+      await contents.getByRole("tab", { name, exact: true }).click();
+      await expect(contents.getByRole("tab", { name, exact: true })).toHaveAttribute(
+        "aria-selected",
+        "true",
+      );
+      await expect(page.getByRole("tabpanel")).toHaveCount(1);
+      expect(
+        await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+      ).toBe(true);
+      await page.screenshot({
+        path: testInfo.outputPath(`dictation-${name.toLowerCase()}-${width}.png`),
+        fullPage: true,
+        animations: "disabled",
+      });
+    }
+    await expect(page.getByText("No generated outputs yet.", { exact: true })).toBeVisible();
+  }
+  await contents.getByRole("tab", { name: "Original", exact: true }).focus();
+  await page.keyboard.press("ArrowRight");
+  await page.keyboard.press("Enter");
+  await expect(contents.getByRole("tab", { name: "Outputs", exact: true })).toBeFocused();
+  await expect(contents.getByRole("tab", { name: "Outputs", exact: true })).toHaveAttribute(
+    "aria-selected",
+    "true",
   );
-  await page.screenshot({
-    path: testInfo.outputPath("history-comparison-narrow.png"),
-    fullPage: true,
-    animations: "disabled",
-  });
+  await contents.getByRole("tab", { name: "Transcription", exact: true }).click();
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.getByRole("button", { name: "Edit transcript", exact: true }).click();
   const dialog = page.getByRole("dialog", {
@@ -3046,9 +3058,11 @@ test("direct dictation pages load older entries outside the snapshot, retry erro
     "Saved 500",
   );
   await page.reload();
+  await page.getByRole("tab", { name: "Original", exact: true }).click();
   await expect(
     page.getByRole("region", { name: "Original transcription", exact: true }),
   ).toContainText("Original 500");
+  await page.getByRole("tab", { name: "Transcription", exact: true }).click();
   await page.evaluate(() => {
     window.dictationTest.failSession = true;
     window.dictationTest.history();
@@ -3160,6 +3174,7 @@ test("saved outputs retain their recipes, regenerate as new versions and leave e
     state.outputs = JSON.parse(sessionStorage.getItem("output-test-versions") ?? "[]");
   });
   await page.goto("/#/history/one");
+  await page.getByRole("tab", { name: "Outputs", exact: true }).click();
   await expect(page.getByRole("button", { name: "Generate output", exact: true })).toBeEnabled();
   await page.getByRole("combobox", { name: "Output prompt", exact: true }).click();
   await page.getByRole("option", { name: "Summary", exact: true }).click();
@@ -3167,10 +3182,23 @@ test("saved outputs retain their recipes, regenerate as new versions and leave e
   await expect
     .poll(() => page.evaluate(() => window.dictationTest.processing?.input))
     .toBe("Test the new model and compare its recognition of names and technical terms.");
+  await page.getByRole("tab", { name: "Original", exact: true }).click();
+  await expect(
+    page.getByRole("region", { name: "Original transcription", exact: true }),
+  ).toBeVisible();
   await page.evaluate(() =>
     window.dictationTest.processing!.resolve(
       "Compare the new model's recognition of names and technical terms.",
     ),
+  );
+  await settle(page);
+  await expect(page.getByRole("tab", { name: "Original", exact: true })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+  await page.getByRole("tab", { name: "Outputs", exact: true }).click();
+  await expect(page.getByRole("combobox", { name: "Output prompt", exact: true })).toContainText(
+    "Summary",
   );
   const first = page
     .getByRole("article", { name: "Summary output", exact: true })
@@ -3187,9 +3215,11 @@ test("saved outputs retain their recipes, regenerate as new versions and leave e
     .getByRole("textbox", { name: "Editable text", exact: true })
     .fill("Updated transcription for the next comparison.");
   await page.getByRole("button", { name: "Save transcript", exact: true }).click();
+  await page.getByRole("tab", { name: "Transcription", exact: true }).click();
   await expect(page.getByRole("region", { name: "Result", exact: true })).toContainText(
     "Updated transcription",
   );
+  await page.getByRole("tab", { name: "Outputs", exact: true }).click();
   await page.evaluate(() => {
     const state = window.dictationTest;
     state.snapshot.textProcessing.model = "new-model";
@@ -3215,12 +3245,15 @@ test("saved outputs retain their recipes, regenerate as new versions and leave e
     .filter({ hasText: "Test the model with names" });
   await expect(second).toContainText("new-model");
   await expect(first).toBeVisible();
+  await page.getByRole("tab", { name: "Transcription", exact: true }).click();
   await expect(page.getByRole("region", { name: "Result", exact: true })).toContainText(
     "Updated transcription",
   );
+  await page.getByRole("tab", { name: "Original", exact: true }).click();
   await expect(
     page.getByRole("region", { name: "Original transcription", exact: true }),
   ).toContainText("um we should test");
+  await page.getByRole("tab", { name: "Outputs", exact: true }).click();
   await first.getByText("Input and prompt", { exact: true }).click();
   await page.screenshot({
     path: testInfo.outputPath("saved-outputs.png"),
@@ -3235,6 +3268,7 @@ test("saved outputs retain their recipes, regenerate as new versions and leave e
     sessionStorage.setItem("output-test-versions", JSON.stringify(window.dictationTest.outputs));
   });
   await page.reload();
+  await page.getByRole("tab", { name: "Outputs", exact: true }).click();
   await expect(first).toContainText("local-model");
   await expect(second).toContainText("new-model");
   await first.getByRole("button", { name: "Delete output", exact: true }).click();
@@ -3253,6 +3287,7 @@ test("saved outputs retain their recipes, regenerate as new versions and leave e
   await dialog.getByRole("button", { name: "Delete output", exact: true }).click();
   await expect(first).toHaveCount(0);
   await expect(second).toBeVisible();
+  await page.getByRole("tab", { name: "Transcription", exact: true }).click();
   await expect(page.getByRole("region", { name: "Result", exact: true })).toContainText(
     "Updated transcription",
   );
@@ -3260,8 +3295,9 @@ test("saved outputs retain their recipes, regenerate as new versions and leave e
 
 test("failed, cancelled and abandoned output generation never adds a late result", async ({
   page,
-}) => {
+}, testInfo) => {
   await page.addInitScript(() => {
+    localStorage.setItem("yap-sidebar-collapsed", "true");
     const state = window.dictationTest;
     state.snapshot.textProcessing.enabled = true;
     state.snapshot.textProcessing.model = "model";
@@ -3279,7 +3315,9 @@ test("failed, cancelled and abandoned output generation never adds a late result
     ];
     state.failProcessing = true;
   });
+  await page.setViewportSize({ width: 360, height: 900 });
   await page.goto("/#/history/one");
+  await page.getByRole("tab", { name: "Outputs", exact: true }).click();
   await page.getByRole("button", { name: "Generate output", exact: true }).click();
   await expect(page.getByRole("alert").filter({ hasText: "Model unavailable" })).toBeVisible();
   await expect(page.getByText("No generated outputs yet.", { exact: true })).toBeVisible();
@@ -3287,13 +3325,32 @@ test("failed, cancelled and abandoned output generation never adds a late result
     window.dictationTest.failProcessing = false;
   });
   await page.getByRole("button", { name: "Generate output", exact: true }).click();
+  await expect(
+    page.getByRole("button", { name: "Cancel generation", exact: true }),
+  ).toBeInViewport();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
+    true,
+  );
+  await page.screenshot({ path: testInfo.outputPath("output-controls-generating-narrow.png") });
+  const activeID = await page.evaluate(() => window.dictationTest.processing!.id);
+  await page.getByRole("tab", { name: "Transcription", exact: true }).click();
+  await expect(page.getByRole("region", { name: "Result", exact: true })).toContainText(
+    "Edited speech",
+  );
+  expect(await page.evaluate(() => window.dictationTest.cancelledProcessing)).not.toContain(
+    activeID,
+  );
+  await page.getByRole("tab", { name: "Outputs", exact: true }).click();
+  expect(await page.evaluate(() => window.dictationTest.processing!.id)).toBe(activeID);
   await page.getByRole("button", { name: "Cancel generation", exact: true }).click();
   await page.evaluate(() => window.dictationTest.processing!.resolve("Cancelled result"));
   await expect(page.getByRole("alert").filter({ hasText: "Processing cancelled" })).toBeVisible();
   expect(await page.evaluate(() => window.dictationTest.outputs.length)).toBe(0);
+  await page.getByRole("tab", { name: "Transcription", exact: true }).click();
   await expect(page.getByRole("region", { name: "Result", exact: true })).toContainText(
     "Edited speech",
   );
+  await page.getByRole("tab", { name: "Outputs", exact: true }).click();
   await page.getByRole("button", { name: "Generate output", exact: true }).click();
   await page.evaluate(() => window.dictationTest.processing!.resolve("Successful retry"));
   await expect(page.getByRole("article")).toContainText("Successful retry");
@@ -3353,6 +3410,7 @@ test("saved outputs remain usable with the model disabled and recover after a fa
     state.failOutputs = true;
   });
   await page.goto("/#/history/one");
+  await page.getByRole("tab", { name: "Outputs", exact: true }).click();
   await expect(page.getByRole("alert").filter({ hasText: "Outputs unavailable" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Generate output", exact: true })).toBeDisabled();
   await page.evaluate(() => {
@@ -3375,6 +3433,7 @@ test("saved outputs remain usable with the model disabled and recover after a fa
     .getByRole("button", { name: "Delete output", exact: true })
     .click();
   await expect(output).toHaveCount(0);
+  await page.getByRole("tab", { name: "Transcription", exact: true }).click();
   await expect(page.getByRole("region", { name: "Result", exact: true })).toContainText(
     "Edited speech",
   );
@@ -3399,11 +3458,12 @@ test("an outdated outputs backend keeps the transcription visible and provides r
     Reflect.deleteProperty(Reflect.get(window, "go").main.App, "GetSessionOutputs");
   });
   await page.goto("/#/history/one");
-  await expect(page.getByRole("alert").filter({ hasText: "restart wails dev" })).toBeVisible();
   await expect(page.getByRole("region", { name: "Result", exact: true })).toContainText(
     "Edited speech",
   );
   await expect(page.getByRole("button", { name: "Copy result", exact: true })).toBeEnabled();
+  await page.getByRole("tab", { name: "Outputs", exact: true }).click();
+  await expect(page.getByRole("alert").filter({ hasText: "restart wails dev" })).toBeVisible();
   await page.evaluate(() => {
     Reflect.set(Reflect.get(window, "go").main.App, "GetSessionOutputs", async () => []);
   });
@@ -3626,6 +3686,7 @@ test("saved transcript edits drive display, search, copy and export while keepin
   await expect(page.getByText("Send PostgreSQL to Benji.\nThanks!", { exact: true })).toBeVisible();
   await page.getByLabel("Search transcripts").fill("um,");
   await page.getByRole("link", { name: /Send PostgreSQL to Benji/ }).click();
+  await page.getByRole("tab", { name: "Original", exact: true }).click();
   await expect(
     page.getByRole("region", { name: "Original transcription", exact: true }),
   ).toBeVisible();

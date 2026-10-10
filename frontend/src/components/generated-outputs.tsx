@@ -90,66 +90,77 @@ export function GeneratedOutputs({
   }
   const options = prompts.map((prompt) => ({ value: prompt.id, label: prompt.name }));
   return (
-    <section aria-label="Generated outputs" className="space-y-4 border-t pt-6">
-      <h2 className="text-base font-semibold">Generated outputs</h2>
-      <div className="flex flex-wrap items-end gap-3">
-        <div className="grid w-full max-w-sm gap-2">
-          <Label htmlFor="output-prompt">Output prompt</Label>
-          <Select
-            items={options}
-            value={selected || null}
-            disabled={!canGenerate || !prompts.length}
-            onValueChange={(value) => {
-              if (value) {
-                setSelected(value);
-                generation.clear();
-              }
-            }}
-          >
-            <SelectTrigger
-              id="output-prompt"
-              className="data-[size=default]:h-9 w-full bg-background"
+    <section aria-label="Generated outputs" className="space-y-5">
+      <div className="space-y-2.5 border-b pb-5">
+        <div className="flex flex-wrap items-end gap-3">
+          <div className="grid w-full max-w-64 gap-1.5">
+            <Label htmlFor="output-prompt" className="text-xs font-normal text-muted-foreground">
+              Output prompt
+            </Label>
+            <Select
+              items={options}
+              value={selected || null}
+              disabled={!canGenerate || !prompts.length}
+              onValueChange={(value) => {
+                if (value) {
+                  setSelected(value);
+                  generation.clear();
+                }
+              }}
             >
-              <SelectValue placeholder="Choose a prompt" />
-            </SelectTrigger>
-            <SelectContent alignItemWithTrigger={false} align="start">
-              <div className="p-1">
-                {options.map((option) => (
-                  <SelectItem key={option.value} value={option.value}>
-                    {option.label}
-                  </SelectItem>
-                ))}
-              </div>
-            </SelectContent>
-          </Select>
-        </div>
-        {generation.pending ? (
-          <div className="flex items-center gap-3">
-            <span role="status" className="text-sm text-muted-foreground">
-              Generating output…
-            </span>
-            <Button variant="outline" onClick={() => void generation.cancel()}>
-              Cancel generation
-            </Button>
+              <SelectTrigger
+                id="output-prompt"
+                className="w-full bg-transparent text-xs data-[size=default]:h-8 dark:bg-transparent"
+              >
+                <SelectValue placeholder="Choose a prompt" />
+              </SelectTrigger>
+              <SelectContent alignItemWithTrigger={false} align="start">
+                <div className="p-1">
+                  {options.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </div>
+              </SelectContent>
+            </Select>
           </div>
-        ) : (
-          <Button
-            disabled={!canGenerate || !selected}
-            onClick={() => void generate((id) => backend.generateOutput(id, sessionID, selected))}
-          >
-            <Sparkles className="size-4" />
-            Generate output
-          </Button>
-        )}
-        {!enabled && (
-          <Link to="/prompts" className="pb-2 text-xs text-muted-foreground underline">
-            Set up text model
-          </Link>
-        )}
+          {generation.pending ? (
+            <div className="flex flex-wrap items-center gap-3">
+              <span role="status" className="text-xs text-muted-foreground">
+                Generating output…
+              </span>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="text-muted-foreground"
+                onClick={() => void generation.cancel()}
+              >
+                Cancel generation
+              </Button>
+            </div>
+          ) : (
+            <Button
+              size="sm"
+              variant="outline"
+              className="shadow-none"
+              disabled={!canGenerate || !selected}
+              onClick={() => void generate((id) => backend.generateOutput(id, sessionID, selected))}
+            >
+              <Sparkles className="size-3.5 text-muted-foreground" />
+              Generate output
+            </Button>
+          )}
+          {!enabled && (
+            <Link to="/prompts" className="pb-1.5 text-xs text-muted-foreground underline">
+              Set up text model
+            </Link>
+          )}
+        </div>
+        <p className="text-[11px] leading-5 text-muted-foreground">
+          Uses your saved transcription. Each output is kept separately.
+        </p>
       </div>
-      <p className="text-xs text-muted-foreground">
-        Uses the saved text above. Each result is saved as a separate output.
-      </p>
       {generation.error && (
         <p role="alert" className="text-sm text-destructive">
           {generation.error}

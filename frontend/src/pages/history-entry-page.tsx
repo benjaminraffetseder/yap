@@ -1,7 +1,20 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router";
-import { ArrowLeft, AudioLines, Copy, Download, Loader2, Pencil, Trash2 } from "lucide-react";
+import {
+  ArrowLeft,
+  AudioLines,
+  CalendarDays,
+  Clock3,
+  Copy,
+  Download,
+  FileText,
+  Loader2,
+  Pencil,
+  Sparkles,
+  Trash2,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Dialog,
   DialogContent,
@@ -98,20 +111,85 @@ function EntryDetail({ id }: { id: string }) {
         <ArrowLeft aria-hidden="true" className="size-4" />
         Back to History
       </Link>
-      <header className="space-y-2">
-        <h1
-          ref={title}
-          tabIndex={-1}
-          className="text-2xl font-semibold tracking-tight outline-none"
-        >
-          Dictation
-        </h1>
+      <header className="space-y-5">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <h1
+            ref={title}
+            tabIndex={-1}
+            className="text-2xl font-semibold tracking-tight outline-none"
+          >
+            Dictation
+          </h1>
+          {entry && (
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={unavailable}
+                onClick={(event) => {
+                  editTrigger.current = event.currentTarget;
+                  setEditing(entry);
+                }}
+              >
+                <Pencil className="size-3.5" />
+                Edit transcript
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={unavailable}
+                onClick={() => void run(() => backend.export(id), false)}
+              >
+                <Download className="size-3.5" />
+                {changed ? "Export result" : "Export transcription"}
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={unavailable}
+                className="text-destructive"
+                onClick={() => {
+                  setDeleteError("");
+                  setDeleting(true);
+                }}
+              >
+                <Trash2 className="size-3.5" />
+                Delete
+              </Button>
+            </div>
+          )}
+        </div>
         {entry && (
-          <p className="text-xs text-muted-foreground">
-            {new Date(entry.createdAt).toLocaleString()} · {duration(entry.durationMs)} ·{" "}
-            {entry.speechModel}
-          </p>
+          <div className="flex flex-wrap items-center gap-x-5 gap-y-3 text-xs text-muted-foreground">
+            <span className="inline-flex items-center gap-2">
+              <CalendarDays className="size-3.5" aria-hidden="true" />
+              {new Date(entry.createdAt).toLocaleString()}
+            </span>
+            <span className="inline-flex items-center gap-2">
+              <Clock3 className="size-3.5" aria-hidden="true" />
+              {duration(entry.durationMs)}
+            </span>
+            <span className="rounded-md border bg-card px-2 py-1 font-mono text-[11px]">
+              {entry.speechModel}
+            </span>
+            {entry.audioPath && !audio && (
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={unavailable || loadingAudio}
+                onClick={() => void play()}
+              >
+                {loadingAudio ? (
+                  <Loader2 className="size-3.5 animate-spin" />
+                ) : (
+                  <AudioLines className="size-3.5" />
+                )}
+                Play recording
+              </Button>
+            )}
+          </div>
         )}
+        {audio && <audio controls autoPlay src={audio} className="h-10 w-full" />}
       </header>
       {loading && (
         <p role="status" className="text-sm text-muted-foreground">
@@ -133,11 +211,37 @@ function EntryDetail({ id }: { id: string }) {
         </section>
       )}
       {entry && (
-        <>
-          <div
-            aria-busy={loading}
-            className={`grid items-start gap-4 ${changed ? "lg:grid-cols-2" : ""}`}
-          >
+        <Tabs defaultValue="transcription" className="min-w-0 gap-6" aria-busy={loading}>
+          <div className="sticky top-0 z-10 overflow-x-auto border-b bg-background pt-2 pb-1">
+            <TabsList
+              variant="line"
+              aria-label="Dictation contents"
+              className="group-data-[orientation=horizontal]/tabs:h-11"
+            >
+              <TabsTrigger
+                value="transcription"
+                className="px-2 text-xs data-active:text-primary after:bg-primary sm:px-3 sm:text-sm"
+              >
+                <FileText className="hidden size-4 sm:block" aria-hidden="true" />
+                Transcription
+              </TabsTrigger>
+              <TabsTrigger
+                value="original"
+                className="px-2 text-xs data-active:text-primary after:bg-primary sm:px-3 sm:text-sm"
+              >
+                <AudioLines className="hidden size-4 sm:block" aria-hidden="true" />
+                Original
+              </TabsTrigger>
+              <TabsTrigger
+                value="outputs"
+                className="px-2 text-xs data-active:text-primary after:bg-primary sm:px-3 sm:text-sm"
+              >
+                <Sparkles className="hidden size-4 sm:block" aria-hidden="true" />
+                Outputs
+              </TabsTrigger>
+            </TabsList>
+          </div>
+          <TabsContent value="transcription" keepMounted>
             <TextPanel
               title={changed ? "Result" : "Transcription"}
               kind={changed ? "result" : "source"}
@@ -156,83 +260,33 @@ function EntryDetail({ id }: { id: string }) {
             >
               <p className="whitespace-pre-wrap break-words text-sm leading-7">{text}</p>
             </TextPanel>
-            {changed && (
-              <TextPanel
-                title="Original transcription"
-                kind="source"
-                description="From the recording"
-                action={
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    disabled={unavailable}
-                    onClick={() => void run(() => backend.copy(entry.rawTranscript), false)}
-                  >
-                    <Copy className="size-3.5" />
-                    Copy original
-                  </Button>
-                }
-              >
-                <p className="whitespace-pre-wrap break-words text-sm leading-7">
-                  {entry.rawTranscript}
-                </p>
-              </TextPanel>
-            )}
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={unavailable}
-              onClick={(event) => {
-                editTrigger.current = event.currentTarget;
-                setEditing(entry);
-              }}
+          </TabsContent>
+          <TabsContent value="original" keepMounted>
+            <TextPanel
+              title="Original transcription"
+              kind="source"
+              description="From the recording · Read only"
+              action={
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={unavailable}
+                  onClick={() => void run(() => backend.copy(entry.rawTranscript), false)}
+                >
+                  <Copy className="size-3.5" />
+                  Copy original
+                </Button>
+              }
             >
-              <Pencil className="size-3.5" />
-              Edit transcript
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={unavailable}
-              onClick={() => void run(() => backend.export(id), false)}
-            >
-              <Download className="size-3.5" />
-              {changed ? "Export result" : "Export transcription"}
-            </Button>
-            {entry.audioPath && !audio && (
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={unavailable || loadingAudio}
-                onClick={() => void play()}
-              >
-                {loadingAudio ? (
-                  <Loader2 className="size-3.5 animate-spin" />
-                ) : (
-                  <AudioLines className="size-3.5" />
-                )}
-                Play recording
-              </Button>
-            )}
-            <Button
-              size="sm"
-              variant="ghost"
-              disabled={unavailable}
-              className="ml-auto text-destructive"
-              onClick={() => {
-                setDeleteError("");
-                setDeleting(true);
-              }}
-            >
-              <Trash2 className="size-3.5" />
-              Delete
-            </Button>
-          </div>
-          {audio && <audio controls autoPlay src={audio} className="h-10 w-full" />}
-          <GeneratedOutputs sessionID={id} unavailable={unavailable} />
-        </>
+              <p className="whitespace-pre-wrap break-words text-sm leading-7">
+                {entry.rawTranscript}
+              </p>
+            </TextPanel>
+          </TabsContent>
+          <TabsContent value="outputs" keepMounted>
+            <GeneratedOutputs sessionID={id} unavailable={unavailable} />
+          </TabsContent>
+        </Tabs>
       )}
       {editing && (
         <TranscriptEditor
