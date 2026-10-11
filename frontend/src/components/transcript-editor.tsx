@@ -1,5 +1,6 @@
 import { useDictation } from "@/components/dictation-provider";
 import { TextPanel } from "@/components/text-panel";
+import { MarkdownContent } from "@/components/markdown-content";
 import { TranscriptProcessor } from "@/components/transcript-processor";
 import { Button } from "@/components/ui/button";
 import {
@@ -150,9 +151,9 @@ export function TranscriptEditor({
                 kind="source"
                 description="From the recording · read only"
               >
-                <p className="max-h-[45vh] overflow-y-auto whitespace-pre-wrap break-words text-sm leading-7">
+                <MarkdownContent className="max-h-[45vh] overflow-y-auto">
                   {session.rawTranscript}
-                </p>
+                </MarkdownContent>
               </TextPanel>
             </div>
             <div className="flex flex-wrap items-center gap-3">

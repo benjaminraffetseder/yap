@@ -104,6 +104,127 @@
   @apply rounded-2xl border bg-card p-6;
 }
 
+.markdown-content {
+  overflow-wrap: anywhere;
+
+  > :first-child {
+    margin-top: 0;
+  }
+
+  > :last-child {
+    margin-bottom: 0;
+  }
+
+  p,
+  ul,
+  ol,
+  blockquote,
+  pre,
+  table {
+    margin-block: 0.75rem;
+  }
+
+  p {
+    white-space: pre-wrap;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    margin-top: 1.25rem;
+    margin-bottom: 0.5rem;
+    font-weight: 600;
+    line-height: 1.4;
+  }
+
+  h1 {
+    font-size: 1.5rem;
+  }
+
+  h2 {
+    font-size: 1.25rem;
+  }
+
+  h3 {
+    font-size: 1.125rem;
+  }
+
+  ul,
+  ol {
+    padding-left: 1.5rem;
+  }
+
+  ul {
+    list-style-type: disc;
+  }
+
+  ol {
+    list-style-type: decimal;
+  }
+
+  li + li {
+    margin-top: 0.25rem;
+  }
+
+  li > ul,
+  li > ol {
+    margin-block: 0.25rem;
+  }
+
+  .task-list-item {
+    list-style: none;
+  }
+
+  input[type="checkbox"] {
+    margin-right: 0.5rem;
+  }
+
+  blockquote {
+    @apply border-l-2 border-primary/40 pl-4 text-muted-foreground;
+  }
+
+  a {
+    @apply rounded-sm text-primary underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-ring;
+  }
+
+  code {
+    @apply rounded bg-muted px-1.5 py-0.5 font-mono text-xs;
+  }
+
+  pre {
+    @apply overflow-x-auto rounded-lg border bg-muted/50 p-3;
+    white-space: pre;
+    overflow-wrap: normal;
+  }
+
+  pre code {
+    padding: 0;
+    background: transparent;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+
+  th,
+  td {
+    @apply border px-3 py-2;
+    min-width: 6rem;
+  }
+
+  th {
+    @apply bg-muted/50 font-semibold;
+  }
+
+  hr {
+    margin-block: 1.25rem;
+  }
+}
+
 @media (forced-colors: none) {
   * {
     scrollbar-width: thin;

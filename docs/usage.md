@@ -46,6 +46,11 @@ History lets you search original and edited text, open a dictation, and copy or
 export it. Select entries to export or delete several at once. Deleting an entry
 also deletes its retained audio and generated outputs.
 
+Transcriptions, generated outputs, and processing previews display Markdown,
+including headings, emphasis, lists, tables, and code blocks. Edit the Markdown
+source in **Edit transcript**. Copy and export keep the source text and formatting
+markers so you can reuse them elsewhere.
+
 **Edit transcript** changes the saved result while keeping the original
 transcription. Ctrl/Cmd+Enter saves; Escape cancels. To reuse a corrected spelling,
 select a name or phrase and choose **Add to vocabulary**. Save the transcript

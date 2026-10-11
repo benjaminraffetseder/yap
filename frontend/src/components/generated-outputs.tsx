@@ -3,6 +3,7 @@ import { Link } from "react-router";
 import { Copy, RefreshCw, Sparkles, Trash2 } from "lucide-react";
 import { useDictation } from "@/components/dictation-provider";
 import { TextPanel } from "@/components/text-panel";
+import { MarkdownContent } from "@/components/markdown-content";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import {
@@ -208,7 +209,7 @@ export function GeneratedOutputs({
                 </Button>
               }
             >
-              <p className="whitespace-pre-wrap break-words text-sm leading-7">{output.text}</p>
+              <MarkdownContent>{output.text}</MarkdownContent>
               <div className="mt-4 flex flex-wrap items-center gap-2">
                 <Button
                   size="sm"
@@ -240,9 +241,9 @@ export function GeneratedOutputs({
                 <div className="mt-3 space-y-3">
                   <div>
                     <h4 className="font-semibold">Input text</h4>
-                    <p className="mt-1 max-h-52 overflow-auto whitespace-pre-wrap break-words leading-6">
+                    <MarkdownContent className="mt-1 max-h-52 overflow-auto text-xs leading-6">
                       {output.input}
-                    </p>
+                    </MarkdownContent>
                   </div>
                   <div>
                     <h4 className="font-semibold">Prompt instructions</h4>

@@ -24,6 +24,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { TextPanel } from "@/components/text-panel";
+import { MarkdownContent } from "@/components/markdown-content";
 import { TranscriptEditor } from "@/components/transcript-editor";
 import { GeneratedOutputs } from "@/components/generated-outputs";
 import { useDictation } from "@/components/dictation-provider";
@@ -258,7 +259,7 @@ function EntryDetail({ id }: { id: string }) {
                 </Button>
               }
             >
-              <p className="whitespace-pre-wrap break-words text-sm leading-7">{text}</p>
+              <MarkdownContent>{text}</MarkdownContent>
             </TextPanel>
           </TabsContent>
           <TabsContent value="original" keepMounted>
@@ -278,9 +279,7 @@ function EntryDetail({ id }: { id: string }) {
                 </Button>
               }
             >
-              <p className="whitespace-pre-wrap break-words text-sm leading-7">
-                {entry.rawTranscript}
-              </p>
+              <MarkdownContent>{entry.rawTranscript}</MarkdownContent>
             </TextPanel>
           </TabsContent>
           <TabsContent value="outputs" keepMounted>

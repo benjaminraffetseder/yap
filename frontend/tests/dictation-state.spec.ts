@@ -5182,12 +5182,9 @@ test("prompt previews use the draft and change History only after apply and save
     .toBe("summary");
   await expect(prompt).toBeDisabled();
   await page.evaluate(() => window.dictationTest.processing!.resolve("Concise summary."));
-  await expect(page.getByRole("textbox", { name: "Generated result", exact: true })).toHaveValue(
+  await expect(page.getByRole("region", { name: "Generated result", exact: true })).toContainText(
     "Concise summary.",
   );
-  await expect(
-    page.getByRole("textbox", { name: "Generated result", exact: true }),
-  ).toHaveAttribute("readonly", "");
   await expect(page.getByRole("region", { name: "Input text", exact: true })).toContainText(
     "Unsaved draft for summary.",
   );
@@ -5215,6 +5212,169 @@ test("prompt previews use the draft and change History only after apply and save
   await expect
     .poll(() => page.evaluate(() => window.dictationTest.snapshot.history[0].rawTranscript))
     .toBe("Original speech.");
+});
+
+test("Markdown formats transcriptions and outputs while copy, export and editing keep the source", async ({
+  page,
+}, testInfo) => {
+  const source = [
+    "# Meeting notes",
+    "",
+    "A **bold** decision with *emphasis* and ~~old wording~~.",
+    "",
+    "- First item",
+    "- Second item",
+    "  - Nested item",
+    "",
+    "1. Start here",
+    "2. Finish here",
+    "",
+    "- [x] Complete",
+    "- [ ] Pending",
+    "",
+    "> A useful quote",
+    "",
+    "| Task | Owner |",
+    "| --- | --- |",
+    "| Review | Benji |",
+    "",
+    "Use `npm run build`.",
+    "",
+    "```ts",
+    'const message = "Hello";',
+    "```",
+    "",
+    "[Documentation](https://example.com/docs)",
+    "",
+    "[Unsafe](javascript:alert(1))",
+    "",
+    "<script>window.markdownExecuted = true</script>",
+    "",
+    "![Remote image](https://example.com/private-image.png)",
+  ].join("\n");
+  const imageRequests: string[] = [];
+  page.on("request", (request) => {
+    if (request.url().includes("private-image.png")) imageRequests.push(request.url());
+  });
+  await page.addInitScript((source) => {
+    const state = window.dictationTest;
+    state.snapshot.history = [
+      {
+        id: "markdown",
+        createdAt: "2026-10-07",
+        durationMs: 1000,
+        rawTranscript: "First line\nSecond line\n\nAnother paragraph.",
+        finalTranscript: source,
+        speechModel: "base",
+        language: "en",
+        audioPath: "",
+      },
+    ];
+    state.outputs = [
+      {
+        id: "markdown-output",
+        sessionId: "markdown",
+        createdAt: "2026-10-07",
+        prompt: { id: "summary", name: "Summary", instruction: "Summarize" },
+        model: "local-model",
+        endpoint: "http://127.0.0.1:1234/v1",
+        input: source,
+        text: source,
+      },
+    ];
+  }, source);
+  await page.goto("/#/history/markdown");
+  const result = page.getByRole("region", { name: "Result", exact: true });
+  await expect(result.getByRole("heading", { name: "Meeting notes", level: 1 })).toBeVisible();
+  await expect(result.locator("strong")).toHaveText("bold");
+  await expect(result.locator("em")).toHaveText("emphasis");
+  await expect(result.locator("del")).toHaveText("old wording");
+  await expect(result.locator("ul ul li")).toHaveText("Nested item");
+  await expect(result.locator("ol > li")).toHaveCount(2);
+  await expect(result.getByRole("checkbox").first()).toBeChecked();
+  await expect(result.getByRole("checkbox").first()).toBeDisabled();
+  await expect(result.locator("blockquote")).toContainText("A useful quote");
+  await expect(result.getByRole("cell", { name: "Benji" })).toBeVisible();
+  await expect(result.locator("pre code")).toHaveText('const message = "Hello";\n');
+  await expect(result.locator("pre")).toHaveCSS("white-space", "pre");
+  await expect(result.getByRole("link", { name: "Documentation" })).toHaveAttribute(
+    "href",
+    "https://example.com/docs",
+  );
+  await expect(result.locator('a[href^="javascript:"]')).toHaveCount(0);
+  await expect(result.locator("script, img")).toHaveCount(0);
+  await expect(result.getByText("Remote image", { exact: true })).toHaveCount(0);
+  expect(await page.evaluate(() => Reflect.get(window, "markdownExecuted"))).toBeUndefined();
+  await page.getByRole("button", { name: "Copy result", exact: true }).click();
+  await expect
+    .poll(() => page.evaluate(() => window.dictationTest.snapshot.status.transcript))
+    .toBe(source);
+  await page.getByRole("button", { name: "Export result", exact: true }).click();
+  await expect.poll(() => page.evaluate(() => window.dictationTest.exportedText)).toBe(source);
+  await page.getByRole("button", { name: "Edit transcript", exact: true }).click();
+  await expect(page.getByRole("textbox", { name: "Editable text" })).toHaveValue(source);
+  await page.getByRole("button", { name: "Cancel", exact: true }).click();
+  await page.getByRole("tab", { name: "Original", exact: true }).click();
+  const original = page.getByRole("region", { name: "Original transcription", exact: true });
+  await expect(original.locator(".markdown-content > p").first()).toHaveText(
+    "First line\nSecond line",
+    { useInnerText: true },
+  );
+  await expect(original.locator(".markdown-content > p").first()).toHaveCSS(
+    "white-space",
+    "pre-wrap",
+  );
+  await page.getByRole("tab", { name: "Outputs", exact: true }).click();
+  const output = page.getByRole("article", { name: "Summary output", exact: true });
+  await expect(output.getByRole("img")).toHaveCount(0);
+  await expect(output.getByText("Remote image", { exact: true })).toHaveCount(0);
+  await expect(output.getByRole("heading", { name: "Meeting notes", level: 1 })).toBeVisible();
+  await expect(output.getByRole("cell", { name: "Benji" })).toBeVisible();
+  await output.getByRole("button", { name: "Copy output", exact: true }).click();
+  await expect
+    .poll(() => page.evaluate(() => window.dictationTest.snapshot.status.transcript))
+    .toBe(source);
+  for (const theme of ["light", "dark"]) {
+    await page.evaluate(
+      (theme) => document.documentElement.classList.toggle("dark", theme === "dark"),
+      theme,
+    );
+    await page.screenshot({ path: testInfo.outputPath(`markdown-${theme}.png`), fullPage: true });
+  }
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(output.getByRole("heading", { name: "Meeting notes", level: 1 })).toBeVisible();
+  const content = output.locator(".markdown-content").first();
+  expect(await content.evaluate((element) => element.scrollWidth - element.clientWidth)).toBe(0);
+  expect(
+    await content.evaluate((element) => element.getBoundingClientRect().right),
+  ).toBeLessThanOrEqual(390);
+  await page.screenshot({ path: testInfo.outputPath("markdown-narrow.png"), fullPage: true });
+  expect(imageRequests).toEqual([]);
+});
+
+test("Markdown previews render formatting and apply the original source to the draft", async ({
+  page,
+}) => {
+  await openPromptEditor(page);
+  const source = "## Summary\n\n- **First** point\n- Second point";
+  await page.getByRole("button", { name: "Generate preview", exact: true }).click();
+  await expect.poll(() => page.evaluate(() => !!window.dictationTest.processing)).toBe(true);
+  await page.evaluate((source) => window.dictationTest.processing!.resolve(source), source);
+  const preview = page.getByRole("region", { name: "Generated result", exact: true });
+  await expect(preview.getByRole("heading", { name: "Summary", level: 2 })).toBeVisible();
+  await expect(preview.getByRole("listitem")).toHaveCount(2);
+  await expect(preview.locator("strong")).toHaveText("First");
+  await page.getByRole("button", { name: "Replace draft", exact: true }).click();
+  await expect(page.getByRole("textbox", { name: "Editable text", exact: true })).toHaveValue(
+    source,
+  );
+  await page.getByRole("button", { name: "Save transcript", exact: true }).click();
+  await expect(
+    page.getByRole("region", { name: "Result", exact: true }).getByRole("heading", {
+      name: "Summary",
+      level: 2,
+    }),
+  ).toBeVisible();
 });
 
 test("failed and cancelled generation retain the draft and suppress late results", async ({

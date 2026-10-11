@@ -13,6 +13,7 @@ import { useDictation } from "@/components/dictation-provider";
 import { backend, isBusy } from "@/lib/backend";
 import { useTextRequest } from "@/lib/use-text-request";
 import { TextPanel } from "@/components/text-panel";
+import { MarkdownContent } from "@/components/markdown-content";
 
 export function TranscriptProcessor({
   input,
@@ -87,9 +88,7 @@ export function TranscriptProcessor({
       )}
       <div className="grid items-start gap-4 md:grid-cols-2">
         <TextPanel title="Input text" kind="source" description="Current draft">
-          <p className="max-h-[40vh] overflow-y-auto whitespace-pre-wrap break-words text-sm leading-7">
-            {input}
-          </p>
+          <MarkdownContent className="max-h-[40vh] overflow-y-auto">{input}</MarkdownContent>
         </TextPanel>
         <TextPanel
           title="Generated result"
@@ -97,18 +96,9 @@ export function TranscriptProcessor({
           description={prompts.find((prompt) => prompt.id === selected)?.name}
         >
           {generation.result ? (
-            <>
-              <Label htmlFor="processing-preview" className="sr-only">
-                Generated result
-              </Label>
-              <textarea
-                id="processing-preview"
-                readOnly
-                rows={8}
-                value={generation.result}
-                className="max-h-[40vh] w-full resize-y rounded-md border bg-background px-3 py-2 text-sm leading-7"
-              />
-            </>
+            <MarkdownContent className="max-h-[40vh] overflow-y-auto">
+              {generation.result}
+            </MarkdownContent>
           ) : (
             <p className="text-sm text-muted-foreground">
               {generation.pending ? "Generating result…" : "Generate a preview to see the result."}
