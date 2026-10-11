@@ -5,7 +5,7 @@ import { RecoveryActions } from "@/components/recovery-actions";
 import { Button } from "@/components/ui/button";
 import { toastManager } from "@/components/ui/toast";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { backendVersionMismatchMessage, isDesktop } from "@/lib/backend";
+import { backend, backendVersionMismatchMessage, isDesktop } from "@/lib/backend";
 import { cn } from "@/lib/utils";
 import {
   AudioLines,
@@ -19,7 +19,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import { useEffect, useState, type CSSProperties } from "react";
-import { NavLink, Outlet } from "react-router";
+import { Link, NavLink, Outlet } from "react-router";
 
 const navigation = [
   { to: "/", label: "Dictate", icon: Mic },
@@ -40,7 +40,8 @@ function readCollapsed() {
 }
 
 export function AppLayout() {
-  const { error, clearError, loading, run, refresh } = useDictation();
+  const { error, clearError, loading, run, refresh, update } = useDictation();
+  const [dismissedUpdate, setDismissedUpdate] = useState("");
   const [collapsed, setCollapsed] = useState(readCollapsed);
   const toggleLabel = collapsed ? "Expand sidebar" : "Collapse sidebar";
   const connectionFailure = !!error && (loading || error === backendVersionMismatchMessage);
@@ -160,6 +161,35 @@ export function AppLayout() {
                   Retry loading
                 </Button>
               </div>
+            )}
+            {update?.available && dismissedUpdate !== update.latestVersion && (
+              <section
+                aria-label="App update available"
+                className="mb-6 space-y-3 rounded-lg border bg-card p-4"
+              >
+                <p className="text-sm font-medium">Yap {update.latestVersion} is available.</p>
+                <p className="text-sm text-muted-foreground">
+                  Download the installer, quit Yap from the tray, and run setup to update.
+                </p>
+                <div className="flex flex-wrap items-center gap-3">
+                  <Button size="sm" onClick={() => void run(backend.downloadUpdate, false)}>
+                    Download update
+                  </Button>
+                  <Link
+                    to="/settings?section=general"
+                    className="text-sm text-primary underline underline-offset-4"
+                  >
+                    Update details
+                  </Link>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => setDismissedUpdate(update.latestVersion)}
+                  >
+                    Later
+                  </Button>
+                </div>
+              </section>
             )}
             <Outlet />
           </div>

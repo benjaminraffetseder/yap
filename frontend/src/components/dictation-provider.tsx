@@ -8,6 +8,7 @@ import {
   type Model,
   type Snapshot,
   type Status,
+  type UpdateStatus,
 } from "@/lib/backend";
 import { EventsOn } from "@wails/runtime/runtime";
 import {
@@ -99,6 +100,10 @@ const empty: Snapshot = {
   },
 };
 type Context = {
+  update: UpdateStatus | null;
+  checkingUpdates: boolean;
+  updateError: string;
+  checkUpdates: (manual?: boolean) => Promise<void>;
   snapshot: Snapshot;
   level: number;
   error: string;
@@ -113,6 +118,10 @@ type Context = {
 };
 const DictationContext = createContext<Context | null>(null);
 export function DictationProvider({ children }: { children: ReactNode }) {
+  const [update, setUpdate] = useState<UpdateStatus | null>(null);
+  const [checkingUpdates, setCheckingUpdates] = useState(false);
+  const [updateError, setUpdateError] = useState("");
+  const updateRequest = useRef(false);
   const [snapshot, setSnapshot] = useState(empty);
   const [level, setLevel] = useState(0);
   const [error, setError] = useState("");
@@ -123,6 +132,25 @@ export function DictationProvider({ children }: { children: ReactNode }) {
   const statusRevision = useRef(0);
   const latestStatus = useRef(empty.status);
   const modelDownload = useRef<{ model: Model; started: boolean } | null>(null);
+  const checkUpdates = useCallback(async (manual = true) => {
+    if (!isDesktop || updateRequest.current) return;
+    updateRequest.current = true;
+    setCheckingUpdates(true);
+    setUpdateError("");
+    try {
+      const value = await backend.checkUpdates(manual);
+      setUpdate(value);
+      setUpdateError(value.error);
+    } catch (cause) {
+      setUpdateError(message(cause));
+    } finally {
+      updateRequest.current = false;
+      setCheckingUpdates(false);
+    }
+  }, []);
+  useEffect(() => {
+    if (isDesktop && !loading) void checkUpdates(false);
+  }, [loading, checkUpdates]);
   const refresh = useCallback(async () => {
     if (!isDesktop) return;
     const request = ++snapshotRequest.current;
@@ -275,6 +303,10 @@ export function DictationProvider({ children }: { children: ReactNode }) {
   return (
     <DictationContext.Provider
       value={{
+        update,
+        checkingUpdates,
+        updateError,
+        checkUpdates,
         snapshot,
         level,
         error,

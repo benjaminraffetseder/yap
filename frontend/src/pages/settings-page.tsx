@@ -1,5 +1,6 @@
 import { AudioSupportPanel } from "@/components/audio-support-panel";
 import { BackupPanel } from "@/components/backup-panel";
+import { UpdatePanel } from "@/components/update-panel";
 import { DiagnosticsPanel } from "@/components/diagnostics-panel";
 import { useDictation } from "@/components/dictation-provider";
 import { SettingRow, SettingsSection, ToggleSetting } from "@/components/settings-section";
@@ -392,6 +393,7 @@ export function SettingsPage() {
           </fieldset>
         </TabsContent>
         <TabsContent value="general" keepMounted className="space-y-5">
+          <UpdatePanel />
           <SettingsSection title="Appearance">
             <SettingRow title="Color theme" description="Applies immediately.">
               <div className="flex flex-wrap gap-2" role="group" aria-label="Color theme">

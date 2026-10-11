@@ -3,6 +3,7 @@ import {
   BeginShortcutCapture,
   Cancel,
   CancelTextProcessing,
+  CheckForUpdates,
   CompleteSetup,
   CopyText,
   DeleteSession,
@@ -27,6 +28,7 @@ import {
   InstallAudioSupport,
   InstallModel,
   ListTextModels,
+  OpenUpdateDownload,
   PreviewBackup,
   ProcessText,
   RefinePrompt,
@@ -116,6 +118,18 @@ export type DiagnosticCheck = {
   message: string;
 };
 export type Microphone = { id: string; name: string };
+export type UpdateStatus = {
+  currentVersion: string;
+  latestVersion: string;
+  available: boolean;
+  supported: boolean;
+  configured: boolean;
+  checkedAt: string;
+  downloadURL: string;
+  notes: string;
+  error: string;
+  message: string;
+};
 export type AudioSupport = {
   installed: boolean;
   managed: boolean;
@@ -228,6 +242,13 @@ function requireOutputAPI(name: string) {
     );
 }
 export const backend = {
+  checkUpdates: async (manual: boolean): Promise<UpdateStatus> => {
+    const api = (window as unknown as { go?: { main?: { App?: Record<string, unknown> } } }).go
+      ?.main?.App;
+    if (typeof api?.CheckForUpdates !== "function") throw new Error(backendVersionMismatchMessage);
+    return CheckForUpdates(manual);
+  },
+  downloadUpdate: OpenUpdateDownload,
   importDroppedAudio: async (paths: string[]): Promise<void> => {
     const api = (window as unknown as { go?: { main?: { App?: Record<string, unknown> } } }).go
       ?.main?.App;

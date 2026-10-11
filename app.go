@@ -24,6 +24,7 @@ import (
 	"yap/internal/startup"
 	"yap/internal/storage"
 	"yap/internal/tray"
+	"yap/internal/updates"
 	"yap/internal/vocabulary"
 
 	"github.com/google/uuid"
@@ -59,6 +60,8 @@ type Snapshot struct {
 	StartInTrayAvailable   bool               `json:"startInTrayAvailable"`
 }
 type App struct {
+	updateChecker                    *updates.Checker
+	updateCancel                     context.CancelFunc
 	pendingBackup                    *storage.BackupArchive
 	backupPreviewID                  string
 	backupHistory                    []storage.Session
@@ -301,6 +304,9 @@ func (a *App) shutdown(ctx context.Context) {
 	a.shutdownOnce.Do(func() {
 		a.mu.Lock()
 		a.closing = true
+		if a.updateCancel != nil {
+			a.updateCancel()
+		}
 		a.shortcutCaptureID = ""
 		if a.shortcutCaptureTimer != nil {
 			a.shortcutCaptureTimer.Stop()
