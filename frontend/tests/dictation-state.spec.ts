@@ -4192,6 +4192,8 @@ test("History keeps its header, search and selection controls visible while scro
   page,
 }, testInfo) => {
   await page.addInitScript(() => {
+    localStorage.setItem("yap-sidebar-collapsed", "true");
+    localStorage.setItem("desktop-theme", "dark");
     window.dictationTest.snapshot.history = Array.from({ length: 40 }, (_, index) => ({
       id: `sticky-${index}`,
       createdAt: "2026-10-09",
@@ -4203,32 +4205,56 @@ test("History keeps its header, search and selection controls visible while scro
       audioPath: "",
     }));
   });
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await page.goto("/#/models");
+  const headingStyle = (element: HTMLElement | SVGElement) => {
+    const style = getComputedStyle(element);
+    return { size: style.fontSize, weight: style.fontWeight, spacing: style.letterSpacing };
+  };
+  const modelsStyle = await page
+    .getByRole("heading", { name: "Models", exact: true })
+    .evaluate(headingStyle);
   await page.goto("/#/history");
   await expect(page.getByText("40 dictations", { exact: true })).toBeVisible();
+  const title = page.getByRole("heading", { name: "History", exact: true });
+  const search = page.getByLabel("Search transcripts", { exact: true });
+  const importAudio = page.getByRole("button", { name: "Import audio", exact: true });
+  expect(await title.evaluate(headingStyle)).toEqual(modelsStyle);
+  const titleBounds = (await title.boundingBox())!;
+  const searchBounds = (await search.boundingBox())!;
+  const importBounds = (await importAudio.boundingBox())!;
+  expect(searchBounds.x).toBeGreaterThan(titleBounds.x + titleBounds.width);
+  expect(Math.abs(searchBounds.y - importBounds.y)).toBeLessThan(2);
+  expect(searchBounds.y).toBeLessThan(titleBounds.y + titleBounds.height + 12);
+  await page.screenshot({
+    path: testInfo.outputPath("history-header-desktop.png"),
+    animations: "disabled",
+  });
   await page.getByRole("checkbox", { name: "Select dictation 1", exact: true }).check();
-  for (const width of [1280, 760]) {
+  for (const width of [1280, 760, 360]) {
     await page.setViewportSize({ width, height: 720 });
     await page.evaluate(() => window.scrollTo(0, 900));
-    const title = page.getByRole("heading", { name: "History", exact: true });
     await expect.poll(async () => (await title.boundingBox())!.y).toBeLessThan(30);
-    const search = page.getByLabel("Search transcripts", { exact: true });
     const controls = [
       title,
       search,
-      page.getByRole("button", { name: "Import audio", exact: true }),
+      importAudio,
       page.getByRole("button", { name: "Export selected", exact: true }),
       page.getByRole("button", { name: "Delete selected", exact: true }),
     ];
     for (const control of controls) {
       const bounds = await control.boundingBox();
       expect(bounds!.y).toBeGreaterThanOrEqual(0);
-      expect(bounds!.y + bounds!.height).toBeLessThan(300);
+      expect(bounds!.y + bounds!.height).toBeLessThan(width === 360 ? 380 : 300);
     }
     expect(await page.evaluate(() => window.scrollY)).toBeGreaterThan(800);
     await page.screenshot({
       path: testInfo.outputPath(`history-sticky-${width}.png`),
       animations: "disabled",
     });
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+    ).toBe(true);
   }
   await page.getByLabel("Search transcripts", { exact: true }).fill("Dictation 39");
   await expect(page.getByText("1 dictation", { exact: true })).toBeVisible();
@@ -5944,7 +5970,11 @@ test("audio import is cancellable across navigation and results open from Histor
   });
   await page.getByRole("link", { name: /Imported words/ }).click();
   await expect(page.getByRole("heading", { name: "Transcription", exact: true })).toBeVisible();
-  await expect(page.getByText("Imported words.", { exact: true })).toBeVisible();
+  await expect(
+    page
+      .getByRole("region", { name: "Transcription", exact: true })
+      .getByText("Imported words.", { exact: true }),
+  ).toBeVisible();
   await expect.poll(() => page.evaluate(() => window.dictationTest.clipboard)).toBe("");
   await page.getByRole("link", { name: "Back to History", exact: true }).click();
   await page.getByRole("button", { name: "Import audio", exact: true }).click();

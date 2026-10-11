@@ -1,6 +1,7 @@
 import { AudioImportButton } from "@/components/audio-import-button";
 import { useDictation } from "@/components/dictation-provider";
 import { DictationRow } from "@/components/dictation-row";
+import { PageHeading } from "@/components/page-heading";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -149,11 +150,34 @@ export function HistoryPage() {
   }
   return (
     <div className="space-y-7">
-      <div className="sticky top-0 z-20 space-y-5 bg-background py-4">
-        <header className="flex flex-wrap items-center justify-between gap-3">
-          <h1 className="text-2xl font-semibold tracking-tight">History</h1>
-          <AudioImportButton />
-        </header>
+      <div className="sticky top-0 z-20 space-y-4 border-b bg-background py-4">
+        <PageHeading
+          title="History"
+          description="Your dictations, ready to revisit."
+          className="items-center"
+        >
+          <div className="flex w-full min-w-0 flex-wrap items-center gap-3 sm:ml-auto sm:w-auto">
+            <div className="relative min-w-0 flex-1 basis-48 sm:w-60 sm:flex-none lg:w-64">
+              <Search
+                aria-hidden="true"
+                className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"
+              />
+              <Input
+                aria-label="Search transcripts"
+                maxLength={250}
+                className="h-9 rounded-lg bg-card pl-10 text-sm"
+                placeholder="Search transcripts…"
+                value={query}
+                onChange={(event) => {
+                  setLoading(true);
+                  setSelected([]);
+                  setParams(event.target.value ? { q: event.target.value } : {}, { replace: true });
+                }}
+              />
+            </div>
+            <AudioImportButton />
+          </div>
+        </PageHeading>
         {snapshot.status.phase === "transcribing" && (
           <div role="status" className="flex flex-wrap items-center gap-3 text-sm">
             <span>{snapshot.status.message}</span>
@@ -162,21 +186,6 @@ export function HistoryPage() {
             </Button>
           </div>
         )}
-        <div className="relative">
-          <Search className="absolute left-3 top-3 size-4 text-muted-foreground" />
-          <Input
-            aria-label="Search transcripts"
-            maxLength={250}
-            className="h-10 rounded-xl bg-card pl-10"
-            placeholder="Search transcripts…"
-            value={query}
-            onChange={(event) => {
-              setLoading(true);
-              setSelected([]);
-              setParams(event.target.value ? { q: event.target.value } : {}, { replace: true });
-            }}
-          />
-        </div>
         {snapshot.status.historyError && (
           <p role="alert" className="text-sm text-destructive">
             {snapshot.status.historyError}

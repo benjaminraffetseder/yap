@@ -1,5 +1,6 @@
 import { useDictation } from "@/components/dictation-provider";
 import { ModelCard } from "@/components/model-card";
+import { PageHeading } from "@/components/page-heading";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -56,13 +57,10 @@ export function ModelsPage({ embedded = false }: { embedded?: boolean }) {
   return (
     <div className="space-y-7">
       {!embedded && (
-        <header className="flex flex-wrap items-end justify-between gap-5">
-          <div>
-            <h1 className="text-3xl font-semibold tracking-tight">Models</h1>
-            <p className="mt-2 text-sm text-muted-foreground">
-              Find the right balance of speed, size, and accuracy.
-            </p>
-          </div>
+        <PageHeading
+          title="Models"
+          description="Find the right balance of speed, size, and accuracy."
+        >
           <div
             role="group"
             aria-label="Model storage"
@@ -76,7 +74,7 @@ export function ModelsPage({ embedded = false }: { embedded?: boolean }) {
               </p>
             </div>
           </div>
-        </header>
+        </PageHeading>
       )}
       {settings.modelPath && (
         <section

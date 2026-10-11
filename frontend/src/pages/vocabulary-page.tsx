@@ -1,4 +1,5 @@
 import { useDictation } from "@/components/dictation-provider";
+import { PageHeading } from "@/components/page-heading";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -61,12 +62,10 @@ export function VocabularyPage() {
   }
   return (
     <div className="space-y-7">
-      <header>
-        <h1 className="text-3xl font-semibold tracking-tight">Vocabulary</h1>
-        <p className="mt-2 text-sm text-muted-foreground">
-          Teach Yap the names, brands, and terms you use.
-        </p>
-      </header>
+      <PageHeading
+        title="Vocabulary"
+        description="Teach Yap the names, brands, and terms you use."
+      />
       <fieldset
         disabled={!isDesktop || busy || saving || loading}
         className="min-w-0 space-y-6 disabled:opacity-60"
