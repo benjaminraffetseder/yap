@@ -117,7 +117,7 @@ type App struct {
 }
 
 func NewApp() *App {
-	return &App{textConfig: textmodel.Defaults(), textEngine: textmodel.Local{}, settings: storage.Defaults(), status: Status{Phase: "idle", Message: "Ready when you are"}, recorder: audio.New(), microphones: audio.Devices, engine: speech.Whisper{}}
+	return &App{textConfig: textmodel.Defaults(), textEngine: textmodel.Local{}, settings: storage.Defaults(), status: Status{Phase: "idle", Message: "Ready when you are"}, recorder: audio.New(), microphones: audio.Devices, engine: speech.Local{}}
 }
 func (a *App) startup(ctx context.Context) {
 	a.mu.Lock()
@@ -838,8 +838,8 @@ func (a *App) SaveSettings(settings storage.Settings) error {
 	return nil
 }
 func (a *App) SelectFile(kind string) (string, error) {
-	label := "Whisper model"
-	pattern := "*.bin"
+	label := "Speech model"
+	pattern := "*.bin;*.gguf"
 	if kind == "runtime" {
 		label = "Whisper executable"
 		pattern = "*"
@@ -867,7 +867,7 @@ func (a *App) InstallModel(id string) error {
 		return errors.New("unknown model")
 	}
 	a.status.Phase = "downloading"
-	a.status.Message = "Downloading Whisper runtime…"
+	a.status.Message = "Checking or downloading speech runtime…"
 	a.status.Progress = 0
 	a.emit()
 	ctx, cancel := context.WithCancel(a.ctx)
@@ -885,11 +885,11 @@ func (a *App) InstallModel(id string) error {
 		a.mu.Lock()
 		executable := a.settings.WhisperPath
 		a.mu.Unlock()
-		executable, err := models.EnsureRuntime(ctx, a.store.Dir, executable, progress)
+		executable, err := models.EnsureModelRuntime(ctx, a.store.Dir, id, executable, progress)
 		var model string
 		if err == nil {
 			a.mu.Lock()
-			a.status.Message = "Checking or downloading Whisper " + id + "…"
+			a.status.Message = "Checking or downloading " + id + "…"
 			a.status.Progress = 0
 			a.emit()
 			a.mu.Unlock()
@@ -912,7 +912,9 @@ func (a *App) InstallModel(id string) error {
 			return
 		}
 		settings := a.settings
-		settings.WhisperPath = executable
+		if speech.Kind(model) == "whisper" {
+			settings.WhisperPath = executable
+		}
 		settings.ModelPath = model
 		if err = a.store.SaveSettings(settings); err != nil {
 			a.fail(err)

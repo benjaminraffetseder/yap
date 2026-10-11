@@ -51,28 +51,43 @@ func samePath(a, b string) bool {
 
 func Remove(dir, id, active string) error {
 	known := false
+	var selectedModel Model
 	for _, model := range Catalog {
 		if model.ID == id {
 			known = true
+			selectedModel = model
 			break
 		}
 	}
 	if !known {
 		return fmt.Errorf("unknown model %q", id)
 	}
-	path := filepath.Join(dir, "models", "ggml-"+id+".bin")
-	if err := managedModelPath(dir, path); err != nil {
+	path := modelPath(dir, selectedModel)
+	validate := managedModelPath
+	if len(selectedModel.Files) > 0 {
+		validate = safeBundle
+	}
+	if err := validate(dir, path); err != nil {
 		return err
 	}
 	if samePath(path, active) {
 		return errors.New("switch to another model before removing the active model")
+	}
+	if len(selectedModel.Files) > 0 {
+		if rel, err := filepath.Rel(path, active); err == nil && filepath.IsLocal(rel) {
+			return errors.New("switch to another model before removing the active model")
+		}
 	}
 	selected, selectErr := os.Stat(active)
 	target, targetErr := os.Stat(path)
 	if selectErr == nil && targetErr == nil && os.SameFile(selected, target) {
 		return errors.New("switch to another model before removing the active model")
 	}
-	if err := os.Remove(path); err != nil {
+	remove := os.Remove
+	if len(selectedModel.Files) > 0 {
+		remove = os.RemoveAll
+	}
+	if err := remove(path); err != nil {
 		return fmt.Errorf("could not remove model: %w", err)
 	}
 	return nil

@@ -1286,6 +1286,248 @@ test("Models compares models, updates the current selection, and fits narrow scr
   });
 });
 
+const additionalSpeechModels = [
+  { id: "medium", name: "Whisper Medium", size: 1533763059 },
+  { id: "large-v3", name: "Whisper Large v3", size: 3095033483 },
+  { id: "parakeet-tdt-0.6b-v3", name: "NVIDIA Parakeet TDT v3", size: 713975456 },
+  { id: "moonshine-v2-tiny", name: "Moonshine V2 Tiny", size: 45233659 },
+  { id: "moonshine-v2-small", name: "Moonshine V2 Small", size: 142300974 },
+  { id: "moonshine-v2-medium", name: "Moonshine V2 Medium", size: 269141623 },
+  { id: "moonshine-base", name: "Moonshine Base", size: 141001190 },
+];
+
+test("Models groups families in accessible accordions and reveals downloads from Home", async ({
+  page,
+}, testInfo) => {
+  await page.addInitScript(
+    (catalog) => {
+      const snapshot = window.dictationTest.snapshot;
+      snapshot.models = catalog.map((model) => ({
+        ...model,
+        description: model.id.startsWith("moonshine")
+          ? "English only"
+          : "Multilingual speech model",
+        installed: model.id === "moonshine-base",
+        path: `/models/${model.id}`,
+        diskBytes: model.id === "moonshine-base" ? model.size : 0,
+        removable: model.id === "moonshine-base",
+      }));
+      snapshot.settings.modelPath = "/models/moonshine-base";
+      localStorage.setItem("yap-sidebar-collapsed", "true");
+    },
+    [
+      { id: "tiny", name: "Whisper Tiny", size: 77691713 },
+      { id: "base", name: "Whisper Base", size: 147951465 },
+      { id: "small", name: "Whisper Small", size: 487601967 },
+      ...additionalSpeechModels,
+    ],
+  );
+  await page.setViewportSize({ width: 1347, height: 840 });
+  await page.goto("/#/models");
+  const whisper = page.getByRole("button", { name: "Whisper models", exact: true });
+  const parakeet = page.getByRole("button", { name: "NVIDIA Parakeet models", exact: true });
+  const moonshine = page.getByRole("button", { name: "Moonshine models", exact: true });
+  await expect(whisper).toContainText("5 models");
+  await expect(parakeet).toContainText("1 model");
+  await expect(moonshine).toContainText("4 models");
+  await expect(whisper).toHaveAttribute("aria-expanded", "false");
+  await expect(parakeet).toHaveAttribute("aria-expanded", "false");
+  await expect(moonshine).toHaveAttribute("aria-expanded", "true");
+  await expect(page.getByRole("region", { name: "Moonshine Base", exact: true })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Whisper Tiny", exact: true })).toBeHidden();
+  await page.screenshot({
+    path: testInfo.outputPath("model-families-desktop.png"),
+    fullPage: true,
+  });
+  await moonshine.focus();
+  await page.keyboard.press("Shift+Tab");
+  await expect(parakeet).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(parakeet).toHaveAttribute("aria-expanded", "true");
+  await whisper.click();
+  await expect(moonshine).toHaveAttribute("aria-expanded", "true");
+  await expect(
+    page.getByRole("region", { name: "Whisper models", exact: true }).getByRole("region"),
+  ).toHaveCount(5);
+  await expect(
+    page.getByRole("region", { name: "NVIDIA Parakeet models", exact: true }).getByRole("region"),
+  ).toHaveCount(1);
+  await expect(
+    page.getByRole("region", { name: "Moonshine models", exact: true }).getByRole("region"),
+  ).toHaveCount(4);
+  for (const [name, accuracy, speed] of [
+    ["Whisper Tiny", "Basic", "Fastest"],
+    ["Whisper Base", "Fair", "Very fast"],
+    ["Whisper Small", "Good", "Fast"],
+    ["Whisper Medium", "Better", "Moderate"],
+    ["Whisper Large v3", "Best", "Slower"],
+    ["NVIDIA Parakeet TDT v3", "High", "Fast"],
+    ["Moonshine V2 Tiny", "Lower", "Fastest"],
+    ["Moonshine Base", "Good", "Very fast"],
+    ["Moonshine V2 Small", "Good", "Very fast"],
+    ["Moonshine V2 Medium", "Better", "Fast"],
+  ]) {
+    const card = page.getByRole("region", { name, exact: true });
+    await expect(card.getByRole("meter", { name: "Accuracy", exact: true })).toHaveAttribute(
+      "aria-valuetext",
+      accuracy,
+    );
+    await expect(card.getByRole("meter", { name: "Speed", exact: true })).toHaveAttribute(
+      "aria-valuetext",
+      speed,
+    );
+  }
+  const tinyCard = page.getByRole("region", { name: "Whisper Tiny", exact: true });
+  await expect(tinyCard).toContainText(
+    "Quick notes and short messages on less powerful computers.",
+  );
+  const headingBounds = await tinyCard.getByRole("heading").boundingBox();
+  const ratingBounds = await tinyCard.getByRole("meter", { name: "Accuracy" }).boundingBox();
+  expect(ratingBounds!.x).toBeGreaterThan(headingBounds!.x);
+  await page
+    .getByRole("button", { name: "Supported languages for Whisper Tiny", exact: true })
+    .hover();
+  const languages = page.locator('[data-slot="tooltip-content"][data-open]');
+  await expect(languages).toContainText("99 languages");
+  await expect(languages).toHaveCSS("opacity", "1");
+  await expect(languages).toContainText("Japanese");
+  await expect(languages).toContainText("Yoruba");
+  expect((await languages.locator("p").last().innerText()).split(", ")).toHaveLength(99);
+  await page.screenshot({
+    path: testInfo.outputPath("model-card-languages-desktop.png"),
+    fullPage: true,
+  });
+  await page.keyboard.press("Escape");
+  await page
+    .getByRole("button", { name: "Supported languages for Whisper Large v3", exact: true })
+    .focus();
+  await expect(languages).toContainText("100 languages");
+  await expect(languages).toContainText("Cantonese");
+  await page.keyboard.press("Escape");
+  const parakeetBadge = page.getByRole("button", {
+    name: "Supported languages for NVIDIA Parakeet TDT v3",
+    exact: true,
+  });
+  await parakeetBadge.focus();
+  await expect(languages).toContainText("25 languages");
+  expect((await languages.locator("p").last().innerText()).split(", ")).toHaveLength(25);
+  await expect(languages).toContainText("Maltese");
+  await page.keyboard.press("Escape");
+  const moonshineCard = page.getByRole("region", { name: "Moonshine Base", exact: true });
+  await expect(moonshineCard.getByText("English only", { exact: true })).toBeVisible();
+  await expect(moonshineCard.getByText("Multilingual", { exact: true })).toHaveCount(0);
+  await moonshine.focus();
+  await page.keyboard.press("Space");
+  await expect(moonshine).toHaveAttribute("aria-expanded", "false");
+  await expect(page.getByRole("region", { name: "Moonshine Base", exact: true })).toBeHidden();
+  await page.setViewportSize({ width: 480, height: 900 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
+    true,
+  );
+  await page.screenshot({ path: testInfo.outputPath("model-families-narrow.png"), fullPage: true });
+  await page
+    .getByRole("button", { name: "Supported languages for Whisper Tiny", exact: true })
+    .focus();
+  await expect(languages).toContainText("99 languages");
+  await expect(languages).toHaveCSS("opacity", "1");
+  const tooltipBounds = await languages.boundingBox();
+  expect(tooltipBounds!.x).toBeGreaterThanOrEqual(0);
+  expect(tooltipBounds!.x + tooltipBounds!.width).toBeLessThanOrEqual(480);
+  expect(tooltipBounds!.y).toBeGreaterThanOrEqual(0);
+  expect(tooltipBounds!.y + tooltipBounds!.height).toBeLessThanOrEqual(900);
+  await page.screenshot({ path: testInfo.outputPath("model-card-languages-narrow.png") });
+  await page.keyboard.press("Escape");
+  await page.getByRole("link", { name: "Dictate", exact: true }).click();
+  await simulateModelDownload(page);
+  await page.getByRole("combobox", { name: "Speech model", exact: true }).click();
+  await page.getByRole("option", { name: /NVIDIA Parakeet TDT v3/ }).click();
+  await page.getByRole("link", { name: "Models", exact: true }).click();
+  await expect(moonshine).toHaveAttribute("aria-expanded", "true");
+  await expect(parakeet).toHaveAttribute("aria-expanded", "true");
+  await expect(parakeet).toContainText("Downloading");
+  await expect(page.getByRole("progressbar", { name: "Model download progress" })).toBeVisible();
+  await parakeet.click();
+  await expect(parakeet).toHaveAttribute("aria-expanded", "false");
+  await expect(parakeet).toContainText("Downloading");
+  await parakeet.click();
+  await page.getByRole("button", { name: "Cancel download", exact: true }).click();
+  await expect(parakeet).not.toContainText("Downloading");
+  await expect(page.getByRole("region", { name: "Current speech model" })).toContainText(
+    "Moonshine Base",
+  );
+});
+
+for (const model of additionalSpeechModels) {
+  test(`${model.name} can download from Models and become the active speech model`, async ({
+    page,
+  }) => {
+    await homeModelScenario(page);
+    await page.evaluate((model) => {
+      window.dictationTest.snapshot.models.push({
+        ...model,
+        description: model.id.startsWith("moonshine")
+          ? "English only"
+          : "Multilingual speech model",
+        installed: false,
+        path: model.id.startsWith("moonshine")
+          ? `/models/${model.id}`
+          : model.id.startsWith("parakeet")
+            ? `/models/${model.id}.q8_0.gguf`
+            : `/models/ggml-${model.id}.bin`,
+        diskBytes: 0,
+        removable: false,
+      });
+      window.dictationTest.history();
+    }, model);
+    await simulateModelDownload(page);
+    await page.getByRole("link", { name: "Models", exact: true }).click();
+    const family = model.id.startsWith("moonshine")
+      ? "Moonshine"
+      : model.id.startsWith("parakeet")
+        ? "NVIDIA Parakeet"
+        : "Whisper";
+    const group = page.getByRole("button", { name: `${family} models`, exact: true });
+    if ((await group.getAttribute("aria-expanded")) !== "true") await group.click();
+    const card = page.getByRole("region", { name: model.name, exact: true });
+    await expect(card.getByText("Download size", { exact: true })).toBeVisible();
+    await expect(card.getByRole("meter", { name: "Accuracy", exact: true })).toBeVisible();
+    await expect(card.getByRole("meter", { name: "Speed", exact: true })).toBeVisible();
+    await card.getByRole("button", { name: "Download & use", exact: true }).click();
+    await expect
+      .poll(() => page.evaluate(() => window.dictationTest.installedModelIDs))
+      .toEqual([model.id]);
+    await expect(card.getByRole("progressbar", { name: "Model download progress" })).toBeVisible();
+    await expect(page.getByRole("region", { name: "Current speech model" })).toContainText(
+      "Whisper Tiny",
+    );
+    await page.evaluate((id) => {
+      const state = window.dictationTest;
+      const downloaded = state.snapshot.models.find((entry) => entry.id === id)!;
+      downloaded.installed = true;
+      downloaded.removable = true;
+      downloaded.diskBytes = downloaded.size;
+      state.snapshot.settings.modelPath = downloaded.path;
+      state.snapshot.status.phase = "idle";
+      state.snapshot.status.message = "Model installed. Ready to dictate.";
+      state.callbacks["dictation:status"](structuredClone(state.snapshot.status));
+      state.history();
+    }, model.id);
+    await expect(card.getByRole("button", { name: "Active", exact: true })).toBeDisabled();
+    await expect(page.getByRole("region", { name: "Current speech model" })).toContainText(
+      model.name,
+    );
+    await page.getByRole("link", { name: "Dictate", exact: true }).click();
+    const selector = page.getByRole("combobox", { name: "Speech model", exact: true });
+    await expect(selector).toContainText(model.name);
+    await selector.click();
+    await expect(
+      page
+        .getByRole("option", { name: model.name, exact: true })
+        .getByRole("img", { name: "Download required" }),
+    ).toHaveCount(0);
+  });
+}
+
 test("model downloads stay inside the matching card across navigation and cancellation", async ({
   page,
 }, testInfo) => {

@@ -6,6 +6,7 @@ go 1.26.0
 replace golang.design/x/hotkey => ./third_party/hotkey
 
 require (
+	github.com/ebitengine/purego v0.11.1
 	github.com/google/uuid v1.6.0
 	github.com/wailsapp/wails/v2 v2.16.0
 	golang.design/x/hotkey v0.6.4

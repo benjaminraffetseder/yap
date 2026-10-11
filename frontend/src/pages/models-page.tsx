@@ -1,6 +1,12 @@
 import { useDictation } from "@/components/dictation-provider";
 import { ModelCard } from "@/components/model-card";
 import { PageHeading } from "@/components/page-heading";
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@/components/ui/accordion";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -25,11 +31,24 @@ import {
 import { useState } from "react";
 import { Link } from "react-router";
 
+const modelFamilies = [
+  { id: "whisper", name: "Whisper" },
+  { id: "parakeet", name: "NVIDIA Parakeet" },
+  { id: "moonshine", name: "Moonshine" },
+];
+
+function modelFamily(model: Model) {
+  if (model.id.startsWith("parakeet-")) return "parakeet";
+  if (model.id.startsWith("moonshine-")) return "moonshine";
+  return "whisper";
+}
+
 export function ModelsPage({ embedded = false }: { embedded?: boolean }) {
   const { snapshot, run, refresh, loading, installModel, downloadingModelId } = useDictation();
   const [removing, setRemoving] = useState<Model | null>(null);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
+  const [openFamilies, setOpenFamilies] = useState<string[] | null>(null);
   const { status, settings, models } = snapshot;
   const downloading = status.phase === "downloading";
   const busy = isBusy(status.phase) || loading || downloadingModelId !== null;
@@ -40,6 +59,15 @@ export function ModelsPage({ embedded = false }: { embedded?: boolean }) {
   const installedCount = models.filter((model) => model.installed).length;
   const currentModel = models.find((model) => !!model.path && settings.modelPath === model.path);
   const currentReady = currentModel ? currentModel.installed : snapshot.ready;
+  const downloadingModel = models.find((model) => model.id === downloadingModelId);
+  const groups = modelFamilies
+    .map((family) => ({
+      ...family,
+      models: models.filter((model) => modelFamily(model) === family.id),
+    }))
+    .filter((family) => family.models.length > 0);
+  const defaultFamilies = [currentModel ? modelFamily(currentModel) : (groups[0]?.id ?? "whisper")];
+  if (downloading && downloadingModel) defaultFamilies.push(modelFamily(downloadingModel));
   async function remove() {
     if (!removing || pending) return;
     setPending(true);
@@ -139,32 +167,70 @@ export function ModelsPage({ embedded = false }: { embedded?: boolean }) {
             Dictation runs on your device
           </span>
         </div>
-        <div className="grid gap-4 lg:grid-cols-3">
-          {models.map((model) => (
-            <ModelCard
-              key={model.id}
-              model={model}
-              selectedModelPath={settings.modelPath}
-              disabled={!isDesktop || busy || pending}
-              sizeLabel={megabytes(model.diskBytes || model.size)}
-              download={
-                downloading && downloadingModelId === model.id
-                  ? { percent: downloadPercent, message: status.message }
-                  : undefined
-              }
-              onUse={() =>
-                void (model.installed
-                  ? run(() => backend.settings({ ...settings, modelPath: model.path }))
-                  : installModel(model))
-              }
-              onRemove={() => {
-                setError("");
-                setRemoving(model);
-              }}
-              onCancelDownload={() => void run(backend.cancel)}
-            />
+        <p className="text-xs text-muted-foreground">
+          Speed and accuracy are relative guides. Results depend on your device and audio.
+        </p>
+        <Accordion
+          multiple
+          value={openFamilies ?? [...new Set(defaultFamilies)]}
+          onValueChange={setOpenFamilies}
+          className="gap-4"
+        >
+          {groups.map((family) => (
+            <AccordionItem
+              key={family.id}
+              value={family.id}
+              className="rounded-2xl border bg-card px-5 sm:px-6"
+            >
+              <AccordionTrigger
+                aria-label={`${family.name} models`}
+                className="items-center gap-3 py-5 hover:no-underline sm:py-6"
+              >
+                <span className="flex flex-wrap items-center gap-2.5">
+                  <span className="text-base font-semibold">{family.name}</span>
+                  <span className="text-xs font-normal text-muted-foreground">
+                    {family.models.length} {family.models.length === 1 ? "model" : "models"}
+                  </span>
+                  {downloading &&
+                    downloadingModel &&
+                    modelFamily(downloadingModel) === family.id && (
+                      <Badge variant="outline" className="border-primary/20 text-primary">
+                        Downloading
+                      </Badge>
+                    )}
+                </span>
+              </AccordionTrigger>
+              <AccordionContent className="pb-5 sm:pb-6 [&_p:not(:last-child)]:mb-0">
+                <div className="grid gap-3">
+                  {family.models.map((model) => (
+                    <ModelCard
+                      key={model.id}
+                      model={model}
+                      selectedModelPath={settings.modelPath}
+                      disabled={!isDesktop || busy || pending}
+                      sizeLabel={megabytes(model.diskBytes || model.size)}
+                      download={
+                        downloading && downloadingModelId === model.id
+                          ? { percent: downloadPercent, message: status.message }
+                          : undefined
+                      }
+                      onUse={() =>
+                        void (model.installed
+                          ? run(() => backend.settings({ ...settings, modelPath: model.path }))
+                          : installModel(model))
+                      }
+                      onRemove={() => {
+                        setError("");
+                        setRemoving(model);
+                      }}
+                      onCancelDownload={() => void run(backend.cancel)}
+                    />
+                  ))}
+                </div>
+              </AccordionContent>
+            </AccordionItem>
           ))}
-        </div>
+        </Accordion>
       </section>
       <div className="flex flex-wrap items-center gap-3 rounded-xl border border-dashed px-5 py-4">
         <FolderOpen className="size-5 shrink-0 text-muted-foreground" aria-hidden="true" />

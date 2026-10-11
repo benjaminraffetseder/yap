@@ -53,7 +53,7 @@ separately if you also want to keep the edit.
 
 Vocabulary entries have a preferred spelling and optional aliases. For example,
 `postgres` can map to `PostgreSQL`. Matching uses whole words or phrases, not
-fuzzy matching. Vocabulary also gives Whisper recognition hints, but it won't
+fuzzy matching. Vocabulary also gives Whisper and Moonshine V2 recognition hints, but it won't
 guarantee a particular transcription. The limit is 100 terms, with ten aliases each.
 
 **Light cleanup**, under Settings → Text processing, tidies spacing, capitalization,

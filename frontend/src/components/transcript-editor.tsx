@@ -1,10 +1,7 @@
-import { useEffect, useRef, useState, type RefObject } from "react";
-import { Link } from "react-router";
-import { TranscriptProcessor } from "@/components/transcript-processor";
+import { useDictation } from "@/components/dictation-provider";
 import { TextPanel } from "@/components/text-panel";
+import { TranscriptProcessor } from "@/components/transcript-processor";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import {
   Dialog,
   DialogContent,
@@ -13,8 +10,11 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { useDictation } from "@/components/dictation-provider";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { backend, isBusy, isDesktop, message, type Session } from "@/lib/backend";
+import { useEffect, useRef, useState, type RefObject } from "react";
+import { Link } from "react-router";
 
 export function TranscriptEditor({
   session,
@@ -128,10 +128,10 @@ export function TranscriptEditor({
                     const selected = field.value
                       .slice(field.selectionStart, field.selectionEnd)
                       .trim();
-                    // eslint-disable-next-line no-control-regex -- reject control characters in vocabulary selections
                     setSelection(
                       selected &&
                         Array.from(selected).length <= 80 &&
+                        // eslint-disable-next-line no-control-regex -- reject control characters in vocabulary selections
                         !/[\u0000-\u001f\u007f-\u009f]/.test(selected)
                         ? selected
                         : "",

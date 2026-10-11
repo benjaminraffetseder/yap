@@ -3,7 +3,7 @@
 Local dictation for your desktop. Hold a shortcut, speak, and release it to paste
 the transcript into the app you're using.
 
-Yap uses whisper.cpp for speech recognition and keeps recordings and transcripts
+Yap runs Whisper, NVIDIA Parakeet, or Moonshine locally and keeps recordings and transcripts
 on your computer. No account or cloud transcription service needed. The desktop
 app is built with Go, Wails, React, and TypeScript.
 
@@ -28,10 +28,16 @@ On Windows 10/11 x64, [build from source](#build-from-source) and open
 
 1. Open Yap and follow the setup guide to download a speech model and test your
    microphone. Small balances speed and accuracy; Base and Tiny are smaller options.
+   Medium and Large v3 are also available; they use more disk space and memory.
+   [Parakeet TDT 0.6B v3](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3)
+   supports 25 European languages with automatic detection (CC BY 4.0).
+   [Moonshine](https://huggingface.co/moonshine-ai/models) V2 Tiny, Small, Medium,
+   and Base are English-only options (MIT).
 2. Put the cursor in a text field in another app.
 3. Hold **Ctrl+Alt+Space**, speak, then release **Space**.
 
-The first model download needs internet. Dictation works offline after that.
+The first model download needs internet. Yap downloads and verifies the model's
+native runtime automatically; no Python installation is needed. Dictation works offline after that.
 You can also record with the microphone button in Yap; this copies the result
 without pasting into another app.
 
@@ -88,6 +94,8 @@ helpers, and the separate website aren't part of the source build.
 
 See the [macOS notes](docs/macos.md) for native Wails build instructions.
 Native compilation and desktop testing are still pending.
+Parakeet runtimes are available for Intel and Apple Silicon Macs. Moonshine's
+current native runtime requires Apple Silicon and macOS 15 or newer.
 
 Linux has X11 adapters using FFmpeg/PulseAudio and xdotool, but no native tray
 or floating indicator yet. It needs a manually configured Whisper runtime.

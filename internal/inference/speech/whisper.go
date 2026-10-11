@@ -35,6 +35,10 @@ func ValidateExecutable(executable string) error {
 }
 
 func ValidateModel(model string) error {
+	if Kind(model) == "moonshine" {
+		_, err := ReadBundle(model)
+		return err
+	}
 	f, err := os.Open(model)
 	if err != nil {
 		return fmt.Errorf("speech model is unavailable; download one in Models or select its file in Settings: %w", err)
@@ -48,7 +52,7 @@ func ValidateModel(model string) error {
 }
 
 func Validate(opts Options) error {
-	if err := ValidateExecutable(opts.Executable); err != nil {
+	if err := ValidateRuntimeFor(opts); err != nil {
 		return err
 	}
 	return ValidateModel(opts.Model)

@@ -2,7 +2,11 @@ package main
 
 import (
 	"embed"
+	"fmt"
 	"log"
+	"os"
+
+	"yap/internal/inference/speech"
 
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
@@ -16,6 +20,13 @@ var assets embed.FS
 var trayIcon []byte
 
 func main() {
+	if handled, err := speech.RunWorker(os.Args[1:]); handled {
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
 	app := NewApp()
 	config := &options.App{
 		Title:              "Yap",

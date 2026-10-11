@@ -36,8 +36,8 @@ func (a *App) GetDiagnosticChecks() ([]DiagnosticCheck, error) {
 }
 
 func (a *App) diagnosticChecks() []DiagnosticCheck {
-	checks := []DiagnosticCheck{{ID: "runtime", Name: "Whisper runtime", Ready: true, Message: "Executable found"}, {ID: "model", Name: "Speech model", Ready: true, Message: "Model file readable"}, {ID: "microphone", Name: "Microphone", Ready: true, Message: "System default"}}
-	if err := speech.ValidateExecutable(a.settings.WhisperPath); err != nil {
+	checks := []DiagnosticCheck{{ID: "runtime", Name: "Speech runtime", Ready: true, Message: "Executable found"}, {ID: "model", Name: "Speech model", Ready: true, Message: "Model file readable"}, {ID: "microphone", Name: "Microphone", Ready: true, Message: "System default"}}
+	if err := speech.ValidateRuntimeFor(speech.Options{Executable: a.settings.WhisperPath, Model: a.settings.ModelPath}); err != nil {
 		checks[0].Ready, checks[0].Message = false, err.Error()
 	}
 	if err := speech.ValidateModel(a.settings.ModelPath); err != nil {
@@ -131,7 +131,7 @@ func (a *App) transcribeDiagnostic(duration int64) {
 		case errors.Is(err, speech.ErrNoSpeech):
 			result = DiagnosticResult{Phase: "error", Message: "No speech detected. Speak a longer sentence and check the selected microphone."}
 		case err != nil:
-			result = DiagnosticResult{Phase: "error", Message: "Transcription failed. Check the selected whisper-cli executable and reinstall the model in Models. For a custom runtime, keep its required libraries alongside the executable.", Details: err.Error()}
+			result = DiagnosticResult{Phase: "error", Message: "Transcription failed; reinstall the model and its runtime in Models. For a custom runtime, keep its required libraries alongside the executable.", Details: err.Error()}
 		case text == "":
 			result = DiagnosticResult{Phase: "error", Message: "No speech detected. Speak a longer sentence and check the selected microphone."}
 		}

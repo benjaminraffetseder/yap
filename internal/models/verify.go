@@ -2,8 +2,6 @@ package models
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
 	"io"
 	"os"
@@ -51,7 +49,7 @@ func verifyModel(ctx context.Context, path string, model Model, cached bool) (bo
 			return old.valid, nil
 		}
 	}
-	h := sha256.New()
+	h, digest := newDigest(model.SHA)
 	buffer := make([]byte, 128*1024)
 	for {
 		if err = ctx.Err(); err != nil {
@@ -76,9 +74,9 @@ func verifyModel(ctx context.Context, path string, model Model, cached bool) (bo
 	if err = ctx.Err(); err != nil {
 		return false, err
 	}
-	valid := hex.EncodeToString(h.Sum(nil)) == model.SHA
+	valid := digest() == model.SHA
 	verification.Lock()
-	if len(verification.files) >= 32 {
+	if len(verification.files) >= 128 {
 		clear(verification.files)
 	}
 	verification.files[path] = verifiedFile{info: end, sha: model.SHA, valid: valid}

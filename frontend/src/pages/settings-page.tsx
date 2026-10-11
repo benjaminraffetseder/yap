@@ -510,7 +510,8 @@ export function SettingsPage() {
             <SettingsSection title="Local speech files">
               <div className="flex flex-wrap items-center justify-between gap-3 py-4">
                 <span className="text-sm text-muted-foreground">
-                  Download and switch speech models
+                  Download and switch speech models. Parakeet and Moonshine manage their runtimes
+                  automatically.
                 </span>
                 <Link
                   to="/models"
@@ -531,7 +532,7 @@ export function SettingsPage() {
                     key: "modelPath",
                     kind: "model",
                     title: "Speech model",
-                    placeholder: "Select a ggml Whisper .bin model",
+                    placeholder: "Select a model file or managed model folder",
                   },
                 ] as const
               ).map((field) => (
