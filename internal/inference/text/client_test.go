@@ -61,6 +61,127 @@ func TestEndpointRejectsRemoteDestinations(t *testing.T) {
 	}
 }
 
+func TestLocalOutputBudgetRetries(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		needed       int
+		serverLimit  *int
+		omitUsage    bool
+		wantRequests int
+		wantError    bool
+	}{
+		{name: "ordinary reply", needed: 4096, wantRequests: 1},
+		{name: "long cleanup", needed: 8192, wantRequests: 2},
+		{name: "longer cleanup", needed: 16384, wantRequests: 3},
+		{name: "missing usage", needed: 32768, omitUsage: true, wantRequests: 4},
+		{name: "bounded retries", needed: 65536, wantRequests: 4, wantError: true},
+		{name: "server context limit", serverLimit: new(512), wantRequests: 1, wantError: true},
+		{name: "no context remaining", serverLimit: new(0), wantRequests: 1, wantError: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			input := strings.Repeat("A long transcript. ", 1500)
+			requests := 0
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				var body struct {
+					MaxTokens int `json:"max_tokens"`
+					Messages  []struct{ Role, Content string }
+				}
+				if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+					t.Error(err)
+					return
+				}
+				if body.MaxTokens != 4096<<requests {
+					t.Errorf("request %d: got budget %d", requests, body.MaxTokens)
+				}
+				requests++
+				if len(body.Messages) != 2 || body.Messages[1].Content != input || !strings.Contains(body.Messages[0].Content, "Cleanup") {
+					t.Error("retry changed the transcript or instructions")
+				}
+				content, reason := "Complete cleaned transcript.", "stop"
+				if tc.serverLimit != nil || body.MaxTokens < tc.needed {
+					content, reason = "partial transcript", "length"
+				}
+				response := map[string]any{"choices": []any{map[string]any{"message": map[string]string{"content": content}, "finish_reason": reason}}}
+				if !tc.omitUsage {
+					count := body.MaxTokens
+					if tc.serverLimit != nil {
+						count = *tc.serverLimit
+					}
+					response["usage"] = map[string]int{"completion_tokens": count}
+				}
+				json.NewEncoder(w).Encode(response)
+			}))
+			defer server.Close()
+			config := Config{Enabled: true, Model: "local", Endpoint: server.URL + "/v1"}
+			output, err := (Local{}).Process(context.Background(), config, Prompt{Instruction: "Cleanup"}, input)
+			if requests != tc.wantRequests {
+				t.Errorf("got %d requests, want %d", requests, tc.wantRequests)
+			}
+			if tc.wantError {
+				if err == nil || output != "" || !strings.Contains(err.Error(), "context") {
+					t.Fatalf("expected actionable truncation failure without partial text: %q, %v", output, err)
+				}
+			} else if err != nil || output != "Complete cleaned transcript." {
+				t.Fatalf("unexpected result: %q, %v", output, err)
+			}
+		})
+	}
+}
+
+func TestRefinementDoesNotRetryTruncatedInstructions(t *testing.T) {
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		w.Write([]byte(`{"choices":[{"message":{"content":"partial"},"finish_reason":"length"}]}`))
+	}))
+	defer server.Close()
+	config := Config{Enabled: true, Model: "local", Endpoint: server.URL + "/v1"}
+	output, err := (Local{}).Refine(context.Background(), config, "Summarize")
+	if err == nil || output != "" || requests != 1 {
+		t.Fatalf("unexpected refinement result: %q, %v (%d requests)", output, err, requests)
+	}
+}
+
+func TestOutputBudgetRetryFailures(t *testing.T) {
+	for _, mode := range []string{"cancel", "server rejects larger budget"} {
+		t.Run(mode, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			requests := 0
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				var body map[string]any
+				if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+					t.Error(err)
+					return
+				}
+				requests++
+				if requests == 1 {
+					w.Write([]byte(`{"choices":[{"message":{"content":"partial"},"finish_reason":"length"}],"usage":{"completion_tokens":4096}}`))
+					return
+				}
+				if mode == "cancel" {
+					cancel()
+					<-r.Context().Done()
+				} else {
+					http.Error(w, "sensitive transcript", http.StatusBadRequest)
+				}
+			}))
+			defer server.Close()
+			config := Config{Enabled: true, Model: "local", Endpoint: server.URL + "/v1"}
+			output, err := (Local{}).Process(ctx, config, Prompt{Instruction: "Cleanup"}, "input")
+			if output != "" || err == nil || requests != 2 {
+				t.Fatalf("unexpected retry result: %q, %v (%d requests)", output, err, requests)
+			}
+			if mode == "cancel" && !errors.Is(err, context.Canceled) {
+				t.Fatalf("cancellation lost: %v", err)
+			}
+			if mode != "cancel" && (!strings.Contains(err.Error(), "HTTP 400") || strings.Contains(err.Error(), "sensitive transcript")) {
+				t.Fatalf("unexpected server error: %v", err)
+			}
+		})
+	}
+}
+
 func TestRefineRewritesInstructionsInsteadOfExecutingThem(t *testing.T) {
 	input := "summarize as bullet points in German, keep names"
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

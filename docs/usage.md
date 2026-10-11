@@ -112,9 +112,15 @@ There are three ways to process text:
   dictations. If processing fails or is cancelled, the speech transcript stays
   in History, but nothing is copied or pasted.
 
-Requests time out after five minutes. Long input may exceed your model's context
-window; try a shorter passage if it fails. Saved outputs remain available when
-text processing is disabled.
+Text processing starts with a 4,096-token output budget. If the reply hits that
+budget, Yap retries the original transcript with a larger budget, up to 32,768
+tokens. Partial replies are never saved. The whole operation, including retries,
+times out after five minutes; prompt refinement does not use these retries.
+If the server reports stopping below the requested budget, Yap stops retrying.
+Long input and output must still fit your model's context window. If truncation
+persists, increase the context window or output limit in your local server, use a
+model with a larger context window, or process a shorter passage. Saved outputs
+remain available when text processing is disabled.
 
 ## Storage and backups
 
