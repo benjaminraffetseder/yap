@@ -2276,13 +2276,92 @@ test("action refresh replies preserve status events received while awaiting them
   await expect(page.getByRole("button", { name: "Start recording" })).toBeDisabled();
 });
 
+test("Vocabulary matches the Models heading and keeps editing actions visible in narrow windows", async ({
+  page,
+}, testInfo) => {
+  await page.addInitScript(() => {
+    localStorage.setItem("desktop-theme", "dark");
+    localStorage.setItem("yap-sidebar-collapsed", "true");
+    window.dictationTest.snapshot.vocabulary = [
+      {
+        id: "postgres",
+        canonical: "PostgreSQL",
+        aliases: ["postgres", "post gre SQL"],
+        enabled: true,
+      },
+      { id: "benji", canonical: "Benji", aliases: ["ben gee"], enabled: true },
+      { id: "yap", canonical: "Yap", aliases: [], enabled: false },
+    ];
+  });
+  await page.setViewportSize({ width: 1347, height: 900 });
+  await page.goto("/#/models");
+  const headingStyle = (element: HTMLElement | SVGElement) => {
+    const style = getComputedStyle(element);
+    return { size: style.fontSize, weight: style.fontWeight, spacing: style.letterSpacing };
+  };
+  const modelHeading = await page
+    .getByRole("heading", { name: "Models", exact: true })
+    .evaluate(headingStyle);
+  await page.getByRole("link", { name: "Vocabulary", exact: true }).click();
+  expect(
+    await page.getByRole("heading", { name: "Vocabulary", exact: true }).evaluate(headingStyle),
+  ).toEqual(modelHeading);
+  await expect(page.getByText("3 / 100", { exact: true })).toBeVisible();
+  const table = page.getByRole("table");
+  await expect(table.getByRole("columnheader", { name: "Enabled", exact: true })).toBeVisible();
+  await expect(
+    table.getByRole("columnheader", { name: "Preferred spelling", exact: true }),
+  ).toBeVisible();
+  await expect(table.getByRole("columnheader", { name: "Aliases", exact: true })).toBeVisible();
+  await expect(table.getByRole("row")).toHaveCount(4);
+  await page.screenshot({
+    path: testInfo.outputPath("vocabulary-desktop.png"),
+    animations: "disabled",
+  });
+  await page.getByLabel("Preferred spelling", { exact: true }).first().fill("Postgres");
+  const save = page.getByRole("button", { name: "Save vocabulary", exact: true });
+  const discard = page.getByRole("button", { name: "Discard changes", exact: true });
+  for (const width of [600, 360]) {
+    await page.setViewportSize({ width, height: 700 });
+    await page.getByRole("button", { name: "Remove Yap", exact: true }).scrollIntoViewIfNeeded();
+    await expect(save).toBeInViewport();
+    await expect(discard).toBeInViewport();
+    await expect(
+      page.getByRole("status", { name: "" }).filter({ hasText: "Unsaved changes" }),
+    ).toBeVisible();
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+    ).toBe(true);
+    await page.screenshot({
+      path: testInfo.outputPath(`vocabulary-${width}.png`),
+      animations: "disabled",
+    });
+  }
+  await discard.click();
+  await expect(page.getByLabel("Preferred spelling", { exact: true }).first()).toHaveValue(
+    "PostgreSQL",
+  );
+  await expect(save).toBeDisabled();
+  await page.evaluate(() => {
+    window.dictationTest.snapshot.vocabulary = [];
+    window.dictationTest.history();
+  });
+  await expect(
+    page.getByRole("heading", { name: "A vocabulary that sounds like you" }),
+  ).toBeVisible();
+  await expect(page.getByRole("table")).toHaveCount(0);
+  await expect(page.getByText("0 / 100", { exact: true })).toBeVisible();
+});
+
 test("vocabulary drafts survive refresh and failed saves, normalize and persist", async ({
   page,
 }) => {
   await page.goto("/#/vocabulary");
   await page.getByRole("button", { name: "Add term", exact: true }).click();
-  await page.getByLabel("Preferred spelling", { exact: true }).fill(" PostgreSQL ");
-  await page.getByLabel("Aliases (comma-separated)").fill("postgres, post gre SQL");
+  const table = page.getByRole("table");
+  await expect(table).toBeVisible();
+  await table.getByLabel("Preferred spelling", { exact: true }).fill(" PostgreSQL ");
+  await table.getByLabel("Aliases (comma-separated)").fill("postgres, post gre SQL");
   await page.evaluate(() => {
     window.dictationTest.history();
     window.dictationTest.failSave = true;
@@ -2292,17 +2371,17 @@ test("vocabulary drafts survive refresh and failed saves, normalize and persist"
   await expect(
     page.locator('[data-slot="toast"]').filter({ hasText: "Vocabulary save failed" }),
   ).toBeVisible();
-  await expect(page.getByLabel("Preferred spelling", { exact: true })).toHaveValue(" PostgreSQL ");
+  await expect(table.getByLabel("Preferred spelling", { exact: true })).toHaveValue(" PostgreSQL ");
   await page.evaluate(() => {
     window.dictationTest.failSave = false;
   });
   await page.getByRole("button", { name: "Save vocabulary" }).click();
-  await expect(page.getByLabel("Preferred spelling", { exact: true })).toHaveValue("PostgreSQL");
+  await expect(table.getByLabel("Preferred spelling", { exact: true })).toHaveValue("PostgreSQL");
   await expect(page.getByRole("button", { name: "Save vocabulary" })).toBeDisabled();
   await expect
     .poll(() => page.evaluate(() => window.dictationTest.snapshot.vocabulary[0].aliases.join("|")))
     .toBe("postgres|post gre SQL");
-  await page.getByRole("checkbox", { name: "Enabled", exact: true }).uncheck();
+  await table.getByRole("checkbox", { name: "Enabled", exact: true }).uncheck();
   await page.getByRole("button", { name: "Save vocabulary" }).click();
   await expect
     .poll(() => page.evaluate(() => window.dictationTest.snapshot.vocabulary[0].enabled))
@@ -2312,6 +2391,36 @@ test("vocabulary drafts survive refresh and failed saves, normalize and persist"
   await expect
     .poll(() => page.evaluate(() => window.dictationTest.snapshot.vocabulary.length))
     .toBe(0);
+  await expect(page.getByRole("table")).toHaveCount(0);
+});
+
+test("vocabulary table paginates when there are more than ten terms", async ({ page }) => {
+  await page.addInitScript(() => {
+    window.dictationTest.snapshot.vocabulary = Array.from({ length: 11 }, (_, index) => ({
+      id: `term-${index}`,
+      canonical: `Term ${index + 1}`,
+      aliases: [],
+      enabled: true,
+    }));
+  });
+  await page.goto("/#/vocabulary");
+  await expect(page.getByText("11 / 100", { exact: true })).toBeVisible();
+  const pages = page.getByRole("navigation", { name: "Vocabulary pages" });
+  await expect(pages).toBeVisible();
+  await expect(pages.getByText("Page 1 of 2", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Preferred spelling", { exact: true })).toHaveCount(10);
+  await expect(page.getByLabel("Preferred spelling", { exact: true }).first()).toHaveValue(
+    "Term 1",
+  );
+  await pages.getByRole("button", { name: "Next", exact: true }).click();
+  await expect(pages.getByText("Page 2 of 2", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Preferred spelling", { exact: true })).toHaveCount(1);
+  await expect(page.getByLabel("Preferred spelling", { exact: true })).toHaveValue("Term 11");
+  await page.getByRole("button", { name: "Add term", exact: true }).click();
+  await expect(page.getByText("12 / 100", { exact: true })).toBeVisible();
+  await expect(pages.getByText("Page 2 of 2", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Preferred spelling", { exact: true })).toHaveCount(2);
+  await expect(page.getByLabel("Preferred spelling", { exact: true }).last()).toHaveValue("");
 });
 
 test("automatic clipboard copying defaults on and persists with manual copying available", async ({
