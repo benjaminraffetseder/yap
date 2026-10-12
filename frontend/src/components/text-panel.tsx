@@ -1,6 +1,6 @@
-import type { ReactNode } from "react";
-import { AudioLines, FileText } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { AudioLines, FileText } from "lucide-react";
+import type { ReactNode } from "react";
 
 export function TextPanel({
   title,
@@ -8,23 +8,32 @@ export function TextPanel({
   description,
   action,
   children,
+  variant = "default",
 }: {
   title: string;
   kind: "result" | "source";
   description?: string;
   action?: ReactNode;
   children: ReactNode;
+  variant?: "default" | "reading";
 }) {
   const Icon = kind === "result" ? FileText : AudioLines;
   return (
     <section
       aria-label={title}
       className={cn(
-        "min-w-0 rounded-xl border p-4",
-        kind === "result" ? "border-primary/25 bg-primary/5" : "bg-muted/20",
+        "min-w-0 rounded-xl border",
+        variant === "reading"
+          ? "bg-card p-5 sm:p-7"
+          : cn("p-4", kind === "result" ? "border-primary/25 bg-primary/5" : "bg-muted/20"),
       )}
     >
-      <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
+      <div
+        className={cn(
+          "flex flex-wrap items-start justify-between gap-3",
+          variant === "reading" ? "mb-7 border-b pb-5" : "mb-3",
+        )}
+      >
         <div className="min-w-0">
           <h3 className="flex items-center gap-2 text-sm font-semibold">
             <Icon
@@ -42,7 +51,11 @@ export function TextPanel({
         </div>
         {action}
       </div>
-      {children}
+      {variant === "reading" ? (
+        <div className="mx-auto max-w-[72ch] py-1 sm:py-3">{children}</div>
+      ) : (
+        children
+      )}
     </section>
   );
 }

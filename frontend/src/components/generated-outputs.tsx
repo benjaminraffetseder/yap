@@ -1,18 +1,7 @@
-import { useEffect, useState } from "react";
-import { Link } from "react-router";
-import { Copy, RefreshCw, Sparkles, Trash2 } from "lucide-react";
 import { useDictation } from "@/components/dictation-provider";
-import { TextPanel } from "@/components/text-panel";
 import { MarkdownContent } from "@/components/markdown-content";
+import { TextPanel } from "@/components/text-panel";
 import { Button } from "@/components/ui/button";
-import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import {
   Dialog,
   DialogContent,
@@ -21,8 +10,19 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { backend, isBusy, message, type GeneratedOutput } from "@/lib/backend";
 import { useTextRequest } from "@/lib/use-text-request";
+import { Copy, Loader2, RefreshCw, Sparkles, Trash2 } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Link } from "react-router";
 
 export function GeneratedOutputs({
   sessionID,
@@ -92,10 +92,10 @@ export function GeneratedOutputs({
   const options = prompts.map((prompt) => ({ value: prompt.id, label: prompt.name }));
   return (
     <section aria-label="Generated outputs" className="space-y-5">
-      <div className="space-y-2.5 border-b pb-5">
-        <div className="flex flex-wrap items-end gap-3">
-          <div className="grid w-full max-w-64 gap-1.5">
-            <Label htmlFor="output-prompt" className="text-xs font-normal text-muted-foreground">
+      <div className="flex flex-wrap items-center justify-between gap-x-5 gap-y-2">
+        <div className="flex min-w-0 max-w-full flex-wrap items-center gap-3">
+          <div className="inline-flex max-w-full flex-wrap items-center gap-1 rounded-lg border bg-muted/15 p-1">
+            <Label htmlFor="output-prompt" className="sr-only">
               Output prompt
             </Label>
             <Select
@@ -111,9 +111,9 @@ export function GeneratedOutputs({
             >
               <SelectTrigger
                 id="output-prompt"
-                className="w-full bg-transparent text-xs data-[size=default]:h-8 dark:bg-transparent"
+                className="w-28 min-w-0 border-transparent bg-transparent text-xs data-[size=default]:h-8 hover:bg-muted/50 sm:w-44 dark:bg-transparent"
               >
-                <SelectValue placeholder="Choose a prompt" />
+                <SelectValue className="min-w-0" placeholder="Choose a prompt" />
               </SelectTrigger>
               <SelectContent alignItemWithTrigger={false} align="start">
                 <div className="p-1">
@@ -125,41 +125,51 @@ export function GeneratedOutputs({
                 </div>
               </SelectContent>
             </Select>
-          </div>
-          {generation.pending ? (
-            <div className="flex flex-wrap items-center gap-3">
-              <span role="status" className="text-xs text-muted-foreground">
-                Generating output…
-              </span>
+            {generation.pending ? (
+              <div className="flex flex-wrap items-center gap-1">
+                <span
+                  role="status"
+                  className="inline-flex items-center gap-1.5 px-2 text-xs text-muted-foreground"
+                >
+                  <Loader2 aria-hidden="true" className="size-3 animate-spin" />
+                  Generating output…
+                </span>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="text-muted-foreground"
+                  onClick={() => void generation.cancel()}
+                >
+                  Cancel generation
+                </Button>
+              </div>
+            ) : (
               <Button
                 size="sm"
                 variant="ghost"
-                className="text-muted-foreground"
-                onClick={() => void generation.cancel()}
+                aria-label="Generate output"
+                className="bg-primary/10 text-xs text-primary hover:bg-primary/15 hover:text-primary"
+                disabled={!canGenerate || !selected}
+                onClick={() =>
+                  void generate((id) => backend.generateOutput(id, sessionID, selected))
+                }
               >
-                Cancel generation
+                <Sparkles className="size-3.5" />
+                Generate
               </Button>
-            </div>
-          ) : (
-            <Button
-              size="sm"
-              variant="outline"
-              className="shadow-none"
-              disabled={!canGenerate || !selected}
-              onClick={() => void generate((id) => backend.generateOutput(id, sessionID, selected))}
-            >
-              <Sparkles className="size-3.5 text-muted-foreground" />
-              Generate output
-            </Button>
-          )}
+            )}
+          </div>
           {!enabled && (
-            <Link to="/prompts" className="pb-1.5 text-xs text-muted-foreground underline">
+            <Link
+              to="/prompts"
+              className="text-xs text-muted-foreground underline underline-offset-4"
+            >
               Set up text model
             </Link>
           )}
         </div>
         <p className="text-[11px] leading-5 text-muted-foreground">
-          Uses your saved transcription. Each output is kept separately.
+          Uses your saved transcript. New outputs are saved separately.
         </p>
       </div>
       {generation.error && (
@@ -194,6 +204,7 @@ export function GeneratedOutputs({
         {outputs.map((output) => (
           <article key={output.id} aria-label={`${output.prompt.name} output`}>
             <TextPanel
+              variant="reading"
               title={output.prompt.name}
               kind="result"
               description={`${output.model} · ${new Date(output.createdAt).toLocaleString()}`}
@@ -209,7 +220,7 @@ export function GeneratedOutputs({
                 </Button>
               }
             >
-              <MarkdownContent>{output.text}</MarkdownContent>
+              <MarkdownContent className="text-base leading-8">{output.text}</MarkdownContent>
               <div className="mt-4 flex flex-wrap items-center gap-2">
                 <Button
                   size="sm"

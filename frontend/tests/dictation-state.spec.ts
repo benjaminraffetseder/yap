@@ -3332,6 +3332,110 @@ test("History opens a dictation page with content tabs that fit narrow windows",
     .toBe("An unchanged transcription.");
 });
 
+test("transcription and editor Changes compare the correct versions and remain usable on narrow screens", async ({
+  page,
+}, testInfo) => {
+  await page.addInitScript(() => {
+    localStorage.setItem("desktop-theme", "dark");
+    localStorage.setItem("yap-sidebar-collapsed", "true");
+    window.dictationTest.snapshot.history = [
+      {
+        id: "compare",
+        createdAt: "2026-10-07T12:30:00",
+        durationMs: 12000,
+        rawTranscript: "Send postgres tomorrow.\n\nConfirm the meeting with the team.",
+        finalTranscript: "Send PostgreSQL today.\n\nConfirm the meeting with the team.",
+        speechModel: "base",
+        language: "en",
+        audioPath: "",
+      },
+    ];
+  });
+  await page.goto("/#/history/compare");
+  const contents = page.getByRole("tablist", { name: "Dictation contents" });
+  await contents.getByRole("tab", { name: "Changes", exact: true }).click();
+  await expect(contents.getByRole("tab", { name: "Changes", exact: true })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+  const changes = page.getByRole("region", { name: "Changes", exact: true });
+  await expect(changes.locator("del").first()).toContainText("postgres");
+  await expect(changes.locator("ins").first()).toContainText("PostgreSQL");
+  await expect(changes).toContainText("Original recording → Current transcription");
+  await settle(page);
+  await page.screenshot({
+    path: testInfo.outputPath("detail-changes-desktop.png"),
+    animations: "disabled",
+  });
+  await page.getByRole("button", { name: "Edit transcript", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Edit transcript", exact: true });
+  const input = dialog.getByRole("textbox", { name: "Editable text" });
+  const reference = dialog.getByRole("tablist", { name: "Editor reference" });
+  await expect(reference.getByRole("tab", { name: "Changes", exact: true })).toHaveCount(0);
+  await input.fill("Send PostgreSQL on Friday.\n\nConfirm the meeting with the team.");
+  await reference.getByRole("tab", { name: "Changes", exact: true }).click();
+  const draft = dialog.getByRole("region", { name: "Draft changes", exact: true });
+  await expect(draft.locator("del")).toContainText(["today"]);
+  await expect(draft.locator("ins")).toContainText(["on Friday"]);
+  await expect(draft).toContainText("Saved text → Your draft");
+  await input.fill("Send PostgreSQL today.\n\nConfirm the meeting with the team.");
+  await expect(reference.getByRole("tab", { name: "Changes", exact: true })).toHaveCount(0);
+  await expect(reference.getByRole("tab", { name: "Original", exact: true })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+  await expect(dialog.getByRole("region", { name: "Original transcription" })).toBeVisible();
+  await input.fill("Send PostgreSQL on Friday.\n\nConfirm the meeting with the team.");
+  await reference.getByRole("tab", { name: "Changes", exact: true }).click();
+  for (const width of [1280, 600, 360]) {
+    await page.setViewportSize({ width, height: 720 });
+    await expect(input).toBeVisible();
+    const save = dialog.getByRole("button", { name: "Save transcript", exact: true });
+    await expect(save).toBeInViewport();
+    expect(await dialog.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
+    await settle(page);
+    await page.screenshot({
+      path: testInfo.outputPath(`editor-changes-${width}.png`),
+      animations: "disabled",
+    });
+  }
+  await reference.getByRole("tab", { name: "Original", exact: true }).click();
+  await expect(input).toHaveValue(
+    "Send PostgreSQL on Friday.\n\nConfirm the meeting with the team.",
+  );
+  await expect(dialog.getByRole("region", { name: "Original transcription" })).toContainText(
+    "postgres tomorrow",
+  );
+  await dialog.getByRole("button", { name: "Save transcript", exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(changes.locator("ins").last()).toContainText("on Friday");
+  await contents.getByRole("tab", { name: "Transcription", exact: true }).click();
+  await page.getByRole("button", { name: "Copy result", exact: true }).click();
+  await expect
+    .poll(() => page.evaluate(() => window.dictationTest.snapshot.status.transcript))
+    .toBe("Send PostgreSQL on Friday.\n\nConfirm the meeting with the team.");
+  await page.getByRole("button", { name: "Edit transcript", exact: true }).click();
+  await input.fill("Send postgres tomorrow.\n\nConfirm the meeting with the team.");
+  await dialog.getByRole("button", { name: "Save transcript", exact: true }).click();
+  await expect(contents.getByRole("tab", { name: "Changes", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("region", { name: "Transcription", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Edit transcript", exact: true }).click();
+  await input.fill("New saved transcription.");
+  await dialog.getByRole("button", { name: "Save transcript", exact: true }).click();
+  await contents.getByRole("tab", { name: "Changes", exact: true }).click();
+  await page.evaluate(() => {
+    const state = window.dictationTest;
+    state.snapshot.history[0].finalTranscript = state.snapshot.history[0].rawTranscript;
+    state.history();
+  });
+  await expect(contents.getByRole("tab", { name: "Changes", exact: true })).toHaveCount(0);
+  await expect(contents.getByRole("tab", { name: "Transcription", exact: true })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+  await expect(page.getByRole("region", { name: "Transcription", exact: true })).toBeVisible();
+});
+
 test("dictation pages preserve the History search and page when returning and deleting", async ({
   page,
 }) => {
