@@ -1,3 +1,4 @@
+import { useMotionPreference } from "@/lib/use-motion-preference";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
@@ -6,6 +7,9 @@ import type { Model } from "@/lib/backend";
 import { modelProfiles, type ModelRating } from "@/lib/model-profiles";
 import { cn } from "@/lib/utils";
 import { Check, Download, HardDrive, Languages, Loader2, Trash2, X } from "lucide-react";
+import { AnimatePresence, motion } from "motion/react";
+import { MotionReveal } from "@/components/motion-reveal";
+import { motionTransition } from "@/lib/motion";
 
 function RatingBar({ name, rating }: { name: "Accuracy" | "Speed"; rating: ModelRating }) {
   return (
@@ -63,9 +67,13 @@ export function ModelCard({
   const repair = model.removable && !model.installed;
   const isDownloading = !!download;
   const profile = modelProfiles[model.id];
+  const reduced = useMotionPreference();
 
   return (
-    <section
+    <motion.section
+      layout={reduced ? false : "position"}
+      layoutDependency={isDownloading}
+      transition={motionTransition("model", reduced)}
       aria-labelledby={`model-${model.id}-heading`}
       className={cn(
         "relative rounded-xl border bg-background/40 p-4 transition-colors sm:p-5",
@@ -133,74 +141,90 @@ export function ModelCard({
             </span>
           )}
         </div>
-        {!download && (
-          <div className="flex shrink-0 items-center gap-2">
-            <Button
-              className={cn(
-                "h-9 flex-1 rounded-lg sm:flex-none",
-                selected &&
-                  "border-primary/20 bg-primary/10 text-primary disabled:opacity-100 dark:bg-primary/10",
-              )}
-              variant={selected ? "outline" : "default"}
-              disabled={disabled || selected}
-              onClick={onUse}
+        <AnimatePresence initial={false} mode="popLayout">
+          {!download && (
+            <MotionReveal
+              key={selected ? "active" : model.installed ? "installed" : "download"}
+              preset="model"
+              className="flex shrink-0 items-center gap-2"
             >
-              {selected ? (
-                <>
-                  <Check className="size-4" aria-hidden="true" />
-                  Active
-                </>
-              ) : model.installed ? (
-                "Use model"
-              ) : (
-                <>
-                  <Download className="size-4" aria-hidden="true" />
-                  {repair ? "Repair & use" : "Download & use"}
-                </>
-              )}
-            </Button>
-            {model.removable && (
               <Button
-                size="icon"
-                variant="ghost"
-                className="size-9 rounded-lg text-muted-foreground hover:text-destructive"
-                aria-label={`Remove ${model.name}`}
-                disabled={disabled || active}
-                title={
-                  active
-                    ? "Switch to another model before removing this one"
-                    : `Remove ${model.name}`
-                }
-                onClick={onRemove}
+                pressFeedback={!selected}
+                className={cn(
+                  "h-9 flex-1 rounded-lg sm:flex-none",
+                  selected &&
+                    "border-primary/20 bg-primary/10 text-primary disabled:opacity-100 dark:bg-primary/10",
+                )}
+                variant={selected ? "outline" : "default"}
+                disabled={disabled || selected}
+                onClick={onUse}
               >
-                <Trash2 className="size-3.5" aria-hidden="true" />
+                {selected ? (
+                  <>
+                    <Check className="size-4" aria-hidden="true" />
+                    Active
+                  </>
+                ) : model.installed ? (
+                  "Use model"
+                ) : (
+                  <>
+                    <Download className="size-4" aria-hidden="true" />
+                    {repair ? "Repair & use" : "Download & use"}
+                  </>
+                )}
               </Button>
-            )}
-          </div>
-        )}
+              {model.removable && (
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="size-9 rounded-lg text-muted-foreground hover:text-destructive"
+                  aria-label={`Remove ${model.name}`}
+                  disabled={disabled || active}
+                  title={
+                    active
+                      ? "Switch to another model before removing this one"
+                      : `Remove ${model.name}`
+                  }
+                  onClick={onRemove}
+                >
+                  <Trash2 className="size-3.5" aria-hidden="true" />
+                </Button>
+              )}
+            </MotionReveal>
+          )}
+        </AnimatePresence>
       </div>
-      {download ? (
-        <div aria-live="polite" className="mt-4 space-y-3">
-          <div className="flex items-center justify-between gap-2 text-xs font-medium text-primary">
-            <span className="flex items-center gap-1.5">
-              <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
-              Downloading
-            </span>
-            <span className="tabular-nums">{download.percent}%</span>
-          </div>
-          <Progress aria-label="Model download progress" value={download.percent} />
-          <p className="text-xs leading-5 break-words text-muted-foreground">{download.message}</p>
-          <Button
-            variant="outline"
-            className="h-10 w-full rounded-lg"
-            aria-label="Cancel download"
-            onClick={onCancelDownload}
+      <AnimatePresence initial={false} mode="popLayout">
+        {download ? (
+          <MotionReveal
+            key="download-progress"
+            preset="model"
+            aria-live="polite"
+            className="mt-4 space-y-3"
           >
-            <X className="size-3.5" aria-hidden="true" />
-            Cancel download
-          </Button>
-        </div>
-      ) : null}
-    </section>
+            <div className="flex items-center justify-between gap-2 text-xs font-medium text-primary">
+              <span className="flex items-center gap-1.5">
+                <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
+                Downloading
+              </span>
+              <span className="tabular-nums">{download.percent}%</span>
+            </div>
+            <Progress aria-label="Model download progress" value={download.percent} />
+            <p className="text-xs leading-5 break-words text-muted-foreground">
+              {download.message}
+            </p>
+            <Button
+              variant="outline"
+              className="h-10 w-full rounded-lg"
+              aria-label="Cancel download"
+              onClick={onCancelDownload}
+            >
+              <X className="size-3.5" aria-hidden="true" />
+              Cancel download
+            </Button>
+          </MotionReveal>
+        ) : null}
+      </AnimatePresence>
+    </motion.section>
   );
 }

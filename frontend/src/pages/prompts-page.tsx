@@ -250,7 +250,7 @@ export function PromptsPage() {
                 </Button>
               </>
             )}
-            <Button disabled={controlsDisabled || !dirty} onClick={() => void save()}>
+            <Button pressFeedback disabled={controlsDisabled || !dirty} onClick={() => void save()}>
               <Save aria-hidden="true" className="size-4" />
               {saving ? "Saving…" : "Save prompts"}
             </Button>

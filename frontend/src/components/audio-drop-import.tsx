@@ -1,12 +1,17 @@
+import { useMotionPreference } from "@/lib/use-motion-preference";
 import { useDictation } from "@/components/dictation-provider";
 import { backend, isBusy, isDesktop } from "@/lib/backend";
 import { OnFileDrop, OnFileDropOff } from "@wails/runtime/runtime";
 import { Upload } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { AnimatePresence, motion } from "motion/react";
+import { MotionReveal } from "@/components/motion-reveal";
+import { fade } from "@/lib/motion";
 
 export function AudioDropImport() {
   const { snapshot, loading, run } = useDictation();
   const [dragging, setDragging] = useState(false);
+  const reduced = useMotionPreference();
   const pending = useRef(false);
   const unavailable = loading
     ? "Wait for Yap to finish loading"
@@ -78,19 +83,32 @@ export function AudioDropImport() {
     };
   }, []);
 
-  if (!dragging) return null;
   return (
-    <div
-      className="pointer-events-none fixed inset-3 z-50 flex items-center justify-center rounded-xl border-2 border-dashed border-primary bg-background/95"
-      role="status"
-    >
-      <div className="space-y-3 px-6 text-center">
-        <Upload className="mx-auto size-10 text-primary" aria-hidden="true" />
-        <p className="text-lg font-medium">{unavailable || "Drop one audio file to import"}</p>
-        {!unavailable && (
-          <p className="text-sm text-muted-foreground">Up to 25 minutes · 256 MiB</p>
-        )}
-      </div>
-    </div>
+    <AnimatePresence>
+      {dragging && (
+        <motion.div
+          key="audio-drop"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0, transition: fade(reduced, 0.1) }}
+          transition={fade(reduced)}
+          className="pointer-events-none fixed inset-3 z-50 flex items-center justify-center rounded-xl border-2 border-dashed border-primary bg-background/95"
+          role="status"
+        >
+          <MotionReveal
+            preset="drop"
+            from="translateY(8px) scale(0.96)"
+            rest="translateY(0px) scale(1)"
+            className="space-y-3 px-6 text-center"
+          >
+            <Upload className="mx-auto size-10 text-primary" aria-hidden="true" />
+            <p className="text-lg font-medium">{unavailable || "Drop one audio file to import"}</p>
+            {!unavailable && (
+              <p className="text-sm text-muted-foreground">Up to 25 minutes · 256 MiB</p>
+            )}
+          </MotionReveal>
+        </motion.div>
+      )}
+    </AnimatePresence>
   );
 }

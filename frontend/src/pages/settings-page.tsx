@@ -231,6 +231,7 @@ export function SettingsPage() {
               </>
             )}
             <Button
+              pressFeedback
               disabled={
                 controlsDisabled ||
                 (!dirty && !(settings.launchAtLogin && snapshot.launchAtLoginAvailable)) ||

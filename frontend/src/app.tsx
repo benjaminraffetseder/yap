@@ -11,27 +11,30 @@ import { PromptsPage } from "@/pages/prompts-page";
 import { SettingsPage } from "@/pages/settings-page";
 import { VocabularyPage } from "@/pages/vocabulary-page";
 import { HashRouter, Route, Routes } from "react-router";
+import { MotionConfig } from "motion/react";
 
 export function App() {
   return (
-    <ThemeProvider>
-      <Toaster />
-      <DictationProvider>
-        <HashRouter>
-          <Routes>
-            <Route element={<AppLayout />}>
-              <Route index element={<HomePage />} />
-              <Route path="settings" element={<SettingsPage />} />
-              <Route path="history" element={<HistoryPage />} />
-              <Route path="history/:id" element={<HistoryEntryPage />} />
-              <Route path="models" element={<ModelsPage />} />
-              <Route path="vocabulary" element={<VocabularyPage />} />
-              <Route path="prompts" element={<PromptsPage />} />
-              <Route path="*" element={<NotFoundPage />} />
-            </Route>
-          </Routes>
-        </HashRouter>
-      </DictationProvider>
-    </ThemeProvider>
+    <MotionConfig reducedMotion="user">
+      <ThemeProvider>
+        <Toaster />
+        <DictationProvider>
+          <HashRouter>
+            <Routes>
+              <Route element={<AppLayout />}>
+                <Route index element={<HomePage />} />
+                <Route path="settings" element={<SettingsPage />} />
+                <Route path="history" element={<HistoryPage />} />
+                <Route path="history/:id" element={<HistoryEntryPage />} />
+                <Route path="models" element={<ModelsPage />} />
+                <Route path="vocabulary" element={<VocabularyPage />} />
+                <Route path="prompts" element={<PromptsPage />} />
+                <Route path="*" element={<NotFoundPage />} />
+              </Route>
+            </Routes>
+          </HashRouter>
+        </DictationProvider>
+      </ThemeProvider>
+    </MotionConfig>
   );
 }

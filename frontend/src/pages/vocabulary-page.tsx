@@ -115,7 +115,7 @@ export function VocabularyPage() {
                   Discard changes
                 </Button>
               )}
-              <Button size="sm" disabled={!dirty} onClick={() => void save()}>
+              <Button pressFeedback size="sm" disabled={!dirty} onClick={() => void save()}>
                 <Save className="size-3.5" />
                 {saving ? "Saving…" : "Save vocabulary"}
               </Button>

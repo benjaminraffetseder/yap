@@ -30,6 +30,164 @@ async function homeModelScenario(page: Page, custom = false) {
   await page.goto("/");
 }
 
+test("motion setup buttons remain visible through held pointer presses and advance on release", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    window.dictationTest.snapshot.settings.setupComplete = false;
+    window.dictationTest.snapshot.microphoneTested = false;
+  });
+  await page.goto("/");
+  const next = page.getByRole("button", { name: "Next", exact: true });
+  for (let i = 0; i < 5; i++) {
+    await next.hover();
+    await page.mouse.down();
+    await expect(next).toHaveCSS("transform", "matrix(0.98, 0, 0, 0.98, 0, 0)");
+    await expect(next).toHaveCSS("opacity", "1");
+    await expect(next).toBeVisible();
+    await page.mouse.up();
+    await expect(page.getByRole("heading", { name: "Let’s hear you" })).toBeVisible();
+    await expect(next).toBeVisible();
+    await expect(next).toHaveCSS("transform", "matrix(1, 0, 0, 1, 0, 0)");
+    await page.getByRole("button", { name: "Back", exact: true }).click();
+    await expect(page.getByRole("heading", { name: "Choose your speech model" })).toBeVisible();
+  }
+  await next.click();
+  await expect(page.getByRole("heading", { name: "Let’s hear you" })).toBeVisible();
+  await expect(next).toHaveCSS("transform", "matrix(1, 0, 0, 1, 0, 0)");
+});
+
+test("motion press feedback resets on pointer exit, responds to reduced motion, and preserves keyboard activation", async ({
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  await homeModelScenario(page);
+  const button = page.getByRole("button", { name: "Import audio", exact: true });
+  await button.hover();
+  await page.mouse.down();
+  await expect
+    .poll(() => button.evaluate((element) => getComputedStyle(element).transform))
+    .not.toBe("none");
+  // Changing the OS preference while a press is active must remove spatial motion immediately.
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await expect(button).toHaveCSS("transform", "none");
+  await expect(button).toHaveCSS("opacity", "0.88");
+  await page.mouse.move(0, 0);
+  await page.mouse.up();
+  await expect(button).toHaveCSS("opacity", "1");
+  expect(await page.evaluate(() => window.dictationTest.audioImports)).toBe(0);
+  await button.focus();
+  await page.keyboard.down("Space");
+  await expect(button).toHaveCSS("transform", "none");
+  await expect(button).toHaveCSS("opacity", "1");
+  await page.keyboard.up("Space");
+  await expect.poll(() => page.evaluate(() => window.dictationTest.audioImports)).toBe(1);
+  await expect(button).toBeDisabled();
+  await expect(button).toHaveCSS("opacity", "0.5");
+});
+
+for (const reduced of [false, true]) {
+  test(`motion setup keeps keyboard navigation instant and celebrates the microphone only once${reduced ? " with reduced motion" : ""}`, async ({
+    page,
+  }) => {
+    await page.emulateMedia({ reducedMotion: reduced ? "reduce" : "no-preference" });
+    await page.addInitScript(() => {
+      window.dictationTest.snapshot.settings.setupComplete = false;
+      window.dictationTest.snapshot.microphoneTested = false;
+    });
+    await page.goto("/");
+    const next = page.getByRole("button", { name: "Next", exact: true });
+    await expect(next).toBeEnabled();
+    const transforms = await next.evaluate(async (button) => {
+      button.dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 1 }));
+      await new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+      );
+      const surface = document.querySelector('[aria-label="Microphone setup"]')!.parentElement!;
+      return surface.getAnimations().flatMap((animation) =>
+        animation.effect instanceof KeyframeEffect
+          ? animation.effect
+              .getKeyframes()
+              .map((frame) => frame.transform)
+              .filter(Boolean)
+          : [],
+      );
+    });
+    if (reduced) expect(transforms).toEqual([]);
+    else expect(transforms).toContain("translateX(24px)");
+    await expect(page.getByRole("heading", { name: "Let’s hear you" })).toBeFocused();
+    await page.getByRole("button", { name: "Test microphone", exact: true }).click();
+    await page.getByRole("button", { name: "Stop test", exact: true }).click();
+    await expect(page.getByText("Microphone test passed", { exact: true })).toBeVisible();
+    await expect(page.locator('[data-slot="setup-mic-success"]')).toHaveCSS(
+      "transform",
+      reduced ? "none" : "matrix(1, 0, 0, 1, 0, 0)",
+    );
+    const halo = page.locator('[data-slot="setup-success-halo"]');
+    await expect(halo).toHaveCount(reduced ? 0 : 1);
+    await page.getByRole("button", { name: "Test microphone", exact: true }).click();
+    await page.getByRole("button", { name: "Stop test", exact: true }).click();
+    await expect(page.getByText("Microphone test passed", { exact: true })).toBeVisible();
+    await expect(halo).toHaveCount(0);
+    await next.focus();
+    await page.keyboard.press("Enter");
+    await expect(
+      page.getByRole("heading", { name: "One shortcut. Ready when you are." }),
+    ).toBeFocused();
+    await expect(page.getByRole("region", { name: "Microphone setup" })).toHaveCount(0);
+    const shortcut = page.getByRole("region", { name: "Shortcut setup" });
+    await expect(shortcut.locator("..")).toHaveCSS("transform", "none");
+    await page.getByRole("button", { name: "Back", exact: true }).click();
+    await expect(page.getByText("Microphone test passed", { exact: true })).toBeVisible();
+    await expect(halo).toHaveCount(0);
+  });
+}
+
+for (const reduced of [false, true]) {
+  test(`motion toasts and interrupted file-drop feedback remain usable${reduced ? " with reduced motion" : ""}`, async ({
+    page,
+  }) => {
+    await page.emulateMedia({ reducedMotion: reduced ? "reduce" : "no-preference" });
+    await homeModelScenario(page);
+    await page.evaluate(async () => {
+      const transfer = new DataTransfer();
+      transfer.items.add(new File(["audio"], "meeting.wav"));
+      window.dispatchEvent(new DragEvent("dragenter", { dataTransfer: transfer }));
+      await new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+      );
+    });
+    const overlay = page.getByRole("status").filter({ hasText: "Drop one audio file to import" });
+    await expect(overlay).toBeVisible();
+    await expect(overlay.locator(":scope > div")).toHaveCSS(
+      "transform",
+      reduced ? "none" : "matrix(1, 0, 0, 1, 0, 0)",
+    );
+    await page.evaluate(async () => {
+      window.dispatchEvent(new Event("blur"));
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+      const transfer = new DataTransfer();
+      transfer.items.add(new File(["audio"], "meeting.wav"));
+      window.dispatchEvent(new DragEvent("dragenter", { dataTransfer: transfer }));
+    });
+    await expect(overlay).toHaveCount(1);
+    await expect(overlay).toHaveCSS("opacity", "1");
+    await page.evaluate(() => {
+      window.dispatchEvent(new Event("blur"));
+      const state = window.dictationTest;
+      state.status("transcribing");
+      state.snapshot.status.phase = "done";
+      state.snapshot.status.message = "Copied to clipboard";
+      state.callbacks["dictation:status"](structuredClone(state.snapshot.status));
+    });
+    await expect(overlay).toHaveCount(0);
+    const toast = page.locator('[data-slot="toast"]').filter({ hasText: "Transcription finished" });
+    await expect(toast).toHaveCSS("transform", reduced ? "none" : "matrix(1, 0, 0, 1, 0, 0)");
+    await toast.getByRole("button", { name: "Dismiss notification" }).click();
+    await expect(toast).toHaveCount(0);
+  });
+}
+
 test("transcription completion uses one toast across navigation without a result panel", async ({
   page,
 }, testInfo) => {
@@ -2869,7 +3027,9 @@ for (const theme of ["dark", "light"] as const) {
     });
     await expect(page.getByText("Shortcut test passed", { exact: true })).toBeVisible();
     await finish.click();
-    await expect(page.getByRole("heading", { name: "Dictate", exact: true })).toBeVisible();
+    await expect(
+      page.getByRole("region", { name: "Dictation recorder", exact: true }),
+    ).toBeVisible();
   });
 }
 
@@ -3081,7 +3241,7 @@ test("first run guides installation, mic testing and shortcut verification", asy
   });
   await expect(page.getByText("Shortcut test passed", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Finish setup" }).click();
-  await expect(page.getByRole("heading", { name: "Dictate", exact: true })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Dictation recorder", exact: true })).toBeVisible();
   await expect
     .poll(() => page.evaluate(() => window.dictationTest.snapshot.history.length))
     .toBe(0);
@@ -3090,7 +3250,7 @@ test("first run guides installation, mic testing and shortcut verification", asy
   await page.getByRole("button", { name: "Run setup" }).click();
   await expect(page.getByRole("heading", { name: "Set up Yap" })).toBeVisible();
   await page.getByRole("button", { name: "Skip setup" }).click();
-  await expect(page.getByRole("heading", { name: "Dictate", exact: true })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Dictation recorder", exact: true })).toBeVisible();
 });
 
 test("history uses processed text for copy and exposes searchable originals", async ({ page }) => {
@@ -3633,7 +3793,12 @@ test("saved outputs retain their recipes, regenerate as new versions and leave e
   await expect(page.getByRole("button", { name: "Generate output", exact: true })).toBeEnabled();
   await page.getByRole("combobox", { name: "Output prompt", exact: true }).click();
   await page.getByRole("option", { name: "Summary", exact: true }).click();
-  await page.getByRole("button", { name: "Generate output", exact: true }).click();
+  const generate = page.getByRole("button", { name: "Generate output", exact: true });
+  await generate.hover();
+  await page.mouse.down();
+  await expect(generate).toHaveCSS("transform", "matrix(0.98, 0, 0, 0.98, 0, 0)");
+  await expect(generate).toHaveCSS("opacity", "1");
+  await page.mouse.up();
   await expect
     .poll(() => page.evaluate(() => window.dictationTest.processing?.input))
     .toBe("Test the new model and compare its recognition of names and technical terms.");
@@ -3659,6 +3824,7 @@ test("saved outputs retain their recipes, regenerate as new versions and leave e
     .getByRole("article", { name: "Summary output", exact: true })
     .filter({ hasText: "Compare the new model's recognition" });
   await expect(first).toContainText("local-model");
+  await expect(generate).toHaveCSS("transform", "matrix(1, 0, 0, 1, 0, 0)");
   await first.getByText("Input and prompt", { exact: true }).click();
   await expect(first).toContainText("Test the new model and compare its recognition");
   await first.getByRole("button", { name: "Copy output", exact: true }).click();
@@ -5936,7 +6102,7 @@ test("render crashes show copyable recovery and retry preserves saved data", asy
     window.dictationTest.snapshot.settings.shortcut = "Ctrl+Alt+Space";
   });
   await page.getByRole("button", { name: "Retry interface", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "Dictate", exact: true })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Dictation recorder", exact: true })).toBeVisible();
   await expect(page.getByText("Saved correction", { exact: true })).toBeVisible();
   await page.getByRole("link", { name: "Settings", exact: true }).click();
   await expect(
@@ -5986,7 +6152,7 @@ test("persistent crashes stay recoverable and window reload keeps persisted pref
     page.waitForEvent("load"),
     page.getByRole("button", { name: "Reload window", exact: true }).click(),
   ]);
-  await expect(page.getByRole("heading", { name: "Dictate", exact: true })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Dictation recorder", exact: true })).toBeVisible();
   await expect(page.getByText("Persisted history", { exact: true })).toBeVisible();
   await expect(page.locator("html")).toHaveClass(/dark/);
   await expect(page.getByRole("button", { name: "Expand sidebar", exact: true })).toBeVisible();

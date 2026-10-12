@@ -21,7 +21,9 @@ import {
 import { backend, isBusy, message, type GeneratedOutput } from "@/lib/backend";
 import { useTextRequest } from "@/lib/use-text-request";
 import { Copy, Loader2, RefreshCw, Sparkles, Trash2 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { AnimatePresence } from "motion/react";
+import { MotionReveal } from "@/components/motion-reveal";
 import { Link } from "react-router";
 
 export function GeneratedOutputs({
@@ -35,6 +37,8 @@ export function GeneratedOutputs({
   const { enabled, prompts } = snapshot.textProcessing;
   const [selected, setSelected] = useState(prompts[0]?.id ?? "");
   const [outputs, setOutputs] = useState<GeneratedOutput[]>([]);
+  const seenOutputs = useRef<{ sessionID: string; ids: Set<string> } | null>(null);
+  const [enteringIds, setEnteringIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [reload, setReload] = useState(0);
@@ -53,6 +57,16 @@ export function GeneratedOutputs({
       .generatedOutputs(sessionID)
       .then((value) => {
         if (active) {
+          const previous = seenOutputs.current;
+          // The first fetch is existing history, not a newly generated result.
+          setEnteringIds(
+            new Set(
+              previous?.sessionID === sessionID
+                ? value.filter((output) => !previous.ids.has(output.id)).map((output) => output.id)
+                : [],
+            ),
+          );
+          seenOutputs.current = { sessionID, ids: new Set(value.map((output) => output.id)) };
           setOutputs(value);
           setLoading(false);
         }
@@ -145,6 +159,7 @@ export function GeneratedOutputs({
               </div>
             ) : (
               <Button
+                pressFeedback
                 size="sm"
                 variant="ghost"
                 aria-label="Generate output"
@@ -201,72 +216,84 @@ export function GeneratedOutputs({
         </p>
       )}
       <div aria-busy={loading} className="space-y-4">
-        {outputs.map((output) => (
-          <article key={output.id} aria-label={`${output.prompt.name} output`}>
-            <TextPanel
-              variant="reading"
-              title={output.prompt.name}
-              kind="result"
-              description={`${output.model} · ${new Date(output.createdAt).toLocaleString()}`}
-              action={
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={disabled}
-                  onClick={() => void run(() => backend.copy(output.text), false)}
-                >
-                  <Copy className="size-3.5" />
-                  Copy output
-                </Button>
-              }
+        <AnimatePresence>
+          {outputs.map((output) => (
+            <MotionReveal
+              key={`${sessionID}:${output.id}`}
+              preset="output"
+              from="translateY(8px)"
+              enter={enteringIds.has(output.id)}
             >
-              <MarkdownContent className="text-base leading-8">{output.text}</MarkdownContent>
-              <div className="mt-4 flex flex-wrap items-center gap-2">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={!canGenerate}
-                  onClick={() =>
-                    void generate((id) => backend.regenerateOutput(id, sessionID, output.id))
+              <article aria-label={`${output.prompt.name} output`}>
+                <TextPanel
+                  variant="reading"
+                  title={output.prompt.name}
+                  kind="result"
+                  description={`${output.model} · ${new Date(output.createdAt).toLocaleString()}`}
+                  action={
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={disabled}
+                      onClick={() => void run(() => backend.copy(output.text), false)}
+                    >
+                      <Copy className="size-3.5" />
+                      Copy output
+                    </Button>
                   }
                 >
-                  <RefreshCw className="size-3.5" />
-                  Regenerate
-                </Button>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  disabled={disabled}
-                  className="ml-auto text-destructive"
-                  onClick={() => {
-                    setDeleteError("");
-                    setDeleting(output);
-                  }}
-                >
-                  <Trash2 className="size-3.5" />
-                  Delete output
-                </Button>
-              </div>
-              <details className="mt-3 text-xs">
-                <summary className="cursor-pointer text-muted-foreground">Input and prompt</summary>
-                <div className="mt-3 space-y-3">
-                  <div>
-                    <h4 className="font-semibold">Input text</h4>
-                    <MarkdownContent className="mt-1 max-h-52 overflow-auto text-xs leading-6">
-                      {output.input}
-                    </MarkdownContent>
+                  <MarkdownContent className="text-base leading-8">{output.text}</MarkdownContent>
+                  <div className="mt-4 flex flex-wrap items-center gap-2">
+                    <Button
+                      pressFeedback
+                      size="sm"
+                      variant="outline"
+                      disabled={!canGenerate}
+                      onClick={() =>
+                        void generate((id) => backend.regenerateOutput(id, sessionID, output.id))
+                      }
+                    >
+                      <RefreshCw className="size-3.5" />
+                      Regenerate
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      disabled={disabled}
+                      className="ml-auto text-destructive"
+                      onClick={() => {
+                        setDeleteError("");
+                        setDeleting(output);
+                      }}
+                    >
+                      <Trash2 className="size-3.5" />
+                      Delete output
+                    </Button>
                   </div>
-                  <div>
-                    <h4 className="font-semibold">Prompt instructions</h4>
-                    <p className="mt-1 max-h-52 overflow-auto whitespace-pre-wrap break-words leading-6">
-                      {output.prompt.instruction}
-                    </p>
-                  </div>
-                </div>
-              </details>
-            </TextPanel>
-          </article>
-        ))}
+                  <details className="mt-3 text-xs">
+                    <summary className="cursor-pointer text-muted-foreground">
+                      Input and prompt
+                    </summary>
+                    <div className="mt-3 space-y-3">
+                      <div>
+                        <h4 className="font-semibold">Input text</h4>
+                        <MarkdownContent className="mt-1 max-h-52 overflow-auto text-xs leading-6">
+                          {output.input}
+                        </MarkdownContent>
+                      </div>
+                      <div>
+                        <h4 className="font-semibold">Prompt instructions</h4>
+                        <p className="mt-1 max-h-52 overflow-auto whitespace-pre-wrap break-words leading-6">
+                          {output.prompt.instruction}
+                        </p>
+                      </div>
+                    </div>
+                  </details>
+                </TextPanel>
+              </article>
+            </MotionReveal>
+          ))}
+        </AnimatePresence>
       </div>
       {!!outputs.length && (
         <p className="text-xs text-muted-foreground">

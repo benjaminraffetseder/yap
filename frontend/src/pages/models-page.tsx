@@ -28,7 +28,8 @@ import {
   ShieldCheck,
   Wrench,
 } from "lucide-react";
-import { useState } from "react";
+import { useId, useState } from "react";
+import { LayoutGroup } from "motion/react";
 import { Link } from "react-router";
 
 const modelFamilies = [
@@ -44,6 +45,7 @@ function modelFamily(model: Model) {
 }
 
 export function ModelsPage({ embedded = false }: { embedded?: boolean }) {
+  const layoutId = useId();
   const { snapshot, run, refresh, loading, installModel, downloadingModelId } = useDictation();
   const [removing, setRemoving] = useState<Model | null>(null);
   const [pending, setPending] = useState(false);
@@ -170,67 +172,69 @@ export function ModelsPage({ embedded = false }: { embedded?: boolean }) {
         <p className="text-xs text-muted-foreground">
           Speed and accuracy are relative guides. Results depend on your device and audio.
         </p>
-        <Accordion
-          multiple
-          value={openFamilies ?? [...new Set(defaultFamilies)]}
-          onValueChange={setOpenFamilies}
-          className="gap-4"
-        >
-          {groups.map((family) => (
-            <AccordionItem
-              key={family.id}
-              value={family.id}
-              className="rounded-2xl border bg-card px-5 sm:px-6"
-            >
-              <AccordionTrigger
-                aria-label={`${family.name} models`}
-                className="items-center gap-3 py-5 hover:no-underline sm:py-6"
+        <LayoutGroup id={layoutId}>
+          <Accordion
+            multiple
+            value={openFamilies ?? [...new Set(defaultFamilies)]}
+            onValueChange={setOpenFamilies}
+            className="gap-4"
+          >
+            {groups.map((family) => (
+              <AccordionItem
+                key={family.id}
+                value={family.id}
+                className="rounded-2xl border bg-card px-5 sm:px-6"
               >
-                <span className="flex flex-wrap items-center gap-2.5">
-                  <span className="text-base font-semibold">{family.name}</span>
-                  <span className="text-xs font-normal text-muted-foreground">
-                    {family.models.length} {family.models.length === 1 ? "model" : "models"}
+                <AccordionTrigger
+                  aria-label={`${family.name} models`}
+                  className="items-center gap-3 py-5 hover:no-underline sm:py-6"
+                >
+                  <span className="flex flex-wrap items-center gap-2.5">
+                    <span className="text-base font-semibold">{family.name}</span>
+                    <span className="text-xs font-normal text-muted-foreground">
+                      {family.models.length} {family.models.length === 1 ? "model" : "models"}
+                    </span>
+                    {downloading &&
+                      downloadingModel &&
+                      modelFamily(downloadingModel) === family.id && (
+                        <Badge variant="outline" className="border-primary/20 text-primary">
+                          Downloading
+                        </Badge>
+                      )}
                   </span>
-                  {downloading &&
-                    downloadingModel &&
-                    modelFamily(downloadingModel) === family.id && (
-                      <Badge variant="outline" className="border-primary/20 text-primary">
-                        Downloading
-                      </Badge>
-                    )}
-                </span>
-              </AccordionTrigger>
-              <AccordionContent className="pb-5 sm:pb-6 [&_p:not(:last-child)]:mb-0">
-                <div className="grid gap-3">
-                  {family.models.map((model) => (
-                    <ModelCard
-                      key={model.id}
-                      model={model}
-                      selectedModelPath={settings.modelPath}
-                      disabled={!isDesktop || busy || pending}
-                      sizeLabel={megabytes(model.diskBytes || model.size)}
-                      download={
-                        downloading && downloadingModelId === model.id
-                          ? { percent: downloadPercent, message: status.message }
-                          : undefined
-                      }
-                      onUse={() =>
-                        void (model.installed
-                          ? run(() => backend.settings({ ...settings, modelPath: model.path }))
-                          : installModel(model))
-                      }
-                      onRemove={() => {
-                        setError("");
-                        setRemoving(model);
-                      }}
-                      onCancelDownload={() => void run(backend.cancel)}
-                    />
-                  ))}
-                </div>
-              </AccordionContent>
-            </AccordionItem>
-          ))}
-        </Accordion>
+                </AccordionTrigger>
+                <AccordionContent className="pb-5 sm:pb-6 [&_p:not(:last-child)]:mb-0">
+                  <div className="grid gap-3">
+                    {family.models.map((model) => (
+                      <ModelCard
+                        key={model.id}
+                        model={model}
+                        selectedModelPath={settings.modelPath}
+                        disabled={!isDesktop || busy || pending}
+                        sizeLabel={megabytes(model.diskBytes || model.size)}
+                        download={
+                          downloading && downloadingModelId === model.id
+                            ? { percent: downloadPercent, message: status.message }
+                            : undefined
+                        }
+                        onUse={() =>
+                          void (model.installed
+                            ? run(() => backend.settings({ ...settings, modelPath: model.path }))
+                            : installModel(model))
+                        }
+                        onRemove={() => {
+                          setError("");
+                          setRemoving(model);
+                        }}
+                        onCancelDownload={() => void run(backend.cancel)}
+                      />
+                    ))}
+                  </div>
+                </AccordionContent>
+              </AccordionItem>
+            ))}
+          </Accordion>
+        </LayoutGroup>
       </section>
       <div className="flex flex-wrap items-center gap-3 rounded-xl border border-dashed px-5 py-4">
         <FolderOpen className="size-5 shrink-0 text-muted-foreground" aria-hidden="true" />

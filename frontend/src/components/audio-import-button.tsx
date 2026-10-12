@@ -23,6 +23,7 @@ export function AudioImportButton({
   return (
     <div className="flex flex-wrap items-center gap-3">
       <Button
+        pressFeedback
         variant="outline"
         title="WAV, MP3, M4A, AAC, FLAC, OGG, Opus, AIFF, WMA · up to 25 minutes · 256 MiB"
         disabled={

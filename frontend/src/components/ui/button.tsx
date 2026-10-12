@@ -1,9 +1,13 @@
+import { useMotionPreference } from "@/lib/use-motion-preference";
 import { Button as ButtonPrimitive } from "@base-ui/react/button";
 import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "cn";
+import { motion } from "motion/react";
+import { useState } from "react";
+import { motionTransition } from "@/lib/motion";
 
 const buttonVariants = cva(
-  "inline-flex shrink-0 items-center justify-center gap-2 rounded-md text-sm font-medium whitespace-nowrap transition-all outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+  "inline-flex shrink-0 items-center justify-center gap-2 rounded-md text-sm font-medium whitespace-nowrap transition-[color,background-color,border-color,box-shadow] outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
   {
     variants: {
       variant: {
@@ -38,13 +42,39 @@ function Button({
   className,
   variant = "default",
   size = "default",
+  pressFeedback = false,
+  render,
   ...props
-}: ButtonPrimitive.Props & VariantProps<typeof buttonVariants>) {
+}: ButtonPrimitive.Props & VariantProps<typeof buttonVariants> & { pressFeedback?: boolean }) {
+  const reduced = useMotionPreference();
+  const [pressed, setPressed] = useState(false);
+  const active = pressed && !props.disabled;
   return (
     <ButtonPrimitive
       data-slot="button"
       className={cn(buttonVariants({ variant, size, className }))}
       {...props}
+      render={
+        render ??
+        (pressFeedback ? (
+          <motion.button
+            initial={false}
+            animate={{
+              // Motion resolves "none" to scale(0), so use scale(1) as the spatial resting state.
+              transform: reduced ? "none" : active ? "scale(0.98)" : "scale(1)",
+              opacity: props.disabled ? 0.5 : reduced && active ? 0.88 : 1,
+            }}
+            transition={motionTransition("press", reduced)}
+            onPointerDown={(event) => {
+              if (event.button === 0) setPressed(true);
+            }}
+            onPointerUp={() => setPressed(false)}
+            onPointerCancel={() => setPressed(false)}
+            onPointerLeave={() => setPressed(false)}
+            onBlur={() => setPressed(false)}
+          />
+        ) : undefined)
+      }
     />
   );
 }
