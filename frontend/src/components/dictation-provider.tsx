@@ -31,6 +31,7 @@ const empty: Snapshot = {
     interaction: "hold",
     autoCopy: true,
     autoPaste: true,
+    saveHistory: true,
     saveAudio: false,
     launchAtLogin: false,
     startInTray: false,

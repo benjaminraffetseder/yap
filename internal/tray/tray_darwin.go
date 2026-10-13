@@ -8,7 +8,7 @@ package tray
 #include <stdint.h>
 #include <stdlib.h>
 void *yap_tray_new(uintptr_t callback);
-void yap_tray_update(void *item, const char *status, const char *record, int record_enabled, int cancel_enabled, int recording);
+void yap_tray_update(void *item, const char *status, const char *record, int record_enabled, int cancel_enabled, int recording, int save_history, int history_enabled);
 void yap_tray_close(void *item);
 */
 import "C"
@@ -84,7 +84,7 @@ func (n *darwinTray) render() {
 		return 0
 	}
 	// Never hold a Go lock while synchronously dispatching to AppKit.
-	C.yap_tray_update(n.item, status, record, flag(v.recordEnabled), flag(v.cancelEnabled), flag(s.Phase == "recording"))
+	C.yap_tray_update(n.item, status, record, flag(v.recordEnabled), flag(v.cancelEnabled), flag(s.Phase == "recording"), flag(s.SaveHistory), flag(s.Phase != "closing" && s.Phase != "backup"))
 }
 
 func (n *darwinTray) Close() {

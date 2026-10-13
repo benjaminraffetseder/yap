@@ -38,6 +38,9 @@ import {
   RestoreBackup,
   RetryShortcut,
   SaveSettings,
+  SetSaveHistory,
+  SaveLatestResult,
+  DismissLatestResult,
   SaveTextProcessing,
   SaveTranscript,
   SaveVocabulary,
@@ -91,6 +94,7 @@ export type Settings = {
   interaction: string;
   autoCopy: boolean;
   autoPaste: boolean;
+  saveHistory: boolean;
   saveAudio: boolean;
   launchAtLogin: boolean;
   startInTray: boolean;
@@ -187,6 +191,8 @@ export type Model = {
   removable: boolean;
 };
 export type Snapshot = {
+  recordingSaveHistory?: boolean;
+  latestResult?: { session: Session; output?: GeneratedOutput; text: string } | null;
   textProcessing: TextProcessing;
   settings: Settings;
   status: Status;
@@ -217,7 +223,7 @@ export type BackupSummary = {
 export type BackupPreferences = Pick<
   Settings,
   "language" | "interaction" | "autoCopy" | "autoPaste" | "saveAudio" | "cleanText"
->;
+> & { saveHistory?: boolean };
 export type BackupPreview = {
   id: string;
   filename: string;
@@ -305,6 +311,9 @@ export const backend = {
   cancel: Cancel,
   microphones: async (): Promise<Microphone[]> => GetMicrophones(),
   settings: SaveSettings,
+  setSaveHistory: SetSaveHistory,
+  saveLatestResult: SaveLatestResult,
+  dismissLatestResult: DismissLatestResult,
   selectFile: SelectFile,
   install: InstallModel,
   vocabulary: SaveVocabulary,

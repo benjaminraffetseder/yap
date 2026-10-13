@@ -13,6 +13,9 @@ func TestPresentation(t *testing.T) {
 		label                  string
 		visible, stop, expires bool
 	}{
+		{"unsaved recording", State{Phase: "recording", StartedAt: 35000, HistoryMode: "Not saving"}, "1:05 · Not saving", true, true, false},
+		{"unsaved done", State{Phase: "done", Message: "Not saved to History", HistoryMode: "Not saving"}, "Not saved to history", true, false, true},
+		{"unsaved processing failure", State{Phase: "done", Message: "Text processing failed: unavailable", HistoryMode: "Not saving"}, "Open Yap to recover text", true, true, true},
 		{"idle", State{Phase: "idle"}, "", false, false, false},
 		{"download", State{Phase: "downloading"}, "", false, false, false},
 		{"recording", State{Phase: "recording", StartedAt: 35_000}, "Recording  1:05", true, true, false},

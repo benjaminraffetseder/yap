@@ -8,15 +8,17 @@ type Controller interface {
 }
 
 type State struct {
-	Phase string
-	Ready bool
+	Phase       string
+	Ready       bool
+	SaveHistory bool
 }
 
 type Actions struct {
-	Show   func()
-	Record func()
-	Cancel func()
-	Quit   func()
+	ToggleHistory func()
+	Show          func()
+	Record        func()
+	Cancel        func()
+	Quit          func()
 }
 
 const (
@@ -24,6 +26,7 @@ const (
 	recordAction
 	cancelAction
 	quitAction
+	historyAction
 )
 
 type view struct {
@@ -76,6 +79,10 @@ func (a Actions) dispatch(id int, s State) {
 	case cancelAction:
 		if v.cancelEnabled {
 			callback = a.Cancel
+		}
+	case historyAction:
+		if s.Phase != "closing" && s.Phase != "backup" {
+			callback = a.ToggleHistory
 		}
 	case quitAction:
 		callback = a.Quit

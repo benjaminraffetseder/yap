@@ -14,9 +14,10 @@ type Controller interface {
 }
 
 type State struct {
-	Phase     string
-	Message   string
-	StartedAt int64
+	Phase       string
+	Message     string
+	StartedAt   int64
+	HistoryMode string
 }
 
 type Actions struct {
@@ -37,7 +38,11 @@ func presentation(s State, now time.Time) view {
 	switch s.Phase {
 	case "recording":
 		seconds := max(int64(0), (now.UnixMilli()-s.StartedAt)/1000)
-		return view{visible: true, label: fmt.Sprintf("Recording  %d:%02d", seconds/60, seconds%60), stop: "Stop", cancel: "Cancel"}
+		label := fmt.Sprintf("Recording  %d:%02d", seconds/60, seconds%60)
+		if s.HistoryMode != "" {
+			label = fmt.Sprintf("%d:%02d · %s", seconds/60, seconds%60, s.HistoryMode)
+		}
+		return view{visible: true, label: label, stop: "Stop", cancel: "Cancel"}
 	case "transcribing":
 		label := "Transcribing…"
 		if s.Message == "Processing text…" {
@@ -55,7 +60,12 @@ func presentation(s State, now time.Time) view {
 		case "Pasted into your application":
 			label = "Pasted"
 		default:
-			if strings.Contains(s.Message, "clipboard failed") || strings.Contains(s.Message, "History") {
+			if s.HistoryMode == "Not saving" && (strings.Contains(strings.ToLower(s.Message), "failed") || strings.Contains(strings.ToLower(s.Message), "cancelled")) {
+				return view{visible: true, label: "Open Yap to recover text", stop: "Open Yap", cancel: "Dismiss", dismissAfter: 6 * time.Second}
+			}
+			if s.Message == "Not saved to History" {
+				label = "Not saved to history"
+			} else if strings.Contains(s.Message, "clipboard failed") || strings.Contains(s.Message, "History") {
 				label = "Saved to history"
 			}
 		}

@@ -1904,6 +1904,7 @@ test.beforeEach(async ({ page }) => {
           interaction: "hold",
           autoCopy: true,
           autoPaste: true,
+          saveHistory: true,
           saveAudio: false,
           launchAtLogin: false,
           startInTray: false,
@@ -2239,6 +2240,18 @@ test.beforeEach(async ({ page }) => {
               state.snapshot.diagnostic.phase = "transcribing";
               state.snapshot.diagnostic.message = "Transcribing test…";
               state.status("diagnostic-transcribing");
+            },
+            SetSaveHistory: async (enabled: boolean) => {
+              state.snapshot.settings.saveHistory = enabled;
+            },
+            SaveLatestResult: async (id: string) => {
+              if (state.snapshot.latestResult?.session.id !== id) throw new Error("stale result");
+              state.snapshot.history.unshift(state.snapshot.latestResult.session);
+              state.snapshot.latestResult = null;
+            },
+            DismissLatestResult: async (id: string) => {
+              if (state.snapshot.latestResult?.session.id !== id) throw new Error("stale result");
+              state.snapshot.latestResult = null;
             },
             SaveSettings: async (settings: Settings) => {
               if (state.failSave) throw new Error("Settings save failed");
@@ -6767,4 +6780,69 @@ test("audio import shows missing decoder guidance and allows retry", async ({ pa
   await button.click();
   await expect.poll(() => page.evaluate(() => window.dictationTest.audioImports)).toBe(2);
   await expect(button).toBeDisabled();
+});
+
+test("history preference is shared between Home and Settings", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("switch", { name: "Save to history" }).click();
+  await expect(page.getByRole("switch", { name: "Save to history" })).not.toBeChecked();
+  await page.getByRole("link", { name: "Settings", exact: true }).click();
+  await page.getByRole("tab", { name: "History & data" }).click();
+  await expect(
+    page.getByRole("checkbox", { name: "Save dictations to history" }),
+  ).not.toBeChecked();
+  await expect(page.getByRole("checkbox", { name: "Keep recordings" })).toBeDisabled();
+  await page.getByRole("checkbox", { name: "Save dictations to history" }).click();
+  await page.getByRole("button", { name: "Save settings", exact: true }).click();
+  await page.getByRole("link", { name: "Dictate", exact: true }).click();
+  await expect(page.getByRole("switch", { name: "Save to history" })).toBeChecked();
+});
+
+test("temporary latest result supports copy, explicit save, and dismiss", async ({
+  page,
+}, testInfo) => {
+  await page.addInitScript(() => {
+    const snapshot = window.dictationTest.snapshot;
+    snapshot.settings.saveHistory = false;
+    snapshot.latestResult = {
+      text: "Temporary text",
+      session: {
+        id: "temporary",
+        createdAt: new Date().toISOString(),
+        durationMs: 1000,
+        rawTranscript: "Temporary text",
+        finalTranscript: "Temporary text",
+        speechModel: "base",
+        language: "en",
+        audioPath: "",
+      },
+    };
+  });
+  await page.goto("/");
+  const panel = page.getByRole("region", { name: "Temporary latest result" });
+  await expect(panel).toContainText("Not saved");
+  await page.screenshot({
+    path: testInfo.outputPath("temporary-latest-result.png"),
+    fullPage: true,
+  });
+  await panel.getByRole("button", { name: "Copy", exact: true }).click();
+  expect(await page.evaluate(() => window.dictationTest.snapshot.status.transcript)).toBe(
+    "Temporary text",
+  );
+  await panel.getByRole("button", { name: "Save to history", exact: true }).click();
+  await expect(panel).not.toBeVisible();
+  expect(await page.evaluate(() => window.dictationTest.snapshot.history.length)).toBe(1);
+  expect(await page.evaluate(() => window.dictationTest.snapshot.settings.saveHistory)).toBe(false);
+  await page.evaluate(() => {
+    const state = window.dictationTest;
+    state.snapshot.latestResult = {
+      text: "Discard me",
+      session: { ...state.snapshot.history[0], id: "discard" },
+    };
+    state.history();
+  });
+  await expect(panel).toContainText("Discard me");
+  await panel.getByRole("button", { name: "Dismiss", exact: true }).click();
+  await expect(panel).not.toBeVisible();
+  expect(await page.evaluate(() => window.dictationTest.snapshot.history.length)).toBe(1);
 });

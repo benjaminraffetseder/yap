@@ -60,7 +60,15 @@ upload audio. Models and optional audio support download only when requested.
 Windows release builds check public GitHub release metadata at startup, at most
 once per day. Update checks send no audio, transcripts, or app settings.
 
-History is saved locally. Keeping audio recordings is off by default; temporary
+History is saved locally by default. Turn **Save to history** off on Home, in
+**Settings → History & data**, or in the tray menu for temporary dictation.
+The choice persists and applies to the next recording or audio import. Unsaved
+results stay in memory until the next dictation or app exit; Home offers **Copy**,
+**Save to history**, and **Dismiss**. This also covers recovery after text processing
+or clipboard/paste failures. Unsaved dictations never retain audio, even when
+Keep recordings is enabled. Existing history is unaffected.
+
+Keeping audio recordings is off by default; temporary
 audio is removed after use, though a forced shutdown can leave files behind.
 History, retained recordings, and exported backups are **not encrypted**.
 On Windows, the data folder is `%APPDATA%\yap`.

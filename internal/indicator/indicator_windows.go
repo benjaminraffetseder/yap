@@ -549,7 +549,7 @@ func (n *native) windowProc(hwnd uintptr, msg uint32, w uintptr, l unsafe.Pointe
 		case stopID:
 			if s.Phase == "recording" && n.actions.Stop != nil {
 				go n.actions.Stop()
-			} else if s.Phase == "error" && n.actions.Show != nil {
+			} else if presentation(s, time.Now()).stop == "Open Yap" && n.actions.Show != nil {
 				go n.actions.Show()
 			}
 		case cancelID:

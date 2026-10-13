@@ -51,3 +51,20 @@ func TestDisabledActionsCannotDispatch(t *testing.T) {
 		t.Fatal("stop action did not run")
 	}
 }
+
+func TestHistoryToggleDispatch(t *testing.T) {
+	called := make(chan struct{}, 1)
+	a := Actions{ToggleHistory: func() { called <- struct{}{} }}
+	a.dispatch(historyAction, State{Phase: "recording"})
+	select {
+	case <-called:
+	case <-time.After(time.Second):
+		t.Fatal("toggle not dispatched")
+	}
+	a.dispatch(historyAction, State{Phase: "closing"})
+	select {
+	case <-called:
+		t.Fatal("toggle dispatched during shutdown")
+	case <-time.After(30 * time.Millisecond):
+	}
+}

@@ -20,6 +20,7 @@ test.beforeEach(async ({ page }) => {
         interaction: "hold",
         autoCopy: true,
         autoPaste: true,
+        saveHistory: true,
         saveAudio: false,
         launchAtLogin: false,
         startInTray: false,

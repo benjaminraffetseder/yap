@@ -360,14 +360,14 @@ export function SettingsPage() {
             <SettingsSection title="Text & delivery">
               <ToggleSetting
                 title="Light cleanup"
-                description="Fix spacing, capitalization, and punctuation; remove common English/German fillers. Keep the original in History."
+                description="Fix spacing, capitalization, and punctuation; remove common English/German fillers. Keep the original when history saving is on."
                 checked={settings.cleanText}
                 disabled={controlsDisabled}
                 onCheckedChange={(cleanText) => setSettings((old) => ({ ...old, cleanText }))}
               />
               <ToggleSetting
                 title="Copy automatically to clipboard"
-                description="Copy completed dictation to the clipboard. When off, save only to History."
+                description="Copy completed dictation to the clipboard. When off, retrieve the result in History or the temporary latest-result panel."
                 checked={settings.autoCopy}
                 disabled={controlsDisabled}
                 onCheckedChange={(autoCopy) => setSettings((old) => ({ ...old, autoCopy }))}
@@ -450,10 +450,17 @@ export function SettingsPage() {
           <fieldset disabled={controlsDisabled} className="disabled:opacity-60">
             <SettingsSection title="History">
               <ToggleSetting
-                title="Keep recordings"
-                description="Save audio for playback in History. Otherwise, delete it after processing."
-                checked={settings.saveAudio}
+                title="Save dictations to history"
+                description="Keep transcripts and generated text in History. Turn off for temporary dictation."
+                checked={settings.saveHistory}
                 disabled={controlsDisabled}
+                onCheckedChange={(saveHistory) => setSettings((old) => ({ ...old, saveHistory }))}
+              />
+              <ToggleSetting
+                title="Keep recordings"
+                description="Save audio for playback when history saving is on. Otherwise, delete it after processing."
+                checked={settings.saveAudio}
+                disabled={controlsDisabled || !settings.saveHistory}
                 onCheckedChange={(saveAudio) => setSettings((old) => ({ ...old, saveAudio }))}
               />
               <SettingRow

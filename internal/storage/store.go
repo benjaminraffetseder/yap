@@ -24,6 +24,7 @@ type Settings struct {
 	Interaction          string `json:"interaction"`
 	AutoCopy             bool   `json:"autoCopy"`
 	AutoPaste            bool   `json:"autoPaste"`
+	SaveHistory          bool   `json:"saveHistory"`
 	SaveAudio            bool   `json:"saveAudio"`
 	LaunchAtLogin        bool   `json:"launchAtLogin"`
 	StartInTray          bool   `json:"startInTray"`
@@ -33,7 +34,7 @@ type Settings struct {
 }
 
 func Defaults() Settings {
-	return Settings{Language: "auto", Shortcut: "Ctrl+Alt+Space", Interaction: "hold", AutoCopy: true, AutoPaste: true}
+	return Settings{SaveHistory: true, Language: "auto", Shortcut: "Ctrl+Alt+Space", Interaction: "hold", AutoCopy: true, AutoPaste: true}
 }
 
 type Session struct {
@@ -124,7 +125,9 @@ func (s *Store) SaveSettings(v Settings) error {
 	_, err = s.db.Exec("INSERT INTO settings(id,value) VALUES(1,?) ON CONFLICT(id) DO UPDATE SET value=excluded.value", string(data))
 	return err
 }
-func (s *Store) Add(v Session) error {
+func (s *Store) Add(v Session) error { return s.AddWithOutput(v, nil) }
+
+func (s *Store) AddWithOutput(v Session, output *GeneratedOutput) error {
 	tx, err := s.db.Begin()
 	if err != nil {
 		return err
@@ -136,6 +139,15 @@ func (s *Store) Add(v Session) error {
 	}
 	if v.FinalTranscript != "" && v.FinalTranscript != v.RawTranscript {
 		if _, err := tx.Exec("INSERT INTO recording_outputs VALUES(?,?)", v.ID, v.FinalTranscript); err != nil {
+			return err
+		}
+	}
+	if output != nil {
+		o := output
+		if o.SessionID != v.ID {
+			return errors.New("output belongs to another dictation")
+		}
+		if _, err := tx.Exec("INSERT INTO generated_outputs VALUES(?,?,?,?,?,?,?,?,?,?)", o.ID, o.SessionID, o.CreatedAt, o.Prompt.ID, o.Prompt.Name, o.Prompt.Instruction, o.Model, o.Endpoint, o.Input, o.Text); err != nil {
 			return err
 		}
 	}

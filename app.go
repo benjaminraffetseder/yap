@@ -43,7 +43,14 @@ type Status struct {
 	StartupError   string  `json:"startupError"`
 	HistoryError   string  `json:"historyError"`
 }
+type TemporaryResult struct {
+	Session storage.Session          `json:"session"`
+	Output  *storage.GeneratedOutput `json:"output,omitempty"`
+	Text    string                   `json:"text"`
+}
 type Snapshot struct {
+	RecordingSaveHistory   bool               `json:"recordingSaveHistory"`
+	LatestResult           *TemporaryResult   `json:"latestResult"`
 	TextProcessing         textmodel.Config   `json:"textProcessing"`
 	Diagnostic             DiagnosticResult   `json:"diagnostic"`
 	Vocabulary             []vocabulary.Entry `json:"vocabulary"`
@@ -60,6 +67,7 @@ type Snapshot struct {
 	StartInTrayAvailable   bool               `json:"startInTrayAvailable"`
 }
 type App struct {
+	latestResult                     *TemporaryResult
 	updateChecker                    *updates.Checker
 	updateCancel                     context.CancelFunc
 	pendingBackup                    *storage.BackupArchive
@@ -140,7 +148,7 @@ func (a *App) startup(ctx context.Context) {
 	a.hideWindow = func() { runtime.WindowHide(ctx) }
 	a.quitApplication = func() { runtime.Quit(ctx) }
 	var err error
-	a.tray, err = tray.New(tray.Actions{Show: a.show, Record: a.trayRecord, Cancel: func() { _ = a.Cancel() }, Quit: a.quit}, trayIcon)
+	a.tray, err = tray.New(tray.Actions{ToggleHistory: a.toggleHistory, Show: a.show, Record: a.trayRecord, Cancel: func() { _ = a.Cancel() }, Quit: a.quit}, trayIcon)
 	if err != nil {
 		a.status.TrayError = "Background controls unavailable: " + err.Error()
 	}
@@ -297,13 +305,15 @@ func (a *App) updateTray() {
 		if a.shortcutCaptureID != "" {
 			phase = "shortcut-capture"
 		}
-		a.tray.Update(tray.State{Phase: phase, Ready: ready})
+		a.tray.Update(tray.State{Phase: phase, Ready: ready, SaveHistory: a.settings.SaveHistory})
 	}
 }
 func (a *App) shutdown(ctx context.Context) {
 	a.shutdownOnce.Do(func() {
 		a.mu.Lock()
 		a.closing = true
+		a.latestResult = nil
+		a.status.Transcript = ""
 		if a.updateCancel != nil {
 			a.updateCancel()
 		}
@@ -357,7 +367,11 @@ func (a *App) emit() {
 	if a.ctx != nil && !a.closing {
 		a.updateTray()
 		if a.indicator != nil && a.indicatorActive {
-			a.indicator.Update(indicator.State{Phase: a.status.Phase, Message: a.status.Message, StartedAt: a.status.StartedAt})
+			historyMode := "Saving"
+			if !a.recordSettings.SaveHistory {
+				historyMode = "Not saving"
+			}
+			a.indicator.Update(indicator.State{HistoryMode: historyMode, Phase: a.status.Phase, Message: a.status.Message, StartedAt: a.status.StartedAt})
 			if a.status.Phase != "recording" && a.status.Phase != "transcribing" {
 				a.indicatorActive = false
 			}
@@ -485,7 +499,16 @@ func (a *App) GetSnapshot() (Snapshot, error) {
 		}
 	}
 	config, _ := textmodel.Normalize(a.textConfig)
-	return Snapshot{TextProcessing: config, Diagnostic: a.diagnostic, Vocabulary: entries, MicrophoneTested: a.microphoneTested, ShortcutTested: a.shortcutTested, Settings: a.settings, Status: a.status, History: history, Models: models.List(a.store.Dir), DataDir: a.store.Dir, Ready: ready, FloatingIndicator: a.indicator != nil, LaunchAtLoginAvailable: a.loginStart != nil, StartInTrayAvailable: a.tray != nil && !a.development}, nil
+	var latest *TemporaryResult
+	if a.latestResult != nil {
+		copy := *a.latestResult
+		if copy.Output != nil {
+			output := *copy.Output
+			copy.Output = &output
+		}
+		latest = &copy
+	}
+	return Snapshot{RecordingSaveHistory: a.recordSettings.SaveHistory, LatestResult: latest, TextProcessing: config, Diagnostic: a.diagnostic, Vocabulary: entries, MicrophoneTested: a.microphoneTested, ShortcutTested: a.shortcutTested, Settings: a.settings, Status: a.status, History: history, Models: models.List(a.store.Dir), DataDir: a.store.Dir, Ready: ready, FloatingIndicator: a.indicator != nil, LaunchAtLoginAvailable: a.loginStart != nil, StartInTrayAvailable: a.tray != nil && !a.development}, nil
 }
 func (a *App) GetMicrophones() ([]audio.Device, error) {
 	a.mu.Lock()
@@ -537,6 +560,7 @@ func (a *App) start(external bool) error {
 	}); err != nil {
 		return errors.Join(err, a.discardAudioLocked(a.path))
 	}
+	a.latestResult = nil
 	a.recordSettings = a.settings
 	a.recordTextConfig, _ = textmodel.Normalize(a.textConfig)
 	a.recordVocabulary, _ = vocabulary.Normalize(a.vocabulary)
@@ -619,18 +643,22 @@ func (a *App) transcribe(ctx context.Context, id, path, target string, duration 
 		return
 	}
 	audioPath := ""
-	if settings.SaveAudio {
+	if settings.SaveHistory && settings.SaveAudio {
 		audioPath = path
 	}
 	session := storage.NewSession(id, duration, text, filepath.Base(settings.ModelPath), settings.Language, audioPath)
 	text = processTranscript(text, settings, entries)
 	session.FinalTranscript = text
-	if err = a.store.Add(session); err != nil {
-		a.fail(fmt.Errorf("could not save transcript: %w", err))
-		return
+	if settings.SaveHistory {
+		if err = a.store.Add(session); err != nil {
+			a.fail(fmt.Errorf("could not save transcript: %w", err))
+			return
+		}
+		persisted = true
+		a.pruneHistoryLocked()
+	} else {
+		a.latestResult = &TemporaryResult{Session: session, Text: text}
 	}
-	persisted = true
-	a.pruneHistoryLocked()
 	if textConfig.Enabled && textConfig.AutoPromptID != "" {
 		prompt, promptErr := textConfig.Prompt(textConfig.AutoPromptID)
 		a.status.Message = "Processing text…"
@@ -648,7 +676,10 @@ func (a *App) transcribe(ctx context.Context, id, path, target string, duration 
 			return
 		}
 		if ctx.Err() != nil {
-			a.status.Phase, a.status.Message = "done", "Text processing cancelled; transcript saved to History"
+			a.status.Phase, a.status.Message = "done", "Text processing cancelled; transcript available"
+			if settings.SaveHistory {
+				a.status.Message = "Text processing cancelled; transcript saved to History"
+			}
 			a.status.Transcript, a.status.StartedAt = text, 0
 			a.emit()
 			return
@@ -657,10 +688,19 @@ func (a *App) transcribe(ctx context.Context, id, path, target string, duration 
 			promptErr = textmodel.ValidateText(processed)
 		}
 		if promptErr == nil {
-			promptErr = a.store.AddGeneratedOutput(storage.NewGeneratedOutput(id, text, processed, textConfig, prompt))
+			output := storage.NewGeneratedOutput(id, text, processed, textConfig, prompt)
+			if settings.SaveHistory {
+				promptErr = a.store.AddGeneratedOutput(output)
+			} else {
+				a.latestResult.Output = &output
+				a.latestResult.Text = processed
+			}
 		}
 		if promptErr != nil {
-			a.status.Phase, a.status.Message = "done", "Saved to History; text processing failed: "+promptErr.Error()
+			a.status.Phase, a.status.Message = "done", "Text processing failed: "+promptErr.Error()
+			if settings.SaveHistory {
+				a.status.Message = "Saved to History; text processing failed: " + promptErr.Error()
+			}
 			a.status.Transcript, a.status.StartedAt = text, 0
 			a.emit()
 			return
@@ -670,11 +710,17 @@ func (a *App) transcribe(ctx context.Context, id, path, target string, duration 
 	a.status.Transcript = text
 	a.status.StartedAt = 0
 	a.status.Phase = "done"
-	a.status.Message = "Saved to History"
+	a.status.Message = "Not saved to History"
+	if settings.SaveHistory {
+		a.status.Message = "Saved to History"
+	}
 	if copyToClipboard {
 		a.status.Message = "Copied to clipboard"
 		if err = a.copyText(text); err != nil {
-			a.status.Message = "Saved to history; clipboard failed: " + err.Error()
+			a.status.Message = "Clipboard failed; transcript available: " + err.Error()
+			if settings.SaveHistory {
+				a.status.Message = "Saved to history; clipboard failed: " + err.Error()
+			}
 		} else if target != "" {
 			if err = platform.Paste(target); err != nil {
 				a.status.Message = err.Error()

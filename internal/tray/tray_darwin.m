@@ -21,6 +21,7 @@ static void onTrayMain(dispatch_block_t block) {
 @property(nonatomic, strong) NSMenuItem *status;
 @property(nonatomic, strong) NSMenuItem *record;
 @property(nonatomic, strong) NSMenuItem *cancel;
+@property(nonatomic, strong) NSMenuItem *history;
 @end
 
 @implementation YapTrayController
@@ -85,6 +86,7 @@ void *yap_tray_new(uintptr_t callback) {
         controller.record.enabled = NO;
         controller.cancel = [controller add:@"Cancel" tag:3 to:menu];
         controller.cancel.enabled = NO;
+        controller.history = [controller add:@"Save to history" tag:5 to:menu];
         [menu addItem:NSMenuItem.separatorItem];
         [controller add:@"Quit Yap" tag:4 to:menu];
         controller.item.menu = menu;
@@ -94,13 +96,15 @@ void *yap_tray_new(uintptr_t callback) {
     return (__bridge_retained void *)controller;
 }
 
-void yap_tray_update(void *item, const char *status, const char *record, int record_enabled, int cancel_enabled, int recording) {
+void yap_tray_update(void *item, const char *status, const char *record, int record_enabled, int cancel_enabled, int recording, int save_history, int history_enabled) {
     YapTrayController *controller = (__bridge YapTrayController *)item;
     onTrayMain(^{
         controller.status.title = [NSString stringWithUTF8String:status];
         controller.record.title = [NSString stringWithUTF8String:record];
         controller.record.enabled = record_enabled != 0;
         controller.cancel.enabled = cancel_enabled != 0;
+        controller.history.state = save_history ? NSControlStateValueOn : NSControlStateValueOff;
+        controller.history.enabled = history_enabled != 0;
         controller.item.button.toolTip = [@"Yap — " stringByAppendingString:controller.status.title];
         [controller.item.button setAccessibilityLabel:controller.item.button.toolTip];
         controller.item.button.image = [NSImage imageWithSystemSymbolName:recording ? @"record.circle.fill" : @"mic.fill" accessibilityDescription:@"Yap"];

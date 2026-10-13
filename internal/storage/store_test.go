@@ -76,6 +76,9 @@ func TestExistingSettingsKeepSystemDefaultMicrophone(t *testing.T) {
 	if settings.LaunchAtLogin || settings.StartInTray {
 		t.Fatal("existing settings unexpectedly enabled background startup")
 	}
+	if !settings.SaveHistory {
+		t.Fatal("legacy settings must save history by default")
+	}
 	if !settings.AutoCopy {
 		t.Fatal("existing settings must enable automatic copying by default")
 	}

@@ -567,7 +567,7 @@ export function PromptsPage() {
               <SettingRow
                 title="After dictation"
                 htmlFor="auto-prompt"
-                description="When enabled, the result is saved and copied or pasted automatically. If processing fails or is cancelled, the speech transcript stays in History and nothing is copied or pasted. You can also preview prompts from History."
+                description="When enabled, the result is copied or pasted automatically and saved if history saving is on. If processing fails or is cancelled, retrieve the speech transcript from History or the temporary latest-result panel. Nothing is copied or pasted on failure."
               >
                 <Select
                   items={automaticOptions}

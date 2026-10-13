@@ -4,7 +4,7 @@ import { useDictation } from "@/components/dictation-provider";
 import { backend, duration } from "@/lib/backend";
 export function RecordingStatus() {
   const {
-    snapshot: { status, floatingIndicator },
+    snapshot: { status, floatingIndicator, recordingSaveHistory },
     level,
     run,
     microphoneTestVisible,
@@ -44,6 +44,16 @@ export function RecordingStatus() {
             : diagnostic
               ? "Transcribing test…"
               : status.message}
+          {recording && (
+            <span className="ml-2 text-xs text-muted-foreground">
+              {recordingSaveHistory ? "Saving to history" : "Not saving to history"}
+            </span>
+          )}
+          {recording && (
+            <span className="ml-2 text-xs text-muted-foreground">
+              {recordingSaveHistory ? "Saving to history" : "Not saving to history"}
+            </span>
+          )}
         </span>
         {capturing && (
           <button

@@ -31,6 +31,7 @@ const maxBackupEntries = 100000
 // Only portable preferences cross computers. Startup, shortcuts, devices,
 // runtime/model paths, server configuration, setup and retention stay local.
 type BackupPreferences struct {
+	SaveHistory *bool  `json:"saveHistory,omitempty"`
 	Language    string `json:"language"`
 	Interaction string `json:"interaction"`
 	AutoCopy    bool   `json:"autoCopy"`
@@ -139,7 +140,7 @@ func backupSnapshotBounded(ctx context.Context, tx *sql.Tx, limit int64) (backup
 	if err := readBackupValue(ctx, tx, "vocabulary", &m.Vocabulary); err != nil {
 		return m, err
 	}
-	m.Preferences = BackupPreferences{settings.Language, settings.Interaction, settings.AutoCopy, settings.AutoPaste, settings.SaveAudio, settings.CleanText}
+	m.Preferences = BackupPreferences{&settings.SaveHistory, settings.Language, settings.Interaction, settings.AutoCopy, settings.AutoPaste, settings.SaveAudio, settings.CleanText}
 	m.Prompts = config.Prompts
 	base, err := json.Marshal(m)
 	if err != nil {
@@ -710,6 +711,9 @@ func (s *Store) RestoreBackup(ctx context.Context, b *BackupArchive, preferences
 		v := b.manifest.Preferences
 		p.settings.Language, p.settings.Interaction, p.settings.AutoPaste, p.settings.SaveAudio, p.settings.CleanText = v.Language, v.Interaction, v.AutoPaste, v.SaveAudio, v.CleanText
 		p.settings.AutoCopy = v.AutoCopy
+		if v.SaveHistory != nil {
+			p.settings.SaveHistory = *v.SaveHistory
+		}
 	}
 	for _, value := range []struct {
 		table string

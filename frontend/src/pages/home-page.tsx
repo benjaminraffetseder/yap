@@ -1,3 +1,4 @@
+import { Switch } from "@/components/ui/switch";
 import { AudioImportButton } from "@/components/audio-import-button";
 import { useDictation } from "@/components/dictation-provider";
 import { DictationRow } from "@/components/dictation-row";
@@ -21,6 +22,8 @@ export function HomePage() {
   const { snapshot, loading, level, run, installModel } = useDictation();
   const { status, settings, history, ready } = snapshot;
   const [now, setNow] = useState(Date.now());
+  const [historyPending, setHistoryPending] = useState(false);
+  const [resultPending, setResultPending] = useState(false);
   const [pending, setPending] = useState(false);
   const [switchingModel, setSwitchingModel] = useState(false);
   const recording = status.phase === "recording";
@@ -228,26 +231,64 @@ export function HomePage() {
                 </SelectContent>
               </Select>
             </div>
-            {ready && !working && !loading && (
-              <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
-                <Keyboard className="mr-1 size-4" aria-hidden="true" />
-                <span className="mr-1">{settings.interaction === "hold" ? "Hold" : "Press"}</span>
-                <span className="flex flex-wrap items-center gap-1.5">
-                  {settings.shortcut.split("+").map((key, index) => (
-                    <span key={key} className="flex items-center gap-1.5">
-                      {index > 0 && (
-                        <span aria-hidden="true" className="text-muted-foreground/60">
-                          +
-                        </span>
-                      )}
-                      <kbd className="rounded-md border bg-background px-1.5 py-1 font-mono text-[11px] text-foreground shadow-xs">
-                        {key}
-                      </kbd>
-                    </span>
-                  ))}
+            <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
+              <label
+                htmlFor="recorder-save-history"
+                title={
+                  isBusy(status.phase)
+                    ? "Changes apply to your next dictation."
+                    : "Save recordings and audio imports to History."
+                }
+                className="flex min-h-8 cursor-pointer items-center gap-2 text-xs text-muted-foreground"
+              >
+                <Switch
+                  id="recorder-save-history"
+                  size="sm"
+                  checked={settings.saveHistory}
+                  disabled={!isDesktop || loading || historyPending || status.phase === "backup"}
+                  aria-describedby="recorder-history-hint"
+                  onCheckedChange={async (enabled) => {
+                    setHistoryPending(true);
+                    try {
+                      await run(() => backend.setSaveHistory(enabled));
+                    } finally {
+                      setHistoryPending(false);
+                    }
+                  }}
+                />
+                Save to history
+              </label>
+              <span id="recorder-history-hint" className="sr-only">
+                {isBusy(status.phase)
+                  ? "Changes apply to your next dictation."
+                  : "Applies to recordings and audio imports."}
+              </span>
+              {(status.phase === "recording" || status.phase === "transcribing") && (
+                <span className="text-xs text-muted-foreground">
+                  {snapshot.recordingSaveHistory ? "Saving to history" : "Not saving to history"}
                 </span>
-              </div>
-            )}
+              )}
+              {ready && !working && !loading && (
+                <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+                  <Keyboard className="mr-1 size-4" aria-hidden="true" />
+                  <span className="mr-1">{settings.interaction === "hold" ? "Hold" : "Press"}</span>
+                  <span className="flex flex-wrap items-center gap-1.5">
+                    {settings.shortcut.split("+").map((key, index) => (
+                      <span key={key} className="flex items-center gap-1.5">
+                        {index > 0 && (
+                          <span aria-hidden="true" className="text-muted-foreground/60">
+                            +
+                          </span>
+                        )}
+                        <kbd className="rounded-md border bg-background px-1.5 py-1 font-mono text-[11px] text-foreground shadow-xs">
+                          {key}
+                        </kbd>
+                      </span>
+                    ))}
+                  </span>
+                </div>
+              )}
+            </div>
           </div>
         )}
       </section>
@@ -277,6 +318,60 @@ export function HomePage() {
         >
           {status.trayError}
         </p>
+      )}
+      {snapshot.latestResult && !isBusy(status.phase) && (
+        <section
+          aria-label="Temporary latest result"
+          className="space-y-4 rounded-xl border bg-card p-6"
+        >
+          <div>
+            <h2 className="text-sm font-semibold">Latest result</h2>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Not saved · available until your next dictation or app exit
+            </p>
+          </div>
+          <p className="max-h-80 overflow-auto whitespace-pre-wrap break-words text-sm">
+            {snapshot.latestResult.text}
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant="outline"
+              disabled={resultPending}
+              onClick={() => void run(() => backend.copy(snapshot.latestResult!.text))}
+            >
+              Copy
+            </Button>
+            <Button
+              disabled={resultPending}
+              onClick={async () => {
+                const id = snapshot.latestResult!.session.id;
+                setResultPending(true);
+                try {
+                  await run(() => backend.saveLatestResult(id));
+                } finally {
+                  setResultPending(false);
+                }
+              }}
+            >
+              Save to history
+            </Button>
+            <Button
+              variant="ghost"
+              disabled={resultPending}
+              onClick={async () => {
+                const id = snapshot.latestResult!.session.id;
+                setResultPending(true);
+                try {
+                  await run(() => backend.dismissLatestResult(id));
+                } finally {
+                  setResultPending(false);
+                }
+              }}
+            >
+              Dismiss
+            </Button>
+          </div>
+        </section>
       )}
       <section>
         <div className="mb-4 flex items-center justify-between">

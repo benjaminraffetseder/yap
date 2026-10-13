@@ -275,6 +275,14 @@ func (n *native) popup() {
 	appendItem(showAction, "Open Yap", true)
 	appendItem(recordAction, v.record, v.recordEnabled)
 	appendItem(cancelAction, "Cancel", v.cancelEnabled)
+	flags := uintptr(0)
+	if n.snapshot().SaveHistory {
+		flags = 8
+	}
+	if n.snapshot().Phase == "closing" || n.snapshot().Phase == "backup" {
+		flags |= 1
+	}
+	user.NewProc("AppendMenuW").Call(menu, flags, uintptr(historyAction), uintptr(unsafe.Pointer(utf16("Save to history"))))
 	separator()
 	appendItem(quitAction, "Quit Yap", true)
 	var position point

@@ -144,7 +144,7 @@ func yapIndicatorAction(handle C.uintptr_t, action C.int) {
 	if action == 1 {
 		if s.Phase == "recording" {
 			callback = n.actions.Stop
-		} else if s.Phase == "error" {
+		} else if presentation(s, time.Now()).stop == "Open Yap" {
 			callback = n.actions.Show
 		}
 	} else if s.Phase == "recording" || s.Phase == "transcribing" {
