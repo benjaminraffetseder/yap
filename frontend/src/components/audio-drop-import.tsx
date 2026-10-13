@@ -26,6 +26,7 @@ export function AudioDropImport() {
   useEffect(() => {
     if (!isDesktop || typeof Reflect.get(window, "runtime")?.OnFileDrop !== "function") return;
     let depth = 0;
+    let awaitingPaths = false;
     const reset = () => {
       depth = 0;
       setDragging(false);
@@ -54,8 +55,13 @@ export function AudioDropImport() {
       if (!isFileDrag(event)) return;
       event.preventDefault();
       reset();
+      awaitingPaths = true;
     };
     OnFileDrop((_x, _y, paths) => {
+      // Wails broadcasts native drops to every dev frontend, including browser previews.
+      // Only the window that received the DOM drop may import its resolved paths.
+      if (!awaitingPaths) return;
+      awaitingPaths = false;
       reset();
       if (pending.current) return;
       pending.current = true;

@@ -6466,6 +6466,27 @@ test("backup cancellation remains available after navigating back to Settings", 
   await expect(page.getByRole("dialog")).toHaveCount(0);
 });
 
+async function dropAudioFiles(page: Page, paths: string[]) {
+  await page.evaluate((paths) => {
+    const transfer = new DataTransfer();
+    for (const path of paths) transfer.items.add(new File(["audio"], path.split(/[/\\]/).pop()!));
+    window.dispatchEvent(new DragEvent("drop", { dataTransfer: transfer, cancelable: true }));
+    window.dictationTest.callbacks["wails:file-drop"](100, 100, paths);
+  }, paths);
+}
+
+test("audio drag and drop ignores native broadcasts from another window", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.getByRole("button", { name: "Import audio", exact: true })).toBeEnabled();
+  await page.evaluate(() => {
+    window.dictationTest.callbacks["wails:file-drop"](100, 100, ["C:\\Audio\\meeting.wav"]);
+  });
+  await settle(page);
+  expect(await page.evaluate(() => window.dictationTest.droppedAudio)).toEqual([]);
+  await expect(page.getByRole("button", { name: "Import audio", exact: true })).toBeEnabled();
+  await expect(page.locator('[data-slot="toast"][data-type="error"]')).toHaveCount(0);
+});
+
 test("audio drag and drop shows feedback and imports across navigation", async ({
   page,
 }, testInfo) => {
@@ -6513,9 +6534,7 @@ test("audio drag and drop shows feedback and imports across navigation", async (
   await page.getByRole("button", { name: "Cancel transcription", exact: true }).click();
   await expect(page.getByRole("button", { name: "Import audio", exact: true })).toBeEnabled();
   await page.getByRole("link", { name: "Settings", exact: true }).click();
-  await page.evaluate(() =>
-    window.dictationTest.callbacks["wails:file-drop"](100, 100, ["C:\\Audio\\interview.mp3"]),
-  );
+  await dropAudioFiles(page, ["C:\\Audio\\interview.mp3"]);
   await expect.poll(() => page.evaluate(() => window.dictationTest.droppedAudio.length)).toBe(2);
   expect(await page.evaluate(() => window.dictationTest.audioImports)).toBe(0);
   await page.getByRole("link", { name: "History", exact: true }).click();
@@ -6524,21 +6543,56 @@ test("audio drag and drop shows feedback and imports across navigation", async (
   ).toBeVisible();
 });
 
+test("audio drag and drop ignores repeated native notifications but accepts the same file in a new drag", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await expect(page.getByRole("button", { name: "Import audio", exact: true })).toBeEnabled();
+  await dropAudioFiles(page, ["C:\\Audio\\meeting.wav"]);
+  await expect(page.getByRole("button", { name: "Import audio", exact: true })).toBeDisabled();
+  // The import RPC has returned and the frontend has refreshed; transcription is still running.
+  await settle(page);
+  await page.evaluate(() => {
+    const transfer = new DataTransfer();
+    transfer.items.add(new File(["audio"], "meeting.wav"));
+    window.dispatchEvent(new DragEvent("dragenter", { dataTransfer: transfer }));
+    window.dictationTest.callbacks["wails:file-drop"](100, 100, ["C:\\Audio\\meeting.wav"]);
+  });
+  await settle(page);
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  await expect(page.locator('[data-slot="toast"][data-type="error"]')).toHaveCount(0);
+  expect(await page.evaluate(() => window.dictationTest.droppedAudio)).toEqual([
+    ["C:\\Audio\\meeting.wav"],
+  ]);
+  // A genuinely new drag of that file still reports busy, then works after cancellation.
+  await dropAudioFiles(page, ["C:\\Audio\\meeting.wav"]);
+  await expect(page.getByRole("alert")).toContainText("Finish the current operation");
+  await page.keyboard.press("F6");
+  await page
+    .locator('[data-slot="toast"][data-type="error"]')
+    .getByRole("button", { name: "Dismiss notification" })
+    .click();
+  await expect(page.locator('[data-slot="toast"][data-type="error"]')).toHaveCount(0);
+  await page.evaluate(() => {
+    window.dictationTest.status("idle");
+  });
+  await expect(page.getByRole("button", { name: "Import audio", exact: true })).toBeEnabled();
+  await dropAudioFiles(page, ["C:\\Audio\\meeting.wav"]);
+  await expect.poll(() => page.evaluate(() => window.dictationTest.droppedAudio.length)).toBe(2);
+  await expect(page.getByRole("alert")).toHaveCount(0);
+});
+
 test("audio drag and drop rejects invalid files and recovers for retry", async ({ page }) => {
   await page.goto("/#/history");
   await expect(page.getByRole("button", { name: "Import audio", exact: true })).toBeEnabled();
-  await page.evaluate(() =>
-    window.dictationTest.callbacks["wails:file-drop"](0, 0, ["C:\\one.wav", "C:\\two.mp3"]),
-  );
+  await dropAudioFiles(page, ["C:\\one.wav", "C:\\two.mp3"]);
   await expect(page.getByRole("alert")).toContainText("drop one audio file at a time");
-  await page.evaluate(() =>
-    window.dictationTest.callbacks["wails:file-drop"](0, 0, ["C:\\notes.txt"]),
-  );
+  await dropAudioFiles(page, ["C:\\notes.txt"]);
   await expect(page.getByRole("alert")).toContainText("choose WAV, MP3");
   await page.evaluate(() => {
     window.dictationTest.failAudioImport = true;
-    window.dictationTest.callbacks["wails:file-drop"](0, 0, ["C:\\long.wav"]);
   });
+  await dropAudioFiles(page, ["C:\\long.wav"]);
   await expect(page.getByRole("alert")).toContainText("25 minutes");
   expect(await page.evaluate(() => window.dictationTest.droppedAudio.length)).toBe(0);
   const errorToast = page.locator('[data-slot="toast"]').filter({ hasText: "25 minutes" });
@@ -6548,8 +6602,8 @@ test("audio drag and drop rejects invalid files and recovers for retry", async (
   await expect(errorToast).toHaveCount(0);
   await page.evaluate(() => {
     window.dictationTest.failAudioImport = false;
-    window.dictationTest.callbacks["wails:file-drop"](0, 0, ["C:\\retry.flac"]);
   });
+  await dropAudioFiles(page, ["C:\\retry.flac"]);
   await expect
     .poll(() => page.evaluate(() => window.dictationTest.droppedAudio))
     .toEqual([["C:\\retry.flac"]]);
@@ -6579,9 +6633,7 @@ test("audio drag and drop respects busy and unavailable models and clears drag f
   await expect(overlay).toBeVisible();
   await page.evaluate(() => window.dispatchEvent(new Event("blur")));
   await expect(overlay).toBeHidden();
-  await page.evaluate(() =>
-    window.dictationTest.callbacks["wails:file-drop"](0, 0, ["C:\\meeting.wav"]),
-  );
+  await dropAudioFiles(page, ["C:\\meeting.wav"]);
   await expect(page.getByRole("alert")).toContainText("Finish the current operation");
   await page.evaluate(() => {
     window.dictationTest.status("idle");
@@ -6589,9 +6641,7 @@ test("audio drag and drop respects busy and unavailable models and clears drag f
     window.dictationTest.history();
   });
   await expect(page.getByRole("button", { name: "Import audio", exact: true })).toBeDisabled();
-  await page.evaluate(() =>
-    window.dictationTest.callbacks["wails:file-drop"](0, 0, ["C:\\meeting.wav"]),
-  );
+  await dropAudioFiles(page, ["C:\\meeting.wav"]);
   await expect(page.getByRole("alert")).toContainText("Choose a speech model");
   expect(await page.evaluate(() => window.dictationTest.droppedAudio.length)).toBe(0);
 });
@@ -6601,8 +6651,8 @@ test("audio drag and drop reports an outdated backend", async ({ page }) => {
   await expect(page.getByRole("button", { name: "Import audio", exact: true })).toBeEnabled();
   await page.evaluate(() => {
     Reflect.deleteProperty(Reflect.get(window, "go").main.App, "ImportDroppedAudio");
-    window.dictationTest.callbacks["wails:file-drop"](0, 0, ["C:\\meeting.wav"]);
   });
+  await dropAudioFiles(page, ["C:\\meeting.wav"]);
   await expect(page.getByRole("alert")).toContainText("Audio import needs the current backend");
 });
 
