@@ -36,7 +36,7 @@ export function RecordingStatus() {
         {capturing ? (
           <AudioLines className="size-5 text-primary" style={{ opacity: 0.4 + level * 0.6 }} />
         ) : (
-          <Loader2 className="size-5 animate-spin text-primary" />
+          <Loader2 className="size-5 animate-spin motion-reduce:animate-none text-primary" />
         )}
         <span className="text-sm font-medium">
           {capturing

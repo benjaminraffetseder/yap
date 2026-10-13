@@ -372,7 +372,7 @@ export function PromptsPage() {
                     onClick={() => void discovery.refresh()}
                   >
                     <RefreshCw
-                      className={`size-3.5 ${discovery.phase === "checking" ? "animate-spin" : ""}`}
+                      className={`size-3.5 ${discovery.phase === "checking" ? "animate-spin motion-reduce:animate-none" : ""}`}
                     />
                     Refresh models
                   </Button>

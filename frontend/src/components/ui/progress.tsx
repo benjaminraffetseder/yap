@@ -1,4 +1,5 @@
 import { Progress as ProgressPrimitive } from "@base-ui/react/progress";
+import { useRender } from "@base-ui/react/use-render";
 import { cn } from "cn";
 
 function Progress({ className, children, value, ...props }: ProgressPrimitive.Root.Props) {
@@ -30,14 +31,44 @@ function ProgressTrack({ className, ...props }: ProgressPrimitive.Track.Props) {
   );
 }
 
-function ProgressIndicator({ className, ...props }: ProgressPrimitive.Indicator.Props) {
+function ProgressIndicator({ className, render, ...props }: ProgressPrimitive.Indicator.Props) {
   return (
     <ProgressPrimitive.Indicator
       data-slot="progress-indicator"
-      className={cn("h-full bg-primary transition-all", className)}
+      className={(state) =>
+        cn(
+          "h-full origin-left bg-primary transition-[transform] duration-150 ease-(--motion-ease-out) motion-reduce:transition-none rtl:origin-right",
+          typeof className === "function" ? className(state) : className,
+        )
+      }
       {...props}
+      render={(elementProps, state) => (
+        <ProgressIndicatorFill elementProps={elementProps} state={state} render={render} />
+      )}
     />
   );
+}
+
+function ProgressIndicatorFill({
+  elementProps,
+  state,
+  render,
+}: {
+  elementProps: useRender.ElementProps<"div">;
+  state: ProgressPrimitive.Indicator.State;
+  render: ProgressPrimitive.Indicator.Props["render"];
+}) {
+  const { style, ...props } = elementProps;
+  // Base UI supplies the normalized width, including min/max and clamping.
+  const scale = state.status === "indeterminate" ? 0 : parseFloat(String(style?.width ?? 0)) / 100;
+  return useRender({
+    render,
+    state: { ...state },
+    props: {
+      ...props,
+      style: { ...style, width: "100%", transform: `scaleX(${scale})` },
+    },
+  });
 }
 
 function ProgressLabel({ className, ...props }: ProgressPrimitive.Label.Props) {

@@ -67,6 +67,7 @@ var roundRect = gdi.NewProc("RoundRect")
 var backgroundMode = gdi.NewProc("SetBkMode")
 var saveDC = gdi.NewProc("SaveDC")
 var restoreDC = gdi.NewProc("RestoreDC")
+var systemParametersInfo = user.NewProc("SystemParametersInfoW")
 
 const (
 	wmUpdate     = 0x8001
@@ -142,6 +143,7 @@ type native struct {
 	dragCursor               uintptr
 	expires                  time.Time
 	labelText                string
+	reduceMotion             bool
 }
 
 var classSequence atomic.Uint64
@@ -203,10 +205,18 @@ func utf16(text string) *uint16 { p, _ := windows.UTF16PtrFromString(text); retu
 func signed(v int) uintptr      { return uintptr(int64(v)) }
 func (n *native) px(v int) int  { return v * n.dpi / 96 }
 
+func systemReducedMotion() bool {
+	// Retain animations if the system query fails.
+	var enabled int32 = 1
+	ok, _, _ := systemParametersInfo.Call(0x1042, 0, uintptr(unsafe.Pointer(&enabled)), 0) // SPI_GETCLIENTAREAANIMATION
+	return ok != 0 && enabled == 0
+}
+
 func (n *native) run(ready chan<- error) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 	defer close(n.done)
+	n.reduceMotion = systemReducedMotion()
 	var module windows.Handle
 	if err := windows.GetModuleHandleEx(windows.GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT, nil, &module); err != nil {
 		ready <- err
@@ -523,6 +533,10 @@ func (n *native) windowProc(hwnd uintptr, msg uint32, w uintptr, l unsafe.Pointe
 		}
 		return 0
 	case 0x007E, 0x001A: // display/work-area changes
+		if msg == 0x001A { // WM_SETTINGCHANGE includes animation preferences.
+			n.reduceMotion = systemReducedMotion()
+			invalidate.Call(hwnd, 0, 0)
+		}
 		if n.visible {
 			n.place()
 		}
@@ -596,16 +610,36 @@ func (n *native) paint(hwnd uintptr) {
 	level, s := n.level, n.state
 	n.mu.Unlock()
 	if s.Phase == "recording" || s.Phase == "transcribing" {
-		for i := 0; i < 4; i++ {
-			height := 4 + int(level*12)
-			if s.Phase == "transcribing" {
-				height = 5 + int((time.Now().UnixMilli()/150+int64(i))%4)*3
+		brush := n.accent
+		if n.reduceMotion && s.Phase == "recording" {
+			if dimmed, _, _ := createBrush.Call(recordingAccent(level)); dimmed != 0 {
+				brush = dimmed
+				defer deleteObject.Call(dimmed)
 			}
+		}
+		now := time.Now().UnixMilli()
+		for i := 0; i < 4; i++ {
+			height := meterHeight(s.Phase, level, i, now, n.reduceMotion)
 			bar := rect{Left: int32(n.px(16 + i*4)), Top: int32(n.px(32 - height/2)), Right: int32(n.px(18 + i*4)), Bottom: int32(n.px(32 + height/2))}
-			fillRect.Call(dc, uintptr(unsafe.Pointer(&bar)), n.accent)
+			fillRect.Call(dc, uintptr(unsafe.Pointer(&bar)), brush)
 		}
 	} else {
 		dot := rect{Left: int32(n.px(18)), Top: int32(n.px(28)), Right: int32(n.px(26)), Bottom: int32(n.px(36))}
 		fillRect.Call(dc, uintptr(unsafe.Pointer(&dot)), n.accent)
 	}
+}
+
+func meterHeight(phase string, level float64, index int, now int64, reduceMotion bool) int {
+	if reduceMotion {
+		return 12
+	}
+	if phase == "transcribing" {
+		return 5 + int((now/150+int64(index))%4)*3
+	}
+	return 4 + int(level*12)
+}
+
+func recordingAccent(level float64) uintptr {
+	brightness := 0.55 + 0.45*level
+	return uintptr(92*brightness) | uintptr(196*brightness)<<8 | uintptr(146*brightness)<<16
 }

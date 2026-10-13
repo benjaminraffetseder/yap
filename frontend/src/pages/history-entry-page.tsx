@@ -148,7 +148,7 @@ function EntryDetail({ id }: { id: string }) {
                       onClick={() => void play()}
                     >
                       {loadingAudio ? (
-                        <Loader2 className="size-3 animate-spin" />
+                        <Loader2 className="size-3 animate-spin motion-reduce:animate-none" />
                       ) : (
                         <AudioLines className="size-3" />
                       )}

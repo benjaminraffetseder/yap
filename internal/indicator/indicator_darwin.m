@@ -57,9 +57,11 @@ static void onIndicatorMain(dispatch_block_t block) {
 @implementation YapStatusMeter
 - (NSView *)hitTest:(NSPoint)point { return nil; }
 - (void)drawRect:(NSRect)dirty {
-    [[NSColor colorWithCalibratedRed:0.36 green:0.77 blue:0.57 alpha:1] setFill];
+    BOOL reduceMotion = NSWorkspace.sharedWorkspace.accessibilityDisplayShouldReduceMotion;
+    double brightness = reduceMotion && !self.working ? 0.55 + 0.45 * self.level : 1;
+    [[NSColor colorWithCalibratedRed:0.36 * brightness green:0.77 * brightness blue:0.57 * brightness alpha:1] setFill];
     for (int i = 0; i < 4; i++) {
-        double height = self.working ? 5 + ((NSInteger)(NSDate.date.timeIntervalSince1970 * 7) + i) % 4 * 3 : 4 + self.level * 12;
+        double height = reduceMotion ? 12 : (self.working ? 5 + ((NSInteger)(NSDate.date.timeIntervalSince1970 * 7) + i) % 4 * 3 : 4 + self.level * 12);
         NSRectFill(NSMakeRect(i * 4, (20-height)/2, 2, height));
     }
 }

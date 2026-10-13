@@ -281,7 +281,7 @@ export function SettingsPage() {
                     aria-label="Refresh microphones"
                   >
                     <RefreshCw
-                      className={`size-4 ${loadingMicrophones ? "animate-spin" : ""}`}
+                      className={`size-4 ${loadingMicrophones ? "animate-spin motion-reduce:animate-none" : ""}`}
                       aria-hidden="true"
                     />
                   </Button>

@@ -42,6 +42,7 @@
 }
 
 :root {
+  --motion-ease-out: cubic-bezier(0.23, 1, 0.32, 1);
   --radius: 0.625rem;
   --background: oklch(0.982 0.006 85);
   --foreground: oklch(0.145 0 0);
@@ -102,6 +103,69 @@
 
 .settings-section {
   @apply rounded-2xl border bg-card p-6;
+}
+
+.motion-popup {
+  opacity: 1;
+  transform: scale(1);
+  transition:
+    opacity 180ms var(--motion-ease-out),
+    transform 180ms var(--motion-ease-out);
+
+  &:where([data-slot="dialog-content"]) {
+    transition-duration: 200ms;
+  }
+
+  &:where([data-starting-style], [data-ending-style]) {
+    opacity: 0;
+    transform: scale(0.95);
+
+    &:where([data-side="bottom"]) {
+      transform: translateY(-8px) scale(0.95);
+    }
+    &:where([data-side="top"]) {
+      transform: translateY(8px) scale(0.95);
+    }
+    &:where([data-side="left"], [data-side="inline-start"]) {
+      transform: translateX(8px) scale(0.95);
+    }
+    &:where([data-side="right"], [data-side="inline-end"]) {
+      transform: translateX(-8px) scale(0.95);
+    }
+  }
+
+  &:where([data-ending-style]) {
+    transition-duration: 100ms;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    transition-property: opacity;
+    transition-duration: 80ms;
+
+    &,
+    &:where([data-starting-style], [data-ending-style]) {
+      transform: none;
+    }
+  }
+
+  &:where([data-align-trigger="true"], [data-instant]) {
+    transition: none;
+  }
+}
+
+.motion-backdrop {
+  opacity: 1;
+  transition: opacity 200ms var(--motion-ease-out);
+
+  &:where([data-starting-style], [data-ending-style]) {
+    opacity: 0;
+  }
+  &:where([data-ending-style]) {
+    transition-duration: 100ms;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    transition-duration: 80ms;
+  }
 }
 
 .markdown-content {

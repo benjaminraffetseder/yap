@@ -11,11 +11,13 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { backend, duration, isBusy, isDesktop } from "@/lib/backend";
+import { useMotionPreference } from "@/lib/use-motion-preference";
 import { SetupPage } from "@/pages/setup-page";
 import { ArrowRight, AudioLines, Download, Keyboard, Loader2, Mic, Square } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link } from "react-router";
 export function HomePage() {
+  const reduced = useMotionPreference();
   const { snapshot, loading, level, run, installModel } = useDictation();
   const { status, settings, history, ready } = snapshot;
   const [now, setNow] = useState(Date.now());
@@ -100,8 +102,11 @@ export function HomePage() {
             />
             <span
               aria-hidden="true"
-              className="absolute inset-3 rounded-full border border-primary/15 transition-transform duration-150 motion-reduce:transition-none"
-              style={{ transform: recording ? `scale(${1 + level * 0.15})` : undefined }}
+              className="absolute inset-3 rounded-full border border-primary/15 transition-[transform,opacity] duration-150 motion-reduce:transition-[opacity]"
+              style={{
+                transform: recording && !reduced ? `scale(${1 + level * 0.15})` : undefined,
+                opacity: recording && reduced ? 0.35 + level * 0.65 : undefined,
+              }}
             />
             {downloading && (
               <CircularProgress
@@ -114,7 +119,7 @@ export function HomePage() {
               disabled={!isDesktop || !ready || working || loading || pending || switchingModel}
               onClick={() => void record()}
               aria-label={recording ? "Stop recording" : "Start recording"}
-              className={`relative flex size-24 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg shadow-primary/15 transition-transform hover:scale-105 active:scale-95 focus-visible:outline-4 focus-visible:outline-offset-4 focus-visible:outline-ring motion-reduce:transition-none disabled:cursor-default disabled:hover:scale-100 ${downloading ? "disabled:opacity-100" : "disabled:opacity-50"}`}
+              className={`relative flex size-24 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg shadow-primary/15 focus-visible:outline-4 focus-visible:outline-offset-4 focus-visible:outline-ring disabled:cursor-default ${downloading ? "disabled:opacity-100" : "disabled:opacity-50"}`}
             >
               {downloading ? (
                 <span className="font-mono text-xl font-medium tabular-nums">
@@ -163,8 +168,13 @@ export function HomePage() {
                   {Array.from({ length: 17 }, (_, index) => (
                     <span
                       key={index}
-                      className="w-1 rounded-full bg-current transition-[height] duration-150 motion-reduce:transition-none"
-                      style={{ height: `${4 + level * (12 + 16 * Math.sin(index * 1.7) ** 2)}px` }}
+                      className="h-8 w-1 rounded-full bg-current transition-[transform,opacity] duration-150 motion-reduce:transition-[opacity]"
+                      style={{
+                        transform: reduced
+                          ? "scaleY(0.375)"
+                          : `scaleY(${(4 + level * (12 + 16 * Math.sin(index * 1.7) ** 2)) / 32})`,
+                        opacity: reduced ? 0.35 + level * 0.65 : undefined,
+                      }}
                     />
                   ))}
                 </div>

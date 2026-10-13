@@ -131,7 +131,7 @@ export function BackupPanel({ disabled, unsaved }: { disabled: boolean; unsaved:
       <div className="flex flex-wrap gap-2">
         <Button variant="outline" disabled={blocked} onClick={() => void exportBackup()}>
           {working === "export" ? (
-            <Loader2 className="size-4 animate-spin" />
+            <Loader2 className="size-4 animate-spin motion-reduce:animate-none" />
           ) : (
             <Download className="size-4" />
           )}
@@ -139,7 +139,7 @@ export function BackupPanel({ disabled, unsaved }: { disabled: boolean; unsaved:
         </Button>
         <Button variant="outline" disabled={blocked} onClick={() => void chooseBackup()}>
           {working === "preview" ? (
-            <Loader2 className="size-4 animate-spin" />
+            <Loader2 className="size-4 animate-spin motion-reduce:animate-none" />
           ) : (
             <Upload className="size-4" />
           )}
@@ -241,7 +241,7 @@ export function BackupPanel({ disabled, unsaved }: { disabled: boolean; unsaved:
           )}
           {working === "restore" && (
             <div className="flex items-center gap-3" role="status">
-              <Loader2 className="size-4 animate-spin" />
+              <Loader2 className="size-4 animate-spin motion-reduce:animate-none" />
               <span className="text-sm">Restoring backup…</span>
               <Button
                 size="sm"

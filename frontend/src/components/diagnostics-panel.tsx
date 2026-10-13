@@ -63,7 +63,9 @@ export function DiagnosticsPanel({ disabled = false }: { disabled?: boolean }) {
           disabled={!isDesktop || checking || busy || pending}
           onClick={() => void refreshChecks()}
         >
-          <RefreshCw className={`size-4 ${checking ? "animate-spin" : ""}`} />
+          <RefreshCw
+            className={`size-4 ${checking ? "animate-spin motion-reduce:animate-none" : ""}`}
+          />
         </Button>
       </div>
       {checks.length > 0 && (
@@ -126,7 +128,7 @@ export function DiagnosticsPanel({ disabled = false }: { disabled?: boolean }) {
             </>
           ) : transcribing ? (
             <>
-              <Loader2 className="size-4 animate-spin" />
+              <Loader2 className="size-4 animate-spin motion-reduce:animate-none" />
               Transcribing test…
             </>
           ) : (

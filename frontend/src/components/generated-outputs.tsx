@@ -145,7 +145,10 @@ export function GeneratedOutputs({
                   role="status"
                   className="inline-flex items-center gap-1.5 px-2 text-xs text-muted-foreground"
                 >
-                  <Loader2 aria-hidden="true" className="size-3 animate-spin" />
+                  <Loader2
+                    aria-hidden="true"
+                    className="size-3 animate-spin motion-reduce:animate-none"
+                  />
                   Generating output…
                 </span>
                 <Button

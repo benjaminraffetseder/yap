@@ -13,6 +13,43 @@ import (
 	"golang.org/x/sys/windows"
 )
 
+func TestReducedMotionMeterKeepsFixedGeometry(t *testing.T) {
+	for _, phase := range []string{"recording", "transcribing"} {
+		for _, level := range []float64{0, 0.5, 1} {
+			for _, now := range []int64{0, 150, 600, 975} {
+				for index := 0; index < 4; index++ {
+					if height := meterHeight(phase, level, index, now, true); height != 12 {
+						t.Fatalf("%s meter moved at level=%g, time=%d, bar=%d: height=%d", phase, level, now, index, height)
+					}
+				}
+			}
+		}
+	}
+	quiet, loud := recordingAccent(0), recordingAccent(1)
+	if loud != 0x0092C45C {
+		t.Fatalf("full level changed the accent color: %#x", loud)
+	}
+	for _, shift := range []uint{0, 8, 16} {
+		if low, high := (quiet>>shift)&0xff, (loud>>shift)&0xff; low == 0 || low >= high {
+			t.Fatalf("level feedback must brighten every color channel: quiet=%#x, loud=%#x", quiet, loud)
+		}
+	}
+}
+
+func TestMotionEnabledMeterRetainsLevelAndBusyFeedback(t *testing.T) {
+	if quiet, loud := meterHeight("recording", 0, 0, 0, false), meterHeight("recording", 1, 0, 0, false); quiet != 4 || loud != 16 {
+		t.Fatalf("recording geometry changed: quiet=%d, loud=%d", quiet, loud)
+	}
+	for index, want := range []int{5, 8, 11, 14} {
+		if height := meterHeight("transcribing", 0, index, 0, false); height != want {
+			t.Fatalf("busy bar %d: height=%d, want=%d", index, height, want)
+		}
+	}
+	if before, after := meterHeight("transcribing", 0, 0, 0, false), meterHeight("transcribing", 0, 0, 150, false); before == after {
+		t.Fatal("motion-enabled busy bars stopped animating")
+	}
+}
+
 func TestNativeIndicatorFollowsForegroundWindowState(t *testing.T) {
 	if os.Getenv("YAP_INDICATOR_SMOKE") != "1" {
 		t.Skip("set YAP_INDICATOR_SMOKE=1 on an unlocked Windows desktop")

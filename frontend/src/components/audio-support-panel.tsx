@@ -69,7 +69,10 @@ export function AudioSupportPanel({
           disabled={!isDesktop || checking || busy || pending}
           onClick={() => void refresh()}
         >
-          <RefreshCw aria-hidden="true" className={`size-4 ${checking ? "animate-spin" : ""}`} />
+          <RefreshCw
+            aria-hidden="true"
+            className={`size-4 ${checking ? "animate-spin motion-reduce:animate-none" : ""}`}
+          />
         </Button>
       </div>
       <div className="space-y-4 px-5 py-4">

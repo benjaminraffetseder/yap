@@ -204,7 +204,10 @@ export function ModelCard({
           >
             <div className="flex items-center justify-between gap-2 text-xs font-medium text-primary">
               <span className="flex items-center gap-1.5">
-                <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
+                <Loader2
+                  className="size-3.5 animate-spin motion-reduce:animate-none"
+                  aria-hidden="true"
+                />
                 Downloading
               </span>
               <span className="tabular-nums">{download.percent}%</span>
