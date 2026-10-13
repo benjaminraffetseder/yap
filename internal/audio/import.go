@@ -14,6 +14,10 @@ import (
 const maxImportBytes int64 = 256 << 20
 const maxImportSeconds int64 = 25 * 60
 
+// MaxNormalizedImportBytes includes the WAV header and 25 minutes of 16 kHz mono PCM16.
+// Retained audio consumers use the same budget as the import pipeline.
+const MaxNormalizedImportBytes = 44 + 16000*2*maxImportSeconds
+
 type importWaveFormat struct {
 	codec, channels, bits, align uint16
 	rate                         uint32

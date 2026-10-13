@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"reflect"
 	"sync"
@@ -9,6 +10,46 @@ import (
 	"yap/internal/storage"
 	"yap/internal/vocabulary"
 )
+
+func TestSnapshotPreservesConflictingVocabularyForRepair(t *testing.T) {
+	a := testApp(t)
+	legacy := []vocabulary.Entry{
+		{ID: "one", Canonical: "Yap", Aliases: []string{"yapp"}, Enabled: true},
+		{ID: "two", Canonical: "YAPP", Enabled: true},
+	}
+	if err := a.store.SaveVocabulary(legacy); err != nil {
+		t.Fatal(err)
+	}
+	var err error
+	a.vocabulary, err = a.store.Vocabulary()
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err := a.GetSnapshot()
+	if err != nil || len(snapshot.Vocabulary) != len(legacy) {
+		t.Fatalf("conflicting terms are unavailable for repair: %+v %v", snapshot.Vocabulary, err)
+	}
+	if snapshot.Vocabulary[0].Canonical != legacy[0].Canonical || snapshot.Vocabulary[1].Canonical != legacy[1].Canonical {
+		t.Fatal("snapshot changed the saved conflicting terms")
+	}
+	encoded, err := json.Marshal(snapshot.Vocabulary)
+	if err != nil || snapshot.Vocabulary[1].Aliases == nil {
+		t.Fatalf("snapshot contains noneditable null aliases: %s %v", encoded, err)
+	}
+	snapshot.Vocabulary[0].Canonical = "Changed in the editor"
+	snapshot.Vocabulary[0].Aliases[0] = "changed alias"
+	if !reflect.DeepEqual(a.vocabulary, legacy) {
+		t.Fatal("snapshot edits changed application vocabulary before saving")
+	}
+	snapshot.Vocabulary[1].Canonical = "Another term"
+	if _, err = a.SaveVocabulary(snapshot.Vocabulary); err != nil {
+		t.Fatalf("conflict could not be repaired: %v", err)
+	}
+	saved, err := a.store.Vocabulary()
+	if err != nil || saved[1].Canonical != "Another term" {
+		t.Fatalf("repair was not persisted: %+v %v", saved, err)
+	}
+}
 
 func TestAddVocabularyPreservesExistingTermsAndTranscripts(t *testing.T) {
 	a := testApp(t)

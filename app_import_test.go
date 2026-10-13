@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/binary"
 	"errors"
 	"os"
@@ -13,6 +14,7 @@ import (
 	"yap/internal/audio"
 	"yap/internal/inference/speech"
 	textmodel "yap/internal/inference/text"
+	"yap/internal/storage"
 	"yap/internal/vocabulary"
 )
 
@@ -92,6 +94,72 @@ func TestAudioImportUsesPipelineWithoutClipboardOrSourceChanges(t *testing.T) {
 			t.Fatal("source changed")
 		}
 	}
+}
+
+func TestRetainedMaximumAudioImportCanBePlayedAndBackedUp(t *testing.T) {
+	a := testApp(t)
+	a.settings.SaveAudio = true
+	source := filepath.Join(t.TempDir(), "twenty-five-minutes.wav")
+	f, err := os.Create(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const pcmBytes = 25 * 60 * 16000 * 2
+	if err = audio.Header(f, pcmBytes); err != nil {
+		f.Close()
+		t.Fatal(err)
+	}
+	if err = f.Truncate(44 + pcmBytes); err != nil {
+		f.Close()
+		t.Fatal(err)
+	}
+	if err = f.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err = a.importAudio(source); err != nil {
+		t.Fatal(err)
+	}
+	a.wg.Wait()
+	entry, err := a.store.Session(a.id)
+	if err != nil || a.status.Phase != "done" || entry.DurationMS != 25*60*1000 {
+		t.Fatalf("maximum import did not finish: %+v %v %v", entry, a.status, err)
+	}
+
+	t.Run("playback", func(t *testing.T) {
+		data, err := a.GetAudio(entry.ID)
+		const prefix = "data:audio/wav;base64,"
+		if err != nil || len(data) != len(prefix)+base64.StdEncoding.EncodedLen(44+pcmBytes) {
+			t.Fatalf("maximum import cannot be played: %v (encoded length %d)", err, len(data))
+		}
+	})
+	t.Run("backup round trip", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "maximum-import.zip")
+		summary, err := a.exportBackup(path, true)
+		if err != nil || summary.Recordings != 1 {
+			t.Fatalf("maximum import cannot be backed up: %+v %v", summary, err)
+		}
+		archive, err := storage.ReadBackup(context.Background(), path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer archive.Close()
+		dest, err := storage.Open(t.TempDir())
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer dest.Close()
+		if _, err = dest.RestoreBackup(context.Background(), archive, false); err != nil {
+			t.Fatal(err)
+		}
+		restored, err := dest.Session(entry.ID)
+		if err != nil || restored.DurationMS != entry.DurationMS {
+			t.Fatalf("maximum import did not restore: %+v %v", restored, err)
+		}
+		data, err := dest.ReadAudio(restored.AudioPath)
+		if err != nil || len(data) != 44+pcmBytes {
+			t.Fatalf("restored audio cannot be played: %v (length %d)", err, len(data))
+		}
+	})
 }
 
 func TestDroppedAudioImportUsesSharedPipeline(t *testing.T) {

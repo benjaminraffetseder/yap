@@ -4,9 +4,11 @@ import (
 	"errors"
 	"io"
 	"path/filepath"
+
+	"yap/internal/audio"
 )
 
-const maxPlaybackBytes = 20 * 1024 * 1024
+const maxPlaybackBytes = audio.MaxNormalizedImportBytes
 
 func readAudioBytes(reader io.Reader, limit int64) ([]byte, error) {
 	data, err := io.ReadAll(io.LimitReader(reader, limit+1))

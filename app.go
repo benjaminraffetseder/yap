@@ -474,7 +474,16 @@ func (a *App) GetSnapshot() (Snapshot, error) {
 		}
 	}
 	ready := speech.Validate(speech.Options{Executable: a.settings.WhisperPath, Model: a.settings.ModelPath}) == nil
-	entries, _ := vocabulary.Normalize(a.vocabulary)
+	entries, err := vocabulary.Normalize(a.vocabulary)
+	if err != nil {
+		// Preserve legacy conflicts for editing, without sharing application memory
+		// or returning null alias arrays to the Vocabulary page.
+		entries = make([]vocabulary.Entry, len(a.vocabulary))
+		for i, entry := range a.vocabulary {
+			entries[i] = entry
+			entries[i].Aliases = append([]string{}, entry.Aliases...)
+		}
+	}
 	config, _ := textmodel.Normalize(a.textConfig)
 	return Snapshot{TextProcessing: config, Diagnostic: a.diagnostic, Vocabulary: entries, MicrophoneTested: a.microphoneTested, ShortcutTested: a.shortcutTested, Settings: a.settings, Status: a.status, History: history, Models: models.List(a.store.Dir), DataDir: a.store.Dir, Ready: ready, FloatingIndicator: a.indicator != nil, LaunchAtLoginAvailable: a.loginStart != nil, StartInTrayAvailable: a.tray != nil && !a.development}, nil
 }

@@ -294,6 +294,7 @@ for (const theme of ["dark", "light"] as const) {
   test(`dictation recorder ${theme} fits narrow windows and reflects recording activity`, async ({
     page,
   }, testInfo) => {
+    await page.emulateMedia({ reducedMotion: "no-preference" });
     await page.addInitScript((theme) => {
       localStorage.setItem("desktop-theme", theme);
       localStorage.setItem("yap-sidebar-collapsed", "true");
@@ -321,7 +322,7 @@ for (const theme of ["dark", "light"] as const) {
       await recorder.getByRole("button", { name: "Start recording" }).click();
       await expect(recorder.getByRole("heading", { name: "Recording", exact: true })).toBeVisible();
       await expect(selector).toBeDisabled();
-      const bars = recorder.locator('span[style*="height:"]');
+      const bars = recorder.locator('[data-slot="recording-level-meter"] > span');
       await expect(bars).toHaveCount(17);
       const quietHeight = await bars.nth(0).evaluate((bar) => bar.getBoundingClientRect().height);
       await page.evaluate(() => window.dictationTest.callbacks["dictation:level"](0.8));
@@ -974,15 +975,14 @@ test("model response toasts dismiss automatically", async ({ page }) => {
   });
   await page.goto("/#/prompts");
   await expect(page.getByRole("button", { name: "Test model", exact: true })).toBeEnabled();
-  await page.clock.install();
   await page.getByRole("button", { name: "Test model", exact: true }).click();
   const response = page
     .locator('[data-slot="toast"]')
     .filter({ hasText: "Model responded successfully." });
   await expect(response).toBeVisible();
   await page.mouse.move(0, 0);
-  await page.clock.fastForward(6000);
-  await expect(response).toBeHidden();
+  // Keep the timeout and Motion's exit animation on the same browser clock.
+  await expect(response).toBeHidden({ timeout: 10000 });
 });
 
 test("prompt deletion asks for confirmation and cancel preserves draft edits", async ({
@@ -3145,7 +3145,6 @@ test("speech model readiness uses one success toast across refreshes and setup s
 test("microphone errors use a dismissible toast without adding a page banner", async ({
   page,
 }, testInfo) => {
-  await page.clock.install();
   await page.addInitScript(() => {
     localStorage.setItem("desktop-theme", "dark");
     const state = window.dictationTest;
@@ -3187,8 +3186,8 @@ test("microphone errors use a dismissible toast without adding a page banner", a
   await expect(toast).toBeVisible();
   await page.getByRole("link", { name: "Models", exact: true }).click();
   await expect(toast).toBeVisible();
-  await page.clock.fastForward(8001);
-  await expect(toast).toHaveCount(0);
+  // Keep the timeout and Motion's exit animation on the same browser clock.
+  await expect(toast).toHaveCount(0, { timeout: 10000 });
 });
 
 test("first run guides installation, mic testing and shortcut verification", async ({ page }) => {

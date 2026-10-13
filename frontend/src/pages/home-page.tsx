@@ -164,7 +164,11 @@ export function HomePage() {
                 <span className="font-mono text-sm tabular-nums text-primary">
                   {duration(Math.max(0, now - status.startedAt))}
                 </span>
-                <div aria-hidden="true" className="flex h-8 items-center gap-1 text-primary">
+                <div
+                  data-slot="recording-level-meter"
+                  aria-hidden="true"
+                  className="flex h-8 items-center gap-1 text-primary"
+                >
                   {Array.from({ length: 17 }, (_, index) => (
                     <span
                       key={index}

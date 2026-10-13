@@ -17,6 +17,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/google/uuid"
+	"yap/internal/audio"
 	textmodel "yap/internal/inference/text"
 	"yap/internal/vocabulary"
 )
@@ -24,7 +25,7 @@ import (
 const backupVersion = 1
 const maxBackupBytes int64 = 2 << 30
 const maxManifestBytes int64 = 64 << 20
-const maxBackupAudioBytes int64 = 20 << 20
+const maxBackupAudioBytes = audio.MaxNormalizedImportBytes
 const maxBackupEntries = 100000
 
 // Only portable preferences cross computers. Startup, shortcuts, devices,
@@ -304,7 +305,7 @@ func (s *Store) ExportBackup(ctx context.Context, path string, includeAudio bool
 		info, e := f.Stat()
 		if e != nil || !info.Mode().IsRegular() || info.Size() > maxBackupAudioBytes {
 			f.Close()
-			return summary, errors.New("retained recording is unreadable or exceeds 20 MiB")
+			return summary, errors.New("retained recording is unreadable or exceeds the audio size limit")
 		}
 		entry, e := writer.Create(archiveAudioName(v.ID))
 		if e == nil {
