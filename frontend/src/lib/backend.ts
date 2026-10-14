@@ -1,5 +1,8 @@
 import {
   AddVocabularyTerm,
+  ApplyDictationProfile,
+  SaveDictationProfile,
+  DeleteDictationProfile,
   BeginShortcutCapture,
   Cancel,
   CancelTextProcessing,
@@ -53,7 +56,15 @@ import {
   StopRecording,
   TestTextModel,
 } from "@wails/go/main/App";
-import { text } from "@wails/go/models";
+import { storage, text } from "@wails/go/models";
+export type DictationProfile = {
+  id: string;
+  name: string;
+  modelPath: string;
+  language: string;
+  cleanText: boolean;
+  autoPromptId: string;
+};
 export type TextPrompt = { id: string; name: string; instruction: string };
 export type TextProcessing = {
   enabled: boolean;
@@ -169,6 +180,7 @@ export type HistoryPageResult = {
   pageSize: number;
 };
 export type Status = {
+  completionWarning?: boolean;
   phase: string;
   message: string;
   startedAt: number;
@@ -191,6 +203,10 @@ export type Model = {
   removable: boolean;
 };
 export type Snapshot = {
+  dictationProfiles?: DictationProfile[];
+  activeProfileId?: string;
+  defaultProfileId?: string;
+  profileModified?: boolean;
   recordingSaveHistory?: boolean;
   latestResult?: { session: Session; output?: GeneratedOutput; text: string } | null;
   textProcessing: TextProcessing;
@@ -247,7 +263,28 @@ function requireOutputAPI(name: string) {
       "Saved outputs need the current backend. Quit and reopen Yap; in development, restart wails dev.",
     );
 }
+function requireProfileAPI(name: string) {
+  const api = (window as unknown as { go?: { main?: { App?: Record<string, unknown> } } }).go?.main
+    ?.App;
+  if (typeof api?.[name] !== "function")
+    throw new Error(
+      "Dictation profiles need the current backend. Quit and reopen Yap; in development, restart wails dev.",
+    );
+}
+
 export const backend = {
+  saveProfile: async (profile: DictationProfile): Promise<DictationProfile> => {
+    requireProfileAPI("SaveDictationProfile");
+    return SaveDictationProfile(storage.DictationProfile.createFrom(profile));
+  },
+  applyProfile: async (id: string): Promise<void> => {
+    requireProfileAPI("ApplyDictationProfile");
+    return ApplyDictationProfile(id);
+  },
+  deleteProfile: async (id: string): Promise<void> => {
+    requireProfileAPI("DeleteDictationProfile");
+    return DeleteDictationProfile(id);
+  },
   checkUpdates: async (manual: boolean): Promise<UpdateStatus> => {
     const api = (window as unknown as { go?: { main?: { App?: Record<string, unknown> } } }).go
       ?.main?.App;

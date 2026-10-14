@@ -51,8 +51,11 @@ function ToastList() {
       className="pointer-events-auto rounded-xl border bg-card p-4 text-card-foreground shadow-lg data-limited:hidden"
     >
       <Toast.Content className="flex items-start gap-3">
-        {toast.type === "error" ? (
-          <CircleAlert className="mt-0.5 size-5 shrink-0 text-destructive" aria-hidden="true" />
+        {toast.type === "error" || toast.type === "warning" ? (
+          <CircleAlert
+            className={`mt-0.5 size-5 shrink-0 ${toast.type === "warning" ? "text-amber-600 dark:text-amber-400" : "text-destructive"}`}
+            aria-hidden="true"
+          />
         ) : (
           <CircleCheck className="mt-0.5 size-5 shrink-0 text-primary" aria-hidden="true" />
         )}
@@ -60,6 +63,9 @@ function ToastList() {
           <Toast.Title className="break-words text-sm font-medium leading-6" />
           {toast.description && (
             <Toast.Description className="mt-1 break-words text-xs leading-5 text-muted-foreground" />
+          )}
+          {toast.actionProps && (
+            <Toast.Action render={<Button size="sm" variant="outline" className="mt-3" />} />
           )}
         </div>
         <Toast.Close

@@ -14,6 +14,7 @@ import {
 import { backend, duration, isBusy, isDesktop } from "@/lib/backend";
 import { useMotionPreference } from "@/lib/use-motion-preference";
 import { SetupPage } from "@/pages/setup-page";
+import { ProfileSelector } from "@/components/dictation-profiles";
 import { ArrowRight, AudioLines, Download, Keyboard, Loader2, Mic, Square } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link } from "react-router";
@@ -26,6 +27,7 @@ export function HomePage() {
   const [resultPending, setResultPending] = useState(false);
   const [pending, setPending] = useState(false);
   const [switchingModel, setSwitchingModel] = useState(false);
+  const [switchingProfile, setSwitchingProfile] = useState(false);
   const recording = status.phase === "recording";
   const downloading = status.phase === "downloading";
   const downloadPercent = Math.round(Math.min(1, Math.max(0, status.progress)) * 100);
@@ -66,6 +68,7 @@ export function HomePage() {
       loading ||
       pending ||
       switchingModel ||
+      switchingProfile ||
       isBusy(status.phase) ||
       value === selectedModel
     )
@@ -95,7 +98,13 @@ export function HomePage() {
             <AudioLines className="size-4 text-primary" aria-hidden="true" />
             Voice to text
           </span>
-          <AudioImportButton showDownloadProgress={false} />
+          <div className="flex flex-wrap items-center gap-3">
+            <ProfileSelector
+              disabled={switchingModel || pending}
+              onPendingChange={setSwitchingProfile}
+            />
+            <AudioImportButton showDownloadProgress={false} />
+          </div>
         </header>
         <div className="flex flex-col items-center justify-center gap-7 px-6 py-10 text-center sm:flex-row sm:gap-10 sm:px-8 sm:py-12 sm:text-left">
           <div className="relative flex size-40 shrink-0 items-center justify-center">
@@ -119,7 +128,15 @@ export function HomePage() {
               />
             )}
             <button
-              disabled={!isDesktop || !ready || working || loading || pending || switchingModel}
+              disabled={
+                !isDesktop ||
+                !ready ||
+                working ||
+                loading ||
+                pending ||
+                switchingModel ||
+                switchingProfile
+              }
               onClick={() => void record()}
               aria-label={recording ? "Stop recording" : "Start recording"}
               className={`relative flex size-24 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg shadow-primary/15 focus-visible:outline-4 focus-visible:outline-offset-4 focus-visible:outline-ring disabled:cursor-default ${downloading ? "disabled:opacity-100" : "disabled:opacity-50"}`}
@@ -208,7 +225,12 @@ export function HomePage() {
                 items={modelOptions}
                 value={selectedModel}
                 disabled={
-                  !isDesktop || loading || pending || switchingModel || isBusy(status.phase)
+                  !isDesktop ||
+                  loading ||
+                  pending ||
+                  switchingModel ||
+                  switchingProfile ||
+                  isBusy(status.phase)
                 }
                 onValueChange={(value) => void selectModel(value)}
               >

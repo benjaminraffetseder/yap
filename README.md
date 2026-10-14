@@ -17,6 +17,7 @@ Linux support is incomplete.
 - Dictate in the background, with tray controls and a floating indicator.
 - Search, edit, copy, and export past transcripts.
 - Add names and preferred spellings to a custom vocabulary.
+- Switch dictation profiles with saved speech-model, language, cleanup, and prompt choices.
 - Transcribe audio files, including WAV, MP3, and M4A.
 - Run cleanup or custom prompts through an optional local text model.
 - Back up history, prompts, vocabulary, and saved recordings.

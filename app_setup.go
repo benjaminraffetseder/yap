@@ -163,7 +163,7 @@ func (a *App) CompleteSetup(skip bool) error {
 	}
 	settings := a.settings
 	settings.SetupComplete = true
-	if err := a.store.SaveSettings(settings); err != nil {
+	if err := a.saveSettingsWithDefaultLocked(settings); err != nil {
 		return err
 	}
 	a.settings = settings

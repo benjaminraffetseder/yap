@@ -15,9 +15,55 @@ clipboard** is enabled by default. Turn it off and save settings to keep complet
 dictation in History without changing the clipboard. Automatic paste also pauses
 while copying is off. You can still copy text manually from History.
 
+If transcription succeeds but copying, pasting, or automatic text processing fails,
+Yap shows **Transcript ready — action needed**. The warning stays available instead
+of disappearing on a timer, with a **Copy transcript** action. Failed copying can be retried from the same
+notification. Cancelled automatic processing also leaves the speech transcript
+available to copy. Copying from this notification never pastes into another app.
+
 The floating indicator appears while you're recording in another app. Drag its
 status area to move it; Yap remembers the position. It hides while Yap's main
 window has focus. Stop and Cancel are available there and in the tray menu.
+
+### Dictation profiles
+
+Under **Settings → Dictation → Dictation profiles**, choose **New profile** to
+start from your saved settings. Name it, then choose its speech model, spoken
+language, light cleanup, and optional **After dictation** prompt. Save the profile,
+then choose **Use** or select it in the **Profile** menu on Dictate. You can save
+up to 20 additional profiles and edit or delete them from Settings. Yap creates
+and selects **Default** from your setup choices or existing saved settings.
+Default stays available and can be edited, but cannot be renamed or deleted.
+
+Saving a profile does not activate it. Switching applies all its choices together
+and keeps your microphone, shortcut, delivery, history, and startup preferences.
+Profiles apply to new recordings and audio imports. Switching is blocked while
+an operation is running. A missing speech model, incompatible Moonshine language,
+disabled text model, or deleted prompt must be resolved before using that profile;
+failed switches leave the previous settings in place.
+
+Automatic prompts use the shared local text model configured in Prompts. A profile
+with **No automatic processing** clears the automatic prompt while keeping that
+model available for manual use. Changing a profile's speech model, language,
+cleanup, or automatic prompt in Settings keeps its name selected and adds a small
+modified icon. Hover or focus the profile name or icon to see **Modified**.
+The speech-model, language, light-cleanup, and **After dictation** controls also
+show an icon beside their labels when their displayed values differ from the
+selected profile. Hover or focus it to see **Changed from [profile name]**, the
+profile value, and the current value. Unsaved edits are identified in the tooltip;
+save them to apply them to dictation. Matching the profile value removes the icon.
+Microphone, shortcut, and history changes do not mark it modified. Saved profiles
+are kept intact; edit and save the profile to keep your new choices, or select it
+again (or choose **Use** in Settings) to restore its saved choices.
+Deleting a selected profile keeps your current settings, selects Default, and
+marks it modified when those settings differ. Profiles persist locally across app restarts
+and are not included in portable backups because they reference this computer's
+speech-model paths.
+
+Unsaved edits in Settings, Prompts, and Vocabulary remain available when you move
+between pages. Use their Save or **Discard changes** action to finish editing.
+Background updates preserve edited fields and refresh untouched settings. These
+drafts stay in memory for the current app session; save before quitting or reloading.
 
 ### Microphone and shortcut
 

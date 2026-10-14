@@ -30,6 +30,10 @@ import { backend, isBusy, isDesktop, message, type Microphone } from "@/lib/back
 import { FolderOpen, Monitor, Moon, RefreshCw, Save, Sun } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
+import { useSavedDraft } from "@/lib/use-saved-draft";
+import { languages } from "@/lib/languages";
+import { ProfilesPanel } from "@/components/dictation-profiles";
+import { ProfileSettingIndicator } from "@/components/profile-setting-indicator";
 const sections = [
   { value: "dictation", label: "Dictation" },
   { value: "general", label: "General" },
@@ -45,20 +49,6 @@ const recordingModes = [
   { value: "hold", label: "Hold to talk" },
   { value: "toggle", label: "Press to start / press to stop" },
 ];
-const languages = [
-  { value: "auto", label: "Detect automatically" },
-  { value: "en", label: "English" },
-  { value: "de", label: "German" },
-  { value: "fr", label: "French" },
-  { value: "es", label: "Spanish" },
-  { value: "it", label: "Italian" },
-  { value: "pt", label: "Portuguese" },
-  { value: "nl", label: "Dutch" },
-  { value: "pl", label: "Polish" },
-  { value: "ja", label: "Japanese" },
-  { value: "zh", label: "Chinese" },
-  { value: "uk", label: "Ukrainian" },
-];
 const retentionOptions = [
   { value: "0", label: "Keep forever" },
   { value: "7", label: "7 days" },
@@ -73,8 +63,7 @@ export function SettingsPage() {
     : "dictation";
   const { theme, setTheme } = useTheme();
   const { snapshot, run, refresh, clearError, loading } = useDictation();
-  const [settings, setSettings] = useState(snapshot.settings);
-  const savedSettings = useRef(snapshot.settings);
+  const [settings, setSettings] = useSavedDraft("settings", snapshot.settings);
   const [saving, setSaving] = useState(false);
   const [confirmRetention, setConfirmRetention] = useState(false);
   const [microphones, setMicrophones] = useState<Microphone[]>([]);
@@ -132,14 +121,6 @@ export function SettingsPage() {
       window.removeEventListener("focus", refresh);
     };
   }, [refreshMicrophones]);
-  useEffect(() => {
-    const previous = savedSettings.current;
-    savedSettings.current = snapshot.settings;
-    // Adopt backend changes only while the draft still matches its saved baseline.
-    setSettings((draft) =>
-      JSON.stringify(draft) === JSON.stringify(previous) ? snapshot.settings : draft,
-    );
-  }, [snapshot.settings]);
   async function browse(kind: "model" | "runtime") {
     await run(async () => {
       const path = await backend.selectFile(kind);
@@ -245,7 +226,8 @@ export function SettingsPage() {
             </Button>
           </div>
         </header>
-        <TabsContent value="dictation" keepMounted>
+        <TabsContent value="dictation" keepMounted className="space-y-5">
+          <ProfilesPanel disabled={controlsDisabled || dirty} />
           <fieldset disabled={controlsDisabled} className="space-y-5 disabled:opacity-60">
             <SettingsSection title="Recording">
               <SettingRow title="Microphone" htmlFor="microphone">
@@ -301,7 +283,11 @@ export function SettingsPage() {
                           : "System default follows your computer’s input setting.")}
                 </p>
               </SettingRow>
-              <SettingRow title="Spoken language" htmlFor="language">
+              <SettingRow
+                title="Spoken language"
+                htmlFor="language"
+                indicator={<ProfileSettingIndicator field="language" value={settings.language} />}
+              >
                 <Select
                   items={languages}
                   value={settings.language}
@@ -360,6 +346,7 @@ export function SettingsPage() {
             <SettingsSection title="Text & delivery">
               <ToggleSetting
                 title="Light cleanup"
+                indicator={<ProfileSettingIndicator field="cleanText" value={settings.cleanText} />}
                 description="Fix spacing, capitalization, and punctuation; remove common English/German fillers. Keep the original when history saving is on."
                 checked={settings.cleanText}
                 disabled={controlsDisabled}
@@ -544,7 +531,16 @@ export function SettingsPage() {
                   },
                 ] as const
               ).map((field) => (
-                <SettingRow key={field.key} title={field.title} htmlFor={field.key}>
+                <SettingRow
+                  key={field.key}
+                  title={field.title}
+                  htmlFor={field.key}
+                  indicator={
+                    field.key === "modelPath" && (
+                      <ProfileSettingIndicator field="modelPath" value={settings.modelPath} />
+                    )
+                  }
+                >
                   <div className="flex gap-2">
                     <Input
                       id={field.key}

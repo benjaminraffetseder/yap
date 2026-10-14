@@ -310,12 +310,39 @@ export function DictationProvider({ children }: { children: ReactNode }) {
       // Notify on a completed operation, not on saved results loaded or restored
       // after manually processing text. Status refreshes must not replay a toast.
       if (status.phase === "done" && previous.phase === "transcribing") {
+        const warning = status.completionWarning === true;
         toastManager.add({
           id: "transcription-complete",
-          type: "success",
-          title: "Transcription finished",
+          type: warning ? "warning" : "success",
+          title: warning ? "Transcript ready — action needed" : "Transcription finished",
           description: status.message,
-          timeout: 5000,
+          timeout: warning ? 0 : 5000,
+          priority: warning ? "high" : "low",
+          actionProps:
+            warning && status.transcript
+              ? {
+                  children: "Copy transcript",
+                  onClick: () => {
+                    void backend
+                      .copy(status.transcript)
+                      .then(() => {
+                        toastManager.update("transcription-complete", {
+                          type: "success",
+                          title: "Copied to clipboard",
+                          description: undefined,
+                          actionProps: undefined,
+                          timeout: 5000,
+                          priority: "low",
+                        });
+                      })
+                      .catch((cause) => {
+                        toastManager.update("transcription-complete", {
+                          description: `Couldn’t copy: ${message(cause)}. Try again.`,
+                        });
+                      });
+                  },
+                }
+              : undefined,
         });
       } else if (
         status.phase === "error" &&

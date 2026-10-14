@@ -1,6 +1,6 @@
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
-import type { ReactNode } from "react";
+import { useId, type ReactNode } from "react";
 
 export function SettingsSection({
   title,
@@ -30,21 +30,26 @@ export function SettingRow({
   title,
   htmlFor,
   description,
+  indicator,
   children,
 }: {
   title: string;
   htmlFor?: string;
   description?: string;
+  indicator?: ReactNode;
   children: ReactNode;
 }) {
   return (
     <div className="grid items-start gap-3 py-4 @xl:grid-cols-[minmax(0,1fr)_minmax(0,22rem)] @xl:gap-6">
       <div className="min-w-0 pt-1.5">
-        {htmlFor ? (
-          <Label htmlFor={htmlFor}>{title}</Label>
-        ) : (
-          <p className="text-sm font-medium">{title}</p>
-        )}
+        <div className="flex items-center gap-1.5">
+          {htmlFor ? (
+            <Label htmlFor={htmlFor}>{title}</Label>
+          ) : (
+            <p className="text-sm font-medium">{title}</p>
+          )}
+          {indicator}
+        </div>
         {description && (
           <p className="mt-1 text-xs leading-5 text-muted-foreground">{description}</p>
         )}
@@ -57,32 +62,43 @@ export function SettingRow({
 export function ToggleSetting({
   title,
   description,
+  indicator,
   checked,
   disabled,
   onCheckedChange,
 }: {
   title: string;
   description?: string;
+  indicator?: ReactNode;
   checked: boolean;
   disabled: boolean;
   onCheckedChange: (value: boolean) => void;
 }) {
+  const id = useId();
   return (
-    <label
+    <div
       className={`flex items-start justify-between gap-6 py-4 ${disabled ? "opacity-60" : "cursor-pointer"}`}
     >
-      <span className="min-w-0">
-        <span className="text-sm font-medium">{title}</span>
+      <div className="min-w-0">
+        <div className="flex items-center gap-1.5">
+          <label htmlFor={id} className="text-sm font-medium">
+            {title}
+          </label>
+          {indicator}
+        </div>
         {description && (
-          <span className="mt-1 block text-xs leading-5 text-muted-foreground">{description}</span>
+          <label htmlFor={id} className="mt-1 block text-xs leading-5 text-muted-foreground">
+            {description}
+          </label>
         )}
-      </span>
+      </div>
       <Checkbox
+        id={id}
         className="mt-0.5 shrink-0"
         checked={checked}
         disabled={disabled}
         onCheckedChange={onCheckedChange}
       />
-    </label>
+    </div>
   );
 }

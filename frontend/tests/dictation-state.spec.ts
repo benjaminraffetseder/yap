@@ -3,6 +3,7 @@ import type {
   BackupPreview,
   BackupSummary,
   DiagnosticCheck,
+  DictationProfile,
   GeneratedOutput,
   Settings,
   Snapshot,
@@ -232,17 +233,26 @@ test("transcription completion uses one toast across navigation without a result
   });
   await settle(page);
   await expect(toast).toHaveCount(0);
-  // A new transcription still notifies, including clipboard fallback messages.
+  // A new transcription with failed delivery needs explicit recovery.
   await page.evaluate(() => {
     const state = window.dictationTest;
     state.status("transcribing");
     state.snapshot.status.phase = "done";
     state.snapshot.status.message = "Saved to history; clipboard failed: unavailable";
+    state.snapshot.status.completionWarning = true;
     state.callbacks["dictation:status"](structuredClone(state.snapshot.status));
   });
-  await expect(toast).toBeVisible();
-  await expect(toast).toContainText("clipboard failed: unavailable");
-  await expect(toast).toHaveCount(0, { timeout: 7000 });
+  const warning = page
+    .locator('[data-slot="toast"]')
+    .filter({ hasText: "Transcript ready — action needed" });
+  await expect(warning).toBeVisible();
+  await expect(warning).toContainText("clipboard failed: unavailable");
+  await expect(warning.locator(".lucide-circle-alert")).toBeVisible();
+  await page.keyboard.press("F6");
+  await warning.getByRole("button", { name: "Copy transcript" }).click();
+  await expect(
+    page.locator('[data-slot="toast"]').filter({ hasText: "Copied to clipboard" }),
+  ).toBeVisible();
 });
 
 test("transcription failures use an error toast and cancellations do not report completion", async ({
@@ -2061,6 +2071,39 @@ test.beforeEach(async ({ page }) => {
       });
     }
     window.dictationTest = state;
+    function profileSnapshot() {
+      if (state.snapshot.settings.setupComplete) {
+        const profiles = state.snapshot.dictationProfiles ?? [];
+        let baseline = profiles.find((p) => p.id === state.snapshot.defaultProfileId);
+        if (!baseline) {
+          baseline = profiles.find((p) => p.name === "Default");
+          if (!baseline) {
+            baseline = {
+              id: "default",
+              name: "Default",
+              modelPath: state.snapshot.settings.modelPath,
+              language: state.snapshot.settings.language,
+              cleanText: state.snapshot.settings.cleanText,
+              autoPromptId: state.snapshot.textProcessing.autoPromptId,
+            };
+            profiles.unshift(baseline);
+          }
+          state.snapshot.defaultProfileId = baseline.id;
+          state.snapshot.activeProfileId = baseline.id;
+        }
+        state.snapshot.dictationProfiles = profiles;
+        if (!state.snapshot.activeProfileId) state.snapshot.activeProfileId = baseline.id;
+      }
+      const selected = state.snapshot.dictationProfiles?.find(
+        (p) => p.id === state.snapshot.activeProfileId,
+      );
+      state.snapshot.profileModified =
+        !!selected &&
+        (selected.modelPath !== state.snapshot.settings.modelPath ||
+          selected.language !== state.snapshot.settings.language ||
+          selected.cleanText !== state.snapshot.settings.cleanText ||
+          selected.autoPromptId !== state.snapshot.textProcessing.autoPromptId);
+    }
     Object.assign(window, {
       runtime: {
         OnFileDrop(
@@ -2153,6 +2196,7 @@ test.beforeEach(async ({ page }) => {
               return structuredClone(state.backupPreview!.summary);
             },
             GetSnapshot() {
+              profileSnapshot();
               if (state.failSnapshot) return Promise.reject(new Error("Snapshot unavailable"));
               const copy = structuredClone(state.snapshot);
               if (state.legacySnapshot) Reflect.deleteProperty(copy, "textProcessing");
@@ -2465,7 +2509,54 @@ test.beforeEach(async ({ page }) => {
                 state.snapshot.history.find((entry) => entry.id === id)?.finalTranscript ?? "";
             },
             CopyText: async (text: string) => {
+              if (state.failClipboard) throw new Error("Clipboard unavailable");
+              state.clipboard = text;
               state.snapshot.status.transcript = text;
+            },
+            SaveDictationProfile: async (profile: DictationProfile) => {
+              if (state.failSave) throw new Error("Could not save profile");
+              const saved = {
+                ...profile,
+                id: profile.id || crypto.randomUUID(),
+                name: profile.name.trim(),
+              };
+              const profiles = state.snapshot.dictationProfiles ?? [];
+              if (
+                profiles.some(
+                  (p) => p.id !== saved.id && p.name.toLowerCase() === saved.name.toLowerCase(),
+                )
+              )
+                throw new Error("Profile name already exists");
+              state.snapshot.dictationProfiles = [
+                ...profiles.filter((p) => p.id !== saved.id),
+                saved,
+              ];
+              state.history();
+              return saved;
+            },
+            ApplyDictationProfile: async (id: string) => {
+              if (state.failSave) throw new Error("Profile model unavailable");
+              const profile = state.snapshot.dictationProfiles?.find((p) => p.id === id);
+              if (!profile) throw new Error("Profile no longer exists");
+              if (profile.autoPromptId && !state.snapshot.textProcessing.enabled)
+                throw new Error("Enable your local text model in Prompts");
+              Object.assign(state.snapshot.settings, {
+                modelPath: profile.modelPath,
+                language: profile.language,
+                cleanText: profile.cleanText,
+              });
+              state.snapshot.textProcessing.autoPromptId = profile.autoPromptId;
+              state.snapshot.activeProfileId = profile.id;
+              state.history();
+            },
+            DeleteDictationProfile: async (id: string) => {
+              if (state.failSave) throw new Error("Could not delete profile");
+              state.snapshot.dictationProfiles = state.snapshot.dictationProfiles?.filter(
+                (p) => p.id !== id,
+              );
+              if (state.snapshot.activeProfileId === id)
+                state.snapshot.activeProfileId = state.snapshot.defaultProfileId;
+              state.history();
             },
             StartRecording: async () => {
               state.status("recording");
@@ -6845,4 +6936,490 @@ test("temporary latest result supports copy, explicit save, and dismiss", async 
   await panel.getByRole("button", { name: "Dismiss", exact: true }).click();
   await expect(panel).not.toBeVisible();
   expect(await page.evaluate(() => window.dictationTest.snapshot.history.length)).toBe(1);
+});
+
+test("unsaved page drafts survive navigation and explicit discard", async ({ page }) => {
+  await page.goto("/#/settings");
+  await page.getByLabel("Global shortcut", { exact: true }).fill("Ctrl+Alt+P");
+  await page.getByRole("link", { name: "Prompts", exact: true }).click();
+  await page.getByRole("tab", { name: "Models", exact: true }).click();
+  await page.getByLabel("Model identifier").fill("unsaved-local-model");
+  await page.getByRole("link", { name: "Vocabulary", exact: true }).click();
+  await page.getByRole("button", { name: "Add term", exact: true }).click();
+  await page.getByLabel("Preferred spelling", { exact: true }).fill("PostgreSQL");
+  await page.getByRole("link", { name: "History", exact: true }).click();
+  await page.getByRole("link", { name: "Settings", exact: true }).click();
+  await expect(page.getByLabel("Global shortcut", { exact: true })).toHaveValue("Ctrl+Alt+P");
+  await page.getByRole("button", { name: "Discard changes", exact: true }).click();
+  await page.getByRole("link", { name: "Prompts", exact: true }).click();
+  await page.getByRole("tab", { name: "Models", exact: true }).click();
+  await expect(page.getByLabel("Model identifier")).toHaveValue("unsaved-local-model");
+  await page.getByRole("button", { name: "Discard changes", exact: true }).click();
+  await page.getByRole("link", { name: "Vocabulary", exact: true }).click();
+  await expect(page.getByLabel("Preferred spelling", { exact: true })).toHaveValue("PostgreSQL");
+  await page.getByRole("button", { name: "Discard changes", exact: true }).click();
+  await page.getByRole("link", { name: "Settings", exact: true }).click();
+  await expect(page.getByLabel("Global shortcut", { exact: true })).toHaveValue("Ctrl+Alt+Space");
+});
+
+test("delivery warnings persist and recover the captured result after clipboard retry", async ({
+  page,
+}) => {
+  await homeModelScenario(page);
+  await page.evaluate(() => {
+    const state = window.dictationTest;
+    state.status("transcribing");
+    Object.assign(state.snapshot.status, {
+      phase: "done",
+      completionWarning: true,
+      message: "Paste failed; transcript is available",
+      transcript: "Recovered original text.",
+    });
+    state.callbacks["dictation:status"](structuredClone(state.snapshot.status));
+    state.failClipboard = true;
+  });
+  const warning = page
+    .locator('[data-slot="toast"]')
+    .filter({ hasText: "Transcript ready — action needed" });
+  await expect(warning).toBeVisible();
+  await page.keyboard.press("F6");
+  await warning.getByRole("button", { name: "Copy transcript" }).click();
+  await expect(warning).toContainText("Couldn’t copy");
+  await page.getByRole("link", { name: "Settings", exact: true }).click();
+  await page.waitForTimeout(5200);
+  await expect(warning).toBeVisible();
+  await page.evaluate(() => {
+    window.dictationTest.failClipboard = false;
+    window.dictationTest.snapshot.status.transcript = "A later result";
+  });
+  await page.keyboard.press("F6");
+  await warning.getByRole("button", { name: "Copy transcript" }).click();
+  await expect
+    .poll(() => page.evaluate(() => window.dictationTest.clipboard))
+    .toBe("Recovered original text.");
+  await expect(
+    page.locator('[data-slot="toast"]').filter({ hasText: "Copied to clipboard" }),
+  ).toBeVisible();
+});
+
+test("dictation profiles create edit switch and delete", async ({ page }, testInfo) => {
+  await homeModelScenario(page);
+  await page.getByRole("link", { name: "Manage dictation profiles" }).click();
+  await page.getByRole("button", { name: "New profile", exact: true }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByLabel("Profile name").fill("Email");
+  await dialog.getByRole("combobox", { name: "Spoken language", exact: true }).click();
+  await page.getByRole("option", { name: "German", exact: true }).click();
+  await dialog.getByRole("switch", { name: "Light cleanup" }).check();
+  await dialog.getByRole("button", { name: "Save profile", exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect
+    .poll(() => page.evaluate(() => window.dictationTest.snapshot.settings.language))
+    .toBe("auto");
+  await page.getByRole("button", { name: "Edit Email", exact: true }).click();
+  await dialog.getByLabel("Profile name").fill("Work email");
+  await dialog.getByRole("button", { name: "Save profile", exact: true }).click();
+  await page.getByRole("link", { name: "Dictate", exact: true }).click();
+  const selector = page.getByRole("combobox", { name: "Dictation profile", exact: true });
+  await selector.click();
+  await page.getByRole("option", { name: "Work email", exact: true }).click();
+  await expect(selector).toContainText("Work email");
+  await expect
+    .poll(() =>
+      page.evaluate(() => ({
+        language: window.dictationTest.snapshot.settings.language,
+        cleanText: window.dictationTest.snapshot.settings.cleanText,
+        shortcut: window.dictationTest.snapshot.settings.shortcut,
+      })),
+    )
+    .toEqual({ language: "de", cleanText: true, shortcut: "Ctrl+Alt+Space" });
+  await page.setViewportSize({ width: 760, height: 560 });
+  await expect(selector).toBeInViewport();
+  await expect
+    .poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
+    .toBe(true);
+  await page.screenshot({ path: testInfo.outputPath("profile-selector-narrow.png") });
+  await page.evaluate(() => window.dictationTest.status("recording"));
+  await expect(selector).toBeDisabled();
+  await page.evaluate(() => window.dictationTest.status("idle"));
+  await page.getByRole("link", { name: "Manage dictation profiles" }).click();
+  await page.getByRole("button", { name: "Delete Work email", exact: true }).click();
+  await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Edit Work email", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Delete Work email", exact: true }).click();
+  await dialog.getByRole("button", { name: "Delete profile", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Edit Default", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Edit Work email", exact: true })).toHaveCount(0);
+  await expect
+    .poll(() => page.evaluate(() => window.dictationTest.snapshot.settings.language))
+    .toBe("de");
+});
+
+test("profile failures retain drafts and selection and Escape protects edits", async ({ page }) => {
+  await homeModelScenario(page);
+  await page.getByRole("link", { name: "Manage dictation profiles" }).click();
+  await page.getByRole("button", { name: "New profile", exact: true }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByLabel("Profile name").fill("Quick notes");
+  await page.keyboard.press("Escape");
+  await expect(dialog.getByText("Discard your unsaved profile changes?")).toBeVisible();
+  await dialog.getByRole("button", { name: "Keep editing", exact: true }).click();
+  await page.evaluate(() => {
+    window.dictationTest.failSave = true;
+  });
+  await dialog.getByRole("button", { name: "Save profile", exact: true }).click();
+  await expect(dialog.getByRole("alert")).toContainText("Could not save profile");
+  await expect(dialog.getByLabel("Profile name")).toHaveValue("Quick notes");
+  await page.evaluate(() => {
+    window.dictationTest.failSave = false;
+  });
+  await dialog.getByRole("button", { name: "Save profile", exact: true }).click();
+  await page.getByRole("link", { name: "Dictate", exact: true }).click();
+  await page.evaluate(() => {
+    window.dictationTest.failSave = true;
+  });
+  const selector = page.getByRole("combobox", { name: "Dictation profile", exact: true });
+  await selector.click();
+  await page.getByRole("option", { name: "Quick notes", exact: true }).click();
+  await expect(selector).toContainText("Default");
+  await expect(
+    page.locator('[data-slot="toast"]').filter({ hasText: "Profile model unavailable" }),
+  ).toBeVisible();
+});
+
+test("profile switching rebases untouched settings while preserving an unsaved shortcut", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    window.dictationTest.snapshot.dictationProfiles = [
+      {
+        id: "email",
+        name: "Email",
+        modelPath: "/base",
+        language: "de",
+        cleanText: true,
+        autoPromptId: "",
+      },
+    ];
+  });
+  await homeModelScenario(page);
+  await page.getByRole("link", { name: "Settings", exact: true }).click();
+  await page.getByLabel("Global shortcut", { exact: true }).fill("Ctrl+Alt+P");
+  await page.getByRole("link", { name: "Dictate", exact: true }).click();
+  await page.getByRole("combobox", { name: "Dictation profile", exact: true }).click();
+  await page.getByRole("option", { name: "Email", exact: true }).click();
+  await expect(
+    page.getByRole("combobox", { name: "Dictation profile", exact: true }),
+  ).toContainText("Email");
+  await page.getByRole("link", { name: "Settings", exact: true }).click();
+  await expect(page.getByLabel("Global shortcut", { exact: true })).toHaveValue("Ctrl+Alt+P");
+  await expect(page.getByRole("combobox", { name: "Spoken language", exact: true })).toContainText(
+    "German",
+  );
+  await page.getByRole("button", { name: "Save settings", exact: true }).click();
+  await expect
+    .poll(() =>
+      page.evaluate(() => ({
+        model: window.dictationTest.snapshot.settings.modelPath,
+        language: window.dictationTest.snapshot.settings.language,
+        shortcut: window.dictationTest.snapshot.settings.shortcut,
+      })),
+    )
+    .toEqual({ model: "/base", language: "de", shortcut: "Ctrl+Alt+P" });
+});
+
+test("Default is selected from saved settings and unrelated preferences do not mark it modified", async ({
+  page,
+}) => {
+  await homeModelScenario(page);
+  const selector = page.getByRole("combobox", { name: "Dictation profile", exact: true });
+  await expect(selector).toContainText("Default");
+  await expect(selector.getByRole("img", { name: "Modified profile" })).toHaveCount(0);
+  await page.evaluate(() => {
+    const state = window.dictationTest;
+    state.snapshot.settings.microphoneId = "usb";
+    state.snapshot.settings.shortcut = "Ctrl+Alt+P";
+    state.snapshot.settings.saveHistory = false;
+    state.history();
+  });
+  await expect(selector).toContainText("Default");
+  await expect(selector.getByRole("img", { name: "Modified profile" })).toHaveCount(0);
+  await page.getByRole("link", { name: "Manage dictation profiles" }).click();
+  await expect(page.getByRole("button", { name: "Use Default", exact: true })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Delete Default", exact: true })).toHaveCount(0);
+  await page.getByRole("button", { name: "Edit Default", exact: true }).click();
+  await expect(page.getByRole("dialog").getByLabel("Profile name")).toBeDisabled();
+});
+
+for (const theme of ["light", "dark"] as const) {
+  test(`modified profile icon and tooltip preserve the name and restore Default in ${theme}`, async ({
+    page,
+  }, testInfo) => {
+    await homeModelScenario(page);
+    await page.evaluate((theme) => localStorage.setItem("desktop-theme", theme), theme);
+    await page.reload();
+    await page.getByRole("link", { name: "Settings", exact: true }).click();
+    await page.getByRole("combobox", { name: "Spoken language", exact: true }).click();
+    await page.getByRole("option", { name: "German", exact: true }).click();
+    await page.getByRole("button", { name: "Save settings", exact: true }).click();
+    await page.getByRole("link", { name: "Dictate", exact: true }).click();
+    await page.setViewportSize({ width: 760, height: 560 });
+    const selector = page.getByRole("combobox", { name: "Dictation profile", exact: true });
+    await expect(selector).toContainText("Default");
+    await expect(selector).not.toContainText("(modified)");
+    const marker = selector.getByRole("img", { name: "Modified profile" });
+    await expect(marker).toBeInViewport();
+    await marker.hover();
+    await expect(page.locator('[data-slot="tooltip-content"]')).toHaveText("Modified");
+    await page.mouse.move(1, 1);
+    await selector.hover();
+    await expect(page.locator('[data-slot="tooltip-content"]')).toHaveText("Modified");
+    await page.mouse.move(1, 1);
+    await page.getByRole("button", { name: "Start recording", exact: true }).focus();
+    await expect(page.locator('[data-slot="tooltip-content"]')).toHaveCount(0);
+    await selector.focus();
+    await page.keyboard.press("Shift+Tab");
+    await page.keyboard.press("Tab");
+    await expect(selector).toBeFocused();
+    await expect(page.locator('[data-slot="tooltip-content"]')).toHaveText("Modified");
+    await expect
+      .poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
+      .toBe(true);
+    await page.screenshot({ path: testInfo.outputPath(`modified-profile-${theme}.png`) });
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () =>
+            window.dictationTest.snapshot.dictationProfiles?.find(
+              (p) => p.id === window.dictationTest.snapshot.defaultProfileId,
+            )?.language,
+        ),
+      )
+      .toBe("auto");
+    await selector.click();
+    await page.getByRole("option", { name: "Default", exact: true }).click();
+    await expect(marker).toHaveCount(0);
+    await expect
+      .poll(() => page.evaluate(() => window.dictationTest.snapshot.settings.language))
+      .toBe("auto");
+  });
+}
+
+test("a named profile retains its name and modified marker across navigation and Settings can restore it", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    window.dictationTest.snapshot.dictationProfiles = [
+      {
+        id: "email",
+        name: "Email",
+        modelPath: "/base",
+        language: "de",
+        cleanText: true,
+        autoPromptId: "",
+      },
+    ];
+  });
+  await homeModelScenario(page);
+  const selector = page.getByRole("combobox", { name: "Dictation profile", exact: true });
+  await selector.click();
+  await page.getByRole("option", { name: "Email", exact: true }).click();
+  await page.evaluate(() => {
+    window.dictationTest.snapshot.settings.cleanText = false;
+    window.dictationTest.history();
+  });
+  await expect(selector).toContainText("Email");
+  await expect(selector.getByRole("img", { name: "Modified profile" })).toBeVisible();
+  await page.getByRole("link", { name: "Manage dictation profiles" }).click();
+  await page.mouse.move(1, 1);
+  await settle(page);
+  await page.getByRole("img", { name: "Modified profile" }).hover();
+  await expect(page.locator('[data-slot="tooltip-content"]')).toHaveText("Modified");
+  await page.getByRole("button", { name: "Use Email", exact: true }).click();
+  await page.getByRole("link", { name: "Dictate", exact: true }).click();
+  await expect(selector).toContainText("Email");
+  await expect(selector.getByRole("img", { name: "Modified profile" })).toHaveCount(0);
+});
+
+for (const theme of ["light", "dark"] as const) {
+  test(`setting indicators explain saved and unsaved cleanup changes in ${theme}`, async ({
+    page,
+  }, testInfo) => {
+    await homeModelScenario(page);
+    await page.evaluate((theme) => localStorage.setItem("desktop-theme", theme), theme);
+    await page.reload();
+    await page.getByRole("link", { name: "Settings", exact: true }).click();
+    const cleanup = page.getByRole("checkbox", { name: /^Light cleanup/ });
+    const marker = page.getByRole("img", {
+      name: "Light cleanup changed from Default",
+      exact: true,
+    });
+    const tooltip = page.locator('[data-slot="tooltip-content"]');
+    await expect(marker).toHaveCount(0);
+    await page.getByText("Light cleanup", { exact: true }).click();
+    await expect(cleanup).toBeChecked();
+    await expect(marker).toBeVisible();
+    await marker.hover();
+    await expect(tooltip).toContainText("Changed from Default");
+    await expect(tooltip).toContainText("Profile: Off");
+    await expect(tooltip).toContainText("Current: On");
+    await expect(tooltip).toContainText("Unsaved change — save to apply.");
+    expect(await page.evaluate(() => window.dictationTest.snapshot.settings.cleanText)).toBe(false);
+    await marker.click();
+    await expect(cleanup).toBeChecked();
+    await page.mouse.move(1, 1);
+    await marker.focus();
+    await page.keyboard.press("Shift+Tab");
+    await page.keyboard.press("Tab");
+    await expect(marker).toBeFocused();
+    await expect(tooltip).toContainText("Profile: Off");
+    await page.keyboard.press("Escape");
+    await page.evaluate(() => {
+      window.dictationTest.failSave = true;
+    });
+    await page.getByRole("button", { name: "Save settings", exact: true }).click();
+    await expect(page.getByRole("button", { name: "Save settings", exact: true })).toBeEnabled();
+    await page.getByRole("link", { name: "Vocabulary", exact: true }).click();
+    await page.getByRole("link", { name: "Settings", exact: true }).click();
+    await expect(cleanup).toBeChecked();
+    await expect(marker).toBeVisible();
+    await page.getByRole("button", { name: "Discard changes", exact: true }).click();
+    await expect(marker).toHaveCount(0);
+    await page.evaluate(() => {
+      window.dictationTest.failSave = false;
+    });
+    await cleanup.check();
+    await page.getByRole("button", { name: "Save settings", exact: true }).click();
+    await expect(page.getByRole("button", { name: "Save settings", exact: true })).toBeDisabled();
+    await page.setViewportSize({ width: 760, height: 560 });
+    await marker.hover();
+    await expect(tooltip).toContainText("Profile: Off");
+    await expect(tooltip).toContainText("Current: On");
+    await expect(tooltip).not.toContainText("Unsaved");
+    await expect
+      .poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
+      .toBe(true);
+    await page.screenshot({
+      path: testInfo.outputPath(`cleanup-setting-indicator-${theme}.png`),
+      animations: "disabled",
+    });
+    await page.getByRole("button", { name: "Use Default", exact: true }).click();
+    await expect(marker).toHaveCount(0);
+    await expect(cleanup).not.toBeChecked();
+  });
+}
+
+test("setting indicators mark only differing profile fields and use readable language and model names", async ({
+  page,
+}) => {
+  await homeModelScenario(page);
+  await page.getByRole("link", { name: "Settings", exact: true }).click();
+  await page.getByLabel("Global shortcut", { exact: true }).fill("Ctrl+Alt+P");
+  await expect(page.getByRole("img", { name: /changed from Default/ })).toHaveCount(0);
+  await page.getByRole("combobox", { name: "Spoken language", exact: true }).click();
+  await page.getByRole("option", { name: "German", exact: true }).click();
+  const language = page.getByRole("img", {
+    name: "Spoken language changed from Default",
+    exact: true,
+  });
+  await language.hover();
+  await expect(page.locator('[data-slot="tooltip-content"]')).toContainText(
+    "Profile: Detect automatically",
+  );
+  await expect(page.locator('[data-slot="tooltip-content"]')).toContainText("Current: German");
+  await expect(page.getByRole("img", { name: "Light cleanup changed from Default" })).toHaveCount(
+    0,
+  );
+  await page.getByRole("tab", { name: "Advanced", exact: true }).click();
+  await page.getByLabel("Speech model", { exact: true }).fill("/base");
+  const model = page.getByRole("img", { name: "Speech model changed from Default", exact: true });
+  await model.hover();
+  await expect(page.locator('[data-slot="tooltip-content"]')).toContainText(
+    "Profile: Whisper Tiny",
+  );
+  await expect(page.locator('[data-slot="tooltip-content"]')).toContainText(
+    "Current: Whisper Base",
+  );
+  await page.getByLabel("Speech model", { exact: true }).fill("/tiny");
+  await expect(model).toHaveCount(0);
+  await page.getByRole("button", { name: "Discard changes", exact: true }).click();
+  await page.getByRole("tab", { name: "Dictation", exact: true }).click();
+  await expect(language).toHaveCount(0);
+  await page.evaluate(() => {
+    const state = window.dictationTest;
+    state.snapshot.dictationProfiles!.push({
+      id: "email",
+      name: "Email",
+      modelPath: "/base",
+      language: "de",
+      cleanText: true,
+      autoPromptId: "",
+    });
+    state.history();
+  });
+  await page.getByRole("button", { name: "Use Email", exact: true }).click();
+  await expect(page.getByRole("checkbox", { name: /^Light cleanup/ })).toBeChecked();
+  await expect(page.getByRole("img", { name: /changed from/ })).toHaveCount(0);
+  await page.getByRole("checkbox", { name: /^Light cleanup/ }).uncheck();
+  await expect(page.getByRole("img", { name: "Light cleanup changed from Email" })).toBeVisible();
+});
+
+test("automatic prompt indicator explains the selected prompt and follows save discard and profile restore", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    window.dictationTest.snapshot.textProcessing.enabled = true;
+    window.dictationTest.snapshot.textProcessing.model = "saved-model";
+    window.dictationTest.snapshot.textProcessing.autoPromptId = "cleanup";
+  });
+  await homeModelScenario(page);
+  await page.getByRole("link", { name: "Prompts", exact: true }).click();
+  await page.getByRole("tab", { name: "Prompts", exact: true }).click();
+  const automatic = page.getByRole("combobox", { name: "After dictation", exact: true });
+  const marker = page.getByRole("img", {
+    name: "Run after dictation changed from Default",
+    exact: true,
+  });
+  const tooltip = page.locator('[data-slot="tooltip-content"]');
+  await expect(automatic).toContainText("Cleanup");
+  await expect(marker).toHaveCount(0);
+  await automatic.click();
+  await page.getByRole("option", { name: "No automatic processing", exact: true }).click();
+  await marker.hover();
+  await expect(tooltip).toContainText("Profile: Cleanup");
+  await expect(tooltip).toContainText("Current: No automatic processing");
+  await expect(tooltip).toContainText("Unsaved change");
+  await marker.click();
+  await expect(automatic).toContainText("No automatic processing");
+  await page.getByRole("button", { name: "Discard changes", exact: true }).click();
+  await expect(automatic).toContainText("Cleanup");
+  await expect(marker).toHaveCount(0);
+  await page.getByRole("combobox", { name: "Prompt", exact: true }).click();
+  await page.getByRole("option", { name: "Summary", exact: true }).click();
+  await expect(page.getByRole("listbox")).toHaveCount(0);
+  // Viewing another prompt does not change the automatic choice.
+  await expect(automatic).toContainText("Cleanup");
+  await expect(marker).toHaveCount(0);
+  await automatic.click();
+  await page.getByRole("listbox").getByRole("option", { name: "Summary", exact: true }).click();
+  await marker.hover();
+  await expect(tooltip).toContainText("Profile: Cleanup");
+  await expect(tooltip).toContainText("Current: Summary");
+  await page.getByRole("button", { name: "Save prompts", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Save prompts", exact: true })).toBeDisabled();
+  await marker.hover();
+  await expect(tooltip).toContainText("Current: Summary");
+  await expect(tooltip).not.toContainText("Unsaved");
+  await page.setViewportSize({ width: 760, height: 560 });
+  await expect(marker).toBeVisible();
+  await expect
+    .poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
+    .toBe(true);
+  await page.getByRole("link", { name: "Settings", exact: true }).click();
+  await page.getByRole("button", { name: "Use Default", exact: true }).click();
+  await page.getByRole("link", { name: "Prompts", exact: true }).click();
+  await expect(marker).toHaveCount(0);
+  expect(await page.evaluate(() => window.dictationTest.snapshot.textProcessing.autoPromptId)).toBe(
+    "cleanup",
+  );
 });

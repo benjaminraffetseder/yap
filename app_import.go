@@ -122,6 +122,7 @@ func (a *App) importAudioWithDecoder(source, decoder string, install audioSuppor
 	a.cancel, a.id, a.path, a.target = cancel, id, path, ""
 	a.indicatorActive = true
 	a.status.Phase, a.status.Message, a.status.Transcript = "transcribing", "Importing audio…", ""
+	a.status.CompletionWarning = false
 	a.status.StartedAt, a.status.Progress = time.Now().UnixMilli(), 0
 	if install != nil {
 		a.status.Phase, a.status.Message = "downloading", "Downloading audio support…"

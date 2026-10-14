@@ -49,11 +49,6 @@ export function RecordingStatus() {
               {recordingSaveHistory ? "Saving to history" : "Not saving to history"}
             </span>
           )}
-          {recording && (
-            <span className="ml-2 text-xs text-muted-foreground">
-              {recordingSaveHistory ? "Saving to history" : "Not saving to history"}
-            </span>
-          )}
         </span>
         {capturing && (
           <button

@@ -32,16 +32,17 @@ import (
 )
 
 type Status struct {
-	Phase          string  `json:"phase"`
-	Message        string  `json:"message"`
-	StartedAt      int64   `json:"startedAt"`
-	Transcript     string  `json:"transcript"`
-	Progress       float64 `json:"progress"`
-	ShortcutError  string  `json:"shortcutError"`
-	IndicatorError string  `json:"indicatorError"`
-	TrayError      string  `json:"trayError"`
-	StartupError   string  `json:"startupError"`
-	HistoryError   string  `json:"historyError"`
+	CompletionWarning bool    `json:"completionWarning,omitempty"`
+	Phase             string  `json:"phase"`
+	Message           string  `json:"message"`
+	StartedAt         int64   `json:"startedAt"`
+	Transcript        string  `json:"transcript"`
+	Progress          float64 `json:"progress"`
+	ShortcutError     string  `json:"shortcutError"`
+	IndicatorError    string  `json:"indicatorError"`
+	TrayError         string  `json:"trayError"`
+	StartupError      string  `json:"startupError"`
+	HistoryError      string  `json:"historyError"`
 }
 type TemporaryResult struct {
 	Session storage.Session          `json:"session"`
@@ -49,24 +50,29 @@ type TemporaryResult struct {
 	Text    string                   `json:"text"`
 }
 type Snapshot struct {
-	RecordingSaveHistory   bool               `json:"recordingSaveHistory"`
-	LatestResult           *TemporaryResult   `json:"latestResult"`
-	TextProcessing         textmodel.Config   `json:"textProcessing"`
-	Diagnostic             DiagnosticResult   `json:"diagnostic"`
-	Vocabulary             []vocabulary.Entry `json:"vocabulary"`
-	MicrophoneTested       bool               `json:"microphoneTested"`
-	ShortcutTested         bool               `json:"shortcutTested"`
-	Settings               storage.Settings   `json:"settings"`
-	Status                 Status             `json:"status"`
-	History                []storage.Session  `json:"history"`
-	Models                 []models.Model     `json:"models"`
-	DataDir                string             `json:"dataDir"`
-	Ready                  bool               `json:"ready"`
-	FloatingIndicator      bool               `json:"floatingIndicator"`
-	LaunchAtLoginAvailable bool               `json:"launchAtLoginAvailable"`
-	StartInTrayAvailable   bool               `json:"startInTrayAvailable"`
+	DictationProfiles      []storage.DictationProfile `json:"dictationProfiles"`
+	ActiveProfileID        string                     `json:"activeProfileId"`
+	DefaultProfileID       string                     `json:"defaultProfileId"`
+	ProfileModified        bool                       `json:"profileModified"`
+	RecordingSaveHistory   bool                       `json:"recordingSaveHistory"`
+	LatestResult           *TemporaryResult           `json:"latestResult"`
+	TextProcessing         textmodel.Config           `json:"textProcessing"`
+	Diagnostic             DiagnosticResult           `json:"diagnostic"`
+	Vocabulary             []vocabulary.Entry         `json:"vocabulary"`
+	MicrophoneTested       bool                       `json:"microphoneTested"`
+	ShortcutTested         bool                       `json:"shortcutTested"`
+	Settings               storage.Settings           `json:"settings"`
+	Status                 Status                     `json:"status"`
+	History                []storage.Session          `json:"history"`
+	Models                 []models.Model             `json:"models"`
+	DataDir                string                     `json:"dataDir"`
+	Ready                  bool                       `json:"ready"`
+	FloatingIndicator      bool                       `json:"floatingIndicator"`
+	LaunchAtLoginAvailable bool                       `json:"launchAtLoginAvailable"`
+	StartInTrayAvailable   bool                       `json:"startInTrayAvailable"`
 }
 type App struct {
+	profileLibrary                   storage.ProfileLibrary
 	latestResult                     *TemporaryResult
 	updateChecker                    *updates.Checker
 	updateCancel                     context.CancelFunc
@@ -172,9 +178,18 @@ func (a *App) startup(ctx context.Context) {
 		return
 	}
 	a.settings.WhisperPath = models.PreferredRuntime(a.settings.WhisperPath)
+	a.profileLibrary, err = a.store.DictationProfiles()
+	if err != nil {
+		a.fail(fmt.Errorf("could not load dictation profiles: %w", err))
+		return
+	}
 	a.textConfig, err = a.store.TextProcessing()
 	if err != nil {
 		a.fail(fmt.Errorf("could not load prompts: %w", err))
+		return
+	}
+	if err := a.ensureDefaultProfileLocked(); err != nil {
+		a.fail(fmt.Errorf("could not initialize Default profile: %w", err))
 		return
 	}
 	a.pruneHistoryLocked()
@@ -508,7 +523,14 @@ func (a *App) GetSnapshot() (Snapshot, error) {
 		}
 		latest = &copy
 	}
-	return Snapshot{RecordingSaveHistory: a.recordSettings.SaveHistory, LatestResult: latest, TextProcessing: config, Diagnostic: a.diagnostic, Vocabulary: entries, MicrophoneTested: a.microphoneTested, ShortcutTested: a.shortcutTested, Settings: a.settings, Status: a.status, History: history, Models: models.List(a.store.Dir), DataDir: a.store.Dir, Ready: ready, FloatingIndicator: a.indicator != nil, LaunchAtLoginAvailable: a.loginStart != nil, StartInTrayAvailable: a.tray != nil && !a.development}, nil
+	activeProfileID := a.profileLibrary.ActiveID
+	profileModified := false
+	for _, p := range a.profileLibrary.Profiles {
+		if p.ID == activeProfileID {
+			profileModified = !p.Matches(a.settings, a.textConfig)
+		}
+	}
+	return Snapshot{DefaultProfileID: a.profileLibrary.DefaultID, ProfileModified: profileModified, DictationProfiles: append([]storage.DictationProfile{}, a.profileLibrary.Profiles...), ActiveProfileID: activeProfileID, RecordingSaveHistory: a.recordSettings.SaveHistory, LatestResult: latest, TextProcessing: config, Diagnostic: a.diagnostic, Vocabulary: entries, MicrophoneTested: a.microphoneTested, ShortcutTested: a.shortcutTested, Settings: a.settings, Status: a.status, History: history, Models: models.List(a.store.Dir), DataDir: a.store.Dir, Ready: ready, FloatingIndicator: a.indicator != nil, LaunchAtLoginAvailable: a.loginStart != nil, StartInTrayAvailable: a.tray != nil && !a.development}, nil
 }
 func (a *App) GetMicrophones() ([]audio.Device, error) {
 	a.mu.Lock()
@@ -565,6 +587,7 @@ func (a *App) start(external bool) error {
 	a.recordTextConfig, _ = textmodel.Normalize(a.textConfig)
 	a.recordVocabulary, _ = vocabulary.Normalize(a.vocabulary)
 	a.status.Phase = "recording"
+	a.status.CompletionWarning = false
 	a.status.Message = "Listening…"
 	a.status.Transcript = ""
 	a.status.StartedAt = time.Now().UnixMilli()
@@ -621,6 +644,7 @@ func (a *App) transcribe(ctx context.Context, id, path, target string, duration 
 	persisted := false
 	text, err := a.engine.Transcribe(ctx, path, speech.Options{Executable: settings.WhisperPath, Model: settings.ModelPath, Language: settings.Language, Prompt: vocabulary.Prompt(entries)})
 	a.mu.Lock()
+	a.status.CompletionWarning = false
 	defer a.mu.Unlock()
 	defer func() {
 		a.cancel = nil
@@ -676,6 +700,7 @@ func (a *App) transcribe(ctx context.Context, id, path, target string, duration 
 			return
 		}
 		if ctx.Err() != nil {
+			a.status.CompletionWarning = true
 			a.status.Phase, a.status.Message = "done", "Text processing cancelled; transcript available"
 			if settings.SaveHistory {
 				a.status.Message = "Text processing cancelled; transcript saved to History"
@@ -697,6 +722,7 @@ func (a *App) transcribe(ctx context.Context, id, path, target string, duration 
 			}
 		}
 		if promptErr != nil {
+			a.status.CompletionWarning = true
 			a.status.Phase, a.status.Message = "done", "Text processing failed: "+promptErr.Error()
 			if settings.SaveHistory {
 				a.status.Message = "Saved to History; text processing failed: " + promptErr.Error()
@@ -717,12 +743,14 @@ func (a *App) transcribe(ctx context.Context, id, path, target string, duration 
 	if copyToClipboard {
 		a.status.Message = "Copied to clipboard"
 		if err = a.copyText(text); err != nil {
+			a.status.CompletionWarning = true
 			a.status.Message = "Clipboard failed; transcript available: " + err.Error()
 			if settings.SaveHistory {
 				a.status.Message = "Saved to history; clipboard failed: " + err.Error()
 			}
 		} else if target != "" {
 			if err = platform.Paste(target); err != nil {
+				a.status.CompletionWarning = true
 				a.status.Message = err.Error()
 			} else {
 				a.status.Message = "Pasted into your application"
@@ -862,7 +890,7 @@ func (a *App) SaveSettings(settings storage.Settings) error {
 			return fmt.Errorf("update launch at login: %w", err)
 		}
 	}
-	if err := a.store.SaveSettings(settings); err != nil {
+	if err := a.saveSettingsWithDefaultLocked(settings); err != nil {
 		restoreSettings()
 		if loginChanged {
 			if rollbackErr := a.loginStart.SetEnabled(previousLogin); rollbackErr != nil {
@@ -971,7 +999,7 @@ func (a *App) InstallModel(id string) error {
 			settings.WhisperPath = executable
 		}
 		settings.ModelPath = model
-		if err = a.store.SaveSettings(settings); err != nil {
+		if err = a.saveSettingsWithDefaultLocked(settings); err != nil {
 			a.fail(err)
 			return
 		}

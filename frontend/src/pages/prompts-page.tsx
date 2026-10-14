@@ -1,4 +1,5 @@
 import { useDictation } from "@/components/dictation-provider";
+import { ProfileSettingIndicator } from "@/components/profile-setting-indicator";
 import { SettingRow, SettingsSection, ToggleSetting } from "@/components/settings-section";
 import { Button } from "@/components/ui/button";
 import {
@@ -31,6 +32,7 @@ import {
 } from "@/lib/backend";
 import { useModelDiscovery } from "@/lib/use-model-discovery";
 import { useTextRequest } from "@/lib/use-text-request";
+import { useSavedDraft } from "@/lib/use-saved-draft";
 import { Plus, RefreshCw, Save, Sparkles, Trash2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
@@ -60,13 +62,12 @@ export function PromptsPage() {
     : "models";
   const { snapshot, refresh, clearError, loading } = useDictation();
   const saved = snapshot.textProcessing;
-  const [draft, setDraft] = useState<TextProcessing>(saved);
+  const [draft, setDraft] = useSavedDraft<TextProcessing>("prompts", saved);
   const [selected, setSelected] = useState(saved.prompts[0]?.id ?? "");
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState<TextPrompt | null>(null);
   const deleteButton = useRef<HTMLButtonElement>(null);
   const cancelDeleteButton = useRef<HTMLButtonElement>(null);
-  const baseline = useRef(saved);
   const modelTest = useTextRequest();
   const refinement = useTextRequest();
   const [refining, setRefining] = useState<{
@@ -92,11 +93,6 @@ export function PromptsPage() {
     ...discovery.models.map((id) => ({ value: `model:${id}`, label: id })),
     { value: "manual", label: "Enter model ID manually" },
   ];
-  useEffect(() => {
-    const previous = baseline.current;
-    baseline.current = saved;
-    setDraft((old) => (JSON.stringify(old) === JSON.stringify(previous) ? saved : old));
-  }, [saved]);
   useEffect(() => {
     if (!draft.prompts.some((p) => p.id === selected)) setSelected(draft.prompts[0]?.id ?? "");
   }, [draft.prompts, selected]);
@@ -567,6 +563,15 @@ export function PromptsPage() {
               <SettingRow
                 title="After dictation"
                 htmlFor="auto-prompt"
+                indicator={
+                  <ProfileSettingIndicator
+                    field="autoPromptId"
+                    value={draft.autoPromptId}
+                    currentLabel={
+                      automaticOptions.find((option) => option.value === draft.autoPromptId)?.label
+                    }
+                  />
+                }
                 description="When enabled, the result is copied or pasted automatically and saved if history saving is on. If processing fails or is cancelled, retrieve the speech transcript from History or the temporary latest-result panel. Nothing is copied or pasted on failure."
               >
                 <Select

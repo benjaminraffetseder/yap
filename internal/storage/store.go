@@ -74,6 +74,7 @@ func Open(dir string) (*Store, error) {
 	// Expand storage without changing the original table's columns. Older builds
 	// still insert/read recordings normally; their deletes also run this trigger.
 	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS vocabulary (id INTEGER PRIMARY KEY CHECK(id=1), value TEXT NOT NULL);
+	CREATE TABLE IF NOT EXISTS dictation_profiles (id INTEGER PRIMARY KEY CHECK(id=1), value TEXT NOT NULL);
 	CREATE TABLE IF NOT EXISTS recording_outputs (id TEXT PRIMARY KEY, transcript TEXT NOT NULL);
 	CREATE TABLE IF NOT EXISTS text_processing (id INTEGER PRIMARY KEY CHECK(id=1), value TEXT NOT NULL);
 	CREATE TABLE IF NOT EXISTS pending_audio_deletions (id TEXT PRIMARY KEY, original TEXT NOT NULL, staged TEXT NOT NULL);

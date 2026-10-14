@@ -14,7 +14,8 @@ import {
 } from "@/components/ui/table";
 import { backend, isBusy, isDesktop, type VocabularyEntry } from "@/lib/backend";
 import { BookOpen, Plus, Save, Trash2 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useSavedDraft } from "@/lib/use-saved-draft";
 
 const PAGE_SIZE = 10;
 
@@ -24,17 +25,12 @@ const draftOf = (entries: VocabularyEntry[]): Draft[] =>
 
 export function VocabularyPage() {
   const { snapshot, run, loading } = useDictation();
-  const [draft, setDraft] = useState(() => draftOf(snapshot.vocabulary));
-  const baseline = useRef(draftOf(snapshot.vocabulary));
+  const saved = useMemo(() => draftOf(snapshot.vocabulary), [snapshot.vocabulary]);
+  const [draft, setDraft] = useSavedDraft("vocabulary", saved);
   const [saving, setSaving] = useState(false);
   const [page, setPage] = useState(0);
   const busy = isBusy(snapshot.status.phase);
   const pages = Math.max(1, Math.ceil(draft.length / PAGE_SIZE) || 1);
-  useEffect(() => {
-    const previous = baseline.current;
-    baseline.current = draftOf(snapshot.vocabulary);
-    setDraft((old) => (JSON.stringify(old) === JSON.stringify(previous) ? baseline.current : old));
-  }, [snapshot.vocabulary]);
   useEffect(() => {
     setPage((current) => Math.min(current, pages - 1));
   }, [pages]);
