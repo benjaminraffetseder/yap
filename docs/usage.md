@@ -47,7 +47,7 @@ with **No automatic processing** clears the automatic prompt while keeping that
 model available for manual use. Changing a profile's speech model, language,
 cleanup, or automatic prompt in Settings keeps its name selected and adds a small
 modified icon. Hover or focus the profile name or icon to see **Modified**.
-The speech-model, language, light-cleanup, and **After dictation** controls also
+The speech-model, language, light-cleanup, and **Run after dictation** controls also
 show an icon beside their labels when their displayed values differ from the
 selected profile. Hover or focus it to see **Changed from [profile name]**, the
 profile value, and the current value. Unsaved edits are identified in the tooltip;
@@ -132,7 +132,7 @@ See [Audio support](audio-support.md) for manual setup and download details.
 Text processing is optional. It needs a running model server on your computer;
 Yap doesn't install the server or load a GGUF file itself.
 
-In **Prompts**, select a server and model, enable LLM processing, save, and choose
+In **Prompts → Text model**, select a server and model, enable LLM processing, save, and choose
 **Test model**. The presets use these base URLs:
 
 | Server | URL |
@@ -146,7 +146,8 @@ and API keys aren't supported. A listed model may still need loading in your
 server; **Test model** checks whether it can generate text. You can enter a model
 ID manually if the server doesn't list models.
 
-Cleanup and Summary prompts are included. Edit them or add your own; there can
+Cleanup and Summary prompts are included. Select one from the saved prompt library
+(or the **Saved prompt** picker in a narrow window). Edit it or add your own; there can
 be up to 30 prompts, each with up to 8,000 characters of instructions. The text
 is supplied separately, so you don't need placeholders. **Refine prompt** uses
 the selected model to suggest clearer instructions. Review and save the suggestion
@@ -159,8 +160,12 @@ There are three ways to process text:
   **Regenerate** uses that saved input and prompt with your current model.
 - **Process text** in the transcript editor previews a result from your draft.
   Choose **Replace draft**, then **Save transcript** to keep it.
-- **After dictation** runs a chosen prompt before copying or pasting new
-  dictations. If processing fails or is cancelled, the speech transcript stays
+- **Run after dictation**, inside a prompt's details, runs that prompt before
+  copying or pasting new dictations. Only one prompt can run automatically:
+  turning another prompt's switch on replaces the current selection, and turning
+  the active switch off disables it. The **Automatic** badge marks your selection.
+  Choose **Save changes** to keep prompt edits and the automatic selection.
+  If processing fails or is cancelled, the speech transcript stays
   in History, but nothing is copied or pasted.
 
 Text processing starts with a 4,096-token output budget. If the reply hits that

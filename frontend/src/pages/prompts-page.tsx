@@ -19,6 +19,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toastManager } from "@/components/ui/toast";
 import {
@@ -33,7 +34,8 @@ import {
 import { useModelDiscovery } from "@/lib/use-model-discovery";
 import { useTextRequest } from "@/lib/use-text-request";
 import { useSavedDraft } from "@/lib/use-saved-draft";
-import { Plus, RefreshCw, Save, Sparkles, Trash2 } from "lucide-react";
+import { Menu } from "@base-ui/react/menu";
+import { Ellipsis, Plus, RefreshCw, Save, Sparkles, Trash2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
 
@@ -52,14 +54,14 @@ const localServers = [
 ];
 const serverOptions = [...localServers, { value: "custom", label: "Custom" }];
 const sections = [
-  { value: "models", label: "Models" },
   { value: "prompts", label: "Prompts" },
+  { value: "models", label: "Text model" },
 ];
 export function PromptsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const section = sections.some((item) => item.value === searchParams.get("section"))
     ? searchParams.get("section")!
-    : "models";
+    : "prompts";
   const { snapshot, refresh, clearError, loading } = useDictation();
   const saved = snapshot.textProcessing;
   const [draft, setDraft] = useSavedDraft<TextProcessing>("prompts", saved);
@@ -123,8 +125,9 @@ export function PromptsPage() {
     value: prompt.id,
     label: prompt.name || "Untitled prompt",
   }));
-  const automaticOptions = [{ value: "", label: "No automatic processing" }, ...promptOptions];
   const prompt = draft.prompts.find((p) => p.id === selected);
+  const automaticPrompt = draft.prompts.find((p) => p.id === draft.autoPromptId);
+  const includedPrompt = defaultTextProcessing.prompts.find((p) => p.id === selected);
   const refinementCurrent =
     !!refining &&
     draft.prompts.some(
@@ -136,6 +139,22 @@ export function PromptsPage() {
     setDraft((old) => ({ ...old, ...value }));
     modelTest.clear();
     setRefinementNotice("");
+  }
+  function selectSection(value: string) {
+    setSearchParams(
+      (previous) => {
+        const next = new URLSearchParams(previous);
+        next.set("section", value);
+        return next;
+      },
+      { replace: true },
+    );
+  }
+  function addPrompt() {
+    if (controlsDisabled || draft.prompts.length >= 30) return;
+    const id = crypto.randomUUID();
+    update({ prompts: [...draft.prompts, { id, name: "New prompt", instruction: "" }] });
+    setSelected(id);
   }
   function updatePrompt(value: Partial<TextPrompt>) {
     update({
@@ -199,57 +218,60 @@ export function PromptsPage() {
       <Tabs
         value={section}
         onValueChange={(value) => {
-          if (typeof value === "string")
-            setSearchParams(
-              (previous) => {
-                const next = new URLSearchParams(previous);
-                next.set("section", value);
-                return next;
-              },
-              { replace: true },
-            );
+          if (typeof value === "string") selectSection(value);
         }}
-        className="gap-5"
+        className="gap-4"
       >
         <header
           aria-label="Prompts"
-          className="sticky top-0 z-20 flex min-h-16 flex-wrap items-center gap-3 bg-background py-2"
+          className="sticky top-0 z-20 space-y-3 bg-background pt-1 pb-2"
         >
-          <h1 className="sr-only">Prompts</h1>
-          <TabsList
-            aria-label="Prompts sections"
-            className="max-w-full group-data-[orientation=horizontal]/tabs:h-10"
-          >
-            {sections.map((item) => (
-              <TabsTrigger key={item.value} value={item.value} className="px-2.5">
-                {item.label}
-              </TabsTrigger>
-            ))}
-          </TabsList>
-          <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
-            {dirty && (
-              <>
-                <span role="status" className="text-xs text-muted-foreground">
-                  Unsaved changes
-                </span>
-                <Button
-                  variant="ghost"
-                  disabled={controlsDisabled}
-                  onClick={() => {
-                    setDraft(saved);
-                    setManualModel(false);
-                    setCustomServer(false);
-                    modelTest.clear();
-                  }}
-                >
-                  Discard changes
-                </Button>
-              </>
-            )}
-            <Button pressFeedback disabled={controlsDisabled || !dirty} onClick={() => void save()}>
-              <Save aria-hidden="true" className="size-4" />
-              {saving ? "Saving…" : "Save prompts"}
-            </Button>
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div className="min-w-0">
+              <h1 className="text-2xl font-semibold tracking-tight">Prompts</h1>
+            </div>
+            <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
+              {dirty && (
+                <>
+                  <span role="status" className="text-xs text-muted-foreground">
+                    Unsaved changes
+                  </span>
+                  <Button
+                    variant="ghost"
+                    disabled={controlsDisabled}
+                    onClick={() => {
+                      setDraft(saved);
+                      setManualModel(false);
+                      setCustomServer(false);
+                      modelTest.clear();
+                    }}
+                  >
+                    Discard changes
+                  </Button>
+                </>
+              )}
+              {!dirty && <span className="sr-only">All changes saved</span>}
+              <Button
+                pressFeedback
+                disabled={controlsDisabled || !dirty}
+                onClick={() => void save()}
+              >
+                <Save aria-hidden="true" className="size-4" />
+                {saving ? "Saving…" : "Save changes"}
+              </Button>
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <TabsList
+              aria-label="Prompts sections"
+              className="max-w-full group-data-[orientation=horizontal]/tabs:h-10"
+            >
+              {sections.map((item) => (
+                <TabsTrigger key={item.value} value={item.value} className="px-2.5">
+                  {item.label}
+                </TabsTrigger>
+              ))}
+            </TabsList>
           </div>
         </header>
         <TabsContent value="models" keepMounted>
@@ -418,186 +440,273 @@ export function PromptsPage() {
           </SettingsSection>
         </TabsContent>
         <TabsContent value="prompts" keepMounted>
-          <fieldset disabled={controlsDisabled} className="space-y-5 disabled:opacity-60">
-            <SettingsSection
-              title="Saved prompts"
-              action={
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={draft.prompts.length >= 30}
-                  onClick={() => {
-                    const id = crypto.randomUUID();
-                    update({
-                      prompts: [...draft.prompts, { id, name: "New prompt", instruction: "" }],
-                    });
-                    setSelected(id);
-                  }}
-                >
-                  <Plus className="size-4" />
-                  Add prompt
-                </Button>
-              }
-            >
-              {draft.prompts.length > 0 ? (
-                <>
-                  <SettingRow title="Prompt" htmlFor="saved-prompt">
-                    <Select
-                      items={promptOptions}
-                      value={selected || null}
-                      disabled={controlsDisabled}
-                      onValueChange={(value) => {
-                        if (value !== null) setSelected(value);
-                      }}
-                    >
-                      <SelectTrigger
-                        id="saved-prompt"
-                        className="data-[size=default]:h-9 w-full min-w-0 rounded-md bg-background"
-                      >
-                        <SelectValue placeholder="Choose a prompt" />
-                      </SelectTrigger>
-                      <SelectContent alignItemWithTrigger={false} align="start">
-                        {promptOptions.map((option) => (
-                          <SelectItem key={option.value} value={option.value}>
-                            {option.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </SettingRow>
-                  {prompt && (
-                    <>
-                      <SettingRow title="Name" htmlFor="prompt-name">
-                        <Input
-                          id="prompt-name"
-                          value={prompt.name}
-                          maxLength={80}
-                          onChange={(event) => updatePrompt({ name: event.target.value })}
-                        />
-                      </SettingRow>
-                      <SettingRow
-                        title="Instructions"
-                        htmlFor="prompt-instruction"
-                        description="The transcript is supplied separately. Describe how to transform it."
-                      >
-                        <div className="space-y-3">
-                          <textarea
-                            id="prompt-instruction"
-                            rows={7}
-                            maxLength={8000}
-                            value={prompt.instruction}
-                            onChange={(event) => updatePrompt({ instruction: event.target.value })}
-                            className="w-full resize-y rounded-md border border-input bg-background px-3 py-2 text-sm leading-6 focus-visible:outline-ring"
-                          />
-                          <Button
-                            ref={refineButton}
-                            variant="outline"
-                            size="sm"
-                            disabled={!draft.model.trim() || !prompt.instruction.trim()}
-                            onClick={refine}
-                          >
-                            <Sparkles aria-hidden="true" className="size-3.5" />
-                            Refine prompt
-                          </Button>
-                          {!draft.model.trim() && (
-                            <p className="text-xs text-muted-foreground">
-                              Choose a text model to refine instructions.
-                            </p>
-                          )}
-                          {refinementNotice && (
-                            <p role="status" className="text-xs text-primary">
-                              {refinementNotice}
-                            </p>
-                          )}
-                        </div>
-                      </SettingRow>
-                      <SettingRow title="Manage prompt">
-                        <div className="flex flex-wrap gap-2">
-                          <Button
-                            ref={deleteButton}
-                            variant="outline"
-                            size="sm"
-                            onClick={() => setDeleting({ ...prompt })}
-                          >
-                            <Trash2 className="size-4" />
-                            Delete prompt
-                          </Button>
-                          {defaultTextProcessing.prompts.some((p) => p.id === selected) && (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() =>
-                                updatePrompt({
-                                  instruction: defaultTextProcessing.prompts.find(
-                                    (p) => p.id === selected,
-                                  )!.instruction,
-                                })
-                              }
-                            >
-                              Reset instructions
-                            </Button>
-                          )}
-                        </div>
-                      </SettingRow>
-                    </>
-                  )}
-                </>
-              ) : (
-                <SettingRow title="Default prompts">
-                  <Button
-                    variant="outline"
-                    onClick={() =>
-                      update({
-                        prompts: defaultTextProcessing.prompts.map((p) => ({
-                          ...p,
-                        })),
-                      })
-                    }
-                  >
-                    Restore default prompts
-                  </Button>
-                </SettingRow>
-              )}
-            </SettingsSection>
-            <SettingsSection title="Automatic processing">
-              <SettingRow
-                title="After dictation"
-                htmlFor="auto-prompt"
-                indicator={
-                  <ProfileSettingIndicator
-                    field="autoPromptId"
-                    value={draft.autoPromptId}
-                    currentLabel={
-                      automaticOptions.find((option) => option.value === draft.autoPromptId)?.label
-                    }
-                  />
-                }
-                description="When enabled, the result is copied or pasted automatically and saved if history saving is on. If processing fails or is cancelled, retrieve the speech transcript from History or the temporary latest-result panel. Nothing is copied or pasted on failure."
-              >
+          <fieldset disabled={controlsDisabled} className="min-w-0 disabled:opacity-60">
+            <div className="mb-4 flex items-end gap-3 @3xl:hidden">
+              <div className="flex min-w-0 flex-1 flex-col gap-2">
+                <Label htmlFor="saved-prompt">Saved prompt</Label>
                 <Select
-                  items={automaticOptions}
-                  value={draft.autoPromptId}
-                  disabled={controlsDisabled || !draft.enabled}
+                  items={promptOptions}
+                  value={selected || null}
+                  disabled={controlsDisabled || draft.prompts.length === 0}
                   onValueChange={(value) => {
-                    if (value !== null) update({ autoPromptId: value });
+                    if (value !== null) setSelected(value);
                   }}
                 >
                   <SelectTrigger
-                    id="auto-prompt"
+                    id="saved-prompt"
                     className="data-[size=default]:h-9 w-full min-w-0 rounded-md bg-background"
                   >
-                    <SelectValue />
+                    <SelectValue placeholder="No saved prompts" />
                   </SelectTrigger>
                   <SelectContent alignItemWithTrigger={false} align="start">
-                    {automaticOptions.map((option) => (
-                      <SelectItem key={option.value} value={option.value}>
+                    {promptOptions.map((option) => (
+                      <SelectItem
+                        key={option.value}
+                        value={option.value}
+                        className="[&>span]:min-w-0 [&>span]:whitespace-normal [&>span]:break-words"
+                      >
                         {option.label}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
-              </SettingRow>
-            </SettingsSection>
+              </div>
+              <Button
+                variant="ghost"
+                disabled={controlsDisabled || draft.prompts.length >= 30}
+                onClick={addPrompt}
+              >
+                <Plus aria-hidden="true" className="size-4" />
+                Add prompt
+              </Button>
+            </div>
+            <div className="grid min-w-0 items-start gap-5 @3xl:grid-cols-[13rem_minmax(0,1fr)] @3xl:gap-8">
+              <section
+                aria-labelledby="prompt-library-title"
+                className="hidden min-w-0 @3xl:sticky @3xl:top-36 @3xl:block @3xl:border-r @3xl:border-border/50 @3xl:pr-5"
+              >
+                <header className="mb-3 flex items-center justify-between gap-2 pl-3">
+                  <h2
+                    id="prompt-library-title"
+                    className="text-xs font-medium text-muted-foreground"
+                  >
+                    Saved prompts
+                  </h2>
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    aria-label="Add prompt"
+                    disabled={controlsDisabled || draft.prompts.length >= 30}
+                    onClick={addPrompt}
+                  >
+                    <Plus aria-hidden="true" className="size-4 text-muted-foreground" />
+                  </Button>
+                </header>
+                <nav
+                  aria-label="Saved prompts"
+                  className="max-h-[max(12rem,calc(100dvh-15rem))] space-y-0.5 overflow-y-auto overscroll-contain pb-2"
+                >
+                  {draft.prompts.map((item) => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      aria-label={item.name || "Untitled prompt"}
+                      aria-pressed={selected === item.id}
+                      disabled={controlsDisabled}
+                      onClick={() => {
+                        setSelected(item.id);
+                        setRefinementNotice("");
+                      }}
+                      className="relative flex min-h-10 w-full min-w-0 items-center rounded-md py-2 pr-2 pl-3 text-left text-muted-foreground outline-none before:absolute before:inset-y-2 before:left-0 before:w-0.5 before:rounded-full before:bg-primary before:opacity-0 hover:bg-accent/40 hover:text-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring disabled:cursor-not-allowed aria-pressed:text-foreground aria-pressed:before:opacity-100"
+                    >
+                      <span className="flex w-full min-w-0 flex-wrap items-center justify-between gap-1.5 text-sm">
+                        <span className="min-w-0 [overflow-wrap:anywhere]">
+                          {item.name || "Untitled prompt"}
+                        </span>
+                        {draft.autoPromptId === item.id && (
+                          <span className="text-[10px] text-primary">Automatic</span>
+                        )}
+                      </span>
+                    </button>
+                  ))}
+                </nav>
+              </section>
+              <section aria-label="Prompt details" className="flex min-w-0 flex-col">
+                {prompt ? (
+                  <div className="flex min-h-0 flex-1 flex-col gap-5">
+                    <header className="space-y-2">
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <h2 className="sr-only">{prompt.name || "Untitled prompt"}</h2>
+                        <Label htmlFor="prompt-name" className="sr-only">
+                          Name
+                        </Label>
+                        <input
+                          id="prompt-name"
+                          value={prompt.name}
+                          placeholder="Prompt name"
+                          maxLength={80}
+                          onChange={(event) => updatePrompt({ name: event.target.value })}
+                          className="-ml-2 h-12 min-w-40 flex-1 rounded-md border border-transparent bg-transparent px-2 text-2xl font-medium tracking-tight outline-none placeholder:text-muted-foreground hover:border-input focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30"
+                        />
+                        <div className="flex items-center gap-3">
+                          <div className="flex min-h-8 items-center gap-1.5">
+                            <Label
+                              htmlFor="auto-prompt"
+                              className="text-xs font-normal text-muted-foreground"
+                            >
+                              Run after dictation
+                            </Label>
+                            <ProfileSettingIndicator
+                              field="autoPromptId"
+                              value={draft.autoPromptId}
+                              currentLabel={
+                                draft.autoPromptId
+                                  ? automaticPrompt
+                                    ? automaticPrompt.name || "Untitled prompt"
+                                    : "Prompt unavailable"
+                                  : "No automatic processing"
+                              }
+                            />
+                            <Switch
+                              id="auto-prompt"
+                              className="ml-1.5"
+                              checked={draft.autoPromptId === prompt.id}
+                              disabled={controlsDisabled || !draft.enabled}
+                              aria-describedby="auto-prompt-help"
+                              onCheckedChange={(checked) =>
+                                update({ autoPromptId: checked ? prompt.id : "" })
+                              }
+                            />
+                          </div>
+                          <Menu.Root>
+                            <Menu.Trigger
+                              ref={deleteButton}
+                              disabled={controlsDisabled}
+                              render={<Button variant="ghost" size="icon-sm" />}
+                              aria-label="More prompt actions"
+                            >
+                              <Ellipsis aria-hidden="true" className="size-4" />
+                            </Menu.Trigger>
+                            <Menu.Portal>
+                              <Menu.Positioner align="end" sideOffset={4} className="z-50">
+                                <Menu.Popup
+                                  finalFocus={() => (deleting ? false : true)}
+                                  className="min-w-44 origin-(--transform-origin) rounded-lg bg-popover p-1 text-popover-foreground shadow-md ring-1 ring-foreground/10 motion-popup"
+                                >
+                                  {includedPrompt && (
+                                    <Menu.Item
+                                      disabled={controlsDisabled}
+                                      onClick={() =>
+                                        updatePrompt({ instruction: includedPrompt.instruction })
+                                      }
+                                      className="rounded-md px-3 py-2 text-sm outline-none data-highlighted:bg-accent"
+                                    >
+                                      Reset instructions
+                                    </Menu.Item>
+                                  )}
+                                  <Menu.Item
+                                    disabled={controlsDisabled}
+                                    onClick={() => setDeleting({ ...prompt })}
+                                    className="flex items-center gap-2 rounded-md px-3 py-2 text-sm text-destructive outline-none data-highlighted:bg-destructive/10"
+                                  >
+                                    <Trash2 aria-hidden="true" className="size-4" />
+                                    Delete prompt
+                                  </Menu.Item>
+                                </Menu.Popup>
+                              </Menu.Positioner>
+                            </Menu.Portal>
+                          </Menu.Root>
+                        </div>
+                      </div>
+                      <p
+                        id="auto-prompt-help"
+                        role="status"
+                        className={`text-xs leading-5 text-muted-foreground [overflow-wrap:anywhere] ${draft.enabled && (!automaticPrompt || draft.autoPromptId === prompt.id) ? "sr-only" : ""}`}
+                      >
+                        {!draft.enabled ? (
+                          <>
+                            Enable LLM processing in{" "}
+                            <button
+                              type="button"
+                              onClick={() => selectSection("models")}
+                              className="text-primary underline underline-offset-4 focus-visible:outline-ring"
+                            >
+                              Text model
+                            </button>{" "}
+                            to run prompts automatically.
+                          </>
+                        ) : draft.autoPromptId === prompt.id ? (
+                          "Runs automatically after every dictation."
+                        ) : automaticPrompt ? (
+                          `Turn on to replace ${automaticPrompt.name || "Untitled prompt"} after dictation.`
+                        ) : (
+                          "Automatic processing is off."
+                        )}
+                      </p>
+                    </header>
+                    <div className="flex min-h-0 flex-1 flex-col gap-2">
+                      <Label htmlFor="prompt-instruction" className="sr-only">
+                        Instructions
+                      </Label>
+                      <p id="prompt-instruction-help" className="sr-only">
+                        Describe the result you want. Your transcript is supplied automatically.
+                      </p>
+                      <textarea
+                        id="prompt-instruction"
+                        rows={9}
+                        maxLength={8000}
+                        value={prompt.instruction}
+                        aria-describedby="prompt-instruction-help"
+                        onChange={(event) => updatePrompt({ instruction: event.target.value })}
+                        className="h-[clamp(18rem,calc(100dvh-18rem),32rem)] min-h-64 w-full resize-y rounded-md border-0 bg-transparent px-0 py-3 text-[15px] leading-7 text-foreground/90 outline-none focus-visible:outline-1 focus-visible:outline-offset-4 focus-visible:outline-ring/50"
+                      />
+                      <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
+                        <Button
+                          ref={refineButton}
+                          variant="ghost"
+                          size="sm"
+                          className="-ml-2 h-7 px-2 text-xs font-normal text-muted-foreground hover:text-primary"
+                          disabled={
+                            controlsDisabled || !draft.model.trim() || !prompt.instruction.trim()
+                          }
+                          onClick={refine}
+                        >
+                          <Sparkles aria-hidden="true" className="size-3.5" />
+                          Refine prompt
+                        </Button>
+                        <span className="text-xs tabular-nums text-muted-foreground">
+                          {Array.from(prompt.instruction).length.toLocaleString()} / 8,000
+                        </span>
+                      </div>
+                    </div>
+                    {refinementNotice && (
+                      <p role="status" className="text-xs text-primary">
+                        {refinementNotice}
+                      </p>
+                    )}
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    <h2 className="text-lg font-semibold">No saved prompts</h2>
+                    <p className="text-sm text-muted-foreground">
+                      Add a prompt or start with Cleanup and Summary.
+                    </p>
+                    <Button
+                      variant="outline"
+                      onClick={() =>
+                        update({
+                          prompts: defaultTextProcessing.prompts.map((p) => ({
+                            ...p,
+                          })),
+                        })
+                      }
+                    >
+                      Restore default prompts
+                    </Button>
+                  </div>
+                )}
+              </section>
+            </div>
           </fieldset>
         </TabsContent>
       </Tabs>
@@ -736,10 +845,10 @@ export function PromptsPage() {
                       ),
                     });
                     setRefining(null);
-                    setRefinementNotice("Refined instructions applied. Save prompts to keep them.");
+                    setRefinementNotice("Refined instructions applied. Save changes to keep them.");
                   }}
                 >
-                  Use instructions
+                  Apply to draft
                 </Button>
               </DialogFooter>
             </>

@@ -31,6 +31,11 @@ async function homeModelScenario(page: Page, custom = false) {
   await page.goto("/");
 }
 
+async function promptAction(page: Page, name: "Delete prompt" | "Reset instructions") {
+  await page.getByRole("button", { name: "More prompt actions", exact: true }).click();
+  await page.getByRole("menuitem", { name, exact: true }).click();
+}
+
 test("motion setup buttons remain visible through held pointer presses and advance on release", async ({
   page,
 }) => {
@@ -785,6 +790,251 @@ test("settings saves use dismissible success and error toasts and preserve faile
   );
 });
 
+for (const theme of ["light", "dark"] as const) {
+  test(`prompt library transfers the automatic selection and keeps drafts across layouts in ${theme}`, async ({
+    page,
+  }, testInfo) => {
+    await page.addInitScript((theme) => {
+      localStorage.setItem("desktop-theme", theme);
+      localStorage.setItem("yap-sidebar-collapsed", "true");
+      const settings = window.dictationTest.snapshot.textProcessing;
+      settings.enabled = true;
+      settings.model = "saved-model";
+      settings.autoPromptId = "summary";
+      settings.prompts[0].instruction =
+        "Correct all punctuation, capitalization, and grammatical errors within the provided transcript. Eliminate filler words (e.g., um, uh, like) and remove accidental repetitions while maintaining natural flow. Preserve the original meaning, all proper nouns and names, specialized technical terminology, and the source language. The output must consist solely of the cleaned and revised text.";
+      settings.prompts.push(
+        {
+          id: "translate",
+          name: "Translate to German",
+          instruction:
+            "Translate the provided transcript to German. Preserve the meaning and names.",
+        },
+        {
+          id: "markdown",
+          name: "Format to Markdown",
+          instruction:
+            "Format the transcript as structured Markdown with clear headings and lists.",
+        },
+        {
+          id: "email",
+          name: "Professional email",
+          instruction: "Rewrite the transcript as a concise professional email.",
+        },
+        {
+          id: "meeting",
+          name: "Meeting notes",
+          instruction: "Extract key decisions and action items with their owners.",
+        },
+        {
+          id: "ticket",
+          name: "Technical ticket",
+          instruction: "Format the transcript as a technical issue with steps to reproduce.",
+        },
+      );
+    }, theme);
+    await page.setViewportSize({ width: 1140, height: 720 });
+    await page.goto("/#/prompts");
+    const library = page.getByRole("navigation", { name: "Saved prompts", exact: true });
+    const automatic = page.getByRole("switch", { name: "Run after dictation", exact: true });
+    const cleanup = library.getByRole("button", { name: "Cleanup", exact: true });
+    const summary = library.getByRole("button", { name: "Summary", exact: true });
+    await expect(page.getByRole("tab", { name: "Prompts", exact: true })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    await expect(page.getByRole("combobox", { name: "Saved prompt", exact: true })).toBeHidden();
+    await expect(cleanup).toHaveAttribute("aria-pressed", "true");
+    await expect(summary.getByText("Automatic", { exact: true })).toBeVisible();
+    await expect(automatic).not.toBeChecked();
+    await expect(
+      page.getByText("Turn on to replace Summary after dictation.", { exact: true }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Automatic processing", exact: true }),
+    ).toHaveCount(0);
+    const instructionsWidth = await page
+      .getByLabel("Instructions", { exact: true })
+      .evaluate((el) => el.getBoundingClientRect().width);
+    expect(instructionsWidth).toBeGreaterThan(500);
+    await automatic.focus();
+    await page.keyboard.press("Space");
+    await expect(automatic).toBeChecked();
+    await expect(cleanup.getByText("Automatic", { exact: true })).toBeVisible();
+    await expect(summary.getByText("Automatic", { exact: true })).toHaveCount(0);
+    expect(
+      await page.evaluate(() => window.dictationTest.snapshot.textProcessing.autoPromptId),
+    ).toBe("summary");
+    await page.getByLabel("Instructions", { exact: true }).fill("Preserve all technical names.");
+    await summary.click();
+    await expect(automatic).not.toBeChecked();
+    await automatic.check();
+    await expect(library.getByText("Automatic", { exact: true })).toHaveCount(1);
+    await automatic.uncheck();
+    await expect(library.getByText("Automatic", { exact: true })).toHaveCount(0);
+    await page.getByRole("button", { name: "Discard changes", exact: true }).click();
+    await expect(automatic).toBeChecked();
+    await cleanup.click();
+    await automatic.check();
+    await page.getByRole("button", { name: "Save changes", exact: true }).click();
+    await expect
+      .poll(() => page.evaluate(() => window.dictationTest.snapshot.textProcessing.autoPromptId))
+      .toBe("cleanup");
+    await page
+      .locator('[data-slot="toast"]')
+      .filter({ hasText: "Prompts saved." })
+      .getByRole("button", { name: "Dismiss notification" })
+      .click();
+    await expect(page.getByRole("button", { name: "Refine prompt", exact: true })).toBeInViewport();
+    await expect(page.getByRole("region", { name: "Prompt details", exact: true })).toBeInViewport({
+      ratio: 1,
+    });
+    await page.screenshot({
+      path: testInfo.outputPath(`prompt-library-${theme}.png`),
+      fullPage: true,
+      animations: "disabled",
+    });
+    await page.getByLabel("Name", { exact: true }).fill("My cleanup");
+    await page.setViewportSize({ width: 760, height: 560 });
+    await page.getByRole("button", { name: "Expand sidebar", exact: true }).click();
+    await expect(library).toBeHidden();
+    const picker = page.getByRole("combobox", { name: "Saved prompt", exact: true });
+    await expect(picker).toContainText("My cleanup");
+    await picker.click();
+    await page.getByRole("option", { name: "Summary", exact: true }).click();
+    await expect(automatic).not.toBeChecked();
+    await automatic.check();
+    await picker.click();
+    await page.getByRole("option", { name: "My cleanup", exact: true }).click();
+    await expect(automatic).not.toBeChecked();
+    await expect(page.getByLabel("Name", { exact: true })).toHaveValue("My cleanup");
+    await page.getByLabel("Instructions", { exact: true }).scrollIntoViewIfNeeded();
+    await expect(page.getByRole("button", { name: "Save changes", exact: true })).toBeInViewport();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+      true,
+    );
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await page.screenshot({
+      path: testInfo.outputPath(`prompt-library-narrow-${theme}.png`),
+      fullPage: true,
+      animations: "disabled",
+    });
+  });
+}
+
+test("prompt automatic switch respects model and busy guards and preserves a failed save", async ({
+  page,
+}) => {
+  await page.goto("/#/prompts");
+  const automatic = page.getByRole("switch", { name: "Run after dictation", exact: true });
+  await expect(automatic).toBeDisabled();
+  await page
+    .locator("#auto-prompt-help")
+    .getByRole("button", { name: "Text model", exact: true })
+    .click();
+  await page.getByRole("checkbox", { name: "Enable LLM processing", exact: true }).check();
+  await page.getByLabel("Model identifier", { exact: true }).fill("saved-model");
+  await page.getByRole("tab", { name: "Prompts", exact: true }).click();
+  await automatic.check();
+  await page.evaluate(() => window.dictationTest.status("recording"));
+  await expect(automatic).toBeDisabled();
+  await expect(
+    page.getByRole("button", { name: "More prompt actions", exact: true }),
+  ).toBeDisabled();
+  await expect(
+    page
+      .getByRole("navigation", { name: "Saved prompts" })
+      .getByRole("button", { name: "Summary", exact: true }),
+  ).toBeDisabled();
+  await page.evaluate(() => {
+    window.dictationTest.status("idle");
+    window.dictationTest.failSave = true;
+  });
+  await page.getByRole("button", { name: "Save changes", exact: true }).click();
+  await expect(
+    page.locator('[data-slot="toast"]').filter({ hasText: "Prompts save failed" }),
+  ).toBeVisible();
+  await expect(automatic).toBeChecked();
+  expect(await page.evaluate(() => window.dictationTest.snapshot.textProcessing.autoPromptId)).toBe(
+    "",
+  );
+  await page.getByRole("link", { name: "History", exact: true }).click();
+  await page.getByRole("link", { name: "Prompts", exact: true }).click();
+  await expect(automatic).toBeChecked();
+  await page.evaluate(() => {
+    window.dictationTest.failSave = false;
+  });
+  await page.getByRole("button", { name: "Save changes", exact: true }).click();
+  await expect
+    .poll(() => page.evaluate(() => window.dictationTest.snapshot.textProcessing.autoPromptId))
+    .toBe("cleanup");
+  await page.getByRole("tab", { name: "Text model", exact: true }).click();
+  await page.getByRole("checkbox", { name: "Enable LLM processing", exact: true }).uncheck();
+  await page.getByRole("tab", { name: "Prompts", exact: true }).click();
+  await expect(automatic).not.toBeChecked();
+  await expect(automatic).toBeDisabled();
+  await page.getByRole("button", { name: "Discard changes", exact: true }).click();
+  await expect(automatic).toBeChecked();
+  await expect(automatic).toBeEnabled();
+});
+
+test("prompt library restores an empty collection and fits long names at the prompt limit", async ({
+  page,
+}, testInfo) => {
+  await page.addInitScript(() => {
+    window.dictationTest.snapshot.textProcessing.prompts = [];
+  });
+  await page.goto("/#/prompts");
+  await expect(page.getByRole("heading", { name: "No saved prompts", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Add prompt", exact: true }).click();
+  await page.getByLabel("Name", { exact: true }).fill("Custom prompt");
+  await page.getByLabel("Instructions", { exact: true }).fill("Preserve all names.");
+  await promptAction(page, "Delete prompt");
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Delete prompt", exact: true })
+    .click();
+  await expect(page.getByRole("heading", { name: "No saved prompts", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Restore default prompts", exact: true }).click();
+  await expect(page.getByLabel("Name", { exact: true })).toHaveValue("Cleanup");
+  await page.getByRole("button", { name: "Save changes", exact: true }).click();
+  await expect
+    .poll(() => page.evaluate(() => window.dictationTest.snapshot.textProcessing.prompts.length))
+    .toBe(2);
+  await page.evaluate(() => {
+    window.dictationTest.snapshot.textProcessing.prompts = Array.from({ length: 30 }, (_, i) => ({
+      id: `prompt-${i}`,
+      name: `${i} ${"長い名前".repeat(19)}`,
+      instruction: "UnbrokenInstruction".repeat(120),
+    }));
+    window.dictationTest.history();
+  });
+  await expect(page.getByRole("button", { name: "Add prompt", exact: true })).toBeDisabled();
+  await expect(
+    page.getByRole("navigation", { name: "Saved prompts" }).getByRole("button"),
+  ).toHaveCount(30);
+  const library = page.getByRole("navigation", { name: "Saved prompts" });
+  expect(await library.evaluate((el) => el.scrollHeight > el.clientHeight)).toBe(true);
+  await library.getByRole("button").last().click();
+  await expect(page.getByLabel("Name", { exact: true })).toHaveValue(`29 ${"長い名前".repeat(19)}`);
+  await expect(
+    page.getByRole("switch", { name: "Run after dictation", exact: true }),
+  ).toBeInViewport();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.setViewportSize({ width: 760, height: 560 });
+  const picker = page.getByRole("combobox", { name: "Saved prompt", exact: true });
+  await picker.click();
+  await page.getByRole("option").last().click();
+  await expect(page.getByLabel("Name", { exact: true })).toHaveValue(`29 ${"長い名前".repeat(19)}`);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.screenshot({
+    path: testInfo.outputPath("prompt-library-long-name.png"),
+    fullPage: true,
+    animations: "disabled",
+  });
+});
+
 test("prompts tabs preserve shared drafts and keep save actions visible in narrow windows", async ({
   page,
 }, testInfo) => {
@@ -795,10 +1045,12 @@ test("prompts tabs preserve shared drafts and keep save actions visible in narro
   await page.setViewportSize({ width: 1080, height: 720 });
   await page.goto("/#/prompts");
   const tabs = page.getByRole("tablist", { name: "Prompts sections" });
-  const modelsTab = tabs.getByRole("tab", { name: "Models", exact: true });
+  const modelsTab = tabs.getByRole("tab", { name: "Text model", exact: true });
   const promptsTab = tabs.getByRole("tab", { name: "Prompts", exact: true });
-  await expect(modelsTab).toHaveAttribute("aria-selected", "true");
+  await expect(promptsTab).toHaveAttribute("aria-selected", "true");
   await expect(page.getByRole("tabpanel")).toHaveCount(1);
+  await expect(page.getByLabel("Name", { exact: true })).toBeVisible();
+  await modelsTab.click();
   await expect(page.getByLabel("Name", { exact: true })).toBeHidden();
   await page.getByLabel("Model identifier", { exact: true }).fill("draft-model");
   await page.screenshot({
@@ -809,7 +1061,9 @@ test("prompts tabs preserve shared drafts and keep save actions visible in narro
   await promptsTab.click();
   await expect(page).toHaveURL(/section=prompts/);
   await expect(page.getByLabel("Model identifier", { exact: true })).toBeHidden();
-  await expect(page.getByLabel("After dictation", { exact: true })).toBeVisible();
+  await expect(
+    page.getByRole("switch", { name: "Run after dictation", exact: true }),
+  ).toBeVisible();
   await page.getByLabel("Name", { exact: true }).fill("My cleanup");
   await expect(page.getByRole("status").filter({ hasText: "Unsaved changes" })).toBeVisible();
   await page.evaluate(() => window.scrollTo(0, 0));
@@ -819,7 +1073,7 @@ test("prompts tabs preserve shared drafts and keep save actions visible in narro
     animations: "disabled",
   });
   await page.getByLabel("Instructions", { exact: true }).scrollIntoViewIfNeeded();
-  const save = page.getByRole("button", { name: "Save prompts", exact: true });
+  const save = page.getByRole("button", { name: "Save changes", exact: true });
   await expect(save).toBeInViewport();
   await save.click();
   await expect
@@ -833,6 +1087,16 @@ test("prompts tabs preserve shared drafts and keep save actions visible in narro
   await page.setViewportSize({ width: 760, height: 680 });
   await page.getByRole("button", { name: "Expand sidebar", exact: true }).click();
   await page.getByLabel("Name", { exact: true }).fill("Narrow cleanup");
+  const pickerBounds = await page
+    .getByRole("combobox", { name: "Saved prompt", exact: true })
+    .boundingBox();
+  const addBounds = await page
+    .getByRole("button", { name: "Add prompt", exact: true })
+    .boundingBox();
+  expect(pickerBounds).not.toBeNull();
+  expect(addBounds).not.toBeNull();
+  expect(Math.abs(pickerBounds!.y - addBounds!.y)).toBeLessThan(1);
+  expect(Math.abs(pickerBounds!.height - addBounds!.height)).toBeLessThan(1);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await expect(save).toBeInViewport();
   await page.evaluate(() => window.scrollTo(0, 0));
@@ -869,9 +1133,9 @@ test("prompt saves and model responses appear as dismissible toasts", async ({
     window.dictationTest.snapshot.textProcessing.enabled = true;
     window.dictationTest.snapshot.textProcessing.model = "saved-model";
   });
-  await page.goto("/#/prompts");
+  await page.goto("/#/prompts?section=models");
   await page.getByLabel("Model identifier", { exact: true }).fill("new-model");
-  await page.getByRole("button", { name: "Save prompts", exact: true }).click();
+  await page.getByRole("button", { name: "Save changes", exact: true }).click();
   const saved = page.locator('[data-slot="toast"]').filter({ hasText: "Prompts saved." });
   await expect(saved).toBeVisible();
   expect(await page.evaluate(() => window.dictationTest.snapshot.textProcessing.model)).toBe(
@@ -917,7 +1181,7 @@ test("failed prompt saves show an error toast and retain edits for retry", async
   await page.evaluate(() => {
     window.dictationTest.failSave = true;
   });
-  await page.getByRole("button", { name: "Save prompts", exact: true }).click();
+  await page.getByRole("button", { name: "Save changes", exact: true }).click();
   const failure = page.locator('[data-slot="toast"]').filter({ hasText: "Prompts save failed" });
   await expect(failure).toBeVisible();
   await expect(
@@ -932,7 +1196,7 @@ test("failed prompt saves show an error toast and retain edits for retry", async
   await page.evaluate(() => {
     window.dictationTest.failSave = false;
   });
-  await page.getByRole("button", { name: "Save prompts", exact: true }).click();
+  await page.getByRole("button", { name: "Save changes", exact: true }).click();
   await expect(
     page.locator('[data-slot="toast"]').filter({ hasText: "Prompts saved." }),
   ).toBeVisible();
@@ -953,7 +1217,7 @@ test("model testing stays inside the card and cancellation remains available", a
       async () => new Promise<string>((resolve) => Reflect.set(window, "finishModelTest", resolve)),
     );
   });
-  await page.goto("/#/prompts");
+  await page.goto("/#/prompts?section=models");
   const card = page.locator("section").filter({
     has: page.getByRole("heading", { name: "Text model", exact: true }),
   });
@@ -983,7 +1247,7 @@ test("model response toasts dismiss automatically", async ({ page }) => {
     window.dictationTest.snapshot.textProcessing.enabled = true;
     window.dictationTest.snapshot.textProcessing.model = "saved-model";
   });
-  await page.goto("/#/prompts");
+  await page.goto("/#/prompts?section=models");
   await expect(page.getByRole("button", { name: "Test model", exact: true })).toBeEnabled();
   await page.getByRole("button", { name: "Test model", exact: true }).click();
   const response = page
@@ -1005,11 +1269,11 @@ test("prompt deletion asks for confirmation and cancel preserves draft edits", a
   await page.goto("/#/prompts?section=prompts");
   await page.getByLabel("Name", { exact: true }).fill("My cleanup");
   await page.getByLabel("Instructions", { exact: true }).fill("Keep all names unchanged.");
-  const remove = page.getByRole("button", {
-    name: "Delete prompt",
+  const actions = page.getByRole("button", {
+    name: "More prompt actions",
     exact: true,
   });
-  await remove.click();
+  await promptAction(page, "Delete prompt");
   const dialog = page.getByRole("dialog", {
     name: "Delete this prompt?",
     exact: true,
@@ -1024,15 +1288,15 @@ test("prompt deletion asks for confirmation and cancel preserves draft edits", a
   });
   await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
   await expect(dialog).toBeHidden();
-  await expect(remove).toBeFocused();
+  await expect(actions).toBeFocused();
   await expect(page.getByLabel("Name", { exact: true })).toHaveValue("My cleanup");
   await expect(page.getByLabel("Instructions", { exact: true })).toHaveValue(
     "Keep all names unchanged.",
   );
-  await expect(page.getByRole("combobox", { name: "After dictation", exact: true })).toContainText(
-    "My cleanup",
-  );
-  await remove.click();
+  await expect(
+    page.getByRole("switch", { name: "Run after dictation", exact: true }),
+  ).toBeChecked();
+  await promptAction(page, "Delete prompt");
   await page.keyboard.press("Escape");
   await expect(dialog).toBeHidden();
   await expect(page.getByLabel("Name", { exact: true })).toHaveValue("My cleanup");
@@ -1053,21 +1317,18 @@ test("confirmed prompt deletion can be discarded and persists only after save", 
     window.dictationTest.snapshot.textProcessing.autoPromptId = "cleanup";
   });
   await page.goto("/#/prompts?section=prompts");
-  const remove = page.getByRole("button", {
-    name: "Delete prompt",
-    exact: true,
-  });
   const dialog = page.getByRole("dialog", {
     name: "Delete this prompt?",
     exact: true,
   });
-  await remove.click();
+  await promptAction(page, "Delete prompt");
   await dialog.getByRole("button", { name: "Delete prompt", exact: true }).click();
   await expect(dialog).toBeHidden();
   await expect(page.getByLabel("Name", { exact: true })).toHaveValue("Summary");
-  await expect(page.getByRole("combobox", { name: "After dictation", exact: true })).toContainText(
-    "No automatic processing",
-  );
+  await expect(
+    page.getByRole("switch", { name: "Run after dictation", exact: true }),
+  ).not.toBeChecked();
+  await expect(page.getByText("Automatic processing is off.", { exact: true })).toBeVisible();
   expect(
     await page.evaluate(() => window.dictationTest.snapshot.textProcessing.prompts.length),
   ).toBe(2);
@@ -1075,14 +1336,16 @@ test("confirmed prompt deletion can be discarded and persists only after save", 
     "cleanup",
   );
   await page.getByRole("button", { name: "Discard changes", exact: true }).click();
-  await page.getByRole("combobox", { name: "Prompt", exact: true }).click();
-  await page.getByRole("option", { name: "Cleanup", exact: true }).click();
-  await expect(page.getByRole("combobox", { name: "After dictation", exact: true })).toContainText(
-    "Cleanup",
-  );
-  await remove.click();
+  await page
+    .getByRole("navigation", { name: "Saved prompts" })
+    .getByRole("button", { name: "Cleanup", exact: true })
+    .click();
+  await expect(
+    page.getByRole("switch", { name: "Run after dictation", exact: true }),
+  ).toBeChecked();
+  await promptAction(page, "Delete prompt");
   await dialog.getByRole("button", { name: "Delete prompt", exact: true }).click();
-  await page.getByRole("button", { name: "Save prompts", exact: true }).click();
+  await page.getByRole("button", { name: "Save changes", exact: true }).click();
   await expect
     .poll(() =>
       page.evaluate(() => ({
@@ -1096,7 +1359,7 @@ test("confirmed prompt deletion can be discarded and persists only after save", 
 
 test("prompt deletion confirmation stays protected if work starts while open", async ({ page }) => {
   await page.goto("/#/prompts?section=prompts");
-  await page.getByRole("button", { name: "Delete prompt", exact: true }).click();
+  await promptAction(page, "Delete prompt");
   const dialog = page.getByRole("dialog", {
     name: "Delete this prompt?",
     exact: true,
@@ -1115,16 +1378,18 @@ test("prompt deletion confirmation stays protected if work starts while open", a
 test("reset instructions preserves customized prompt names", async ({ page }) => {
   await page.goto("/#/prompts?section=prompts");
   for (const name of ["Cleanup", "Summary"]) {
-    await page.getByRole("combobox", { name: "Prompt", exact: true }).click();
-    await page.getByRole("option", { name, exact: true }).click();
+    await page
+      .getByRole("navigation", { name: "Saved prompts" })
+      .getByRole("button", { name, exact: true })
+      .click();
     await page.getByLabel("Name", { exact: true }).fill(`My ${name}`);
     await page.getByLabel("Instructions", { exact: true }).fill("My special instructions");
-    await page.getByRole("button", { name: "Reset instructions", exact: true }).click();
+    await promptAction(page, "Reset instructions");
     await expect(page.getByLabel("Name", { exact: true })).toHaveValue(`My ${name}`);
     await expect(page.getByLabel("Instructions", { exact: true })).not.toHaveValue(
       "My special instructions",
     );
-    await page.getByRole("button", { name: "Save prompts", exact: true }).click();
+    await page.getByRole("button", { name: "Save changes", exact: true }).click();
     await expect
       .poll(() =>
         page.evaluate(
@@ -1140,10 +1405,10 @@ test("reset instructions preserves customized prompt names", async ({ page }) =>
 test("prompt refinement previews an unsaved draft and saves only after applying", async ({
   page,
 }, testInfo) => {
-  await page.goto("/#/prompts");
+  await page.goto("/#/prompts?section=models");
   await page.getByRole("tab", { name: "Prompts", exact: true }).click();
   await expect(page.getByRole("button", { name: "Refine prompt", exact: true })).toBeDisabled();
-  await page.getByRole("tab", { name: "Models", exact: true }).click();
+  await page.getByRole("tab", { name: "Text model", exact: true }).click();
   await page.getByLabel("Model identifier", { exact: true }).fill("draft-model");
   await page.getByLabel("Local server URL", { exact: true }).fill("http://127.0.0.1:1234/v1");
   await page.getByRole("tab", { name: "Prompts", exact: true }).click();
@@ -1156,9 +1421,7 @@ test("prompt refinement previews an unsaved draft and saves only after applying"
   await expect(dialog.getByLabel("Your instructions", { exact: true })).toHaveValue(
     "summarize in bullets, keep names",
   );
-  await expect(
-    dialog.getByRole("button", { name: "Use instructions", exact: true }),
-  ).toBeDisabled();
+  await expect(dialog.getByRole("button", { name: "Apply to draft", exact: true })).toBeDisabled();
   await expect
     .poll(() =>
       page.evaluate(() =>
@@ -1191,7 +1454,7 @@ test("prompt refinement previews an unsaved draft and saves only after applying"
       page.evaluate(() => window.dictationTest.snapshot.textProcessing.prompts[0].instruction),
     )
     .toBe("Clean up text.");
-  await dialog.getByRole("button", { name: "Use instructions", exact: true }).click();
+  await dialog.getByRole("button", { name: "Apply to draft", exact: true }).click();
   await expect(dialog).toBeHidden();
   await expect(page.getByLabel("Instructions", { exact: true })).toHaveValue(
     "Summarize in bullet points. Preserve all names.",
@@ -1204,7 +1467,7 @@ test("prompt refinement previews an unsaved draft and saves only after applying"
       page.evaluate(() => window.dictationTest.snapshot.textProcessing.prompts[0].instruction),
     )
     .toBe("Clean up text.");
-  await page.getByRole("button", { name: "Save prompts", exact: true }).click();
+  await page.getByRole("button", { name: "Save changes", exact: true }).click();
   await expect
     .poll(() =>
       page.evaluate(() => window.dictationTest.snapshot.textProcessing.prompts[0].instruction),
@@ -1220,7 +1483,7 @@ test("prompt refinement previews an unsaved draft and saves only after applying"
 });
 
 test("discarding prompt refinement preserves draft and cancels late results", async ({ page }) => {
-  await page.goto("/#/prompts");
+  await page.goto("/#/prompts?section=models");
   await page.getByLabel("Model identifier", { exact: true }).fill("local");
   await page.getByRole("tab", { name: "Prompts", exact: true }).click();
   await page.getByLabel("Instructions", { exact: true }).fill("My rough draft");
@@ -1242,7 +1505,7 @@ test("discarding prompt refinement preserves draft and cancels late results", as
 });
 
 test("prompt refinement can cancel and retry after a model failure", async ({ page }) => {
-  await page.goto("/#/prompts");
+  await page.goto("/#/prompts?section=models");
   await page.getByLabel("Model identifier", { exact: true }).fill("local");
   await page.getByRole("tab", { name: "Prompts", exact: true }).click();
   await page.evaluate(() => {
@@ -1257,7 +1520,7 @@ test("prompt refinement can cancel and retry after a model failure", async ({ pa
   await page.getByRole("button", { name: "Cancel refinement", exact: true }).click();
   await page.evaluate(() => window.dictationTest.processing!.resolve("Cancelled late result"));
   await expect(page.getByRole("alert")).toHaveText("Processing cancelled");
-  await expect(page.getByRole("button", { name: "Use instructions", exact: true })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Apply to draft", exact: true })).toBeDisabled();
   await page.getByRole("button", { name: "Refine again", exact: true }).click();
   await page.evaluate(() => window.dictationTest.processing!.resolve("New instructions"));
   await expect(page.getByLabel("Refined instructions", { exact: true })).toHaveValue(
@@ -1268,7 +1531,7 @@ test("prompt refinement can cancel and retry after a model failure", async ({ pa
 test("leaving prompts cancels refinement and old backends show recovery guidance", async ({
   page,
 }) => {
-  await page.goto("/#/prompts");
+  await page.goto("/#/prompts?section=models");
   await page.getByLabel("Model identifier", { exact: true }).fill("local");
   await page.getByRole("tab", { name: "Prompts", exact: true }).click();
   await page.getByRole("button", { name: "Refine prompt", exact: true }).click();
@@ -1280,7 +1543,7 @@ test("leaving prompts cancels refinement and old backends show recovery guidance
     .poll(() => page.evaluate(() => window.dictationTest.cancelledProcessing.length))
     .toBe(1);
   await page.evaluate(() => window.dictationTest.processing!.resolve("Late instructions"));
-  await page.goto("/#/prompts");
+  await page.goto("/#/prompts?section=models");
   await page.getByLabel("Model identifier", { exact: true }).fill("local");
   await page.evaluate(() => {
     Reflect.deleteProperty(Reflect.get(window, "go").main.App, "RefinePrompt");
@@ -5391,7 +5654,8 @@ test("shortcut recorder is disabled during active work and works in first-run se
 test("prompt drafts survive refresh and failed save; model testing uses saved config", async ({
   page,
 }, testInfo) => {
-  await page.goto("/#/prompts");
+  await page.setViewportSize({ width: 760, height: 680 });
+  await page.goto("/#/prompts?section=models");
   await page.getByRole("checkbox", { name: "Enable LLM processing" }).check();
   await page.getByLabel("Model identifier").fill("my-local-model");
   await page.getByLabel("Local server URL").fill("http://127.0.0.1:1234/v1");
@@ -5401,7 +5665,7 @@ test("prompt drafts survive refresh and failed save; model testing uses saved co
   await page
     .getByLabel("Instructions")
     .fill("Format the transcript as a bug report. Keep names unchanged.");
-  await page.getByRole("combobox", { name: "Prompt", exact: true }).click();
+  await page.getByRole("combobox", { name: "Saved prompt", exact: true }).click();
   await expect(page.getByRole("option", { name: "Technical ticket", exact: true })).toHaveAttribute(
     "aria-selected",
     "true",
@@ -5412,47 +5676,26 @@ test("prompt drafts survive refresh and failed save; model testing uses saved co
     fullPage: true,
   });
   await page.keyboard.press("Escape");
-  await expect(page.getByRole("combobox", { name: "Prompt", exact: true })).toBeFocused();
+  await expect(page.getByRole("combobox", { name: "Saved prompt", exact: true })).toBeFocused();
   await expect(page.getByRole("listbox")).toHaveCount(0);
-  await page.getByRole("combobox", { name: "Prompt", exact: true }).click();
+  await page.getByRole("combobox", { name: "Saved prompt", exact: true }).click();
   await page.getByRole("listbox").getByRole("option", { name: "Cleanup", exact: true }).click();
   await expect(page.getByLabel("Name", { exact: true })).toHaveValue("Cleanup");
   await expect(page.getByRole("listbox")).toHaveCount(0);
-  await page.getByRole("combobox", { name: "Prompt", exact: true }).click();
+  await page.getByRole("combobox", { name: "Saved prompt", exact: true }).click();
   await page
     .getByRole("listbox")
     .getByRole("option", { name: "Technical ticket", exact: true })
     .click();
   await expect(page.getByLabel("Name", { exact: true })).toHaveValue("Technical ticket");
   await expect(page.getByRole("listbox")).toHaveCount(0);
-  await page.getByRole("combobox", { name: "After dictation", exact: true }).click();
-  await page
-    .getByRole("listbox")
-    .getByRole("option", { name: "Technical ticket", exact: true })
-    .click();
-  await expect(
-    page
-      .getByRole("combobox", { name: "After dictation", exact: true })
-      .locator('[data-slot="select-value"]'),
-  ).toHaveText("Technical ticket");
-  await expect(page.getByRole("listbox")).toHaveCount(0);
-  await page.getByRole("combobox", { name: "After dictation", exact: true }).click();
-  await page
-    .getByRole("listbox")
-    .getByRole("option", { name: "No automatic processing", exact: true })
-    .click();
-  await expect(
-    page
-      .getByRole("combobox", { name: "After dictation", exact: true })
-      .locator('[data-slot="select-value"]'),
-  ).toHaveText("No automatic processing");
-  await expect(page.getByRole("listbox")).toHaveCount(0);
-  await page.getByRole("combobox", { name: "After dictation", exact: true }).click();
-  await page
-    .getByRole("listbox")
-    .getByRole("option", { name: "Technical ticket", exact: true })
-    .click();
-  await page.getByRole("tab", { name: "Models", exact: true }).click();
+  const automatic = page.getByRole("switch", { name: "Run after dictation", exact: true });
+  await automatic.check();
+  await expect(automatic).toBeChecked();
+  await automatic.uncheck();
+  await expect(page.getByText("Automatic processing is off.", { exact: true })).toBeVisible();
+  await automatic.check();
+  await page.getByRole("tab", { name: "Text model", exact: true }).click();
   await expect(page.getByRole("button", { name: "Test model", exact: true })).toBeDisabled();
   await page.getByRole("tab", { name: "Prompts", exact: true }).click();
   await expect
@@ -5464,17 +5707,17 @@ test("prompt drafts survive refresh and failed save; model testing uses saved co
   });
   await settle(page);
   await expect(page.getByLabel("Name", { exact: true })).toHaveValue("Technical ticket");
-  await page.getByRole("button", { name: "Save prompts", exact: true }).click();
+  await page.getByRole("button", { name: "Save changes", exact: true }).click();
   await expect(
     page.locator('[data-slot="toast"]').filter({ hasText: "Prompts save failed" }),
   ).toBeVisible();
-  await page.getByRole("tab", { name: "Models", exact: true }).click();
+  await page.getByRole("tab", { name: "Text model", exact: true }).click();
   await expect(page.getByLabel("Model identifier")).toHaveValue("my-local-model");
   await page.evaluate(() => {
     window.dictationTest.failSave = false;
   });
-  await page.getByRole("button", { name: "Save prompts", exact: true }).click();
-  await expect(page.getByRole("button", { name: "Save prompts", exact: true })).toBeDisabled();
+  await page.getByRole("button", { name: "Save changes", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Save changes", exact: true })).toBeDisabled();
   await expect
     .poll(() => page.evaluate(() => window.dictationTest.snapshot.textProcessing.prompts.length))
     .toBe(3);
@@ -5487,24 +5730,21 @@ test("prompt drafts survive refresh and failed save; model testing uses saved co
     fullPage: true,
   });
   await page.getByRole("tab", { name: "Prompts", exact: true }).click();
-  await page.getByRole("button", { name: "Delete prompt", exact: true }).click();
+  await promptAction(page, "Delete prompt");
   await page
     .getByRole("dialog", { name: "Delete this prompt?", exact: true })
     .getByRole("button", { name: "Delete prompt", exact: true })
     .click();
-  await expect(
-    page
-      .getByRole("combobox", { name: "After dictation", exact: true })
-      .locator('[data-slot="select-value"]'),
-  ).toHaveText("No automatic processing");
-  await page.getByRole("tab", { name: "Models", exact: true }).click();
+  await expect(automatic).not.toBeChecked();
+  await expect(page.getByText("Automatic processing is off.", { exact: true })).toBeVisible();
+  await page.getByRole("tab", { name: "Text model", exact: true }).click();
   await page.getByRole("checkbox", { name: "Enable LLM processing" }).uncheck();
-  await page.getByRole("button", { name: "Save prompts", exact: true }).click();
+  await page.getByRole("button", { name: "Save changes", exact: true }).click();
   await expect
     .poll(() => page.evaluate(() => window.dictationTest.snapshot.textProcessing.enabled))
     .toBe(false);
   await page.getByRole("tab", { name: "Prompts", exact: true }).click();
-  await expect(page.getByLabel("After dictation")).toBeDisabled();
+  await expect(automatic).toBeDisabled();
 });
 
 async function openPromptEditor(page: Page) {
@@ -5911,7 +6151,7 @@ test("an outdated backend keeps the interface visible and recovers after restart
   await page.addInitScript(() => {
     window.dictationTest.legacySnapshot = true;
   });
-  await page.goto("/#/prompts");
+  await page.goto("/#/prompts?section=models");
   await expect(page.getByRole("alert").filter({ hasText: "different versions" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Prompts", exact: true })).toBeVisible();
   await expect(page.getByRole("navigation", { name: "Main navigation" })).toBeVisible();
@@ -5937,13 +6177,13 @@ test("local models can be selected without changing saved preferences until Save
   await page.addInitScript(() => {
     window.dictationTest.textModels = ["gemma", "llama:8b"];
   });
-  await page.goto("/#/prompts");
+  await page.goto("/#/prompts?section=models");
   await expect(
     page.getByText("Server responded. 2 models available.", { exact: true }),
   ).toBeVisible();
   await page.getByRole("tab", { name: "Prompts", exact: true }).click();
   await page.getByLabel("Name", { exact: true }).fill("My cleanup");
-  await page.getByRole("tab", { name: "Models", exact: true }).click();
+  await page.getByRole("tab", { name: "Text model", exact: true }).click();
   const picker = page.getByRole("combobox", { name: "Model", exact: true });
   await picker.click();
   await page.getByRole("option", { name: "llama:8b", exact: true }).click();
@@ -5957,11 +6197,11 @@ test("local models can be selected without changing saved preferences until Save
   await page.getByRole("button", { name: "Refresh models", exact: true }).click();
   await page.getByRole("tab", { name: "Prompts", exact: true }).click();
   await expect(page.getByLabel("Name", { exact: true })).toHaveValue("My cleanup");
-  await page.getByRole("button", { name: "Save prompts", exact: true }).click();
+  await page.getByRole("button", { name: "Save changes", exact: true }).click();
   await expect
     .poll(() => page.evaluate(() => window.dictationTest.snapshot.textProcessing.model))
     .toBe("llama:8b");
-  await page.getByRole("tab", { name: "Models", exact: true }).click();
+  await page.getByRole("tab", { name: "Text model", exact: true }).click();
   await page.getByRole("button", { name: "Test model", exact: true }).click();
   await expect(
     page.locator('[data-slot="toast"]').filter({ hasText: "Model responded successfully." }),
@@ -5982,7 +6222,7 @@ test("server presets discover LM Studio and preserve saved choices until Save", 
     window.dictationTest.textModels = ["ollama-model"];
     window.dictationTest.snapshot.textProcessing.model = "ollama-model";
   });
-  await page.goto("/#/prompts");
+  await page.goto("/#/prompts?section=models");
   const server = page.getByRole("combobox", { name: "Server", exact: true });
   const model = page.getByRole("combobox", { name: "Model", exact: true });
   await expect(server).toContainText("Ollama");
@@ -6005,7 +6245,7 @@ test("server presets discover LM Studio and preserve saved choices until Save", 
   expect(await page.evaluate(() => window.dictationTest.snapshot.textProcessing.endpoint)).toBe(
     "http://127.0.0.1:11434/v1",
   );
-  await page.getByRole("button", { name: "Save prompts", exact: true }).click();
+  await page.getByRole("button", { name: "Save changes", exact: true }).click();
   await expect
     .poll(() => page.evaluate(() => window.dictationTest.snapshot.textProcessing.endpoint))
     .toBe("http://127.0.0.1:1234/v1");
@@ -6048,7 +6288,7 @@ test("discovery keeps manual IDs across failures, empty lists, missing models an
     state.snapshot.textProcessing.model = "old-model";
     state.modelListError = "Could not reach server. Start it and refresh models.";
   });
-  await page.goto("/#/prompts");
+  await page.goto("/#/prompts?section=models");
   await expect(
     page.getByRole("alert").filter({ hasText: "Start it and refresh models" }),
   ).toBeVisible();
@@ -6086,7 +6326,7 @@ test("endpoint changes and navigation cancel discovery and ignore late model lis
   await page.addInitScript(() => {
     window.dictationTest.deferModelList = true;
   });
-  await page.goto("/#/prompts");
+  await page.goto("/#/prompts?section=models");
   await expect
     .poll(() => page.evaluate(() => window.dictationTest.pendingModelLists.length))
     .toBe(1);
@@ -6148,7 +6388,7 @@ test("older backends show discovery restart guidance without hiding Prompts", as
   await page.addInitScript(() => {
     Reflect.deleteProperty(Reflect.get(window, "go").main.App, "ListTextModels");
   });
-  await page.goto("/#/prompts");
+  await page.goto("/#/prompts?section=models");
   await expect(page.getByRole("alert").filter({ hasText: "restart wails dev" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Prompts", exact: true })).toBeVisible();
   await page.getByLabel("Model identifier").fill("manual-model");
@@ -6307,7 +6547,7 @@ test("startup recovery provides diagnostics and retry without overwriting saved 
     state.snapshot.textProcessing.model = "saved-model";
     state.snapshot.textProcessing.enabled = true;
   });
-  await page.goto("/#/prompts");
+  await page.goto("/#/prompts?section=models");
   await expect(page.getByRole("region", { name: "Connection recovery" })).toBeVisible();
   await expect(page.getByRole("checkbox", { name: "Enable LLM processing" })).toBeDisabled();
   await page.getByText("Technical details", { exact: true }).click();
@@ -6942,7 +7182,7 @@ test("unsaved page drafts survive navigation and explicit discard", async ({ pag
   await page.goto("/#/settings");
   await page.getByLabel("Global shortcut", { exact: true }).fill("Ctrl+Alt+P");
   await page.getByRole("link", { name: "Prompts", exact: true }).click();
-  await page.getByRole("tab", { name: "Models", exact: true }).click();
+  await page.getByRole("tab", { name: "Text model", exact: true }).click();
   await page.getByLabel("Model identifier").fill("unsaved-local-model");
   await page.getByRole("link", { name: "Vocabulary", exact: true }).click();
   await page.getByRole("button", { name: "Add term", exact: true }).click();
@@ -6952,7 +7192,7 @@ test("unsaved page drafts survive navigation and explicit discard", async ({ pag
   await expect(page.getByLabel("Global shortcut", { exact: true })).toHaveValue("Ctrl+Alt+P");
   await page.getByRole("button", { name: "Discard changes", exact: true }).click();
   await page.getByRole("link", { name: "Prompts", exact: true }).click();
-  await page.getByRole("tab", { name: "Models", exact: true }).click();
+  await page.getByRole("tab", { name: "Text model", exact: true }).click();
   await expect(page.getByLabel("Model identifier")).toHaveValue("unsaved-local-model");
   await page.getByRole("button", { name: "Discard changes", exact: true }).click();
   await page.getByRole("link", { name: "Vocabulary", exact: true }).click();
@@ -7374,39 +7614,37 @@ test("automatic prompt indicator explains the selected prompt and follows save d
   });
   await homeModelScenario(page);
   await page.getByRole("link", { name: "Prompts", exact: true }).click();
-  await page.getByRole("tab", { name: "Prompts", exact: true }).click();
-  const automatic = page.getByRole("combobox", { name: "After dictation", exact: true });
+  const automatic = page.getByRole("switch", { name: "Run after dictation", exact: true });
   const marker = page.getByRole("img", {
     name: "Run after dictation changed from Default",
     exact: true,
   });
   const tooltip = page.locator('[data-slot="tooltip-content"]');
-  await expect(automatic).toContainText("Cleanup");
+  await expect(automatic).toBeChecked();
   await expect(marker).toHaveCount(0);
-  await automatic.click();
-  await page.getByRole("option", { name: "No automatic processing", exact: true }).click();
+  await automatic.uncheck();
   await marker.hover();
   await expect(tooltip).toContainText("Profile: Cleanup");
   await expect(tooltip).toContainText("Current: No automatic processing");
   await expect(tooltip).toContainText("Unsaved change");
   await marker.click();
-  await expect(automatic).toContainText("No automatic processing");
+  await expect(automatic).not.toBeChecked();
   await page.getByRole("button", { name: "Discard changes", exact: true }).click();
-  await expect(automatic).toContainText("Cleanup");
+  await expect(automatic).toBeChecked();
   await expect(marker).toHaveCount(0);
-  await page.getByRole("combobox", { name: "Prompt", exact: true }).click();
-  await page.getByRole("option", { name: "Summary", exact: true }).click();
-  await expect(page.getByRole("listbox")).toHaveCount(0);
+  await page
+    .getByRole("navigation", { name: "Saved prompts", exact: true })
+    .getByRole("button", { name: "Summary", exact: true })
+    .click();
   // Viewing another prompt does not change the automatic choice.
-  await expect(automatic).toContainText("Cleanup");
+  await expect(automatic).not.toBeChecked();
   await expect(marker).toHaveCount(0);
-  await automatic.click();
-  await page.getByRole("listbox").getByRole("option", { name: "Summary", exact: true }).click();
+  await automatic.check();
   await marker.hover();
   await expect(tooltip).toContainText("Profile: Cleanup");
   await expect(tooltip).toContainText("Current: Summary");
-  await page.getByRole("button", { name: "Save prompts", exact: true }).click();
-  await expect(page.getByRole("button", { name: "Save prompts", exact: true })).toBeDisabled();
+  await page.getByRole("button", { name: "Save changes", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Save changes", exact: true })).toBeDisabled();
   await marker.hover();
   await expect(tooltip).toContainText("Current: Summary");
   await expect(tooltip).not.toContainText("Unsaved");
