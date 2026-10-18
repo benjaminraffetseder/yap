@@ -18,7 +18,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { backend, isBusy, message, type GeneratedOutput } from "@/lib/backend";
+import { backend, isBusy, message, processingOptions, type GeneratedOutput } from "@/lib/backend";
 import { useTextRequest } from "@/lib/use-text-request";
 import { Copy, Loader2, RefreshCw, Sparkles, Trash2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
@@ -34,8 +34,9 @@ export function GeneratedOutputs({
   unavailable: boolean;
 }) {
   const { snapshot, run } = useDictation();
-  const { enabled, prompts } = snapshot.textProcessing;
-  const [selected, setSelected] = useState(prompts[0]?.id ?? "");
+  const { enabled } = snapshot.textProcessing;
+  const options = processingOptions(snapshot.textProcessing);
+  const [selected, setSelected] = useState(options[0]?.value ?? "");
   const [outputs, setOutputs] = useState<GeneratedOutput[]>([]);
   const seenOutputs = useRef<{ sessionID: string; ids: Set<string> } | null>(null);
   const [enteringIds, setEnteringIds] = useState<Set<string>>(new Set());
@@ -47,8 +48,9 @@ export function GeneratedOutputs({
   const [deleteError, setDeleteError] = useState("");
   const generation = useTextRequest();
   useEffect(() => {
-    if (!prompts.some((prompt) => prompt.id === selected)) setSelected(prompts[0]?.id ?? "");
-  }, [prompts, selected]);
+    if (!processingOptions(snapshot.textProcessing).some((option) => option.value === selected))
+      setSelected(processingOptions(snapshot.textProcessing)[0]?.value ?? "");
+  }, [snapshot.textProcessing, selected]);
   useEffect(() => {
     let active = true;
     setLoading(true);
@@ -103,7 +105,9 @@ export function GeneratedOutputs({
       setDeletingNow(false);
     }
   }
-  const options = prompts.map((prompt) => ({ value: prompt.id, label: prompt.name }));
+  const selectedChain = (snapshot.textProcessing.chains ?? []).find(
+    (chain) => chain.id === selected,
+  );
   return (
     <section aria-label="Generated outputs" className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-x-5 gap-y-2">
@@ -115,7 +119,7 @@ export function GeneratedOutputs({
             <Select
               items={options}
               value={selected || null}
-              disabled={!canGenerate || !prompts.length}
+              disabled={!canGenerate || !options.length}
               onValueChange={(value) => {
                 if (value) {
                   setSelected(value);
@@ -149,7 +153,7 @@ export function GeneratedOutputs({
                     aria-hidden="true"
                     className="size-3 animate-spin motion-reduce:animate-none"
                   />
-                  Generating output…
+                  {selectedChain ? snapshot.status.message : "Generating output…"}
                 </span>
                 <Button
                   size="sm"
@@ -165,7 +169,7 @@ export function GeneratedOutputs({
                 pressFeedback
                 size="sm"
                 variant="ghost"
-                aria-label="Generate output"
+                aria-label={selectedChain ? "Run chain" : "Generate output"}
                 className="bg-primary/10 text-xs text-primary hover:bg-primary/15 hover:text-primary"
                 disabled={!canGenerate || !selected}
                 onClick={() =>
@@ -173,7 +177,7 @@ export function GeneratedOutputs({
                 }
               >
                 <Sparkles className="size-3.5" />
-                Generate
+                {selectedChain ? "Run chain" : "Generate"}
               </Button>
             )}
           </div>
@@ -187,7 +191,9 @@ export function GeneratedOutputs({
           )}
         </div>
         <p className="text-[11px] leading-5 text-muted-foreground">
-          Uses your saved transcript. New outputs are saved separately.
+          {selectedChain
+            ? "Each step uses its chosen input. Completed results are saved separately, even if a later step fails."
+            : "Uses your saved transcript. New outputs are saved separately."}
         </p>
       </div>
       {generation.error && (
@@ -197,7 +203,7 @@ export function GeneratedOutputs({
       )}
       {generation.result && (
         <p role="status" className="text-sm text-primary">
-          Output saved.
+          {selectedChain ? "Chain complete. All step results saved." : "Output saved."}
         </p>
       )}
       {loading && (
@@ -245,6 +251,24 @@ export function GeneratedOutputs({
                     </Button>
                   }
                 >
+                  {output.chain?.runId && (
+                    <p className="mb-3 text-xs text-muted-foreground">
+                      {output.chain.name} · Step {output.chain.step} of {output.chain.total}
+                      {" · Input: "}
+                      {output.chain.input === "original"
+                        ? "Original transcription"
+                        : output.chain.input === "transcript"
+                          ? "Saved transcript"
+                          : (() => {
+                              const source = outputs.find(
+                                (item) => item.id === output.chain?.sourceOutputId,
+                              );
+                              return source
+                                ? `Step ${source.chain?.step}: ${source.prompt.name}`
+                                : "Earlier step (saved input below)";
+                            })()}
+                    </p>
+                  )}
                   <MarkdownContent className="text-base leading-8">{output.text}</MarkdownContent>
                   <div className="mt-4 flex flex-wrap items-center gap-2">
                     <Button

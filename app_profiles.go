@@ -81,7 +81,7 @@ func (a *App) SaveDictationProfile(profile storage.DictationProfile) (storage.Di
 		return storage.DictationProfile{}, err
 	}
 	if profile.AutoPromptID != "" {
-		if _, err := a.textConfig.Prompt(profile.AutoPromptID); err != nil {
+		if _, err := a.textConfig.Recipe(profile.AutoPromptID); err != nil {
 			return storage.DictationProfile{}, err
 		}
 	}

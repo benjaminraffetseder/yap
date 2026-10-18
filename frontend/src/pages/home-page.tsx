@@ -355,6 +355,30 @@ export function HomePage() {
           <p className="max-h-80 overflow-auto whitespace-pre-wrap break-words text-sm">
             {snapshot.latestResult.text}
           </p>
+          {snapshot.latestResult.outputs?.some((output) => output.chain?.runId) && (
+            <details className="space-y-3 text-sm">
+              <summary className="cursor-pointer text-muted-foreground">
+                Completed chain steps
+              </summary>
+              {snapshot.latestResult.outputs!.map((output) => (
+                <div key={output.id} className="space-y-2 rounded-lg border p-3">
+                  <p className="font-medium">
+                    Step {output.chain?.step}: {output.prompt.name}
+                  </p>
+                  <p className="max-h-60 overflow-auto whitespace-pre-wrap break-words">
+                    {output.text}
+                  </p>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => void run(() => backend.copy(output.text))}
+                  >
+                    Copy step result
+                  </Button>
+                </div>
+              ))}
+            </details>
+          )}
           <div className="flex flex-wrap gap-2">
             <Button
               variant="outline"

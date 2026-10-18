@@ -24,7 +24,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { backend, isBusy, isDesktop, message, type DictationProfile } from "@/lib/backend";
+import {
+  backend,
+  isBusy,
+  isDesktop,
+  message,
+  processingOptions,
+  type DictationProfile,
+} from "@/lib/backend";
 import { languages } from "@/lib/languages";
 
 export function ProfileSelector({
@@ -214,7 +221,7 @@ export function ProfilesPanel({ disabled }: { disabled: boolean }) {
                     profile.language}{" "}
                   · {profile.cleanText ? "Light cleanup" : "No cleanup"}
                   {profile.autoPromptId
-                    ? ` · ${snapshot.textProcessing.prompts.find((p) => p.id === profile.autoPromptId)?.name ?? "Prompt unavailable"}`
+                    ? ` · ${processingOptions(snapshot.textProcessing).find((p) => p.value === profile.autoPromptId)?.label ?? "Prompt or chain unavailable"}`
                     : ""}
                 </p>
               </div>
@@ -351,10 +358,13 @@ function ProfileEditor({
     : [...languages, { value: draft.language, label: draft.language }];
   const prompts = [
     { value: "", label: "No automatic processing" },
-    ...snapshot.textProcessing.prompts.map((p) => ({ value: p.id, label: p.name })),
+    ...processingOptions(snapshot.textProcessing),
   ];
   if (!prompts.some((p) => p.value === draft.autoPromptId))
-    prompts.push({ value: draft.autoPromptId, label: "Prompt unavailable — choose another" });
+    prompts.push({
+      value: draft.autoPromptId,
+      label: "Prompt or chain unavailable — choose another",
+    });
   function close() {
     if (!saving) {
       if (dirty) setConfirmDiscard(true);
@@ -460,8 +470,8 @@ function ProfileEditor({
               </SelectContent>
             </Select>
             <p className="text-xs leading-5 text-muted-foreground">
-              Automatic prompts use your shared local text model. Configure and enable it in Prompts
-              first.
+              Automatic prompts and chains use your shared local text model. Configure and enable it
+              in Prompts first.
             </p>
           </div>
         </fieldset>

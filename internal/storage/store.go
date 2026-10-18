@@ -90,7 +90,10 @@ func Open(dir string) (*Store, error) {
 		model TEXT NOT NULL, endpoint TEXT NOT NULL, input TEXT NOT NULL, output TEXT NOT NULL);
 	CREATE INDEX IF NOT EXISTS generated_outputs_recording ON generated_outputs(recording_id,created_at);
 	CREATE TRIGGER IF NOT EXISTS delete_generated_outputs AFTER DELETE ON recordings
-	BEGIN DELETE FROM generated_outputs WHERE recording_id=OLD.id; END;`)
+	BEGIN DELETE FROM generated_outputs WHERE recording_id=OLD.id; END;
+	CREATE TABLE IF NOT EXISTS generated_output_chains (output_id TEXT PRIMARY KEY, value TEXT NOT NULL);
+	CREATE TRIGGER IF NOT EXISTS delete_generated_output_chain AFTER DELETE ON generated_outputs
+	BEGIN DELETE FROM generated_output_chains WHERE output_id=OLD.id; END;`)
 	if err != nil {
 		db.Close()
 		return nil, err
@@ -129,6 +132,14 @@ func (s *Store) SaveSettings(v Settings) error {
 func (s *Store) Add(v Session) error { return s.AddWithOutput(v, nil) }
 
 func (s *Store) AddWithOutput(v Session, output *GeneratedOutput) error {
+	var outputs []GeneratedOutput
+	if output != nil {
+		outputs = append(outputs, *output)
+	}
+	return s.AddWithOutputs(v, outputs)
+}
+
+func (s *Store) AddWithOutputs(v Session, outputs []GeneratedOutput) error {
 	tx, err := s.db.Begin()
 	if err != nil {
 		return err
@@ -143,12 +154,11 @@ func (s *Store) AddWithOutput(v Session, output *GeneratedOutput) error {
 			return err
 		}
 	}
-	if output != nil {
-		o := output
+	for _, o := range outputs {
 		if o.SessionID != v.ID {
 			return errors.New("output belongs to another dictation")
 		}
-		if _, err := tx.Exec("INSERT INTO generated_outputs VALUES(?,?,?,?,?,?,?,?,?,?)", o.ID, o.SessionID, o.CreatedAt, o.Prompt.ID, o.Prompt.Name, o.Prompt.Instruction, o.Model, o.Endpoint, o.Input, o.Text); err != nil {
+		if err := insertGeneratedOutput(tx, o); err != nil {
 			return err
 		}
 	}

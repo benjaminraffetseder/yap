@@ -171,6 +171,8 @@ func (a *App) processTextRequest(requestID string, request textRequest) (string,
 		return "", errors.New("enable a local text model in Prompts first")
 	}
 	prompt := textmodel.Prompt{Instruction: "Reply with only OK."}
+	var recipe *textmodel.Chain
+	var session storage.Session
 	if target != nil {
 		entry, entryErr := a.store.Session(target.sessionID)
 		if entryErr != nil {
@@ -181,6 +183,7 @@ func (a *App) processTextRequest(requestID string, request textRequest) (string,
 			return "", entryErr
 		}
 		input = entry.FinalTranscript
+		session = entry
 		if target.outputID != "" {
 			prior, priorErr := a.store.GeneratedOutput(target.sessionID, target.outputID)
 			if priorErr != nil {
@@ -188,18 +191,27 @@ func (a *App) processTextRequest(requestID string, request textRequest) (string,
 				return "", errors.New("could not load the saved output for regeneration")
 			}
 			input, prompt = prior.Input, prior.Prompt
+		} else {
+			selected, recipeErr := config.Recipe(request.promptID)
+			if recipeErr != nil {
+				a.mu.Unlock()
+				return "", recipeErr
+			}
+			recipe = &selected
 		}
 	}
-	if !request.test && request.refinement == nil && (target == nil || target.outputID == "") {
+	if !request.test && request.refinement == nil && target == nil {
 		prompt, err = config.Prompt(request.promptID)
 		if err != nil {
 			a.mu.Unlock()
 			return "", err
 		}
 	}
-	if err = textmodel.ValidateText(input); err != nil {
-		a.mu.Unlock()
-		return "", err
+	if recipe == nil {
+		if err = textmodel.ValidateText(input); err != nil {
+			a.mu.Unlock()
+			return "", err
+		}
 	}
 	parent := a.ctx
 	if parent == nil {
@@ -223,6 +235,8 @@ func (a *App) processTextRequest(requestID string, request textRequest) (string,
 	var output string
 	if request.refinement != nil {
 		output, err = a.textEngine.Refine(ctx, config, input)
+	} else if recipe != nil {
+		output, err = a.runTextRecipe(ctx, config, *recipe, session, a.store.AddGeneratedOutput)
 	} else {
 		output, err = a.textEngine.Process(ctx, config, prompt, input)
 	}
@@ -246,7 +260,7 @@ func (a *App) processTextRequest(requestID string, request textRequest) (string,
 	if a.closing || ctx.Err() != nil {
 		return "", context.Canceled
 	}
-	if err == nil && target != nil {
+	if err == nil && target != nil && recipe == nil {
 		err = a.store.AddGeneratedOutput(storage.NewGeneratedOutput(target.sessionID, input, output, config, prompt))
 		if err == nil {
 			a.event("dictation:history")

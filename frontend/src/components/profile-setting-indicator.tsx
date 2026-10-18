@@ -3,6 +3,7 @@ import { CircleDot } from "lucide-react";
 import { useDictation } from "@/components/dictation-provider";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { languages } from "@/lib/languages";
+import { processingOptions } from "@/lib/backend";
 
 export function ModifiedMarker({ className = "", ...props }: ComponentProps<"span">) {
   return (
@@ -49,8 +50,8 @@ export function ProfileSettingIndicator({
         return languages.find((language) => language.value === setting)?.label || setting;
       case "autoPromptId":
         return setting
-          ? snapshot.textProcessing.prompts.find((prompt) => prompt.id === setting)?.name ||
-              "Prompt unavailable"
+          ? processingOptions(snapshot.textProcessing).find((option) => option.value === setting)
+              ?.label || "Prompt or chain unavailable"
           : "No automatic processing";
       default:
         return setting;

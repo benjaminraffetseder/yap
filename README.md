@@ -20,6 +20,7 @@ Linux support is incomplete.
 - Switch dictation profiles with saved speech-model, language, cleanup, and prompt choices.
 - Transcribe audio files, including WAV, MP3, and M4A.
 - Run cleanup or custom prompts through an optional local text model.
+- Save prompt chains with a chosen input for each step and keep intermediate results.
 - Back up history, prompts, vocabulary, and saved recordings.
 
 ## Getting started

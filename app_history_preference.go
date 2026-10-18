@@ -44,7 +44,11 @@ func (a *App) SaveLatestResult(id string) error {
 	if a.latestResult == nil || a.latestResult.Session.ID != id {
 		return errors.New("this temporary result is no longer available")
 	}
-	if err := a.store.AddWithOutput(a.latestResult.Session, a.latestResult.Output); err != nil {
+	outputs := a.latestResult.Outputs
+	if len(outputs) == 0 && a.latestResult.Output != nil {
+		outputs = append(outputs, *a.latestResult.Output)
+	}
+	if err := a.store.AddWithOutputs(a.latestResult.Session, outputs); err != nil {
 		return err
 	}
 	a.latestResult = nil

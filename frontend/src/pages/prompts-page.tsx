@@ -1,5 +1,6 @@
 import { useDictation } from "@/components/dictation-provider";
 import { ProfileSettingIndicator } from "@/components/profile-setting-indicator";
+import { PromptChainsEditor } from "@/components/prompt-chains-editor";
 import { SettingRow, SettingsSection, ToggleSetting } from "@/components/settings-section";
 import { Button } from "@/components/ui/button";
 import {
@@ -55,6 +56,7 @@ const localServers = [
 const serverOptions = [...localServers, { value: "custom", label: "Custom" }];
 const sections = [
   { value: "prompts", label: "Prompts" },
+  { value: "chains", label: "Chains" },
   { value: "models", label: "Text model" },
 ];
 export function PromptsPage() {
@@ -126,7 +128,12 @@ export function PromptsPage() {
     label: prompt.name || "Untitled prompt",
   }));
   const prompt = draft.prompts.find((p) => p.id === selected);
-  const automaticPrompt = draft.prompts.find((p) => p.id === draft.autoPromptId);
+  const automaticPrompt = [...draft.prompts, ...(draft.chains ?? [])].find(
+    (p) => p.id === draft.autoPromptId,
+  );
+  const dependentChains = (draft.chains ?? []).filter((chain) =>
+    chain.steps.some((step) => step.promptId === deleting?.id),
+  );
   const includedPrompt = defaultTextProcessing.prompts.find((p) => p.id === selected);
   const refinementCurrent =
     !!refining &&
@@ -162,7 +169,13 @@ export function PromptsPage() {
     });
   }
   function deletePrompt() {
-    if (!deleting || controlsDisabled || !draft.prompts.some((p) => p.id === deleting.id)) return;
+    if (
+      !deleting ||
+      controlsDisabled ||
+      dependentChains.length ||
+      !draft.prompts.some((p) => p.id === deleting.id)
+    )
+      return;
     update({
       prompts: draft.prompts.filter((p) => p.id !== deleting.id),
       autoPromptId: draft.autoPromptId === deleting.id ? "" : draft.autoPromptId,
@@ -438,6 +451,14 @@ export function PromptsPage() {
               )}
             </SettingRow>
           </SettingsSection>
+        </TabsContent>
+        <TabsContent value="chains" keepMounted>
+          <PromptChainsEditor
+            config={draft}
+            disabled={controlsDisabled}
+            onChange={update}
+            onConfigureModel={() => selectSection("models")}
+          />
         </TabsContent>
         <TabsContent value="prompts" keepMounted>
           <fieldset disabled={controlsDisabled} className="min-w-0 disabled:opacity-60">
@@ -729,6 +750,8 @@ export function PromptsPage() {
               {deleting &&
                 draft.autoPromptId === deleting.id &&
                 " Automatic processing after dictation will be turned off."}
+              {dependentChains.length > 0 &&
+                ` Update or delete the chains using this prompt first: ${dependentChains.map((chain) => chain.name).join(", ")}.`}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -737,7 +760,11 @@ export function PromptsPage() {
             </Button>
             <Button
               variant="destructive"
-              disabled={controlsDisabled || !draft.prompts.some((p) => p.id === deleting?.id)}
+              disabled={
+                controlsDisabled ||
+                dependentChains.length > 0 ||
+                !draft.prompts.some((p) => p.id === deleting?.id)
+              }
               onClick={deletePrompt}
             >
               Delete prompt

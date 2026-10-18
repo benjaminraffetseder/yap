@@ -45,9 +45,10 @@ type Status struct {
 	HistoryError      string  `json:"historyError"`
 }
 type TemporaryResult struct {
-	Session storage.Session          `json:"session"`
-	Output  *storage.GeneratedOutput `json:"output,omitempty"`
-	Text    string                   `json:"text"`
+	Session storage.Session           `json:"session"`
+	Output  *storage.GeneratedOutput  `json:"output,omitempty"`
+	Text    string                    `json:"text"`
+	Outputs []storage.GeneratedOutput `json:"outputs,omitempty"`
 }
 type Snapshot struct {
 	DictationProfiles      []storage.DictationProfile `json:"dictationProfiles"`
@@ -517,6 +518,7 @@ func (a *App) GetSnapshot() (Snapshot, error) {
 	var latest *TemporaryResult
 	if a.latestResult != nil {
 		copy := *a.latestResult
+		copy.Outputs = append([]storage.GeneratedOutput{}, copy.Outputs...)
 		if copy.Output != nil {
 			output := *copy.Output
 			copy.Output = &output
@@ -684,7 +686,7 @@ func (a *App) transcribe(ctx context.Context, id, path, target string, duration 
 		a.latestResult = &TemporaryResult{Session: session, Text: text}
 	}
 	if textConfig.Enabled && textConfig.AutoPromptID != "" {
-		prompt, promptErr := textConfig.Prompt(textConfig.AutoPromptID)
+		recipe, promptErr := textConfig.Recipe(textConfig.AutoPromptID)
 		a.status.Message = "Processing text…"
 		a.emit()
 		a.event("dictation:history")
@@ -693,7 +695,14 @@ func (a *App) transcribe(ctx context.Context, id, path, target string, duration 
 		a.mu.Unlock()
 		var processed string
 		if promptErr == nil {
-			processed, promptErr = a.textEngine.Process(ctx, textConfig, prompt, text)
+			processed, promptErr = a.runTextRecipe(ctx, textConfig, recipe, session, func(output storage.GeneratedOutput) error {
+				if settings.SaveHistory {
+					return a.store.AddGeneratedOutput(output)
+				}
+				a.latestResult.Outputs = append(a.latestResult.Outputs, output)
+				a.latestResult.Output = &output
+				return nil
+			})
 		}
 		a.mu.Lock()
 		if a.closing {
@@ -712,14 +721,8 @@ func (a *App) transcribe(ctx context.Context, id, path, target string, duration 
 		if promptErr == nil {
 			promptErr = textmodel.ValidateText(processed)
 		}
-		if promptErr == nil {
-			output := storage.NewGeneratedOutput(id, text, processed, textConfig, prompt)
-			if settings.SaveHistory {
-				promptErr = a.store.AddGeneratedOutput(output)
-			} else {
-				a.latestResult.Output = &output
-				a.latestResult.Text = processed
-			}
+		if promptErr == nil && !settings.SaveHistory {
+			a.latestResult.Text = processed
 		}
 		if promptErr != nil {
 			a.status.CompletionWarning = true

@@ -155,22 +155,58 @@ if you want to keep it.
 
 There are three ways to process text:
 
-- **Generated outputs** on a dictation page saves separate versions using its
-  saved text. Each output keeps its input, instructions, and model details.
+- **Generated outputs** on a dictation page saves separate versions using a prompt
+  or a saved chain. A single prompt uses the saved transcript. Each output keeps
+  its input, instructions, and model details.
   **Regenerate** uses that saved input and prompt with your current model.
 - **Process text** in the transcript editor previews a result from your draft.
   Choose **Replace draft**, then **Save transcript** to keep it.
 - **Run after dictation**, inside a prompt's details, runs that prompt before
-  copying or pasting new dictations. Only one prompt can run automatically:
-  turning another prompt's switch on replaces the current selection, and turning
+  copying or pasting new dictations. Only one prompt or chain can run automatically:
+  turning another prompt or chain's switch on replaces the current selection, and turning
   the active switch off disables it. The **Automatic** badge marks your selection.
   Choose **Save changes** to keep prompt edits and the automatic selection.
   If processing fails or is cancelled, the speech transcript stays
   in History, but nothing is copied or pasted.
 
-Text processing starts with a 4,096-token output budget. If the reply hits that
-budget, Yap retries the original transcript with a larger budget, up to 32,768
-tokens. Partial replies are never saved. The whole operation, including retries,
+### Prompt chains
+
+Open **Prompts → Chains → Add chain**, give it a name, and add steps. Each step
+selects an existing saved prompt and **Use text from**:
+
+- **Original transcription** uses the speech recognizer's unedited text.
+- **Saved transcript (including edits)** uses the transcript captured when the
+  run starts, including light cleanup, vocabulary replacements, and saved edits.
+- **Step N: Prompt name** uses the result of that particular earlier step.
+
+New steps default to the preceding step's result. For example, Cleanup can use
+the original, Summary can use Cleanup, and Email can use either Summary or
+Cleanup. Only earlier steps are available as inputs. Reordering preserves those
+references; moves that would put an input after its dependent are disabled.
+Change dependent inputs before removing a step. Save changes to keep the chain.
+There can be up to 30 chains, each containing 1–10 steps.
+
+To run a chain manually, open a dictation's **Outputs** tab, choose the chain in
+the prompt picker, and select **Run chain**. To run it automatically, turn on
+**Run chain after dictation** in its details, or choose it under **After dictation**
+in a dictation profile. All steps use the shared local text model. Automatic
+execution copies or pastes only the last step after the entire chain succeeds.
+
+Each completed step is saved immediately as a separate output with its chain,
+step number, exact input, prompt, and model. A failed or cancelled step stops the
+chain and keeps completed results. With **Save to history** off, results remain
+temporary on Home; expand **Completed chain steps** to inspect or copy them.
+**Save to history** saves the transcript and all completed steps together.
+
+Regenerating an individual output creates a separate version from its captured
+input and instructions; existing downstream outputs keep their original inputs.
+Editing or deleting a chain does not change past outputs. Prompts used by a
+chain must be removed from its steps before they can be deleted. Backups include
+saved chains and the input relationships of their generated outputs.
+
+Each prompt execution starts with a 4,096-token output budget. If the reply hits
+that budget, Yap retries the same input with a larger budget, up to 32,768 tokens.
+Partial replies are never saved. Each prompt or chain step, including retries,
 times out after five minutes; prompt refinement does not use these retries.
 If the server reports stopping below the requested budget, Yap stops retrying.
 Long input and output must still fit your model's context window. If truncation
@@ -194,7 +230,7 @@ downloads, not custom files. **Repair & use** replaces a damaged model;
 **Check & repair runtime** checks the managed Windows runtime.
 
 Settings → Backup & restore exports a `.yap-backup.zip` with history, edited
-text, generated outputs, prompts, vocabulary, and portable preferences.
+text, generated outputs, prompts, chains, vocabulary, and portable preferences.
 **Include retained recordings** is off by default. Models and runtimes aren't
 included. Save backups outside Yap's data folder and keep them private: they
 are unencrypted.

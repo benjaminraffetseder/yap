@@ -18,8 +18,10 @@ function restoredMessage(summary: BackupSummary) {
     summary.duplicateSessions +
     summary.duplicateOutputs +
     summary.skippedPrompts +
+    (summary.skippedChains ?? 0) +
     summary.skippedVocabulary;
-  return `Restored ${summary.sessions} dictations, ${summary.outputs} outputs, ${summary.prompts} prompts, and ${summary.vocabulary} terms.${skipped ? ` ${skipped} existing or conflicting entries kept.` : ""}`;
+  const chains = summary.chains ? `, ${summary.chains} chains` : "";
+  return `Restored ${summary.sessions} dictations, ${summary.outputs} outputs, ${summary.prompts} prompts${chains}, and ${summary.vocabulary} terms.${skipped ? ` ${skipped} existing or conflicting entries kept.` : ""}`;
 }
 
 export function BackupPanel({ disabled, unsaved }: { disabled: boolean; unsaved: boolean }) {
@@ -122,7 +124,8 @@ export function BackupPanel({ disabled, unsaved }: { disabled: boolean; unsaved:
         Backup & restore
       </h2>
       <p className="text-xs text-muted-foreground">
-        Save History, generated outputs, prompts, vocabulary, and portable preferences in one file.
+        Save History, generated outputs, prompts, chains, vocabulary, and portable preferences in
+        one file.
       </p>
       <label className="flex items-center gap-2 text-sm">
         <Checkbox checked={audio} disabled={blocked} onCheckedChange={setAudio} />
@@ -187,8 +190,8 @@ export function BackupPanel({ disabled, unsaved }: { disabled: boolean; unsaved:
           <DialogHeader>
             <DialogTitle>Restore backup?</DialogTitle>
             <DialogDescription>
-              New entries will be added. Existing dictations, outputs, and conflicting prompts or
-              terms will be kept.
+              New entries will be added. Existing dictations, outputs, and conflicting prompts,
+              chains, or terms will be kept.
             </DialogDescription>
           </DialogHeader>
           {preview && (
@@ -204,6 +207,11 @@ export function BackupPanel({ disabled, unsaved }: { disabled: boolean; unsaved:
                   ["Dictations", preview.summary.sessions, preview.summary.duplicateSessions],
                   ["Generated outputs", preview.summary.outputs, preview.summary.duplicateOutputs],
                   ["Prompts", preview.summary.prompts, preview.summary.skippedPrompts],
+                  [
+                    "Prompt chains",
+                    preview.summary.chains ?? 0,
+                    preview.summary.skippedChains ?? 0,
+                  ],
                   [
                     "Vocabulary terms",
                     preview.summary.vocabulary,

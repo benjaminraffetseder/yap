@@ -66,18 +66,28 @@ export type DictationProfile = {
   autoPromptId: string;
 };
 export type TextPrompt = { id: string; name: string; instruction: string };
+export type PromptChainStep = { id: string; promptId: string; input: string };
+export type PromptChain = { id: string; name: string; steps: PromptChainStep[] };
 export type TextProcessing = {
   enabled: boolean;
   endpoint: string;
   model: string;
   autoPromptId: string;
   prompts: TextPrompt[];
+  chains?: PromptChain[];
 };
+export function processingOptions(config: TextProcessing) {
+  return [
+    ...config.prompts.map((prompt) => ({ value: prompt.id, label: prompt.name })),
+    ...(config.chains ?? []).map((chain) => ({ value: chain.id, label: `${chain.name} (chain)` })),
+  ];
+}
 export const defaultTextProcessing: TextProcessing = {
   enabled: false,
   endpoint: "http://127.0.0.1:11434/v1",
   model: "",
   autoPromptId: "",
+  chains: [],
   prompts: [
     {
       id: "cleanup",
@@ -172,6 +182,16 @@ export type GeneratedOutput = {
   endpoint: string;
   input: string;
   text: string;
+  chain?: {
+    runId: string;
+    chainId: string;
+    name: string;
+    stepId: string;
+    step: number;
+    total: number;
+    input: string;
+    sourceOutputId: string;
+  };
 };
 export type HistoryPageResult = {
   entries: Session[];
@@ -208,7 +228,12 @@ export type Snapshot = {
   defaultProfileId?: string;
   profileModified?: boolean;
   recordingSaveHistory?: boolean;
-  latestResult?: { session: Session; output?: GeneratedOutput; text: string } | null;
+  latestResult?: {
+    session: Session;
+    output?: GeneratedOutput;
+    outputs?: GeneratedOutput[];
+    text: string;
+  } | null;
   textProcessing: TextProcessing;
   settings: Settings;
   status: Status;
@@ -231,6 +256,8 @@ export type BackupSummary = {
   duplicateOutputs: number;
   prompts: number;
   skippedPrompts: number;
+  chains?: number;
+  skippedChains?: number;
   vocabulary: number;
   skippedVocabulary: number;
   recordings: number;

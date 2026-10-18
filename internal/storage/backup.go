@@ -16,10 +16,11 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/google/uuid"
 	"yap/internal/audio"
 	textmodel "yap/internal/inference/text"
 	"yap/internal/vocabulary"
+
+	"github.com/google/uuid"
 )
 
 const backupVersion = 1
@@ -48,6 +49,7 @@ type backupManifest struct {
 	Sessions    []Session          `json:"sessions"`
 	Outputs     []GeneratedOutput  `json:"outputs"`
 	Prompts     []textmodel.Prompt `json:"prompts"`
+	Chains      []textmodel.Chain  `json:"chains"`
 	Vocabulary  []vocabulary.Entry `json:"vocabulary"`
 }
 
@@ -58,6 +60,8 @@ type BackupSummary struct {
 	DuplicateOutputs  int `json:"duplicateOutputs"`
 	Prompts           int `json:"prompts"`
 	SkippedPrompts    int `json:"skippedPrompts"`
+	Chains            int `json:"chains"`
+	SkippedChains     int `json:"skippedChains"`
 	Vocabulary        int `json:"vocabulary"`
 	SkippedVocabulary int `json:"skippedVocabulary"`
 	Recordings        int `json:"recordings"`
@@ -142,6 +146,7 @@ func backupSnapshotBounded(ctx context.Context, tx *sql.Tx, limit int64) (backup
 	}
 	m.Preferences = BackupPreferences{&settings.SaveHistory, settings.Language, settings.Interaction, settings.AutoCopy, settings.AutoPaste, settings.SaveAudio, settings.CleanText}
 	m.Prompts = config.Prompts
+	m.Chains = config.Chains
 	base, err := json.Marshal(m)
 	if err != nil {
 		return m, err
@@ -207,7 +212,7 @@ func backupSnapshotBounded(ctx context.Context, tx *sql.Tx, limit int64) (backup
 	}
 	for rows.Next() {
 		var v GeneratedOutput
-		if err = rows.Scan(&v.ID, &v.SessionID, &v.CreatedAt, &v.Prompt.ID, &v.Prompt.Name, &v.Prompt.Instruction, &v.Model, &v.Endpoint, &v.Input, &v.Text); err != nil {
+		if err = scanGeneratedOutput(rows, &v); err != nil {
 			break
 		}
 		if err = account(v, len(m.Outputs)); err != nil {
@@ -364,6 +369,7 @@ func (s *Store) ExportBackup(ctx context.Context, path string, includeAudio bool
 		return summary, err
 	}
 	summary.Sessions, summary.Outputs, summary.Prompts, summary.Vocabulary = len(m.Sessions), len(m.Outputs), len(m.Prompts), len(m.Vocabulary)
+	summary.Chains = len(m.Chains)
 	return summary, nil
 }
 
@@ -389,11 +395,13 @@ func validateBackupManifest(m *backupManifest) error {
 	}
 	config := textmodel.Defaults()
 	config.Prompts = m.Prompts
+	config.Chains = m.Chains
 	config, err := textmodel.Normalize(config)
 	if err != nil {
 		return fmt.Errorf("invalid backup prompts: %w", err)
 	}
 	m.Prompts = config.Prompts
+	m.Chains = config.Chains
 	m.Vocabulary, err = vocabulary.Normalize(m.Vocabulary)
 	if err != nil {
 		return fmt.Errorf("invalid backup vocabulary: %w", err)
@@ -418,6 +426,9 @@ func validateBackupManifest(m *backupManifest) error {
 			return err
 		}
 		if err := textmodel.ValidateText(v.Text); err != nil {
+			return err
+		}
+		if err := validateOutputChain(v.Chain); err != nil {
 			return err
 		}
 		if _, err := textmodel.Normalize(textmodel.Config{Enabled: true, Endpoint: v.Endpoint, Model: v.Model, Prompts: []textmodel.Prompt{v.Prompt}}); err != nil {
@@ -597,12 +608,33 @@ func planBackup(ctx context.Context, tx *sql.Tx, b *BackupArchive) (p restorePla
 				break
 			}
 		}
+		for _, existing := range p.config.Chains {
+			found = found || existing.ID == v.ID
+		}
 		if found || len(p.config.Prompts) >= 30 {
 			p.summary.SkippedPrompts++
 			continue
 		}
 		p.config.Prompts = append(p.config.Prompts, v)
 		p.summary.Prompts++
+	}
+	for _, chain := range b.manifest.Chains {
+		found := false
+		for _, existing := range p.config.Chains {
+			found = found || existing.ID == chain.ID
+		}
+		for _, prompt := range p.config.Prompts {
+			found = found || prompt.ID == chain.ID
+		}
+		candidate := p.config
+		candidate.Chains = append(append([]textmodel.Chain{}, p.config.Chains...), chain)
+		normalized, validationErr := textmodel.Normalize(candidate)
+		if found || validationErr != nil {
+			p.summary.SkippedChains++
+			continue
+		}
+		p.config = normalized
+		p.summary.Chains++
 	}
 	for _, v := range b.manifest.Vocabulary {
 		candidate := append(append([]vocabulary.Entry{}, p.vocabulary...), v)
@@ -703,7 +735,7 @@ func (s *Store) RestoreBackup(ctx context.Context, b *BackupArchive, preferences
 		}
 	}
 	for _, v := range p.outputs {
-		if _, err = tx.Exec("INSERT INTO generated_outputs VALUES(?,?,?,?,?,?,?,?,?,?)", v.ID, v.SessionID, v.CreatedAt, v.Prompt.ID, v.Prompt.Name, v.Prompt.Instruction, v.Model, v.Endpoint, v.Input, v.Text); err != nil {
+		if err = insertGeneratedOutput(tx, v); err != nil {
 			return RestoredBackup{}, err
 		}
 	}

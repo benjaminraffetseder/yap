@@ -2637,6 +2637,44 @@ test.beforeEach(async ({ page }) => {
             },
             GenerateSessionOutput: async (id: string, sessionID: string, promptID: string) => {
               const entry = state.snapshot.history.find((entry) => entry.id === sessionID);
+              const chain = state.snapshot.textProcessing.chains?.find(
+                (chain) => chain.id === promptID,
+              );
+              if (entry && chain) {
+                const completed = new Map<string, GeneratedOutput>();
+                const runId = crypto.randomUUID();
+                let result = "";
+                for (const [index, step] of chain.steps.entries()) {
+                  const prompt = state.snapshot.textProcessing.prompts.find(
+                    (prompt) => prompt.id === step.promptId,
+                  )!;
+                  const source = completed.get(step.input.slice(5));
+                  const input =
+                    step.input === "original"
+                      ? entry.rawTranscript
+                      : step.input === "transcript"
+                        ? entry.finalTranscript
+                        : source!.text;
+                  const pending = beginOutput(id, sessionID, prompt, input);
+                  state.snapshot.status.message = `Step ${index + 1} of ${chain.steps.length} · ${prompt.name}`;
+                  state.callbacks["dictation:status"](structuredClone(state.snapshot.status));
+                  result = await pending;
+                  const output = state.outputs[0];
+                  output.chain = {
+                    runId,
+                    chainId: chain.id,
+                    name: chain.name,
+                    stepId: step.id,
+                    step: index + 1,
+                    total: chain.steps.length,
+                    input: step.input,
+                    sourceOutputId: source?.id ?? "",
+                  };
+                  completed.set(step.id, output);
+                  state.history();
+                }
+                return result;
+              }
               const prompt = state.snapshot.textProcessing.prompts.find(
                 (prompt) => prompt.id === promptID,
               );
@@ -7660,4 +7698,313 @@ test("automatic prompt indicator explains the selected prompt and follows save d
   expect(await page.evaluate(() => window.dictationTest.snapshot.textProcessing.autoPromptId)).toBe(
     "cleanup",
   );
+});
+
+test("prompt chains can be saved with explicit sources and selected for automatic processing", async ({
+  page,
+}, testInfo) => {
+  await page.addInitScript(() => {
+    const state = window.dictationTest;
+    state.snapshot.textProcessing.enabled = true;
+    state.snapshot.textProcessing.model = "local-model";
+    state.snapshot.textProcessing.prompts.push({
+      id: "email",
+      name: "Email",
+      instruction: "Write an email.",
+    });
+  });
+  await page.goto("/#/prompts?section=chains");
+  await page.getByRole("button", { name: "Add chain", exact: true }).click();
+  await page.getByRole("textbox", { name: "Chain name", exact: true }).fill("Meeting follow-up");
+  await expect(page.getByRole("combobox", { name: "Step 1 input", exact: true })).toContainText(
+    "Original transcription",
+  );
+  await page.getByRole("button", { name: "Add step", exact: true }).click();
+  await page.getByRole("combobox", { name: "Step 2 prompt", exact: true }).click();
+  await page.getByRole("option", { name: "Summary", exact: true }).click();
+  await expect(page.getByRole("combobox", { name: "Step 2 input", exact: true })).toContainText(
+    "Step 1: Cleanup",
+  );
+  await page.getByRole("button", { name: "Add step", exact: true }).click();
+  await page.getByRole("combobox", { name: "Step 3 prompt", exact: true }).click();
+  await page.getByRole("option", { name: "Email", exact: true }).click();
+  await page.getByRole("combobox", { name: "Step 3 input", exact: true }).click();
+  await expect(
+    page.getByRole("option", { name: "Original transcription", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("option", { name: "Saved transcript (including edits)", exact: true }),
+  ).toBeVisible();
+  await expect(page.getByRole("option", { name: "Step 2: Summary", exact: true })).toBeVisible();
+  await page.getByRole("option", { name: "Step 1: Cleanup", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Remove step 1", exact: true })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Move step 1 down", exact: true })).toBeDisabled();
+  await page.getByRole("switch", { name: "Run chain after dictation", exact: true }).check();
+  await page.getByRole("button", { name: "Save changes", exact: true }).click();
+  await expect
+    .poll(() => page.evaluate(() => window.dictationTest.snapshot.textProcessing.chains?.[0].name))
+    .toBe("Meeting follow-up");
+  const saved = await page.evaluate(() =>
+    structuredClone(window.dictationTest.snapshot.textProcessing),
+  );
+  expect(saved.chains![0].steps[2].input).toBe(`step:${saved.chains![0].steps[0].id}`);
+  expect(saved.autoPromptId).toBe(saved.chains![0].id);
+  await page.screenshot({ path: testInfo.outputPath("prompt-chain-editor.png"), fullPage: true });
+  await page.setViewportSize({ width: 760, height: 560 });
+  await expect
+    .poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
+    .toBe(true);
+  await expect(page.getByRole("button", { name: "Save changes", exact: true })).toBeInViewport();
+  await page.screenshot({
+    path: testInfo.outputPath("prompt-chain-editor-narrow.png"),
+    fullPage: true,
+  });
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await page.getByRole("link", { name: "History", exact: true }).click();
+  await page.getByRole("link", { name: "Prompts", exact: true }).click();
+  await page.getByRole("tab", { name: "Chains", exact: true }).click();
+  await expect(page.getByRole("textbox", { name: "Chain name", exact: true })).toHaveValue(
+    "Meeting follow-up",
+  );
+  await page.getByRole("tab", { name: "Prompts", exact: true }).click();
+  await promptAction(page, "Delete prompt");
+  const dialog = page.getByRole("dialog", { name: "Delete this prompt?", exact: true });
+  await expect(dialog).toContainText("Meeting follow-up");
+  await expect(dialog.getByRole("button", { name: "Delete prompt", exact: true })).toBeDisabled();
+  await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+  await page.getByRole("tab", { name: "Chains", exact: true }).click();
+  await page.getByRole("button", { name: "Delete chain", exact: true }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Delete chain", exact: true }).click();
+  await page.getByRole("button", { name: "Save changes", exact: true }).click();
+  await expect
+    .poll(() => page.evaluate(() => window.dictationTest.snapshot.textProcessing.autoPromptId))
+    .toBe("");
+  await expect
+    .poll(() => page.evaluate(() => window.dictationTest.snapshot.textProcessing.chains))
+    .toEqual([]);
+});
+
+test("manual prompt chains retain intermediate results and show their input sources", async ({
+  page,
+}, testInfo) => {
+  await page.addInitScript(() => {
+    const state = window.dictationTest;
+    state.snapshot.textProcessing.enabled = true;
+    state.snapshot.textProcessing.model = "local-model";
+    state.snapshot.textProcessing.prompts.push({
+      id: "email",
+      name: "Email",
+      instruction: "Write an email.",
+    });
+    state.snapshot.textProcessing.chains = [
+      {
+        id: "follow-up",
+        name: "Follow-up",
+        steps: [
+          { id: "a", promptId: "cleanup", input: "original" },
+          { id: "b", promptId: "summary", input: "step:a" },
+          { id: "c", promptId: "email", input: "step:a" },
+        ],
+      },
+    ];
+    state.snapshot.history = [
+      {
+        id: "chain",
+        createdAt: "2026-10-15T12:00:00Z",
+        durationMs: 1000,
+        rawTranscript: "Raw speech.",
+        finalTranscript: "Edited transcript.",
+        speechModel: "base",
+        language: "en",
+        audioPath: "",
+      },
+    ];
+  });
+  await page.goto("/#/history/chain");
+  await page.getByRole("tab", { name: "Outputs", exact: true }).click();
+  await page.getByRole("combobox", { name: "Output prompt", exact: true }).click();
+  await page.getByRole("option", { name: "Follow-up (chain)", exact: true }).click();
+  await page.getByRole("button", { name: "Run chain", exact: true }).click();
+  await expect
+    .poll(() => page.evaluate(() => window.dictationTest.processing?.input))
+    .toBe("Raw speech.");
+  await expect(page.getByText("Step 1 of 3 · Cleanup", { exact: true })).toBeVisible();
+  await page.evaluate(() => window.dictationTest.processing!.resolve("Cleaned speech."));
+  await expect
+    .poll(() => page.evaluate(() => window.dictationTest.processing?.prompt))
+    .toBe("summary");
+  await expect
+    .poll(() => page.evaluate(() => window.dictationTest.processing?.input))
+    .toBe("Cleaned speech.");
+  await expect(page.getByRole("article", { name: "Cleanup output", exact: true })).toContainText(
+    "Step 1 of 3",
+  );
+  await page.evaluate(() => window.dictationTest.processing!.resolve("A short summary."));
+  await expect
+    .poll(() => page.evaluate(() => window.dictationTest.processing?.prompt))
+    .toBe("email");
+  await expect
+    .poll(() => page.evaluate(() => window.dictationTest.processing?.input))
+    .toBe("Cleaned speech.");
+  await page.evaluate(() =>
+    window.dictationTest.processing!.resolve("Dear team, here is the follow-up."),
+  );
+  await expect(
+    page.getByText("Chain complete. All step results saved.", { exact: true }),
+  ).toBeVisible();
+  const email = page.getByRole("article", { name: "Email output", exact: true });
+  await expect(email).toContainText("Input: Step 1: Cleanup");
+  await expect(page.getByRole("article", { name: "Summary output", exact: true })).toContainText(
+    "A short summary.",
+  );
+  expect(await page.evaluate(() => window.dictationTest.clipboard)).toBe("");
+  expect(await page.evaluate(() => window.dictationTest.snapshot.history[0].finalTranscript)).toBe(
+    "Edited transcript.",
+  );
+  await page.screenshot({ path: testInfo.outputPath("prompt-chain-results.png"), fullPage: true });
+});
+
+test("cancelled manual prompt chains leave completed results available", async ({ page }) => {
+  await page.addInitScript(() => {
+    const state = window.dictationTest;
+    state.snapshot.textProcessing.enabled = true;
+    state.snapshot.textProcessing.model = "local-model";
+    state.snapshot.textProcessing.chains = [
+      {
+        id: "notes",
+        name: "Notes",
+        steps: [
+          { id: "a", promptId: "cleanup", input: "original" },
+          { id: "b", promptId: "summary", input: "step:a" },
+        ],
+      },
+    ];
+    state.snapshot.history = [
+      {
+        id: "chain",
+        createdAt: "2026-10-15T12:00:00Z",
+        durationMs: 1000,
+        rawTranscript: "Raw speech.",
+        finalTranscript: "Edited transcript.",
+        speechModel: "base",
+        language: "en",
+        audioPath: "",
+      },
+    ];
+  });
+  await page.goto("/#/history/chain");
+  await page.getByRole("tab", { name: "Outputs", exact: true }).click();
+  await page.getByRole("combobox", { name: "Output prompt", exact: true }).click();
+  await page.getByRole("option", { name: "Notes (chain)", exact: true }).click();
+  await page.getByRole("button", { name: "Run chain", exact: true }).click();
+  await expect
+    .poll(() => page.evaluate(() => window.dictationTest.processing?.input))
+    .toBe("Raw speech.");
+  await page.evaluate(() => window.dictationTest.processing!.resolve("Cleaned speech."));
+  await expect
+    .poll(() => page.evaluate(() => window.dictationTest.processing?.prompt))
+    .toBe("summary");
+  await page.getByRole("button", { name: "Cancel generation", exact: true }).click();
+  await page.evaluate(() => window.dictationTest.processing!.resolve("Late summary."));
+  await expect(page.getByRole("alert").filter({ hasText: "Processing cancelled" })).toBeVisible();
+  await expect(page.getByRole("article", { name: "Cleanup output", exact: true })).toContainText(
+    "Cleaned speech.",
+  );
+  await expect(page.getByRole("article", { name: "Summary output", exact: true })).toHaveCount(0);
+});
+
+test("dictation profiles can select saved prompt chains", async ({ page }) => {
+  await homeModelScenario(page);
+  await page.evaluate(() => {
+    const state = window.dictationTest;
+    state.snapshot.textProcessing.enabled = true;
+    state.snapshot.textProcessing.model = "local-model";
+    state.snapshot.textProcessing.chains = [
+      {
+        id: "notes",
+        name: "Meeting notes",
+        steps: [{ id: "a", promptId: "summary", input: "transcript" }],
+      },
+    ];
+    state.callbacks["setup:changed"]();
+  });
+  await page.getByRole("link", { name: "Manage dictation profiles" }).click();
+  await page.getByRole("button", { name: "New profile", exact: true }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByLabel("Profile name").fill("Meeting");
+  await dialog.getByRole("combobox", { name: "After dictation", exact: true }).click();
+  await page.getByRole("option", { name: "Meeting notes (chain)", exact: true }).click();
+  await dialog.getByRole("button", { name: "Save profile", exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          window.dictationTest.snapshot.dictationProfiles?.find(
+            (profile) => profile.name === "Meeting",
+          )?.autoPromptId,
+      ),
+    )
+    .toBe("notes");
+  await page.getByRole("link", { name: "Dictate", exact: true }).click();
+  await page.getByRole("combobox", { name: "Dictation profile", exact: true }).click();
+  await page.getByRole("option", { name: "Meeting", exact: true }).click();
+  await expect
+    .poll(() => page.evaluate(() => window.dictationTest.snapshot.textProcessing.autoPromptId))
+    .toBe("notes");
+});
+
+test("temporary prompt chains expose completed results after an interrupted run", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const state = window.dictationTest;
+    const session = {
+      id: "temporary-chain",
+      createdAt: "2026-10-15T12:00:00Z",
+      durationMs: 1000,
+      rawTranscript: "Original speech.",
+      finalTranscript: "Original speech.",
+      speechModel: "base",
+      language: "en",
+      audioPath: "",
+    };
+    state.snapshot.settings.saveHistory = false;
+    state.snapshot.latestResult = {
+      session,
+      text: session.finalTranscript,
+      outputs: [
+        {
+          id: "cleaned",
+          sessionId: session.id,
+          createdAt: session.createdAt,
+          prompt: state.snapshot.textProcessing.prompts[0],
+          input: session.rawTranscript,
+          text: "Cleaned result.",
+          model: "local-model",
+          endpoint: state.snapshot.textProcessing.endpoint,
+          chain: {
+            runId: "run",
+            chainId: "notes",
+            name: "Notes",
+            stepId: "a",
+            step: 1,
+            total: 2,
+            input: "original",
+            sourceOutputId: "",
+          },
+        },
+      ],
+    };
+  });
+  await page.goto("/#/");
+  const temporary = page.getByRole("region", { name: "Temporary latest result", exact: true });
+  await temporary.getByText("Completed chain steps", { exact: true }).click();
+  await expect(temporary).toContainText("Step 1: Cleanup");
+  await expect(temporary).toContainText("Cleaned result.");
+  await temporary.getByRole("button", { name: "Copy step result", exact: true }).click();
+  await expect
+    .poll(() => page.evaluate(() => window.dictationTest.clipboard))
+    .toBe("Cleaned result.");
+  expect(await page.evaluate(() => window.dictationTest.snapshot.history)).toEqual([]);
 });
