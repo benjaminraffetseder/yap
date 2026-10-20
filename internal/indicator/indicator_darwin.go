@@ -8,7 +8,7 @@ package indicator
 #include <stdint.h>
 #include <stdlib.h>
 void *yap_indicator_new(uintptr_t callback);
-void yap_indicator_update(void *panel, const char *label, const char *stop, const char *cancel, int visible, int move, int working, double level);
+void yap_indicator_update(void *panel, const char *label, const char *stop, const char *cancel, int visible, int move, int working, double level, int dark);
 void yap_indicator_close(void *panel);
 */
 import "C"
@@ -26,6 +26,7 @@ type darwinIndicator struct {
 	mu                sync.Mutex
 	state             State
 	level             float64
+	dark              bool
 	actions           Actions
 	closed, dismissed bool
 	changed, visible  bool
@@ -37,7 +38,7 @@ type darwinIndicator struct {
 
 // AppKit stores frame geometry in the app's user defaults.
 func New(actions Actions, _ string) (Controller, error) {
-	n := &darwinIndicator{actions: actions, stop: make(chan struct{}), done: make(chan struct{})}
+	n := &darwinIndicator{actions: actions, stop: make(chan struct{}), done: make(chan struct{}), dark: true}
 	n.handle = cgo.NewHandle(n)
 	n.panel = C.yap_indicator_new(C.uintptr_t(n.handle))
 	if n.panel == nil {
@@ -74,6 +75,11 @@ func (n *darwinIndicator) SetLevel(level float64) {
 	n.level = max(0, min(1, level))
 	n.mu.Unlock()
 }
+func (n *darwinIndicator) SetTheme(dark bool) {
+	n.mu.Lock()
+	n.dark = dark
+	n.mu.Unlock()
+}
 func (n *darwinIndicator) Close() {
 	n.mu.Lock()
 	if n.closed {
@@ -95,7 +101,7 @@ func (n *darwinIndicator) render() {
 		n.mu.Unlock()
 		return
 	}
-	s, level := n.state, n.level
+	s, level, dark := n.state, n.level, n.dark
 	now := time.Now()
 	v := presentation(s, now)
 	move := C.int(0)
@@ -128,7 +134,11 @@ func (n *darwinIndicator) render() {
 	if s.Phase == "transcribing" {
 		working = 1
 	}
-	C.yap_indicator_update(n.panel, label, stop, cancel, visible, move, working, C.double(level))
+	darkMode := C.int(0)
+	if dark {
+		darkMode = 1
+	}
+	C.yap_indicator_update(n.panel, label, stop, cancel, visible, move, working, C.double(level), darkMode)
 }
 
 //export yapIndicatorAction

@@ -53,13 +53,17 @@ static void onIndicatorMain(dispatch_block_t block) {
 @interface YapStatusMeter : NSView
 @property(nonatomic) double level;
 @property(nonatomic) BOOL working;
+@property(nonatomic) BOOL dark;
 @end
 @implementation YapStatusMeter
 - (NSView *)hitTest:(NSPoint)point { return nil; }
 - (void)drawRect:(NSRect)dirty {
     BOOL reduceMotion = NSWorkspace.sharedWorkspace.accessibilityDisplayShouldReduceMotion;
     double brightness = reduceMotion && !self.working ? 0.55 + 0.45 * self.level : 1;
-    [[NSColor colorWithCalibratedRed:0.36 * brightness green:0.77 * brightness blue:0.57 * brightness alpha:1] setFill];
+    double red = self.dark ? 136.0 / 255 : 68.0 / 255;
+    double green = self.dark ? 181.0 / 255 : 124.0 / 255;
+    double blue = self.dark ? 151.0 / 255 : 96.0 / 255;
+    [[NSColor colorWithCalibratedRed:red * brightness green:green * brightness blue:blue * brightness alpha:1] setFill];
     for (int i = 0; i < 4; i++) {
         double height = reduceMotion ? 12 : (self.working ? 5 + ((NSInteger)(NSDate.date.timeIntervalSince1970 * 7) + i) % 4 * 3 : 4 + self.level * 12);
         NSRectFill(NSMakeRect(i * 4, (20-height)/2, 2, height));
@@ -124,14 +128,15 @@ void *yap_indicator_new(uintptr_t callback) {
         NSView *content = [[YapStatusContent alloc] initWithFrame:NSMakeRect(0, 0, 376, 64)];
         controller.panel.contentView = content;
         content.wantsLayer = YES;
-        content.layer.backgroundColor = [NSColor colorWithCalibratedWhite:0.13 alpha:1].CGColor;
+        content.layer.backgroundColor = [NSColor colorWithCalibratedRed:40.0 / 255 green:41.0 / 255 blue:43.0 / 255 alpha:1].CGColor;
         content.layer.cornerRadius = 12;
         controller.label = [YapStatusLabel labelWithString:@""];
         controller.label.frame = NSMakeRect(40, 22, 168, 20);
         controller.label.font = [NSFont systemFontOfSize:14];
-        controller.label.textColor = NSColor.whiteColor;
+        controller.label.textColor = NSColor.secondaryLabelColor;
         [content addSubview:controller.label];
         controller.meter = [[YapStatusMeter alloc] initWithFrame:NSMakeRect(16, 22, 16, 20)];
+        controller.meter.dark = YES;
         [content addSubview:controller.meter];
         controller.stop = [controller button:@"Stop" x:216 tag:1];
         controller.cancel = [controller button:@"Cancel" x:296 tag:2];
@@ -139,9 +144,19 @@ void *yap_indicator_new(uintptr_t callback) {
     return (__bridge_retained void *)controller;
 }
 
-void yap_indicator_update(void *pointer, const char *label, const char *stop, const char *cancel, int visible, int move, int working, double level) {
+void yap_indicator_update(void *pointer, const char *label, const char *stop, const char *cancel, int visible, int move, int working, double level, int dark) {
     YapStatusController *controller = (__bridge YapStatusController *)pointer;
     onIndicatorMain(^{
+        NSString *appearance = dark ? NSAppearanceNameDarkAqua : NSAppearanceNameAqua;
+        if (![controller.panel.appearance.name isEqualToString:appearance]) {
+            controller.panel.appearance = [NSAppearance appearanceNamed:appearance];
+            controller.panel.contentView.layer.backgroundColor = (dark
+                ? [NSColor colorWithCalibratedRed:40.0 / 255 green:41.0 / 255 blue:43.0 / 255 alpha:1]
+                : [NSColor colorWithCalibratedRed:250.0 / 255 green:248.0 / 255 blue:246.0 / 255 alpha:1]).CGColor;
+            controller.label.textColor = NSColor.secondaryLabelColor;
+            controller.meter.dark = dark != 0;
+            controller.meter.needsDisplay = YES;
+        }
         NSWindow *focused = NSApp.keyWindow;
         BOOL appFocused = NSApp.active && focused && focused != controller.panel && focused.visible && !focused.miniaturized;
         // This only hides the panel: Go keeps recording state and expiry, and

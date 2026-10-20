@@ -78,6 +78,12 @@ const (
 	exNoActivate = 0x08000000
 	exToolWindow = 0x00000080
 	exTopmost    = 0x00000008
+
+	panelWidth      = 316
+	panelHeight     = 40
+	backgroundColor = 0x002B2928
+	textColor       = 0x00CFCCC8
+	accentColor     = 0x0097B588
 )
 
 type rect struct{ Left, Top, Right, Bottom int32 }
@@ -117,11 +123,23 @@ type drawItem struct {
 	Data                                          uintptr
 }
 
+type palette struct {
+	background, text, accent, button, pressed uintptr
+}
+
+func themePalette(dark bool) palette {
+	if dark {
+		return palette{backgroundColor, textColor, accentColor, 0x00353230, 0x0044403D}
+	}
+	return palette{0x00F6F8FA, 0x00504B46, 0x00607C44, 0x00EBEEF0, 0x00DDE2E5}
+}
+
 type native struct {
 	mu           sync.Mutex
 	state        State
 	changed      bool
 	level        float64
+	dark         bool
 	actions      Actions
 	foreground   func() uintptr
 	positionPath string
@@ -132,6 +150,7 @@ type native struct {
 	label, stop, cancel      uintptr
 	background, accent, font uintptr
 	button, pressed          uintptr
+	colors                   palette
 	dpi                      int
 	visible                  bool
 	placing                  bool
@@ -160,7 +179,7 @@ func New(actions Actions, dataDir string) (Controller, error) {
 }
 
 func newNative(actions Actions, dataDir string, foreground func() uintptr) (Controller, error) {
-	n := &native{actions: actions, foreground: foreground, done: make(chan struct{}), dpi: 96}
+	n := &native{actions: actions, foreground: foreground, done: make(chan struct{}), dpi: 96, dark: true}
 	if dataDir != "" {
 		n.positionPath = filepath.Join(dataDir, "indicator-position.json")
 	}
@@ -192,6 +211,17 @@ func (n *native) SetLevel(level float64) {
 	n.mu.Lock()
 	n.level = max(0, min(1, level))
 	n.mu.Unlock()
+}
+func (n *native) SetTheme(dark bool) {
+	if n.closed.Load() {
+		return
+	}
+	n.mu.Lock()
+	n.dark = dark
+	n.mu.Unlock()
+	if hwnd := n.handle.Load(); hwnd != 0 {
+		postMessage.Call(hwnd, wmUpdate, 0, 0)
+	}
 }
 func (n *native) Close() {
 	if n.closed.CompareAndSwap(false, true) {
@@ -231,15 +261,17 @@ func (n *native) run(ready chan<- error) {
 		return
 	}
 	defer unregisterClass.Call(uintptr(unsafe.Pointer(className)), uintptr(module))
-	n.background, _, _ = createBrush.Call(0x00222222)
-	n.accent, _, _ = createBrush.Call(0x0092C45C)
-	n.button, _, _ = createBrush.Call(0x00383838)
-	n.pressed, _, _ = createBrush.Call(0x00505050)
-	defer deleteObject.Call(n.background)
-	defer deleteObject.Call(n.accent)
-	defer deleteObject.Call(n.button)
-	defer deleteObject.Call(n.pressed)
-	hwnd, _, err := createWindow.Call(exNoActivate|exToolWindow|exTopmost, uintptr(unsafe.Pointer(className)), uintptr(unsafe.Pointer(utf16("Yap — Dictation status"))), 0x80000000, 0, 0, 348, 64, 0, 0, uintptr(module), 0)
+	if !n.applyTheme(n.dark) {
+		ready <- fmt.Errorf("create indicator palette failed")
+		return
+	}
+	defer func() {
+		deleteObject.Call(n.background)
+		deleteObject.Call(n.accent)
+		deleteObject.Call(n.button)
+		deleteObject.Call(n.pressed)
+	}()
+	hwnd, _, err := createWindow.Call(exNoActivate|exToolWindow|exTopmost, uintptr(unsafe.Pointer(className)), uintptr(unsafe.Pointer(utf16("Yap — Dictation status"))), 0x80000000, 0, 0, panelWidth, panelHeight, 0, 0, uintptr(module), 0)
 	if hwnd == 0 {
 		ready <- fmt.Errorf("create indicator window: %w", err)
 		return
@@ -300,6 +332,40 @@ func (n *native) child(class, text string, style uint32, id, instance uintptr) u
 	return hwnd
 }
 
+// Brushes belong to the window's OS thread. Replace the complete palette before
+// repainting the status and native buttons, without changing notification state.
+func (n *native) applyTheme(dark bool) bool {
+	colors := themePalette(dark)
+	if n.colors == colors {
+		return true
+	}
+	var brushes [4]uintptr
+	for i, color := range []uintptr{colors.background, colors.accent, colors.button, colors.pressed} {
+		brushes[i], _, _ = createBrush.Call(color)
+		if brushes[i] == 0 {
+			for _, brush := range brushes {
+				if brush != 0 {
+					deleteObject.Call(brush)
+				}
+			}
+			return false
+		}
+	}
+	for _, brush := range []uintptr{n.background, n.accent, n.button, n.pressed} {
+		if brush != 0 {
+			deleteObject.Call(brush)
+		}
+	}
+	n.background, n.accent, n.button, n.pressed = brushes[0], brushes[1], brushes[2], brushes[3]
+	n.colors = colors
+	for _, control := range []uintptr{n.label, n.stop, n.cancel} {
+		if control != 0 {
+			invalidate.Call(control, 0, 1)
+		}
+	}
+	return true
+}
+
 // Native buttons remain accessible, but mouse clicks must not call SetFocus.
 func (n *native) preventActivation(hwnd, id uintptr) {
 	var previous uintptr
@@ -336,17 +402,17 @@ func (n *native) layout() {
 	if n.font != 0 {
 		deleteObject.Call(n.font)
 	}
-	n.font, _, _ = createFont.Call(signed(-n.px(14)), 0, 0, 0, 400, 0, 0, 0, 1, 0, 0, 5, 0, uintptr(unsafe.Pointer(utf16("Segoe UI"))))
+	n.font, _, _ = createFont.Call(signed(-n.px(13)), 0, 0, 0, 400, 0, 0, 0, 1, 0, 0, 5, 0, uintptr(unsafe.Pointer(utf16("Segoe UI"))))
 	for _, h := range []uintptr{n.label, n.stop, n.cancel} {
 		sendMessage.Call(h, 0x0030, n.font, 1)
 	}
 	for _, p := range []struct {
 		h            uintptr
 		x, y, w, hgt int
-	}{{n.label, 40, 21, 174, 22}, {n.stop, 216, 16, 58, 32}, {n.cancel, 280, 16, 58, 32}} {
+	}{{n.label, 34, 11, 148, 18}, {n.stop, 184, 7, 64, 26}, {n.cancel, 254, 7, 54, 26}} {
 		setWindowPos.Call(p.h, 0, signed(n.px(p.x)), signed(n.px(p.y)), uintptr(n.px(p.w)), uintptr(n.px(p.hgt)), 0x0014)
 	}
-	region, _, _ := createRegion.Call(0, 0, uintptr(n.px(348)+1), uintptr(n.px(64)+1), uintptr(n.px(16)), uintptr(n.px(16)))
+	region, _, _ := createRegion.Call(0, 0, uintptr(n.px(panelWidth)+1), uintptr(n.px(panelHeight)+1), uintptr(n.px(16)), uintptr(n.px(16)))
 	if region != 0 {
 		if ok, _, _ := setWindowRgn.Call(n.handle.Load(), region, 1); ok == 0 {
 			deleteObject.Call(region)
@@ -366,7 +432,7 @@ func (n *native) place() {
 	if ok, _, _ := getMonitorInfo.Call(monitor, uintptr(unsafe.Pointer(&info))); ok == 0 {
 		return
 	}
-	w, h := n.px(348), n.px(64)
+	w, h := n.px(panelWidth), n.px(panelHeight)
 	previousDPI := n.dpi
 	x := int(info.Work.Left) + (int(info.Work.Right-info.Work.Left)-w)/2
 	y := int(info.Work.Bottom) - h - n.px(24)
@@ -407,8 +473,10 @@ func (n *native) refresh() {
 	n.mu.Lock()
 	s := n.state
 	changed := n.changed
+	dark := n.dark
 	n.changed = false
 	n.mu.Unlock()
+	n.applyTheme(dark)
 	now := time.Now()
 	v := presentation(s, now)
 	if changed {
@@ -517,8 +585,8 @@ func (n *native) windowProc(hwnd uintptr, msg uint32, w uintptr, l unsafe.Pointe
 	case 0x0014:
 		return 1 // WM_ERASEBKGND: paint the background once
 	case 0x0138: // WM_CTLCOLORSTATIC
-		setTextColor.Call(w, 0x00F0F0F0)
-		setBackgroundColor.Call(w, 0x00222222)
+		setTextColor.Call(w, n.colors.text)
+		setBackgroundColor.Call(w, n.colors.background)
 		return n.background
 	case 0x000F:
 		n.paint(hwnd)
@@ -590,7 +658,7 @@ func (n *native) drawButton(item *drawItem) {
 	selectObject.Call(item.DC, pen)
 	roundRect.Call(item.DC, signed(int(item.Bounds.Left)), signed(int(item.Bounds.Top)), signed(int(item.Bounds.Right)), signed(int(item.Bounds.Bottom)), uintptr(n.px(8)), uintptr(n.px(8)))
 	selectObject.Call(item.DC, n.font)
-	setTextColor.Call(item.DC, 0x00F0F0F0)
+	setTextColor.Call(item.DC, n.colors.text)
 	backgroundMode.Call(item.DC, 1) // TRANSPARENT
 	var text [32]uint16
 	length, _, _ := getWindowText.Call(item.Window, uintptr(unsafe.Pointer(&text[0])), uintptr(len(text)))
@@ -604,7 +672,7 @@ func (n *native) paint(hwnd uintptr) {
 		return
 	}
 	defer endPaint.Call(hwnd, uintptr(unsafe.Pointer(&ps)))
-	bounds := rect{Right: int32(n.px(348)), Bottom: int32(n.px(64))}
+	bounds := rect{Right: int32(n.px(panelWidth)), Bottom: int32(n.px(panelHeight))}
 	fillRect.Call(dc, uintptr(unsafe.Pointer(&bounds)), n.background)
 	n.mu.Lock()
 	level, s := n.level, n.state
@@ -612,7 +680,7 @@ func (n *native) paint(hwnd uintptr) {
 	if s.Phase == "recording" || s.Phase == "transcribing" {
 		brush := n.accent
 		if n.reduceMotion && s.Phase == "recording" {
-			if dimmed, _, _ := createBrush.Call(recordingAccent(level)); dimmed != 0 {
+			if dimmed, _, _ := createBrush.Call(recordingAccent(n.colors.accent, level)); dimmed != 0 {
 				brush = dimmed
 				defer deleteObject.Call(dimmed)
 			}
@@ -620,11 +688,11 @@ func (n *native) paint(hwnd uintptr) {
 		now := time.Now().UnixMilli()
 		for i := 0; i < 4; i++ {
 			height := meterHeight(s.Phase, level, i, now, n.reduceMotion)
-			bar := rect{Left: int32(n.px(16 + i*4)), Top: int32(n.px(32 - height/2)), Right: int32(n.px(18 + i*4)), Bottom: int32(n.px(32 + height/2))}
+			bar := rect{Left: int32(n.px(12 + i*4)), Top: int32(n.px(panelHeight/2 - height/2)), Right: int32(n.px(14 + i*4)), Bottom: int32(n.px(panelHeight/2 + height/2))}
 			fillRect.Call(dc, uintptr(unsafe.Pointer(&bar)), brush)
 		}
 	} else {
-		dot := rect{Left: int32(n.px(18)), Top: int32(n.px(28)), Right: int32(n.px(26)), Bottom: int32(n.px(36))}
+		dot := rect{Left: int32(n.px(16)), Top: int32(n.px(17)), Right: int32(n.px(22)), Bottom: int32(n.px(23))}
 		fillRect.Call(dc, uintptr(unsafe.Pointer(&dot)), n.accent)
 	}
 }
@@ -639,7 +707,9 @@ func meterHeight(phase string, level float64, index int, now int64, reduceMotion
 	return 4 + int(level*12)
 }
 
-func recordingAccent(level float64) uintptr {
+func recordingAccent(color uintptr, level float64) uintptr {
 	brightness := 0.55 + 0.45*level
-	return uintptr(92*brightness) | uintptr(196*brightness)<<8 | uintptr(146*brightness)<<16
+	return uintptr(float64(color&0xff)*brightness) |
+		uintptr(float64((color>>8)&0xff)*brightness)<<8 |
+		uintptr(float64((color>>16)&0xff)*brightness)<<16
 }

@@ -2083,10 +2083,47 @@ test("active valid models offer runtime verification and repair", async ({ page 
     .toBe("/base");
 });
 
+for (const theme of ["light", "dark"] as const) {
+  test(`indicator restores saved ${theme} appearance`, async ({ page }) => {
+    await page.emulateMedia({ colorScheme: theme === "dark" ? "light" : "dark" });
+    await page.addInitScript((saved) => localStorage.setItem("desktop-theme", saved), theme);
+    await page.goto("/#/settings?section=general");
+    await expect
+      .poll(() => page.evaluate(() => window.dictationTest.indicatorThemes.at(-1)))
+      .toBe(theme === "dark");
+    await page.reload();
+    await expect
+      .poll(() => page.evaluate(() => window.dictationTest.indicatorThemes.at(-1)))
+      .toBe(theme === "dark");
+  });
+}
+
+test("indicator appearance follows live theme selection and system changes", async ({ page }) => {
+  await page.emulateMedia({ colorScheme: "light" });
+  await page.goto("/#/settings?section=general");
+  const lastTheme = () => page.evaluate(() => window.dictationTest.indicatorThemes.at(-1));
+  const appearance = page.getByRole("group", { name: "Color theme", exact: true });
+  await expect.poll(lastTheme).toBe(false);
+  await page.emulateMedia({ colorScheme: "dark" });
+  await expect.poll(lastTheme).toBe(true);
+  await expect(page.locator("html")).toHaveClass(/dark/);
+  await appearance.getByRole("button", { name: "Light", exact: true }).click();
+  await expect.poll(lastTheme).toBe(false);
+  await page.emulateMedia({ colorScheme: "light" });
+  await appearance.getByRole("button", { name: "Dark", exact: true }).click();
+  await expect.poll(lastTheme).toBe(true);
+  await page.emulateMedia({ colorScheme: "dark" });
+  await appearance.getByRole("button", { name: "System", exact: true }).click();
+  await page.emulateMedia({ colorScheme: "light" });
+  await expect.poll(lastTheme).toBe(false);
+  await expect(page.locator("html")).not.toHaveClass(/dark/);
+});
+
 declare global {
   interface Window {
     dictationTest: {
       snapshot: Snapshot;
+      indicatorThemes: boolean[];
       callbacks: Record<string, (...args: unknown[]) => void>;
       deferSnapshots: boolean;
       failSnapshot: boolean;
@@ -2216,6 +2253,7 @@ test.beforeEach(async ({ page }) => {
         },
       },
       callbacks: {},
+      indicatorThemes: [],
       failSession: false,
       deferSessions: false,
       pendingSessions: [],
@@ -2394,6 +2432,9 @@ test.beforeEach(async ({ page }) => {
       go: {
         main: {
           App: {
+            SetIndicatorTheme: async (dark: boolean) => {
+              state.indicatorThemes.push(dark);
+            },
             ImportDroppedAudio: async (paths: string[]) => {
               if (paths.length !== 1) throw new Error("drop one audio file at a time");
               if (!/\.(wav|mp3|m4a|aac|flac|ogg|opus|aif|aiff|wma)$/i.test(paths[0]))

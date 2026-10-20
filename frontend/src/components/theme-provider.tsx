@@ -1,4 +1,5 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import { SetIndicatorTheme } from "@wails/go/main/App";
 
 type Theme = "light" | "dark" | "system";
 type ThemeContextValue = { theme: Theme; setTheme: (theme: Theme) => void };
@@ -20,12 +21,17 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const media = window.matchMedia("(prefers-color-scheme: dark)");
-    const apply = () => {
+    const apply = async () => {
       const dark = theme === "dark" || (theme === "system" && media.matches);
       document.documentElement.classList.toggle("dark", dark);
       document.documentElement.style.colorScheme = dark ? "dark" : "light";
+      try {
+        await SetIndicatorTheme(dark);
+      } catch {
+        // Browser previews do not have a native indicator.
+      }
     };
-    apply();
+    void apply();
     media.addEventListener("change", apply);
     return () => media.removeEventListener("change", apply);
   }, [theme]);

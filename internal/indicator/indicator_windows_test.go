@@ -25,8 +25,8 @@ func TestReducedMotionMeterKeepsFixedGeometry(t *testing.T) {
 			}
 		}
 	}
-	quiet, loud := recordingAccent(0), recordingAccent(1)
-	if loud != 0x0092C45C {
+	quiet, loud := recordingAccent(accentColor, 0), recordingAccent(accentColor, 1)
+	if loud != 0x0097B588 {
 		t.Fatalf("full level changed the accent color: %#x", loud)
 	}
 	for _, shift := range []uint{0, 8, 16} {
@@ -212,7 +212,7 @@ func TestNativeIndicator(t *testing.T) {
 	var bounds rect
 	user.NewProc("GetWindowRect").Call(hwnd, uintptr(unsafe.Pointer(&bounds)))
 	dpi, _, _ := getDPI.Call(hwnd)
-	if bounds.Right-bounds.Left != int32(348*int(dpi)/96) || bounds.Bottom-bounds.Top != int32(64*int(dpi)/96) {
+	if bounds.Right-bounds.Left != int32(316*int(dpi)/96) || bounds.Bottom-bounds.Top != int32(40*int(dpi)/96) {
 		t.Fatalf("window dimensions do not match display scale: %+v, DPI %d", bounds, dpi)
 	}
 	windowBounds := func() rect {
@@ -271,6 +271,27 @@ func TestNativeIndicator(t *testing.T) {
 		time.Sleep(45 * time.Second)
 		setWindowLong.Call(hwnd, signed(-20), styles)
 	}
+	for _, dark := range []bool{false, true, false} {
+		controller.SetTheme(dark)
+		sendMessage.Call(hwnd, wmUpdate, 0, 0) // Apply on the window's OS thread.
+		dc, _, _ := user.NewProc("GetDC").Call(hwnd)
+		brush, _, _ := sendMessage.Call(hwnd, 0x0138, dc, n.label) // WM_CTLCOLORSTATIC
+		var actual struct {
+			Style, Color uint32
+			Hatch        uintptr
+		}
+		ok, _, _ := gdi.NewProc("GetObjectW").Call(brush, unsafe.Sizeof(actual), uintptr(unsafe.Pointer(&actual)))
+		foreground, _, _ := gdi.NewProc("GetTextColor").Call(dc)
+		user.NewProc("ReleaseDC").Call(hwnd, dc)
+		want := themePalette(dark)
+		if ok == 0 || uintptr(actual.Color) != want.background || foreground != want.text {
+			t.Fatalf("theme not applied (dark=%t): background=%#x, text=%#x", dark, actual.Color, foreground)
+		}
+		if got := windowBounds(); got != dragged || !visible() || !strings.HasPrefix(text(), "Recording  1:") {
+			t.Fatal("theme change moved, hid, or reset the active indicator")
+		}
+		assertFocus()
+	}
 	click(n.stop)
 	callback("stop action missing", stop)
 	click(n.cancel)
@@ -295,6 +316,11 @@ func TestNativeIndicator(t *testing.T) {
 	callback("open app action missing", open)
 	click(n.cancel)
 	wait("dismiss failed", func() bool { return !visible() })
+	controller.SetTheme(true)
+	sendMessage.Call(hwnd, wmUpdate, 0, 0)
+	if visible() {
+		t.Fatal("appearance change replayed a dismissed notification")
+	}
 	controller.Update(failure)
 	wait("repeated error did not reappear after dismissal", visible)
 	wait("error did not auto-hide", func() bool { return !visible() })

@@ -25,6 +25,7 @@ type fakeIndicator struct {
 	mu         sync.Mutex
 	states     []indicator.State
 	levels     []float64
+	themes     []bool
 	closed     bool
 	closeCount int
 }
@@ -39,7 +40,33 @@ func (f *fakeIndicator) SetLevel(level float64) {
 	defer f.mu.Unlock()
 	f.levels = append(f.levels, level)
 }
+func (f *fakeIndicator) SetTheme(dark bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.themes = append(f.themes, dark)
+}
 func (f *fakeIndicator) Close() { f.closed = true; f.closeCount++ }
+
+func TestIndicatorThemeDoesNotChangeDictationState(t *testing.T) {
+	a := testApp(t)
+	f := &fakeIndicator{}
+	a.indicator = f
+	a.status = Status{Phase: "transcribing", Message: "Transcribing…"}
+	a.SetIndicatorTheme(false)
+	a.SetIndicatorTheme(true)
+	if len(f.themes) != 2 || f.themes[0] || !f.themes[1] {
+		t.Fatalf("indicator missed appearance changes: %v", f.themes)
+	}
+	if a.status.Phase != "transcribing" || len(f.states) != 0 {
+		t.Fatal("appearance change reset dictation or replayed a notification")
+	}
+	a.closing = true
+	a.SetIndicatorTheme(false)
+	if len(f.themes) != 2 {
+		t.Fatal("appearance updated the indicator during shutdown")
+	}
+	NewApp().SetIndicatorTheme(false) // Unavailable native indicators are harmless.
+}
 
 func TestShutdownOnceAcrossCloseHooks(t *testing.T) {
 	a := testApp(t)

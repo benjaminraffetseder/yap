@@ -10,6 +10,7 @@ import (
 type Controller interface {
 	Update(State)
 	SetLevel(float64)
+	SetTheme(dark bool)
 	Close()
 }
 

@@ -231,6 +231,16 @@ func (a *App) startup(ctx context.Context) {
 	a.registerShortcut()
 }
 
+// SetIndicatorTheme receives the appearance already resolved by the webview,
+// including changes to the system theme while Yap is in the background.
+func (a *App) SetIndicatorTheme(dark bool) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if !a.closing && a.indicator != nil {
+		a.indicator.SetTheme(dark)
+	}
+}
+
 func (a *App) show() {
 	a.mu.Lock()
 	a.windowRequested = true
