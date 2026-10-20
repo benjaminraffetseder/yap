@@ -23,9 +23,11 @@ type DictationProfile struct {
 }
 
 type ProfileLibrary struct {
-	DefaultID string             `json:"defaultId,omitempty"`
-	ActiveID  string             `json:"activeId"`
-	Profiles  []DictationProfile `json:"profiles"`
+	AppRules        []AppProfileRule   `json:"appRules,omitempty"`
+	ProfileShortcut string             `json:"profileShortcut,omitempty"`
+	DefaultID       string             `json:"defaultId,omitempty"`
+	ActiveID        string             `json:"activeId"`
+	Profiles        []DictationProfile `json:"profiles"`
 }
 
 func NormalizeProfiles(library ProfileLibrary) (ProfileLibrary, error) {
@@ -64,7 +66,36 @@ func NormalizeProfiles(library ProfileLibrary) (ProfileLibrary, error) {
 	if library.DefaultID != "" && !ids[library.DefaultID] {
 		return ProfileLibrary{}, errors.New("default dictation profile does not exist")
 	}
+	if len(library.ProfileShortcut) > 80 {
+		return ProfileLibrary{}, errors.New("profile shortcut is too long")
+	}
+	if len(library.AppRules) > 50 {
+		return ProfileLibrary{}, errors.New("use at most 50 application rules")
+	}
+	library.AppRules = append([]AppProfileRule(nil), library.AppRules...)
+	apps := map[string]bool{}
+	for i, rule := range library.AppRules {
+		rule.ApplicationID = strings.ToLower(strings.TrimSpace(rule.ApplicationID))
+		rule.ApplicationName = strings.TrimSpace(rule.ApplicationName)
+		if rule.ApplicationID == "" || len(rule.ApplicationID) > 512 || !utf8.ValidString(rule.ApplicationID) || strings.ContainsAny(rule.ApplicationID, "\r\n\x00") || apps[rule.ApplicationID] {
+			return ProfileLibrary{}, errors.New("choose each application only once")
+		}
+		if rule.ApplicationName == "" || utf8.RuneCountInString(rule.ApplicationName) > 120 || !utf8.ValidString(rule.ApplicationName) || strings.ContainsAny(rule.ApplicationName, "\r\n\x00") {
+			return ProfileLibrary{}, errors.New("application names must contain 1–120 characters")
+		}
+		if !ids[rule.ProfileID] {
+			return ProfileLibrary{}, errors.New("choose an existing profile for each application")
+		}
+		apps[rule.ApplicationID] = true
+		library.AppRules[i] = rule
+	}
 	return library, nil
+}
+
+type AppProfileRule struct {
+	ApplicationID   string `json:"applicationId"`
+	ApplicationName string `json:"applicationName"`
+	ProfileID       string `json:"profileId"`
 }
 
 // Capture the baseline once, after setup or when upgrading existing settings.

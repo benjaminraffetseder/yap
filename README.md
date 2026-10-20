@@ -18,6 +18,7 @@ Linux support is incomplete.
 - Search, edit, copy, and export past transcripts.
 - Add names and preferred spellings to a custom vocabulary.
 - Switch dictation profiles with saved speech-model, language, cleanup, and prompt choices.
+- Choose profiles automatically per app, or cycle them with a global shortcut.
 - Transcribe audio files, including WAV, MP3, and M4A.
 - Run cleanup or custom prompts through an optional local text model.
 - Save prompt chains with a chosen input for each step and keep intermediate results.

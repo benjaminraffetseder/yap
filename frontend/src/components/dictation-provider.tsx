@@ -279,7 +279,12 @@ export function DictationProvider({ children }: { children: ReactNode }) {
     await refresh().catch((cause) => setError(message(cause)));
   }
   useEffect(() => {
-    if (!isDesktop || !snapshot.status.shortcutError || isBusy(snapshot.status.phase)) return;
+    if (
+      !isDesktop ||
+      (!snapshot.status.shortcutError && !snapshot.status.profileShortcutError) ||
+      isBusy(snapshot.status.phase)
+    )
+      return;
     let pending = false;
     const retry = () => {
       if (pending) return;
@@ -296,7 +301,12 @@ export function DictationProvider({ children }: { children: ReactNode }) {
     };
     window.addEventListener("focus", retry);
     return () => window.removeEventListener("focus", retry);
-  }, [snapshot.status.shortcutError, snapshot.status.phase, refresh]);
+  }, [
+    snapshot.status.shortcutError,
+    snapshot.status.profileShortcutError,
+    snapshot.status.phase,
+    refresh,
+  ]);
   useEffect(() => {
     if (!isDesktop) return;
     let active = true;
@@ -386,6 +396,10 @@ export function DictationProvider({ children }: { children: ReactNode }) {
         if (active) setError(message(cause));
       });
     });
+    const offProfile = EventsOn("profile:changed", (name: string, error: string) => {
+      if (!active) return;
+      toastManager.add({ type: error ? "error" : "success", title: error || `Profile: ${name}` });
+    });
     void refresh().catch((cause) => {
       if (active) setError(message(cause));
     });
@@ -396,6 +410,7 @@ export function DictationProvider({ children }: { children: ReactNode }) {
       offLevel();
       offHistory();
       offSetup();
+      offProfile();
     };
   }, [refresh]);
   return (

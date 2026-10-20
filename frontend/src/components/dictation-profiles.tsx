@@ -46,8 +46,13 @@ export function ProfileSelector({
   const applying = useRef(false);
   const profiles = snapshot.dictationProfiles ?? [];
   const options = profiles.map((p) => ({ value: `profile:${p.id}`, label: p.name }));
-  const selected = snapshot.activeProfileId ? `profile:${snapshot.activeProfileId}` : null;
-  const modified = !!snapshot.profileModified;
+  const recordingProfile =
+    snapshot.status.phase === "recording" || snapshot.status.phase === "transcribing"
+      ? snapshot.status.profileId
+      : undefined;
+  const selectedID = recordingProfile || snapshot.activeProfileId;
+  const selected = selectedID ? `profile:${selectedID}` : null;
+  const modified = !!snapshot.profileModified && selectedID === snapshot.activeProfileId;
   async function apply(id: string) {
     if (applying.current || disabled || loading || isBusy(snapshot.status.phase)) return;
     applying.current = true;

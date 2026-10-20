@@ -15,6 +15,7 @@ type Controller interface {
 }
 
 type State struct {
+	ProfileName string
 	Phase       string
 	Message     string
 	StartedAt   int64
@@ -37,11 +38,16 @@ type view struct {
 
 func presentation(s State, now time.Time) view {
 	switch s.Phase {
+	case "profile":
+		return view{visible: true, label: s.Message, cancel: "Dismiss", dismissAfter: 2500 * time.Millisecond}
 	case "recording":
 		seconds := max(int64(0), (now.UnixMilli()-s.StartedAt)/1000)
 		label := fmt.Sprintf("Recording  %d:%02d", seconds/60, seconds%60)
 		if s.HistoryMode != "" {
 			label = fmt.Sprintf("%d:%02d · %s", seconds/60, seconds%60, s.HistoryMode)
+		}
+		if s.ProfileName != "" {
+			label += " · " + s.ProfileName
 		}
 		return view{visible: true, label: label, stop: "Stop", cancel: "Cancel"}
 	case "transcribing":

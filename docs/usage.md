@@ -65,6 +65,37 @@ between pages. Use their Save or **Discard changes** action to finish editing.
 Background updates preserve edited fields and refresh untouched settings. These
 drafts stay in memory for the current app session; save before quitting or reloading.
 
+### Automatic profiles and profile cycling
+
+Under **Settings → Dictation → Automatic profiles & shortcuts**, refresh the open
+applications, choose an app and a saved profile, and select **Add rule**. Choose
+**Save profile automation** to apply your rules. Each app can have one rule; open
+the target app first if it isn't listed. Windows rules identify the executable
+name; macOS rules identify its bundle ID. Rules cover the entire application,
+including every tab in a browser. Automatic app identification requires Windows
+or a native macOS build.
+
+When you start dictation with the global recording shortcut, Yap uses the focused
+app's profile for that recording. The profile name appears in Dictate and the
+floating indicator while recording. Moving focus afterwards doesn't change it.
+Apps without a rule, audio imports, and recordings started in Yap or the tray use
+your manually selected settings. Automatic selection leaves those saved settings
+in place. If a matching profile's model or prompt is unavailable, Yap reports the
+problem before recording; repair the profile or remove its rule. Deleting a
+profile also removes its app rules. Vocabulary remains shared across profiles.
+
+Set an optional **Cycle profiles shortcut**, such as `Ctrl+Alt+P`, then save profile
+automation. It must differ from the recording shortcut; leave it empty to disable
+it. Each press selects the next available profile in library order, skipping
+profiles with unavailable models or prompts, and shows its name in the floating
+indicator. In an assigned app, cycling starts from that app's profile. Your choice
+overrides its rule for the next shortcut dictation in the same app; subsequent
+dictations use the rule again. Starting dictation in another app clears that
+temporary override. Cycling is paused during recording, processing, and shortcut
+capture. If another program claims the shortcut, Yap keeps your previous setting
+and reports the conflict. App rules and the cycling shortcut stay local to this
+computer and aren't included in portable backups.
+
 ### Microphone and shortcut
 
 Choose a microphone under **Settings → Audio input**, then save. **System

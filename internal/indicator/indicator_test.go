@@ -13,6 +13,8 @@ func TestPresentation(t *testing.T) {
 		label                  string
 		visible, stop, expires bool
 	}{
+		{"profile switched", State{Phase: "profile", Message: "Profile: Email"}, "Profile: Email", true, false, true},
+		{"automatic profile", State{Phase: "recording", StartedAt: 35000, HistoryMode: "Saving", ProfileName: "Email"}, "1:05 · Saving · Email", true, true, false},
 		{"unsaved recording", State{Phase: "recording", StartedAt: 35000, HistoryMode: "Not saving"}, "1:05 · Not saving", true, true, false},
 		{"unsaved done", State{Phase: "done", Message: "Not saved to History", HistoryMode: "Not saving"}, "Not saved to history", true, false, true},
 		{"unsaved processing failure", State{Phase: "done", Message: "Text processing failed: unavailable", HistoryMode: "Not saving"}, "Open Yap to recover text", true, true, true},

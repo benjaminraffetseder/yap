@@ -119,6 +119,7 @@ func (a *App) importAudioWithDecoder(source, decoder string, install audioSuppor
 	ctx, cancel := context.WithCancel(a.ctx)
 	a.latestResult = nil
 	a.recordSettings = settings
+	a.status.ProfileID = a.profileLibrary.ActiveID
 	a.cancel, a.id, a.path, a.target = cancel, id, path, ""
 	a.indicatorActive = true
 	a.status.Phase, a.status.Message, a.status.Transcript = "transcribing", "Importing audio…", ""

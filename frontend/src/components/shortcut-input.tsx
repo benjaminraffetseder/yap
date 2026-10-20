@@ -18,11 +18,13 @@ export function ShortcutInput({
   value,
   disabled,
   onChange,
+  recordLabel = "Record shortcut",
 }: {
   id: string;
   value: string;
   disabled: boolean;
   onChange: (value: string) => void;
+  recordLabel?: string;
 }) {
   const [open, setOpen] = useState(false);
   const [error, setError] = useState("");
@@ -53,7 +55,7 @@ export function ShortcutInput({
           }}
         >
           <Keyboard className="size-4" />
-          Record shortcut
+          {recordLabel}
         </Button>
       </div>
       {error && (

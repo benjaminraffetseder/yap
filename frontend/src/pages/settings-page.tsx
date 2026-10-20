@@ -4,6 +4,7 @@ import { UpdatePanel } from "@/components/update-panel";
 import { DiagnosticsPanel } from "@/components/diagnostics-panel";
 import { useDictation } from "@/components/dictation-provider";
 import { SettingRow, SettingsSection, ToggleSetting } from "@/components/settings-section";
+import { ProfileAutomationPanel } from "@/components/profile-automation";
 import { ShortcutInput } from "@/components/shortcut-input";
 import { ShortcutStatus } from "@/components/shortcut-status";
 import { useTheme } from "@/components/theme-provider";
@@ -228,6 +229,7 @@ export function SettingsPage() {
         </header>
         <TabsContent value="dictation" keepMounted className="space-y-5">
           <ProfilesPanel disabled={controlsDisabled || dirty} />
+          <ProfileAutomationPanel disabled={controlsDisabled || dirty} />
           <fieldset disabled={controlsDisabled} className="space-y-5 disabled:opacity-60">
             <SettingsSection title="Recording">
               <SettingRow title="Microphone" htmlFor="microphone">

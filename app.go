@@ -32,17 +32,19 @@ import (
 )
 
 type Status struct {
-	CompletionWarning bool    `json:"completionWarning,omitempty"`
-	Phase             string  `json:"phase"`
-	Message           string  `json:"message"`
-	StartedAt         int64   `json:"startedAt"`
-	Transcript        string  `json:"transcript"`
-	Progress          float64 `json:"progress"`
-	ShortcutError     string  `json:"shortcutError"`
-	IndicatorError    string  `json:"indicatorError"`
-	TrayError         string  `json:"trayError"`
-	StartupError      string  `json:"startupError"`
-	HistoryError      string  `json:"historyError"`
+	ProfileID            string  `json:"profileId,omitempty"`
+	ProfileShortcutError string  `json:"profileShortcutError,omitempty"`
+	CompletionWarning    bool    `json:"completionWarning,omitempty"`
+	Phase                string  `json:"phase"`
+	Message              string  `json:"message"`
+	StartedAt            int64   `json:"startedAt"`
+	Transcript           string  `json:"transcript"`
+	Progress             float64 `json:"progress"`
+	ShortcutError        string  `json:"shortcutError"`
+	IndicatorError       string  `json:"indicatorError"`
+	TrayError            string  `json:"trayError"`
+	StartupError         string  `json:"startupError"`
+	HistoryError         string  `json:"historyError"`
 }
 type TemporaryResult struct {
 	Session storage.Session           `json:"session"`
@@ -51,6 +53,8 @@ type TemporaryResult struct {
 	Outputs []storage.GeneratedOutput `json:"outputs,omitempty"`
 }
 type Snapshot struct {
+	AppProfileRules        []storage.AppProfileRule   `json:"appProfileRules"`
+	ProfileShortcut        string                     `json:"profileShortcut"`
 	DictationProfiles      []storage.DictationProfile `json:"dictationProfiles"`
 	ActiveProfileID        string                     `json:"activeProfileId"`
 	DefaultProfileID       string                     `json:"defaultProfileId"`
@@ -73,6 +77,11 @@ type Snapshot struct {
 	StartInTrayAvailable   bool                       `json:"startInTrayAvailable"`
 }
 type App struct {
+	profileShortcut                  shortcutRegistration
+	profileShortcutGeneration        uint64
+	profileOverrideApp               string
+	profileOverridePending           bool
+	activeApplication                func() string
 	profileLibrary                   storage.ProfileLibrary
 	latestResult                     *TemporaryResult
 	updateChecker                    *updates.Checker
@@ -229,6 +238,7 @@ func (a *App) startup(ctx context.Context) {
 		a.status.IndicatorError = "Floating indicator unavailable: " + err.Error()
 	}
 	a.registerShortcut()
+	a.registerProfileShortcut()
 }
 
 // SetIndicatorTheme receives the appearance already resolved by the webview,
@@ -369,9 +379,14 @@ func (a *App) shutdown(ctx context.Context) {
 		}
 		s := a.shortcut
 		a.shortcut = nil
+		ps := a.profileShortcut
+		a.profileShortcut = nil
 		a.mu.Unlock()
 		if s != nil {
 			s.Close()
+		}
+		if ps != nil {
+			ps.Close()
 		}
 		a.wg.Wait()
 		if a.pendingBackup != nil {
@@ -397,7 +412,13 @@ func (a *App) emit() {
 			if !a.recordSettings.SaveHistory {
 				historyMode = "Not saving"
 			}
-			a.indicator.Update(indicator.State{HistoryMode: historyMode, Phase: a.status.Phase, Message: a.status.Message, StartedAt: a.status.StartedAt})
+			profileName := ""
+			for _, p := range a.profileLibrary.Profiles {
+				if p.ID == a.status.ProfileID {
+					profileName = p.Name
+				}
+			}
+			a.indicator.Update(indicator.State{ProfileName: profileName, HistoryMode: historyMode, Phase: a.status.Phase, Message: a.status.Message, StartedAt: a.status.StartedAt})
 			if a.status.Phase != "recording" && a.status.Phase != "transcribing" {
 				a.indicatorActive = false
 			}
@@ -542,7 +563,7 @@ func (a *App) GetSnapshot() (Snapshot, error) {
 			profileModified = !p.Matches(a.settings, a.textConfig)
 		}
 	}
-	return Snapshot{DefaultProfileID: a.profileLibrary.DefaultID, ProfileModified: profileModified, DictationProfiles: append([]storage.DictationProfile{}, a.profileLibrary.Profiles...), ActiveProfileID: activeProfileID, RecordingSaveHistory: a.recordSettings.SaveHistory, LatestResult: latest, TextProcessing: config, Diagnostic: a.diagnostic, Vocabulary: entries, MicrophoneTested: a.microphoneTested, ShortcutTested: a.shortcutTested, Settings: a.settings, Status: a.status, History: history, Models: models.List(a.store.Dir), DataDir: a.store.Dir, Ready: ready, FloatingIndicator: a.indicator != nil, LaunchAtLoginAvailable: a.loginStart != nil, StartInTrayAvailable: a.tray != nil && !a.development}, nil
+	return Snapshot{AppProfileRules: append([]storage.AppProfileRule{}, a.profileLibrary.AppRules...), ProfileShortcut: a.profileLibrary.ProfileShortcut, DefaultProfileID: a.profileLibrary.DefaultID, ProfileModified: profileModified, DictationProfiles: append([]storage.DictationProfile{}, a.profileLibrary.Profiles...), ActiveProfileID: activeProfileID, RecordingSaveHistory: a.recordSettings.SaveHistory, LatestResult: latest, TextProcessing: config, Diagnostic: a.diagnostic, Vocabulary: entries, MicrophoneTested: a.microphoneTested, ShortcutTested: a.shortcutTested, Settings: a.settings, Status: a.status, History: history, Models: models.List(a.store.Dir), DataDir: a.store.Dir, Ready: ready, FloatingIndicator: a.indicator != nil, LaunchAtLoginAvailable: a.loginStart != nil, StartInTrayAvailable: a.tray != nil && !a.development}, nil
 }
 func (a *App) GetMicrophones() ([]audio.Device, error) {
 	a.mu.Lock()
@@ -570,7 +591,11 @@ func (a *App) start(external bool) error {
 		return errors.New("finish the current operation first")
 	}
 	a.indicatorActive = true
-	if err := speech.Validate(speech.Options{Executable: a.settings.WhisperPath, Model: a.settings.ModelPath}); err != nil {
+	settings, textConfig, profileID, err := a.recordingConfiguration(external)
+	if err != nil {
+		return err
+	}
+	if err := speech.Validate(speech.Options{Executable: settings.WhisperPath, Model: settings.ModelPath}); err != nil {
 		return err
 	}
 	file, path, err := a.store.CreateRecording()
@@ -595,14 +620,18 @@ func (a *App) start(external bool) error {
 		return errors.Join(err, a.discardAudioLocked(a.path))
 	}
 	a.latestResult = nil
-	a.recordSettings = a.settings
-	a.recordTextConfig, _ = textmodel.Normalize(a.textConfig)
+	a.recordSettings = settings
+	a.recordTextConfig, _ = textmodel.Normalize(textConfig)
+	a.status.ProfileID = profileID
 	a.recordVocabulary, _ = vocabulary.Normalize(a.vocabulary)
 	a.status.Phase = "recording"
 	a.status.CompletionWarning = false
 	a.status.Message = "Listening…"
 	a.status.Transcript = ""
 	a.status.StartedAt = time.Now().UnixMilli()
+	if external {
+		a.profileOverridePending = false
+	}
 	a.status.Progress = 0
 	a.emit()
 	id := a.id
@@ -835,6 +864,9 @@ func (a *App) SaveSettings(settings storage.Settings) error {
 	}
 	if _, _, err := platform.ParseShortcut(settings.Shortcut); err != nil {
 		return err
+	}
+	if platform.SameShortcut(settings.Shortcut, a.profileLibrary.ProfileShortcut) {
+		return errors.New("recording and profile cycling must use different shortcuts")
 	}
 	if settings.MicrophoneID != "" && settings.MicrophoneID != a.settings.MicrophoneID {
 		devices, err := a.microphones()

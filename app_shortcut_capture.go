@@ -24,6 +24,11 @@ func (a *App) BeginShortcutCapture() (string, error) {
 	token := uuid.NewString()
 	a.shortcutCaptureID = token
 	a.shortcutGeneration++
+	a.profileShortcutGeneration++
+	if a.profileShortcut != nil {
+		a.profileShortcut.Close()
+		a.profileShortcut = nil
+	}
 	if a.shortcut != nil {
 		a.shortcut.Close()
 		a.shortcut = nil
@@ -56,10 +61,14 @@ func (a *App) endShortcutCaptureLocked(token string) error {
 		return nil
 	}
 	a.registerShortcut()
+	a.registerProfileShortcut()
 	a.emit()
 	a.event("shortcut:capture-ended", token)
 	if a.status.ShortcutError != "" {
 		return fmt.Errorf("could not restore the saved shortcut: %s; choose another combination and save settings", a.status.ShortcutError)
+	}
+	if a.status.ProfileShortcutError != "" {
+		return fmt.Errorf("could not restore the profile shortcut: %s", a.status.ProfileShortcutError)
 	}
 	return nil
 }

@@ -1,6 +1,8 @@
 import {
   AddVocabularyTerm,
   ApplyDictationProfile,
+  GetProfileApplications,
+  SaveProfileAutomation,
   SaveDictationProfile,
   DeleteDictationProfile,
   BeginShortcutCapture,
@@ -65,6 +67,8 @@ export type DictationProfile = {
   cleanText: boolean;
   autoPromptId: string;
 };
+export type ProfileApplication = { id: string; name: string };
+export type AppProfileRule = { applicationId: string; applicationName: string; profileId: string };
 export type TextPrompt = { id: string; name: string; instruction: string };
 export type PromptChainStep = { id: string; promptId: string; input: string };
 export type PromptChain = { id: string; name: string; steps: PromptChainStep[] };
@@ -200,6 +204,8 @@ export type HistoryPageResult = {
   pageSize: number;
 };
 export type Status = {
+  profileId?: string;
+  profileShortcutError?: string;
   completionWarning?: boolean;
   phase: string;
   message: string;
@@ -223,6 +229,8 @@ export type Model = {
   removable: boolean;
 };
 export type Snapshot = {
+  appProfileRules?: AppProfileRule[];
+  profileShortcut?: string;
   dictationProfiles?: DictationProfile[];
   activeProfileId?: string;
   defaultProfileId?: string;
@@ -300,6 +308,17 @@ function requireProfileAPI(name: string) {
 }
 
 export const backend = {
+  profileApplications: async (): Promise<ProfileApplication[]> => {
+    requireProfileAPI("GetProfileApplications");
+    return GetProfileApplications();
+  },
+  saveProfileAutomation: async (rules: AppProfileRule[], shortcut: string): Promise<void> => {
+    requireProfileAPI("SaveProfileAutomation");
+    return SaveProfileAutomation(
+      rules.map((rule) => storage.AppProfileRule.createFrom(rule)),
+      shortcut,
+    );
+  },
   saveProfile: async (profile: DictationProfile): Promise<DictationProfile> => {
     requireProfileAPI("SaveDictationProfile");
     return SaveDictationProfile(storage.DictationProfile.createFrom(profile));

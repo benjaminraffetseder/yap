@@ -13,10 +13,15 @@ func (a *App) RetryShortcut() error {
 	if a.busy() {
 		return errors.New("finish the current operation before retrying the shortcut")
 	}
-	if a.shortcut != nil {
+	if a.shortcut != nil && (a.profileShortcut != nil || a.profileLibrary.ProfileShortcut == "") {
 		return nil
 	}
-	a.registerShortcut()
+	if a.shortcut == nil {
+		a.registerShortcut()
+	}
+	if a.profileShortcut == nil {
+		a.registerProfileShortcut()
+	}
 	a.emit()
 	// Registration failures remain in ShortcutError, including after an
 	// asynchronous permission prompt. Do not turn them into dictation errors.
