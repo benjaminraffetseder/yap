@@ -34,6 +34,7 @@ function EntryDetail({ id }: { id: string }) {
   const location = useLocation();
   const back = `/history${location.search}`;
   const [entry, setEntry] = useState<Session | null>(null);
+  const entryLoaded = useRef(false);
   const [loading, setLoading] = useState(isDesktop);
   const [error, setError] = useState("");
   const [reload, setReload] = useState(0);
@@ -51,12 +52,13 @@ function EntryDetail({ id }: { id: string }) {
   useEffect(() => {
     if (!isDesktop || connecting) return;
     let active = true;
-    setLoading(true);
+    if (!entryLoaded.current) setLoading(true);
     setError("");
     void backend
       .session(id)
       .then((value) => {
         if (active) {
+          entryLoaded.current = !!value;
           setEntry(value);
           setLoading(false);
           if (!value) setAudio("");
@@ -329,7 +331,6 @@ function EntryDetail({ id }: { id: string }) {
           returnFocus={editTrigger}
           onClose={() => setEditing(null)}
           onSaved={() => {
-            setEditing(null);
             setReload((old) => old + 1);
             void run(refresh, false);
           }}

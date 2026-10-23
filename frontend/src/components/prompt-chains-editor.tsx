@@ -1,4 +1,5 @@
 import { ProfileSettingIndicator } from "@/components/profile-setting-indicator";
+import { RevisionHistory } from "@/components/revision-history";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -19,6 +20,7 @@ import {
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import type { PromptChain, PromptChainStep, TextProcessing } from "@/lib/backend";
+import { validateTextProcessing } from "@/lib/draft-validation";
 import { Menu } from "@base-ui/react/menu";
 import {
   ArrowDown,
@@ -27,6 +29,7 @@ import {
   Ellipsis,
   FileAudio,
   FileText,
+  History,
   Plus,
   Sparkles,
   Trash2,
@@ -54,15 +57,18 @@ export function PromptChainsEditor({
   disabled,
   onChange,
   onConfigureModel,
+  onDelete,
 }: {
   config: TextProcessing;
   disabled: boolean;
   onChange: (value: Partial<TextProcessing>) => void;
   onConfigureModel: () => void;
+  onDelete: (chain: PromptChain) => void;
 }) {
   const chains = config.chains ?? emptyChains;
   const [selected, setSelected] = useState(chains[0]?.id ?? "");
   const [deleting, setDeleting] = useState(false);
+  const [history, setHistory] = useState<PromptChain | null>(null);
   const nameInput = useRef<HTMLInputElement>(null);
   const focusNewName = useRef(false);
   const chain = chains.find((item) => item.id === selected);
@@ -509,6 +515,10 @@ export function PromptChainsEditor({
                 <p className="text-xs leading-5 text-muted-foreground">
                   Steps run in order. Every completed result is kept.
                 </p>
+                <Button variant="ghost" size="sm" onClick={() => setHistory(chain)}>
+                  <History aria-hidden="true" className="size-3.5" />
+                  Version history
+                </Button>
                 <Button
                   variant="ghost"
                   size="sm"
@@ -523,6 +533,40 @@ export function PromptChainsEditor({
           </>
         )}
       </fieldset>
+      {history && (
+        <RevisionHistory
+          kind="chain"
+          itemId={history.id}
+          title="Chain version history"
+          prompts={config.prompts}
+          current={JSON.stringify(chains.find((item) => item.id === history.id) ?? history)}
+          onClose={() => setHistory(null)}
+          validate={(value) => {
+            const previous = JSON.parse(value) as PromptChain;
+            const missing = previous.steps.some(
+              (step) => !config.prompts.some((prompt) => prompt.id === step.promptId),
+            );
+            return missing
+              ? "This version uses a prompt that no longer exists. Restore or recreate that prompt first."
+              : validateTextProcessing({
+                  ...config,
+                  chains: chains.map((item) =>
+                    item.id === history.id ? { ...previous, id: history.id } : item,
+                  ),
+                });
+          }}
+          onRestore={(value) => {
+            const previous = JSON.parse(value) as PromptChain;
+            onChange({
+              chains: chains.map((item) =>
+                item.id === history.id
+                  ? { ...item, name: previous.name, steps: previous.steps }
+                  : item,
+              ),
+            });
+          }}
+        />
+      )}
       <Dialog open={deleting} onOpenChange={setDeleting}>
         <DialogContent>
           <DialogHeader>
@@ -541,10 +585,7 @@ export function PromptChainsEditor({
               variant="destructive"
               disabled={disabled}
               onClick={() => {
-                onChange({
-                  chains: chains.filter((item) => item.id !== selected),
-                  autoPromptId: config.autoPromptId === selected ? "" : config.autoPromptId,
-                });
+                if (chain) onDelete(chain);
                 setDeleting(false);
               }}
             >

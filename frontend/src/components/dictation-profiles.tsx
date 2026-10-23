@@ -1,3 +1,4 @@
+import { AutoSaveStatus } from "@/components/auto-save-status";
 import { useDictation } from "@/components/dictation-provider";
 import { ProcessingSelectItems } from "@/components/processing-select-items";
 import { ProfileApps } from "@/components/profile-apps";
@@ -37,6 +38,8 @@ import {
   type ProfileApplication,
 } from "@/lib/backend";
 import { languages } from "@/lib/languages";
+import { useAutoSave } from "@/lib/use-auto-save";
+import { useSavedDraft } from "@/lib/use-saved-draft";
 import { Pencil, Plus, Settings2, Trash2, Workflow } from "lucide-react";
 import { useRef, useState } from "react";
 import { Link } from "react-router";
@@ -392,11 +395,11 @@ function ProfileEditor({
   onClose: () => void;
 }) {
   const { snapshot, refresh } = useDictation();
-  const [draft, setDraft] = useState(profile);
-  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(profile);
+  const [draft, setDraft, draftState] = useSavedDraft(`profile:${profile.id || "new"}`, saved);
+  const profileID = useRef(profile.id);
   const [error, setError] = useState("");
-  const [confirmDiscard, setConfirmDiscard] = useState(false);
-  const dirty = JSON.stringify(draft) !== JSON.stringify(profile);
+  const [closing, setClosing] = useState(false);
   const models = snapshot.models
     .filter((model) => model.installed)
     .map((model) => ({ value: model.path, label: model.name }));
@@ -420,18 +423,52 @@ function ProfileEditor({
       label: "Prompt or chain unavailable — choose another",
     });
   const selectedPrompt = prompts.find((prompt) => prompt.value === draft.autoPromptId);
-  function close() {
-    if (!saving) {
-      if (dirty) setConfirmDiscard(true);
-      else onClose();
+  const reason = !draft.name.trim()
+    ? "Give this profile a name."
+    : Array.from(draft.name.trim()).length > 60 ||
+        ["\r", "\n", "\0"].some((character) => draft.name.includes(character))
+      ? "Use a profile name of up to 60 characters without line breaks."
+      : !draft.modelPath
+        ? "Choose a speech model."
+        : unavailablePrompt
+          ? "Choose an available prompt or chain."
+          : draft.autoPromptId && !snapshot.textProcessing.enabled
+            ? "Enable the shared text model first."
+            : "";
+  async function save() {
+    setError("");
+    try {
+      const submitted = { ...draft, id: profileID.current || draft.id };
+      const result = await backend.saveProfile(submitted);
+      profileID.current = result.id;
+      setDraft((old) => ({ ...old, id: result.id }));
+      draftState.markSubmitted({ ...submitted, id: result.id });
+      setSaved(result);
+      await refresh();
+    } catch (cause) {
+      setError(message(cause));
+      throw cause;
     }
+  }
+  const autoSave = useAutoSave({
+    draftKey: JSON.stringify(draft),
+    dirty: draftState.dirty,
+    canSave: !disabled && isDesktop && !reason,
+    save,
+    delay: 800,
+  });
+  async function close() {
+    if (closing) return;
+    setClosing(true);
+    if (!draftState.dirty || reason || (await autoSave.retry())) onClose();
+    setClosing(false);
   }
   return (
     <Dialog
       open
       disablePointerDismissal
       onOpenChange={(open) => {
-        if (!open) close();
+        if (!open) void close();
       }}
     >
       <DialogContent showCloseButton={false} className="max-h-[calc(100dvh-2rem)] overflow-y-auto">
@@ -443,7 +480,7 @@ function ProfileEditor({
             Saving a profile leaves your current settings in place. Choose Use to activate it.
           </DialogDescription>
         </DialogHeader>
-        <fieldset disabled={disabled || saving} className="space-y-4">
+        <fieldset disabled={disabled || closing} className="space-y-4">
           <div className="space-y-2">
             <Label htmlFor="profile-name">Profile name</Label>
             <Input
@@ -547,43 +584,18 @@ function ProfileEditor({
             {error}
           </p>
         )}
-        {confirmDiscard ? (
-          <div className="space-y-3 rounded-lg border p-3">
-            <p className="text-sm">Discard your unsaved profile changes?</p>
-            <div className="flex flex-wrap gap-2">
-              <Button variant="outline" onClick={() => setConfirmDiscard(false)}>
-                Keep editing
-              </Button>
-              <Button variant="destructive" onClick={onClose}>
-                Discard changes
-              </Button>
-            </div>
-          </div>
-        ) : (
-          <DialogFooter>
-            <Button variant="outline" disabled={saving} onClick={close}>
-              Cancel
-            </Button>
-            <Button
-              disabled={disabled || saving || !draft.name.trim() || !draft.modelPath}
-              onClick={async () => {
-                setSaving(true);
-                setError("");
-                try {
-                  await backend.saveProfile(draft);
-                  await refresh();
-                  onClose();
-                } catch (cause) {
-                  setError(message(cause));
-                } finally {
-                  setSaving(false);
-                }
-              }}
-            >
-              {saving ? "Saving…" : "Save profile"}
-            </Button>
-          </DialogFooter>
-        )}
+        <DialogFooter className="items-center sm:justify-between">
+          <AutoSaveStatus
+            status={autoSave.status}
+            reason={reason}
+            retry={autoSave.retry}
+            discard={() => setDraft(saved)}
+            disabled={disabled || closing}
+          />
+          <Button variant="outline" disabled={closing} onClick={() => void close()}>
+            Done
+          </Button>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );

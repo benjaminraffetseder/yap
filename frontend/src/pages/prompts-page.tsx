@@ -1,6 +1,8 @@
+import { AutoSaveStatus } from "@/components/auto-save-status";
 import { useDictation } from "@/components/dictation-provider";
 import { ProfileSettingIndicator } from "@/components/profile-setting-indicator";
 import { PromptChainsEditor } from "@/components/prompt-chains-editor";
+import { RevisionHistory } from "@/components/revision-history";
 import { SettingRow, SettingsSection, ToggleSetting } from "@/components/settings-section";
 import { Button } from "@/components/ui/button";
 import {
@@ -32,11 +34,14 @@ import {
   type TextProcessing,
   type TextPrompt,
 } from "@/lib/backend";
+import { deleteDraftItem } from "@/lib/delete-draft-item";
+import { validateTextProcessing } from "@/lib/draft-validation";
+import { useAutoSave } from "@/lib/use-auto-save";
 import { useModelDiscovery } from "@/lib/use-model-discovery";
-import { useTextRequest } from "@/lib/use-text-request";
 import { useSavedDraft } from "@/lib/use-saved-draft";
+import { useTextRequest } from "@/lib/use-text-request";
 import { Menu } from "@base-ui/react/menu";
-import { Ellipsis, Plus, RefreshCw, Save, Sparkles, Trash2 } from "lucide-react";
+import { Ellipsis, History, Plus, RefreshCw, Sparkles, Trash2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
 
@@ -66,9 +71,10 @@ export function PromptsPage() {
     : "prompts";
   const { snapshot, refresh, clearError, loading } = useDictation();
   const saved = snapshot.textProcessing;
-  const [draft, setDraft] = useSavedDraft<TextProcessing>("prompts", saved);
+  const [draft, setDraft, draftState] = useSavedDraft<TextProcessing>("prompts", saved);
   const [selected, setSelected] = useState(saved.prompts[0]?.id ?? "");
-  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState("");
+  const [historyPrompt, setHistoryPrompt] = useState<TextPrompt | null>(null);
   const [deleting, setDeleting] = useState<TextPrompt | null>(null);
   const deleteButton = useRef<HTMLButtonElement>(null);
   const cancelDeleteButton = useRef<HTMLButtonElement>(null);
@@ -120,8 +126,9 @@ export function PromptsPage() {
         timeout: 8000,
       });
   }, [modelTest.pending, modelTest.result, modelTest.error]);
-  const dirty = JSON.stringify(draft) !== JSON.stringify(saved);
-  const busy = isBusy(snapshot.status.phase) || saving || modelTest.pending || refinement.pending;
+  const dirty = draftState.dirty;
+  const reason = validateTextProcessing(draft);
+  const busy = isBusy(snapshot.status.phase) || modelTest.pending || refinement.pending;
   const controlsDisabled = !isDesktop || busy || loading;
   const promptOptions = draft.prompts.map((prompt) => ({
     value: prompt.id,
@@ -176,10 +183,16 @@ export function PromptsPage() {
       !draft.prompts.some((p) => p.id === deleting.id)
     )
       return;
-    update({
-      prompts: draft.prompts.filter((p) => p.id !== deleting.id),
-      autoPromptId: draft.autoPromptId === deleting.id ? "" : draft.autoPromptId,
-    });
+    deleteDraftItem(
+      draft,
+      {
+        ...draft,
+        prompts: draft.prompts.filter((p) => p.id !== deleting.id),
+        autoPromptId: draft.autoPromptId === deleting.id ? "" : draft.autoPromptId,
+      },
+      setDraft,
+      "Prompt",
+    );
     setDeleting(null);
   }
   function refine() {
@@ -200,21 +213,15 @@ export function PromptsPage() {
     setRefining(null);
   }
   async function save() {
-    if (controlsDisabled) return;
-    setSaving(true);
     clearError();
-    toastManager.close("prompt-save");
+    setSaveError("");
     try {
-      const value = await backend.textProcessing(draft);
-      setDraft(value);
+      await backend.textProcessing(draft);
+      draftState.markSubmitted(draft);
       modelTest.clear();
       await refresh();
-      toastManager.add({
-        id: "prompt-save",
-        type: "success",
-        title: "Prompts saved.",
-      });
     } catch (cause) {
+      setSaveError(message(cause));
       toastManager.add({
         id: "prompt-save",
         type: "error",
@@ -222,10 +229,16 @@ export function PromptsPage() {
         priority: "high",
         timeout: 8000,
       });
-    } finally {
-      setSaving(false);
+      throw cause;
     }
   }
+  const autoSave = useAutoSave({
+    draftKey: JSON.stringify(draft),
+    dirty,
+    canSave: !controlsDisabled && !reason,
+    save,
+    delay: 1000,
+  });
   return (
     <div className="@container space-y-5">
       <Tabs
@@ -244,34 +257,19 @@ export function PromptsPage() {
               <h1 className="text-2xl font-semibold tracking-tight">Prompts</h1>
             </div>
             <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
-              {dirty && (
-                <>
-                  <span role="status" className="text-xs text-muted-foreground">
-                    Unsaved changes
-                  </span>
-                  <Button
-                    variant="ghost"
-                    disabled={controlsDisabled}
-                    onClick={() => {
-                      setDraft(saved);
-                      setManualModel(false);
-                      setCustomServer(false);
-                      modelTest.clear();
-                    }}
-                  >
-                    Discard changes
-                  </Button>
-                </>
-              )}
-              {!dirty && <span className="sr-only">All changes saved</span>}
-              <Button
-                pressFeedback
-                disabled={controlsDisabled || !dirty}
-                onClick={() => void save()}
-              >
-                <Save aria-hidden="true" className="size-4" />
-                {saving ? "Saving…" : "Save changes"}
-              </Button>
+              <AutoSaveStatus
+                status={autoSave.status}
+                showDiscard={dirty && !autoSave.saving}
+                reason={reason}
+                retry={autoSave.retry}
+                disabled={controlsDisabled}
+                discard={() => {
+                  setDraft(saved);
+                  setManualModel(false);
+                  setCustomServer(false);
+                  modelTest.clear();
+                }}
+              />
             </div>
           </div>
           <div className="flex flex-wrap items-center justify-between gap-3">
@@ -287,6 +285,11 @@ export function PromptsPage() {
             </TabsList>
           </div>
         </header>
+        {saveError && autoSave.failed && (
+          <p role="alert" className="text-xs text-destructive">
+            {saveError}
+          </p>
+        )}
         <TabsContent value="models" keepMounted>
           <SettingsSection title="Text model">
             <fieldset disabled={controlsDisabled} className="divide-y disabled:opacity-60">
@@ -445,7 +448,9 @@ export function PromptsPage() {
                     Test model
                   </Button>
                   {dirty && (
-                    <span className="text-xs text-muted-foreground">Save before testing.</span>
+                    <span className="text-xs text-muted-foreground">
+                      Wait until saved before testing.
+                    </span>
                   )}
                 </div>
               )}
@@ -458,6 +463,18 @@ export function PromptsPage() {
             disabled={controlsDisabled}
             onChange={update}
             onConfigureModel={() => selectSection("models")}
+            onDelete={(chain) =>
+              deleteDraftItem(
+                draft,
+                {
+                  ...draft,
+                  chains: (draft.chains ?? []).filter((item) => item.id !== chain.id),
+                  autoPromptId: draft.autoPromptId === chain.id ? "" : draft.autoPromptId,
+                },
+                setDraft,
+                "Chain",
+              )
+            }
           />
         </TabsContent>
         <TabsContent value="prompts" keepMounted>
@@ -614,6 +631,13 @@ export function PromptsPage() {
                                   finalFocus={() => (deleting ? false : true)}
                                   className="min-w-44 origin-(--transform-origin) rounded-lg bg-popover p-1 text-popover-foreground shadow-md ring-1 ring-foreground/10 motion-popup"
                                 >
+                                  <Menu.Item
+                                    className="flex items-center gap-2 rounded-md px-3 py-2 text-sm outline-none data-highlighted:bg-accent"
+                                    onClick={() => setHistoryPrompt(prompt)}
+                                  >
+                                    <History aria-hidden="true" className="size-4" />
+                                    Version history
+                                  </Menu.Item>
                                   {includedPrompt && (
                                     <Menu.Item
                                       disabled={controlsDisabled}
@@ -731,6 +755,28 @@ export function PromptsPage() {
           </fieldset>
         </TabsContent>
       </Tabs>
+      {historyPrompt && (
+        <RevisionHistory
+          kind="prompt"
+          itemId={historyPrompt.id}
+          title="Prompt version history"
+          current={JSON.stringify(
+            draft.prompts.find((item) => item.id === historyPrompt.id) ?? historyPrompt,
+          )}
+          onClose={() => setHistoryPrompt(null)}
+          onRestore={(value) => {
+            const previous = JSON.parse(value) as TextPrompt;
+            setDraft((old) => ({
+              ...old,
+              prompts: old.prompts.map((item) =>
+                item.id === historyPrompt.id
+                  ? { ...item, name: previous.name, instruction: previous.instruction }
+                  : item,
+              ),
+            }));
+          }}
+        />
+      )}
       <Dialog
         open={!!deleting}
         disablePointerDismissal
@@ -746,7 +792,7 @@ export function PromptsPage() {
           <DialogHeader>
             <DialogTitle>Delete this prompt?</DialogTitle>
             <DialogDescription>
-              “{deleting?.name || "Untitled prompt"}” will be removed when you save your changes.
+              “{deleting?.name || "Untitled prompt"}” will be removed. You can undo this deletion.
               {deleting &&
                 draft.autoPromptId === deleting.id &&
                 " Automatic processing after dictation will be turned off."}
@@ -872,7 +918,7 @@ export function PromptsPage() {
                       ),
                     });
                     setRefining(null);
-                    setRefinementNotice("Refined instructions applied. Save changes to keep them.");
+                    setRefinementNotice("Refined instructions applied.");
                   }}
                 >
                   Apply to draft

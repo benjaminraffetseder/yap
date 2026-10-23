@@ -1,5 +1,7 @@
+import { AutoSaveStatus } from "@/components/auto-save-status";
 import { useDictation } from "@/components/dictation-provider";
 import { PageHeading } from "@/components/page-heading";
+import { RevisionHistory } from "@/components/revision-history";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -12,60 +14,73 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { backend, isBusy, isDesktop, type VocabularyEntry } from "@/lib/backend";
-import { BookOpen, Plus, Save, Trash2 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { toastManager } from "@/components/ui/toast";
+import { backend, isBusy, isDesktop, message, type VocabularyEntry } from "@/lib/backend";
+import {
+  vocabularyDraft as draftOf,
+  validateVocabulary,
+  vocabularyPayload,
+  type VocabularyDraft as Draft,
+} from "@/lib/draft-validation";
+import { useAutoSave } from "@/lib/use-auto-save";
 import { useSavedDraft } from "@/lib/use-saved-draft";
+import { BookOpen, History, Plus, Trash2 } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 
 const PAGE_SIZE = 10;
 
-type Draft = Omit<VocabularyEntry, "aliases"> & { aliases: string };
-const draftOf = (entries: VocabularyEntry[]): Draft[] =>
-  entries.map((entry) => ({ ...entry, aliases: entry.aliases.join(", ") }));
-
 export function VocabularyPage() {
-  const { snapshot, run, loading } = useDictation();
+  const { snapshot, refresh, loading } = useDictation();
   const saved = useMemo(() => draftOf(snapshot.vocabulary), [snapshot.vocabulary]);
-  const [draft, setDraft] = useSavedDraft("vocabulary", saved);
-  const [saving, setSaving] = useState(false);
+  const [draft, setDraft, draftState] = useSavedDraft("vocabulary", saved);
+  const [error, setError] = useState("");
+  const [history, setHistory] = useState(false);
   const [page, setPage] = useState(0);
   const busy = isBusy(snapshot.status.phase);
   const pages = Math.max(1, Math.ceil(draft.length / PAGE_SIZE) || 1);
   useEffect(() => {
     setPage((current) => Math.min(current, pages - 1));
   }, [pages]);
-  const dirty = JSON.stringify(draft) !== JSON.stringify(draftOf(snapshot.vocabulary));
+  const payload = vocabularyPayload(draft, snapshot.vocabulary);
+  const errors = validateVocabulary(payload);
+  const reason = Object.values(errors)[0];
+  const disabled = !isDesktop || busy || loading;
   const pageEntries = draft.slice(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE);
   function update(id: string, value: Partial<Draft>) {
     setDraft((old) => old.map((entry) => (entry.id === id ? { ...entry, ...value } : entry)));
   }
   async function save() {
-    if (loading || saving || busy) return;
-    setSaving(true);
-    await run(async () => {
-      const saved = await backend.vocabulary(
-        draft.map((entry) => ({
-          ...entry,
-          aliases: entry.aliases
-            .split(",")
-            .map((alias) => alias.trim())
-            .filter(Boolean),
-        })),
-      );
-      setDraft(draftOf(saved));
-    });
-    setSaving(false);
+    setError("");
+    try {
+      await backend.vocabulary(payload);
+      draftState.markSubmitted(draft);
+      await refresh();
+    } catch (cause) {
+      setError(message(cause));
+      toastManager.add({
+        id: "vocabulary-save",
+        type: "error",
+        title: message(cause),
+        priority: "high",
+        timeout: 8000,
+      });
+      throw cause;
+    }
   }
+  const autoSave = useAutoSave({
+    draftKey: JSON.stringify(draft),
+    dirty: draftState.dirty,
+    canSave: !disabled && !reason,
+    save,
+    delay: 800,
+  });
   return (
     <div className="space-y-7">
       <PageHeading
         title="Vocabulary"
         description="Teach Yap the names, brands, and terms you use."
       />
-      <fieldset
-        disabled={!isDesktop || busy || saving || loading}
-        className="min-w-0 space-y-6 disabled:opacity-60"
-      >
+      <fieldset disabled={disabled} className="min-w-0 space-y-6 disabled:opacity-60">
         <section aria-labelledby="vocabulary-terms-heading" className="space-y-4">
           <div className="sticky top-0 z-20 flex flex-wrap items-center justify-between gap-3 bg-background py-3">
             <div className="flex flex-wrap items-center gap-3">
@@ -75,11 +90,14 @@ export function VocabularyPage() {
               <span className="text-xs tabular-nums text-muted-foreground">
                 {draft.length} / 100
               </span>
-              {dirty && (
-                <span role="status" className="text-xs text-muted-foreground">
-                  Unsaved changes
-                </span>
-              )}
+              <AutoSaveStatus
+                status={autoSave.status}
+                showDiscard={draftState.dirty && !autoSave.saving}
+                reason={reason}
+                retry={autoSave.retry}
+                discard={() => setDraft(saved)}
+                disabled={disabled}
+              />
             </div>
             <div className="ml-auto flex flex-wrap items-center gap-2">
               <Button
@@ -102,21 +120,17 @@ export function VocabularyPage() {
                 <Plus className="size-3.5" />
                 Add term
               </Button>
-              {dirty && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setDraft(draftOf(snapshot.vocabulary))}
-                >
-                  Discard changes
-                </Button>
-              )}
-              <Button pressFeedback size="sm" disabled={!dirty} onClick={() => void save()}>
-                <Save className="size-3.5" />
-                {saving ? "Saving…" : "Save vocabulary"}
+              <Button variant="ghost" size="sm" onClick={() => setHistory(true)}>
+                <History aria-hidden="true" className="size-3.5" />
+                Version history
               </Button>
             </div>
           </div>
+          {error && autoSave.failed && (
+            <p role="alert" className="text-xs text-destructive">
+              {error}
+            </p>
+          )}
           {!draft.length ? (
             <div className="rounded-2xl border border-dashed px-6 py-12 text-center">
               <BookOpen
@@ -151,13 +165,22 @@ export function VocabularyPage() {
                           <div className="flex items-center justify-center">
                             <Checkbox
                               aria-label="Enabled"
-                              disabled={!isDesktop || busy || saving || loading}
+                              disabled={disabled}
                               checked={entry.enabled}
                               onCheckedChange={(checked) =>
                                 update(entry.id, { enabled: checked === true })
                               }
                             />
                           </div>
+                          {errors[entry.id] && (
+                            <p
+                              id={`error-${entry.id}`}
+                              role="alert"
+                              className="mt-2 text-xs text-destructive"
+                            >
+                              {errors[entry.id]}
+                            </p>
+                          )}
                         </TableCell>
                         <TableCell className="whitespace-normal">
                           <Label htmlFor={`term-${entry.id}`} className="sr-only">
@@ -165,6 +188,8 @@ export function VocabularyPage() {
                           </Label>
                           <Input
                             id={`term-${entry.id}`}
+                            aria-invalid={!!errors[entry.id]}
+                            aria-describedby={errors[entry.id] ? `error-${entry.id}` : undefined}
                             maxLength={80}
                             placeholder="e.g. PostgreSQL"
                             value={entry.canonical}
@@ -232,6 +257,16 @@ export function VocabularyPage() {
           )}
         </section>
       </fieldset>
+      {history && (
+        <RevisionHistory
+          kind="vocabulary"
+          itemId=""
+          title="Vocabulary version history"
+          current={JSON.stringify(snapshot.vocabulary)}
+          onClose={() => setHistory(false)}
+          onRestore={(value) => setDraft(draftOf(JSON.parse(value) as VocabularyEntry[]))}
+        />
+      )}
     </div>
   );
 }

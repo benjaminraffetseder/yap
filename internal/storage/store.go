@@ -81,6 +81,9 @@ func Open(dir string) (*Store, error) {
 	CREATE TABLE IF NOT EXISTS pending_audio_deletions (id TEXT PRIMARY KEY, original TEXT NOT NULL, staged TEXT NOT NULL);
 	CREATE TABLE IF NOT EXISTS discarded_audio (path TEXT PRIMARY KEY);
 	CREATE TABLE IF NOT EXISTS deleted_recordings (id TEXT PRIMARY KEY, deleted_at TEXT NOT NULL);
+	CREATE TABLE IF NOT EXISTS revisions (id INTEGER PRIMARY KEY AUTOINCREMENT, kind TEXT NOT NULL, item_id TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, value TEXT NOT NULL);
+	CREATE INDEX IF NOT EXISTS revisions_item ON revisions(kind,item_id,id);
+	CREATE TRIGGER IF NOT EXISTS delete_recording_revisions AFTER DELETE ON recordings BEGIN DELETE FROM revisions WHERE kind='transcript' AND item_id=OLD.id; END;
 	CREATE TRIGGER IF NOT EXISTS delete_recording_tombstone AFTER DELETE ON recordings BEGIN DELETE FROM deleted_recordings WHERE id=OLD.id; END;
 	CREATE TRIGGER IF NOT EXISTS delete_recording_output AFTER DELETE ON recordings BEGIN DELETE FROM recording_outputs WHERE id=OLD.id; END;`)
 	if err != nil {
@@ -210,7 +213,20 @@ func (s *Store) UpdateTranscript(id, text string) error {
 	if utf8.RuneCountInString(text) > 100000 {
 		return errors.New("use at most 100,000 characters in a transcript")
 	}
-	result, err := s.db.Exec(`INSERT INTO recording_outputs(id,transcript)
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	var before string
+	err = tx.QueryRow(`SELECT COALESCE(o.transcript,r.transcript) FROM recordings r LEFT JOIN recording_outputs o ON o.id=r.id WHERE r.id=? AND NOT EXISTS (SELECT 1 FROM deleted_recordings d WHERE d.id=r.id)`, id).Scan(&before)
+	if errors.Is(err, sql.ErrNoRows) {
+		return errors.New("this dictation no longer exists; close the editor and refresh History")
+	}
+	if err != nil {
+		return err
+	}
+	result, err := tx.Exec(`INSERT INTO recording_outputs(id,transcript)
 		SELECT id,? FROM recordings WHERE id=? AND NOT EXISTS (SELECT 1 FROM deleted_recordings d WHERE d.id=recordings.id)
 		ON CONFLICT(id) DO UPDATE SET transcript=excluded.transcript`, text, id)
 	if err != nil {
@@ -223,7 +239,10 @@ func (s *Store) UpdateTranscript(id, text string) error {
 	if count == 0 {
 		return errors.New("this dictation no longer exists; close the editor and refresh History")
 	}
-	return nil
+	if err := recordRevision(tx, "transcript", id, before, text, time.Now()); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 func NewSession(id string, duration int64, text, model, language, path string) Session {
 	return Session{ID: id, CreatedAt: time.Now().UTC().Format(time.RFC3339Nano), DurationMS: duration, RawTranscript: text, FinalTranscript: text, SpeechModel: model, Language: language, AudioPath: path}
@@ -246,10 +265,28 @@ func (s *Store) Vocabulary() ([]vocabulary.Entry, error) {
 	return out, err
 }
 func (s *Store) SaveVocabulary(entries []vocabulary.Entry) error {
+	if entries == nil {
+		entries = []vocabulary.Entry{}
+	}
 	data, err := json.Marshal(entries)
 	if err != nil {
 		return err
 	}
-	_, err = s.db.Exec("INSERT INTO vocabulary VALUES(1,?) ON CONFLICT(id) DO UPDATE SET value=excluded.value", string(data))
-	return err
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	before := "[]"
+	err = tx.QueryRow("SELECT value FROM vocabulary WHERE id=1").Scan(&before)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return err
+	}
+	if err := recordRevision(tx, "vocabulary", "", before, string(data), time.Now()); err != nil {
+		return err
+	}
+	if _, err = tx.Exec("INSERT INTO vocabulary VALUES(1,?) ON CONFLICT(id) DO UPDATE SET value=excluded.value", string(data)); err != nil {
+		return err
+	}
+	return tx.Commit()
 }

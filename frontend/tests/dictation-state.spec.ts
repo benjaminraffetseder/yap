@@ -6,8 +6,8 @@ import type {
   DiagnosticCheck,
   DictationProfile,
   GeneratedOutput,
-  Settings,
   Session,
+  Settings,
   Snapshot,
   Status,
   TextProcessing,
@@ -31,6 +31,17 @@ async function homeModelScenario(page: Page, custom = false) {
     state.snapshot.settings.modelPath = custom ? "/models/custom-speech.bin" : "/tiny";
   }, custom);
   await page.goto("/");
+}
+
+async function saveDraft(page: Page) {
+  const retry = page.getByRole("button", { name: "Retry", exact: true });
+  if (await retry.isVisible()) await retry.click();
+  await expect(
+    page
+      .getByRole("status")
+      .filter({ hasText: /Changes save automatically|Changes not saved|Not saved yet:/ })
+      .first(),
+  ).toBeVisible();
 }
 
 async function promptAction(page: Page, name: "Delete prompt" | "Reset instructions") {
@@ -882,15 +893,10 @@ for (const theme of ["light", "dark"] as const) {
     await expect(automatic).toBeChecked();
     await cleanup.click();
     await automatic.check();
-    await page.getByRole("button", { name: "Save changes", exact: true }).click();
+    await saveDraft(page);
     await expect
       .poll(() => page.evaluate(() => window.dictationTest.snapshot.textProcessing.autoPromptId))
       .toBe("cleanup");
-    await page
-      .locator('[data-slot="toast"]')
-      .filter({ hasText: "Prompts saved." })
-      .getByRole("button", { name: "Dismiss notification" })
-      .click();
     await expect(page.getByRole("button", { name: "Refine prompt", exact: true })).toBeInViewport();
     await expect(page.getByRole("region", { name: "Prompt details", exact: true })).toBeInViewport({
       ratio: 1,
@@ -915,7 +921,7 @@ for (const theme of ["light", "dark"] as const) {
     await expect(automatic).not.toBeChecked();
     await expect(page.getByLabel("Name", { exact: true })).toHaveValue("My cleanup");
     await page.getByLabel("Instructions", { exact: true }).scrollIntoViewIfNeeded();
-    await expect(page.getByRole("button", { name: "Save changes", exact: true })).toBeInViewport();
+    await expect(page.locator('header[aria-label="Prompts"]').getByRole("status")).toBeInViewport();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
       true,
     );
@@ -956,7 +962,7 @@ test("prompt automatic switch respects model and busy guards and preserves a fai
     window.dictationTest.status("idle");
     window.dictationTest.failSave = true;
   });
-  await page.getByRole("button", { name: "Save changes", exact: true }).click();
+  await saveDraft(page);
   await expect(
     page.locator('[data-slot="toast"]').filter({ hasText: "Prompts save failed" }),
   ).toBeVisible();
@@ -970,7 +976,7 @@ test("prompt automatic switch respects model and busy guards and preserves a fai
   await page.evaluate(() => {
     window.dictationTest.failSave = false;
   });
-  await page.getByRole("button", { name: "Save changes", exact: true }).click();
+  await saveDraft(page);
   await expect
     .poll(() => page.evaluate(() => window.dictationTest.snapshot.textProcessing.autoPromptId))
     .toBe("cleanup");
@@ -1003,7 +1009,7 @@ test("prompt library restores an empty collection and fits long names at the pro
   await expect(page.getByRole("heading", { name: "No saved prompts", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Restore default prompts", exact: true }).click();
   await expect(page.getByLabel("Name", { exact: true })).toHaveValue("Cleanup");
-  await page.getByRole("button", { name: "Save changes", exact: true }).click();
+  await saveDraft(page);
   await expect
     .poll(() => page.evaluate(() => window.dictationTest.snapshot.textProcessing.prompts.length))
     .toBe(2);
@@ -1071,7 +1077,9 @@ test("prompts tabs preserve shared drafts and keep save actions visible in narro
     page.getByRole("switch", { name: "Run after dictation", exact: true }),
   ).toBeVisible();
   await page.getByLabel("Name", { exact: true }).fill("My cleanup");
-  await expect(page.getByRole("status").filter({ hasText: "Unsaved changes" })).toBeVisible();
+  await expect(
+    page.getByRole("status").filter({ hasText: /Saving|Changes save automatically/ }),
+  ).toBeVisible();
   await page.evaluate(() => window.scrollTo(0, 0));
   await page.screenshot({
     path: testInfo.outputPath("prompts-wide.png"),
@@ -1079,9 +1087,9 @@ test("prompts tabs preserve shared drafts and keep save actions visible in narro
     animations: "disabled",
   });
   await page.getByLabel("Instructions", { exact: true }).scrollIntoViewIfNeeded();
-  const save = page.getByRole("button", { name: "Save changes", exact: true });
+  const save = page.locator('header[aria-label="Prompts"]').getByRole("status");
   await expect(save).toBeInViewport();
-  await save.click();
+  await saveDraft(page);
   await expect
     .poll(() =>
       page.evaluate(() => ({
@@ -1132,7 +1140,7 @@ test("prompts tabs preserve shared drafts and keep save actions visible in narro
   await expect(page.getByLabel("Name", { exact: true })).toBeVisible();
 });
 
-test("prompt saves and model responses appear as dismissible toasts", async ({
+test("prompt auto-save status and model response toasts reflect saved state", async ({
   page,
 }, testInfo) => {
   await page.addInitScript(() => {
@@ -1141,14 +1149,13 @@ test("prompt saves and model responses appear as dismissible toasts", async ({
   });
   await page.goto("/#/prompts?section=models");
   await page.getByLabel("Model identifier", { exact: true }).fill("new-model");
-  await page.getByRole("button", { name: "Save changes", exact: true }).click();
-  const saved = page.locator('[data-slot="toast"]').filter({ hasText: "Prompts saved." });
+  await saveDraft(page);
+  const saved = page.locator('header[aria-label="Prompts"]').getByRole("status");
   await expect(saved).toBeVisible();
   expect(await page.evaluate(() => window.dictationTest.snapshot.textProcessing.model)).toBe(
     "new-model",
   );
-  await saved.getByRole("button", { name: "Dismiss notification" }).click();
-  await expect(saved).toBeHidden();
+  await expect(saved).toHaveText("Changes save automatically");
   await page.getByRole("button", { name: "Test model", exact: true }).click();
   const response = page
     .locator('[data-slot="toast"]')
@@ -1187,7 +1194,7 @@ test("failed prompt saves show an error toast and retain edits for retry", async
   await page.evaluate(() => {
     window.dictationTest.failSave = true;
   });
-  await page.getByRole("button", { name: "Save changes", exact: true }).click();
+  await saveDraft(page);
   const failure = page.locator('[data-slot="toast"]').filter({ hasText: "Prompts save failed" });
   await expect(failure).toBeVisible();
   await expect(
@@ -1202,10 +1209,10 @@ test("failed prompt saves show an error toast and retain edits for retry", async
   await page.evaluate(() => {
     window.dictationTest.failSave = false;
   });
-  await page.getByRole("button", { name: "Save changes", exact: true }).click();
-  await expect(
-    page.locator('[data-slot="toast"]').filter({ hasText: "Prompts saved." }),
-  ).toBeVisible();
+  await saveDraft(page);
+  await expect(page.locator('header[aria-label="Prompts"]').getByRole("status")).toHaveText(
+    "Changes save automatically",
+  );
   expect(
     await page.evaluate(() => window.dictationTest.snapshot.textProcessing.prompts[0].name),
   ).toBe("Retry cleanup");
@@ -1285,7 +1292,7 @@ test("prompt deletion asks for confirmation and cancel preserves draft edits", a
     exact: true,
   });
   await expect(dialog).toContainText("My cleanup");
-  await expect(dialog).toContainText("removed when you save your changes");
+  await expect(dialog).toContainText("removed. You can undo this deletion");
   await expect(dialog).toContainText("Automatic processing after dictation will be turned off");
   await expect(dialog.getByRole("button", { name: "Cancel", exact: true })).toBeFocused();
   await page.screenshot({
@@ -1351,7 +1358,7 @@ test("confirmed prompt deletion can be discarded and persists only after save", 
   ).toBeChecked();
   await promptAction(page, "Delete prompt");
   await dialog.getByRole("button", { name: "Delete prompt", exact: true }).click();
-  await page.getByRole("button", { name: "Save changes", exact: true }).click();
+  await saveDraft(page);
   await expect
     .poll(() =>
       page.evaluate(() => ({
@@ -1395,7 +1402,7 @@ test("reset instructions preserves customized prompt names", async ({ page }) =>
     await expect(page.getByLabel("Instructions", { exact: true })).not.toHaveValue(
       "My special instructions",
     );
-    await page.getByRole("button", { name: "Save changes", exact: true }).click();
+    await saveDraft(page);
     await expect
       .poll(() =>
         page.evaluate(
@@ -1473,7 +1480,7 @@ test("prompt refinement previews an unsaved draft and saves only after applying"
       page.evaluate(() => window.dictationTest.snapshot.textProcessing.prompts[0].instruction),
     )
     .toBe("Clean up text.");
-  await page.getByRole("button", { name: "Save changes", exact: true }).click();
+  await saveDraft(page);
   await expect
     .poll(() =>
       page.evaluate(() => window.dictationTest.snapshot.textProcessing.prompts[0].instruction),
@@ -2682,6 +2689,7 @@ test.beforeEach(async ({ page }) => {
               );
               return structuredClone(state.snapshot.vocabulary);
             },
+            GetRevisions: async () => [],
             SaveTextProcessing: async (config: TextProcessing) => {
               if (state.failSave) throw new Error("Prompts save failed");
               state.snapshot.textProcessing = structuredClone(config);
@@ -3197,15 +3205,15 @@ test("Vocabulary matches the Models heading and keeps editing actions visible in
     animations: "disabled",
   });
   await page.getByLabel("Preferred spelling", { exact: true }).first().fill("Postgres");
-  const save = page.getByRole("button", { name: "Save vocabulary", exact: true });
-  const discard = page.getByRole("button", { name: "Discard changes", exact: true });
+  const save = page.getByRole("status").filter({ hasText: "Changes save automatically" });
   for (const width of [600, 360]) {
     await page.setViewportSize({ width, height: 700 });
     await page.getByRole("button", { name: "Remove Yap", exact: true }).scrollIntoViewIfNeeded();
     await expect(save).toBeInViewport();
-    await expect(discard).toBeInViewport();
     await expect(
-      page.getByRole("status", { name: "" }).filter({ hasText: "Unsaved changes" }),
+      page
+        .getByRole("status", { name: "" })
+        .filter({ hasText: /Saving|Changes save automatically/ }),
     ).toBeVisible();
     expect(
       await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
@@ -3215,11 +3223,11 @@ test("Vocabulary matches the Models heading and keeps editing actions visible in
       animations: "disabled",
     });
   }
-  await discard.click();
+  await saveDraft(page);
   await expect(page.getByLabel("Preferred spelling", { exact: true }).first()).toHaveValue(
-    "PostgreSQL",
+    "Postgres",
   );
-  await expect(save).toBeDisabled();
+  await expect(save).toBeVisible();
   await page.evaluate(() => {
     window.dictationTest.snapshot.vocabulary = [];
     window.dictationTest.history();
@@ -3245,7 +3253,7 @@ test("vocabulary drafts survive refresh and failed saves, normalize and persist"
     window.dictationTest.failSave = true;
   });
   await settle(page);
-  await page.getByRole("button", { name: "Save vocabulary" }).click();
+  await saveDraft(page);
   await expect(
     page.locator('[data-slot="toast"]').filter({ hasText: "Vocabulary save failed" }),
   ).toBeVisible();
@@ -3253,19 +3261,21 @@ test("vocabulary drafts survive refresh and failed saves, normalize and persist"
   await page.evaluate(() => {
     window.dictationTest.failSave = false;
   });
-  await page.getByRole("button", { name: "Save vocabulary" }).click();
-  await expect(table.getByLabel("Preferred spelling", { exact: true })).toHaveValue("PostgreSQL");
-  await expect(page.getByRole("button", { name: "Save vocabulary" })).toBeDisabled();
+  await saveDraft(page);
+  await expect(table.getByLabel("Preferred spelling", { exact: true })).toHaveValue(" PostgreSQL ");
+  await expect(
+    page.getByRole("status").filter({ hasText: "Changes save automatically" }),
+  ).toBeVisible();
   await expect
     .poll(() => page.evaluate(() => window.dictationTest.snapshot.vocabulary[0].aliases.join("|")))
     .toBe("postgres|post gre SQL");
   await table.getByRole("checkbox", { name: "Enabled", exact: true }).uncheck();
-  await page.getByRole("button", { name: "Save vocabulary" }).click();
+  await saveDraft(page);
   await expect
     .poll(() => page.evaluate(() => window.dictationTest.snapshot.vocabulary[0].enabled))
     .toBe(false);
-  await page.getByRole("button", { name: "Remove PostgreSQL" }).click();
-  await page.getByRole("button", { name: "Save vocabulary" }).click();
+  await page.getByRole("button", { name: "Remove  PostgreSQL " }).click();
+  await saveDraft(page);
   await expect
     .poll(() => page.evaluate(() => window.dictationTest.snapshot.vocabulary.length))
     .toBe(0);
@@ -3945,7 +3955,7 @@ test("History opens a dictation page with content tabs that fit narrow windows",
     path: testInfo.outputPath("editor-comparison.png"),
     animations: "disabled",
   });
-  await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+  await dialog.getByRole("button", { name: "Done", exact: true }).click();
   await page.getByRole("link", { name: "Back to History", exact: true }).click();
   await page.getByRole("link", { name: /An unchanged transcription/ }).click();
   await expect(page.getByRole("region", { name: "Result", exact: true })).toHaveCount(0);
@@ -4017,7 +4027,7 @@ test("transcription and editor Changes compare the correct versions and remain u
   for (const width of [1280, 600, 360]) {
     await page.setViewportSize({ width, height: 720 });
     await expect(input).toBeVisible();
-    const save = dialog.getByRole("button", { name: "Save transcript", exact: true });
+    const save = dialog.getByRole("button", { name: "Done", exact: true });
     await expect(save).toBeInViewport();
     expect(await dialog.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
     await settle(page);
@@ -4033,7 +4043,7 @@ test("transcription and editor Changes compare the correct versions and remain u
   await expect(dialog.getByRole("region", { name: "Original transcription" })).toContainText(
     "postgres tomorrow",
   );
-  await dialog.getByRole("button", { name: "Save transcript", exact: true }).click();
+  await dialog.getByRole("button", { name: "Done", exact: true }).click();
   await expect(dialog).toHaveCount(0);
   await expect(changes.locator("ins").last()).toContainText("on Friday");
   await contents.getByRole("tab", { name: "Transcription", exact: true }).click();
@@ -4043,12 +4053,12 @@ test("transcription and editor Changes compare the correct versions and remain u
     .toBe("Send PostgreSQL on Friday.\n\nConfirm the meeting with the team.");
   await page.getByRole("button", { name: "Edit transcript", exact: true }).click();
   await input.fill("Send postgres tomorrow.\n\nConfirm the meeting with the team.");
-  await dialog.getByRole("button", { name: "Save transcript", exact: true }).click();
+  await dialog.getByRole("button", { name: "Done", exact: true }).click();
   await expect(contents.getByRole("tab", { name: "Changes", exact: true })).toHaveCount(0);
   await expect(page.getByRole("region", { name: "Transcription", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Edit transcript", exact: true }).click();
   await input.fill("New saved transcription.");
-  await dialog.getByRole("button", { name: "Save transcript", exact: true }).click();
+  await dialog.getByRole("button", { name: "Done", exact: true }).click();
   await contents.getByRole("tab", { name: "Changes", exact: true }).click();
   await page.evaluate(() => {
     const state = window.dictationTest;
@@ -4312,7 +4322,7 @@ test("saved outputs retain their recipes, regenerate as new versions and leave e
   await page
     .getByRole("textbox", { name: "Editable text", exact: true })
     .fill("Updated transcription for the next comparison.");
-  await page.getByRole("button", { name: "Save transcript", exact: true }).click();
+  await page.getByRole("button", { name: "Done", exact: true }).click();
   await page.getByRole("tab", { name: "Transcription", exact: true }).click();
   await expect(page.getByRole("region", { name: "Result", exact: true })).toContainText(
     "Updated transcription",
@@ -4773,9 +4783,11 @@ test("saved transcript edits drive display, search, copy and export while keepin
   });
   await expect(input).toHaveValue("Send PostgreSQL.");
   await expect(input).toBeFocused();
-  await expect(dialog.getByRole("button", { name: "Save transcript" })).toBeDisabled();
+  await expect(
+    dialog.getByRole("status").filter({ hasText: /Changes save automatically|Not saved yet:/ }),
+  ).toBeVisible();
   await input.fill("Send PostgreSQL to Benji.\nThanks!");
-  await dialog.getByRole("button", { name: "Save transcript" }).click();
+  await dialog.getByRole("button", { name: "Done" }).click();
   await expect(dialog).toHaveCount(0);
   await expect(page.getByText("Send PostgreSQL to Benji.\nThanks!", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Copy result", exact: true }).click();
@@ -4833,7 +4845,7 @@ test("editor retains its draft across refresh and failed saves, then saves with 
   });
   await settle(page);
   await expect(input).toHaveValue("My correction.");
-  await dialog.getByRole("button", { name: "Save transcript" }).click();
+  await dialog.getByRole("button", { name: "Done" }).click();
   await expect(dialog.getByRole("alert")).toHaveText("Transcript save failed");
   await expect(input).toHaveValue("My correction.");
   await expect
@@ -4843,11 +4855,15 @@ test("editor retains its draft across refresh and failed saves, then saves with 
     window.dictationTest.failSave = false;
   });
   await input.press("Control+Enter");
+  await expect(
+    dialog.getByRole("status").filter({ hasText: "Changes save automatically" }),
+  ).toBeVisible();
+  await dialog.getByRole("button", { name: "Done", exact: true }).click();
   await expect(dialog).toHaveCount(0);
   await expect(page.getByText("My correction.", { exact: true })).toBeVisible();
 });
 
-test("cancel and Escape discard edits, empty edits cannot be saved, and outside clicks keep the draft", async ({
+test("Done and Escape flush edits, empty edits cannot be saved, and outside clicks keep the draft", async ({
   page,
 }) => {
   await page.addInitScript(() => {
@@ -4877,25 +4893,27 @@ test("cancel and Escape discard edits, empty edits cannot be saved, and outside 
     exact: true,
   });
   await input.fill(" \n ");
-  await expect(dialog.getByRole("button", { name: "Save transcript" })).toBeDisabled();
+  await expect(
+    dialog.getByRole("status").filter({ hasText: /Changes save automatically|Not saved yet:/ }),
+  ).toBeVisible();
   await input.fill("Discard this.");
   await page.mouse.click(5, 5);
   await expect(input).toHaveValue("Discard this.");
-  await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+  await dialog.getByRole("button", { name: "Done", exact: true }).click();
   await expect(dialog).toHaveCount(0);
   await expect(edit).toBeFocused();
   await expect
     .poll(() => page.evaluate(() => window.dictationTest.snapshot.history[0].finalTranscript))
-    .toBe("Original plain transcript.");
+    .toBe("Discard this.");
   await edit.click();
-  await expect(input).toHaveValue("Original plain transcript.");
+  await expect(input).toHaveValue("Discard this.");
   await input.fill("Escape this.");
   await input.press("Escape");
   await expect(dialog).toHaveCount(0);
   await expect(edit).toBeFocused();
   await expect
     .poll(() => page.evaluate(() => window.dictationTest.snapshot.history[0].finalTranscript))
-    .toBe("Original plain transcript.");
+    .toBe("Escape this.");
 });
 
 test("deleted recordings fail safely without losing the editor draft", async ({ page }) => {
@@ -4923,12 +4941,13 @@ test("deleted recordings fail safely without losing the editor draft", async ({ 
     window.dictationTest.history();
   });
   await settle(page);
-  await dialog.getByRole("button", { name: "Save transcript" }).click();
+  await dialog.getByRole("button", { name: "Done" }).click();
   await expect(dialog.getByRole("alert")).toHaveText("This dictation no longer exists");
   await expect(dialog.getByRole("textbox", { name: "Editable text", exact: true })).toHaveValue(
     "Keep my draft.",
   );
-  await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+  await dialog.getByRole("button", { name: "Discard changes", exact: true }).click();
+  await dialog.getByRole("button", { name: "Done", exact: true }).click();
   await expect(
     page.getByRole("heading", { name: "Dictation not found", exact: true }),
   ).toBeVisible();
@@ -5019,6 +5038,8 @@ test("a selected correction adds a confirmed term without saving the transcript 
     .poll(() => page.evaluate(() => window.dictationTest.snapshot.status.transcript))
     .toBe("");
   await input.press("Control+Enter");
+  await expect(page.getByRole("dialog", { name: "Edit transcript", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Done", exact: true }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect
     .poll(() => page.evaluate(() => window.dictationTest.snapshot.history[0].finalTranscript))
@@ -5090,7 +5111,7 @@ test("Cancel and Escape return from vocabulary confirmation without losing edits
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect
     .poll(() => page.evaluate(() => window.dictationTest.snapshot.history[0].finalTranscript))
-    .toBe("postgres connection ready.");
+    .toBe("PostgreSQL connection ready.");
 });
 
 test("vocabulary selection rejects multiline or oversized terms and respects active recording", async ({
@@ -6023,16 +6044,15 @@ test("prompt drafts survive refresh and failed save; model testing uses saved co
   await page.getByRole("tab", { name: "Text model", exact: true }).click();
   await expect(page.getByRole("button", { name: "Test model", exact: true })).toBeDisabled();
   await page.getByRole("tab", { name: "Prompts", exact: true }).click();
-  await expect
-    .poll(() => page.evaluate(() => window.dictationTest.snapshot.textProcessing.enabled))
-    .toBe(false);
+  await saveDraft(page);
   await page.evaluate(() => {
-    window.dictationTest.history();
     window.dictationTest.failSave = true;
+    window.dictationTest.history();
   });
+  await page.getByLabel("Name", { exact: true }).fill("Technical ticket updated");
   await settle(page);
-  await expect(page.getByLabel("Name", { exact: true })).toHaveValue("Technical ticket");
-  await page.getByRole("button", { name: "Save changes", exact: true }).click();
+  await expect(page.getByLabel("Name", { exact: true })).toHaveValue("Technical ticket updated");
+  await saveDraft(page);
   await expect(
     page.locator('[data-slot="toast"]').filter({ hasText: "Prompts save failed" }),
   ).toBeVisible();
@@ -6041,8 +6061,10 @@ test("prompt drafts survive refresh and failed save; model testing uses saved co
   await page.evaluate(() => {
     window.dictationTest.failSave = false;
   });
-  await page.getByRole("button", { name: "Save changes", exact: true }).click();
-  await expect(page.getByRole("button", { name: "Save changes", exact: true })).toBeDisabled();
+  await saveDraft(page);
+  await expect(
+    page.getByRole("status").filter({ hasText: "Changes save automatically" }),
+  ).toBeVisible();
   await expect
     .poll(() => page.evaluate(() => window.dictationTest.snapshot.textProcessing.prompts.length))
     .toBe(3);
@@ -6064,7 +6086,7 @@ test("prompt drafts survive refresh and failed save; model testing uses saved co
   await expect(page.getByText("Automatic processing is off.", { exact: true })).toBeVisible();
   await page.getByRole("tab", { name: "Text model", exact: true }).click();
   await page.getByRole("checkbox", { name: "Enable LLM processing" }).uncheck();
-  await page.getByRole("button", { name: "Save changes", exact: true }).click();
+  await saveDraft(page);
   await expect
     .poll(() => page.evaluate(() => window.dictationTest.snapshot.textProcessing.enabled))
     .toBe(false);
@@ -6143,7 +6165,7 @@ test("prompt previews use the draft and change History only after apply and save
   await expect
     .poll(() => page.evaluate(() => window.dictationTest.snapshot.status.transcript))
     .toBe("");
-  await page.getByRole("button", { name: "Save transcript", exact: true }).click();
+  await page.getByRole("button", { name: "Done", exact: true }).click();
   await expect
     .poll(() => page.evaluate(() => window.dictationTest.snapshot.history[0].finalTranscript))
     .toBe("Concise summary.");
@@ -6251,7 +6273,7 @@ test("Markdown formats transcriptions and outputs while copy, export and editing
   await expect.poll(() => page.evaluate(() => window.dictationTest.exportedText)).toBe(source);
   await page.getByRole("button", { name: "Edit transcript", exact: true }).click();
   await expect(page.getByRole("textbox", { name: "Editable text" })).toHaveValue(source);
-  await page.getByRole("button", { name: "Cancel", exact: true }).click();
+  await page.getByRole("button", { name: "Done", exact: true }).click();
   await page.getByRole("tab", { name: "Original", exact: true }).click();
   const original = page.getByRole("region", { name: "Original transcription", exact: true });
   await expect(original.locator(".markdown-content > p").first()).toHaveText(
@@ -6306,7 +6328,7 @@ test("Markdown previews render formatting and apply the original source to the d
   await expect(page.getByRole("textbox", { name: "Editable text", exact: true })).toHaveValue(
     source,
   );
-  await page.getByRole("button", { name: "Save transcript", exact: true }).click();
+  await page.getByRole("button", { name: "Done", exact: true }).click();
   await expect(
     page.getByRole("region", { name: "Result", exact: true }).getByRole("heading", {
       name: "Summary",
@@ -6388,7 +6410,7 @@ for (const route of ["vocabulary", "settings"]) {
       await expect(page.getByLabel("Preferred spelling").first()).toHaveValue("PostgreSQL");
       await control.click();
       await page.getByLabel("Preferred spelling").nth(1).fill("Benji");
-      await page.getByRole("button", { name: "Save vocabulary", exact: true }).click();
+      await saveDraft(page);
       await expect
         .poll(() =>
           page.evaluate(() =>
@@ -6521,7 +6543,7 @@ test("local models can be selected without changing saved preferences until Save
   await page.getByRole("button", { name: "Refresh models", exact: true }).click();
   await page.getByRole("tab", { name: "Prompts", exact: true }).click();
   await expect(page.getByLabel("Name", { exact: true })).toHaveValue("My cleanup");
-  await page.getByRole("button", { name: "Save changes", exact: true }).click();
+  await saveDraft(page);
   await expect
     .poll(() => page.evaluate(() => window.dictationTest.snapshot.textProcessing.model))
     .toBe("llama:8b");
@@ -6539,7 +6561,7 @@ test("local models can be selected without changing saved preferences until Save
   await expect(page.getByLabel("Model identifier")).toHaveValue("llama:8b");
 });
 
-test("server presets discover LM Studio and preserve saved choices until Save", async ({
+test("server presets discover LM Studio and auto-save valid choices", async ({
   page,
 }, testInfo) => {
   await page.addInitScript(() => {
@@ -6566,10 +6588,7 @@ test("server presets discover LM Studio and preserve saved choices until Save", 
   await expect(page.getByLabel("Model identifier")).toHaveValue("ollama-model");
   await model.click();
   await page.getByRole("option", { name: "lm-studio-model", exact: true }).click();
-  expect(await page.evaluate(() => window.dictationTest.snapshot.textProcessing.endpoint)).toBe(
-    "http://127.0.0.1:11434/v1",
-  );
-  await page.getByRole("button", { name: "Save changes", exact: true }).click();
+  await saveDraft(page);
   await expect
     .poll(() => page.evaluate(() => window.dictationTest.snapshot.textProcessing.endpoint))
     .toBe("http://127.0.0.1:1234/v1");
@@ -6599,8 +6618,9 @@ test("server presets discover LM Studio and preserve saved choices until Save", 
   await expect
     .poll(() => page.evaluate(() => window.dictationTest.modelListRequests.at(-1)?.endpoint))
     .toBe("http://127.0.0.1:8080/v1");
+  await saveDraft(page);
   expect(await page.evaluate(() => window.dictationTest.snapshot.textProcessing.endpoint)).toBe(
-    "http://127.0.0.1:1234/v1",
+    "http://127.0.0.1:8080/v1",
   );
 });
 
@@ -6703,7 +6723,7 @@ test("endpoint changes and navigation cancel discovery and ignore late model lis
   await expect(page.getByRole("tablist", { name: "Settings sections", exact: true })).toBeVisible();
   await expect
     .poll(() => page.evaluate(() => window.dictationTest.snapshot.textProcessing.model))
-    .toBe("");
+    .toBe("current-server-model");
 });
 
 test("older backends show discovery restart guidance without hiding Prompts", async ({ page }) => {
@@ -7509,7 +7529,7 @@ test("temporary latest result supports copy, explicit save, and dismiss", async 
   expect(await page.evaluate(() => window.dictationTest.snapshot.history.length)).toBe(1);
 });
 
-test("unsaved page drafts survive navigation and explicit discard", async ({ page }) => {
+test("page drafts flush on navigation and remain saved when returning", async ({ page }) => {
   await page.goto("/#/settings");
   await page.getByLabel("Global shortcut", { exact: true }).fill("Ctrl+Alt+P");
   await page.getByRole("link", { name: "Prompts", exact: true }).click();
@@ -7527,10 +7547,10 @@ test("unsaved page drafts survive navigation and explicit discard", async ({ pag
   await page.getByRole("link", { name: "Prompts", exact: true }).click();
   await page.getByRole("tab", { name: "Text model", exact: true }).click();
   await expect(page.getByLabel("Model identifier")).toHaveValue("unsaved-local-model");
-  await page.getByRole("button", { name: "Discard changes", exact: true }).click();
+  await saveDraft(page);
   await page.getByRole("link", { name: "Vocabulary", exact: true }).click();
   await expect(page.getByLabel("Preferred spelling", { exact: true })).toHaveValue("PostgreSQL");
-  await page.getByRole("button", { name: "Discard changes", exact: true }).click();
+  await saveDraft(page);
   await page.getByRole("link", { name: "Settings", exact: true }).click();
   await expect(page.getByLabel("Global shortcut", { exact: true })).toHaveValue("Ctrl+Alt+P");
 });
@@ -7584,14 +7604,14 @@ test("dictation profiles create edit switch and delete", async ({ page }, testIn
   await dialog.getByRole("combobox", { name: "Spoken language", exact: true }).click();
   await page.getByRole("option", { name: "German", exact: true }).click();
   await dialog.getByRole("switch", { name: "Light cleanup" }).check();
-  await dialog.getByRole("button", { name: "Save profile", exact: true }).click();
+  await dialog.getByRole("button", { name: "Done", exact: true }).click();
   await expect(dialog).toHaveCount(0);
   await expect
     .poll(() => page.evaluate(() => window.dictationTest.snapshot.settings.language))
     .toBe("auto");
   await page.getByRole("button", { name: "Edit Email", exact: true }).click();
   await dialog.getByLabel("Profile name").fill("Work email");
-  await dialog.getByRole("button", { name: "Save profile", exact: true }).click();
+  await dialog.getByRole("button", { name: "Done", exact: true }).click();
   await page.getByRole("link", { name: "Dictate", exact: true }).click();
   const selector = page.getByRole("combobox", { name: "Dictation profile", exact: true });
   await selector.click();
@@ -7628,25 +7648,25 @@ test("dictation profiles create edit switch and delete", async ({ page }, testIn
     .toBe("de");
 });
 
-test("profile failures retain drafts and selection and Escape protects edits", async ({ page }) => {
+test("profile failures retain drafts and selection and Escape attempts a save", async ({
+  page,
+}) => {
   await homeModelScenario(page);
   await page.getByRole("link", { name: "Manage dictation profiles" }).click();
   await page.getByRole("button", { name: "New profile", exact: true }).click();
   const dialog = page.getByRole("dialog");
-  await dialog.getByLabel("Profile name").fill("Quick notes");
-  await page.keyboard.press("Escape");
-  await expect(dialog.getByText("Discard your unsaved profile changes?")).toBeVisible();
-  await dialog.getByRole("button", { name: "Keep editing", exact: true }).click();
   await page.evaluate(() => {
     window.dictationTest.failSave = true;
   });
-  await dialog.getByRole("button", { name: "Save profile", exact: true }).click();
+  await dialog.getByLabel("Profile name").fill("Quick notes");
+  await page.keyboard.press("Escape");
+  await dialog.getByRole("button", { name: "Done", exact: true }).click();
   await expect(dialog.getByRole("alert")).toContainText("Could not save profile");
   await expect(dialog.getByLabel("Profile name")).toHaveValue("Quick notes");
   await page.evaluate(() => {
     window.dictationTest.failSave = false;
   });
-  await dialog.getByRole("button", { name: "Save profile", exact: true }).click();
+  await dialog.getByRole("button", { name: "Done", exact: true }).click();
   await page.getByRole("link", { name: "Dictate", exact: true }).click();
   await page.evaluate(() => {
     window.dictationTest.failSave = true;
@@ -7975,8 +7995,10 @@ test("automatic prompt indicator explains the selected prompt and follows save d
   await marker.hover();
   await expect(tooltip).toContainText("Profile: Cleanup");
   await expect(tooltip).toContainText("Current: Summary");
-  await page.getByRole("button", { name: "Save changes", exact: true }).click();
-  await expect(page.getByRole("button", { name: "Save changes", exact: true })).toBeDisabled();
+  await saveDraft(page);
+  await expect(
+    page.getByRole("status").filter({ hasText: "Changes save automatically" }),
+  ).toBeVisible();
   await marker.hover();
   await expect(tooltip).toContainText("Current: Summary");
   await expect(tooltip).not.toContainText("Not saved");
@@ -8035,7 +8057,7 @@ test("prompt chains can be saved with explicit sources and selected for automati
   ).toBeDisabled();
   await page.keyboard.press("Escape");
   await page.getByRole("switch", { name: "Run chain after dictation", exact: true }).check();
-  await page.getByRole("button", { name: "Save changes", exact: true }).click();
+  await saveDraft(page);
   await expect
     .poll(() => page.evaluate(() => window.dictationTest.snapshot.textProcessing.chains?.[0].name))
     .toBe("Meeting follow-up");
@@ -8049,7 +8071,7 @@ test("prompt chains can be saved with explicit sources and selected for automati
   await expect
     .poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
     .toBe(true);
-  await expect(page.getByRole("button", { name: "Save changes", exact: true })).toBeInViewport();
+  await expect(page.locator('header[aria-label="Prompts"]').getByRole("status")).toBeInViewport();
   await page.screenshot({
     path: testInfo.outputPath("prompt-chain-editor-narrow.png"),
     fullPage: true,
@@ -8070,7 +8092,7 @@ test("prompt chains can be saved with explicit sources and selected for automati
   await page.getByRole("tab", { name: "Chains", exact: true }).click();
   await page.getByRole("button", { name: "Delete chain", exact: true }).click();
   await page.getByRole("dialog").getByRole("button", { name: "Delete chain", exact: true }).click();
-  await page.getByRole("button", { name: "Save changes", exact: true }).click();
+  await saveDraft(page);
   await expect
     .poll(() => page.evaluate(() => window.dictationTest.snapshot.textProcessing.autoPromptId))
     .toBe("");
@@ -8240,7 +8262,7 @@ test("dictation profiles can select saved prompt chains", async ({ page }) => {
   const afterDictation = dialog.getByRole("combobox", { name: "After dictation", exact: true });
   await expect(afterDictation.locator("svg.lucide-workflow")).toHaveCount(1);
   await expect(afterDictation).not.toContainText("(chain)");
-  await dialog.getByRole("button", { name: "Save profile", exact: true }).click();
+  await dialog.getByRole("button", { name: "Done", exact: true }).click();
   await expect(dialog).toHaveCount(0);
   await expect
     .poll(() =>
@@ -8639,7 +8661,7 @@ test("chain editor adds prompts with the keyboard and preserves references when 
   await expect(page.getByRole("combobox", { name: "Step 2 prompt", exact: true })).toContainText(
     "Summary",
   );
-  await page.getByRole("button", { name: "Save changes", exact: true }).click();
+  await saveDraft(page);
   const chain = await page.evaluate(() => window.dictationTest.snapshot.textProcessing.chains![0]);
   expect(chain.steps.map((step) => step.promptId)).toEqual(["cleanup", "summary"]);
   expect(chain.steps[1].input).toBe(`step:${chain.steps[0].id}`);
@@ -8647,4 +8669,432 @@ test("chain editor adds prompts with the keyboard and preserves references when 
   await expect(addStep).toBeDisabled();
   await expect(page.getByRole("button", { name: "Step 1 actions", exact: true })).toBeDisabled();
   await expect(page.getByRole("combobox", { name: "Step 1 input", exact: true })).toBeDisabled();
+});
+
+test("auto-save vocabulary keeps submitted aliases without a loop and skips empty new rows", async ({
+  page,
+}) => {
+  await page.goto("/#/vocabulary");
+  await page.evaluate(() => {
+    const app = Reflect.get(window, "go").main.App;
+    const original = app.SaveVocabulary;
+    Reflect.set(window, "autoSaveCalls", []);
+    app.SaveVocabulary = (entries: VocabularyEntry[]) => {
+      Reflect.get(window, "autoSaveCalls").push(entries);
+      return original(entries);
+    };
+  });
+  await page.getByRole("button", { name: "Add term", exact: true }).click();
+  await page.getByLabel("Preferred spelling", { exact: true }).fill(" Yap ");
+  await page.getByLabel("Aliases (comma-separated)").fill("a,b");
+  await page.getByRole("button", { name: "Add term", exact: true }).click();
+  await expect
+    .poll(() => page.evaluate(() => window.dictationTest.snapshot.vocabulary))
+    .toEqual([{ id: expect.any(String), canonical: "Yap", aliases: ["a", "b"], enabled: true }]);
+  await expect(
+    page.getByRole("status").filter({ hasText: "Changes save automatically" }),
+  ).toBeVisible();
+  await expect(page.getByLabel("Aliases (comma-separated)").first()).toHaveValue("a,b");
+  await expect(page.getByLabel("Preferred spelling", { exact: true }).first()).toHaveValue(" Yap ");
+  await page.waitForTimeout(1800);
+  expect(await page.evaluate(() => Reflect.get(window, "autoSaveCalls").length)).toBe(1);
+  expect(
+    await page.evaluate(() => {
+      const event = new Event("beforeunload", { cancelable: true });
+      window.dispatchEvent(event);
+      return event.defaultPrevented;
+    }),
+  ).toBe(false);
+  await expect(page.getByRole("button", { name: "Save vocabulary" })).toHaveCount(0);
+});
+
+test("auto-save pauses invalid vocabulary and prompts, then resumes after correction", async ({
+  page,
+}) => {
+  await page.goto("/#/vocabulary");
+  await page.getByRole("button", { name: "Add term", exact: true }).click();
+  await page.getByLabel("Aliases (comma-separated)").fill("alias");
+  await expect(page.getByRole("alert")).toContainText("1–80 characters");
+  await expect(page.getByRole("status").filter({ hasText: "Not saved yet:" })).toBeVisible();
+  await page.waitForTimeout(1000);
+  expect(await page.evaluate(() => window.dictationTest.snapshot.vocabulary)).toEqual([]);
+  expect(
+    await page.evaluate(() => {
+      const event = new Event("beforeunload", { cancelable: true });
+      window.dispatchEvent(event);
+      return event.defaultPrevented;
+    }),
+  ).toBe(true);
+  await page.getByLabel("Preferred spelling", { exact: true }).fill("Yap");
+  await expect
+    .poll(() => page.evaluate(() => window.dictationTest.snapshot.vocabulary.length))
+    .toBe(1);
+  await page.getByRole("link", { name: "Prompts", exact: true }).click();
+  await page.getByLabel("Instructions", { exact: true }).fill("");
+  await expect(page.getByRole("status").filter({ hasText: "Not saved yet:" })).toContainText(
+    "Cleanup needs instructions",
+  );
+  await page.waitForTimeout(1200);
+  expect(
+    await page.evaluate(() => window.dictationTest.snapshot.textProcessing.prompts[0].instruction),
+  ).toBe("Clean up text.");
+  await page.getByLabel("Instructions", { exact: true }).fill("Correct the draft.");
+  await expect
+    .poll(() =>
+      page.evaluate(() => window.dictationTest.snapshot.textProcessing.prompts[0].instruction),
+    )
+    .toBe("Correct the draft.");
+  await expect(page.getByRole("button", { name: "Save changes" })).toHaveCount(0);
+});
+
+test("auto-save prompt and chain deletion Undo restores the previous draft and automatic selection", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const config = window.dictationTest.snapshot.textProcessing;
+    config.enabled = true;
+    config.model = "model";
+    config.autoPromptId = "cleanup";
+    config.chains = [
+      {
+        id: "chain",
+        name: "Summary chain",
+        steps: [{ id: "step", promptId: "summary", input: "original" }],
+      },
+    ];
+  });
+  await page.goto("/#/prompts");
+  await promptAction(page, "Delete prompt");
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Delete prompt", exact: true })
+    .click();
+  await expect
+    .poll(() =>
+      page.evaluate(() => window.dictationTest.snapshot.textProcessing.prompts.map((p) => p.id)),
+    )
+    .toEqual(["summary"]);
+  await page.keyboard.press("F6");
+  await page
+    .locator('[data-slot="toast"]')
+    .filter({ hasText: "Prompt deleted" })
+    .getByRole("button", { name: "Undo", exact: true })
+    .click();
+  await expect
+    .poll(() => page.evaluate(() => window.dictationTest.snapshot.textProcessing.autoPromptId))
+    .toBe("cleanup");
+  await page.getByRole("tab", { name: "Chains", exact: true }).click();
+  await page.getByRole("button", { name: "Delete chain", exact: true }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Delete chain", exact: true }).click();
+  await expect
+    .poll(() => page.evaluate(() => window.dictationTest.snapshot.textProcessing.chains?.length))
+    .toBe(0);
+  await page.keyboard.press("F6");
+  await page
+    .locator('[data-slot="toast"]')
+    .filter({ hasText: "Chain deleted" })
+    .getByRole("button", { name: "Undo", exact: true })
+    .click();
+  await expect
+    .poll(() => page.evaluate(() => window.dictationTest.snapshot.textProcessing.chains?.length))
+    .toBe(1);
+});
+
+test("auto-save serializes requests and preserves edits made while a save is pending", async ({
+  page,
+}) => {
+  await page.goto("/#/prompts");
+  await page.evaluate(() => {
+    const app = Reflect.get(window, "go").main.App;
+    const original = app.SaveTextProcessing;
+    Reflect.set(window, "autoSaveCalls", []);
+    app.SaveTextProcessing = (config: TextProcessing) =>
+      new Promise((resolve) => {
+        Reflect.get(window, "autoSaveCalls").push(config);
+        Reflect.set(window, "finishAutoSave", () => resolve(original(config)));
+      });
+  });
+  const input = page.getByLabel("Instructions", { exact: true });
+  await input.fill("First version");
+  await expect.poll(() => page.evaluate(() => Reflect.get(window, "autoSaveCalls").length)).toBe(1);
+  await input.fill("Second version");
+  await page.waitForTimeout(1200);
+  expect(await page.evaluate(() => Reflect.get(window, "autoSaveCalls").length)).toBe(1);
+  await page.evaluate(() => Reflect.get(window, "finishAutoSave")());
+  await expect(input).toHaveValue("Second version");
+  await expect.poll(() => page.evaluate(() => Reflect.get(window, "autoSaveCalls").length)).toBe(2);
+  await page.evaluate(() => Reflect.get(window, "finishAutoSave")());
+  await expect
+    .poll(() =>
+      page.evaluate(() => window.dictationTest.snapshot.textProcessing.prompts[0].instruction),
+    )
+    .toBe("Second version");
+  await expect(
+    page.getByRole("status").filter({ hasText: "Changes save automatically" }),
+  ).toBeVisible();
+});
+
+test("auto-save profile creates once on its first valid save and Done flushes subsequent edits", async ({
+  page,
+}) => {
+  await homeModelScenario(page);
+  await page.getByRole("link", { name: "Manage dictation profiles" }).click();
+  await page.getByRole("button", { name: "New profile", exact: true }).click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog.getByRole("button", { name: "Save profile" })).toHaveCount(0);
+  await dialog.getByLabel("Profile name").fill("Email");
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          window.dictationTest.snapshot.dictationProfiles?.filter((p) => p.name === "Email").length,
+      ),
+    )
+    .toBe(1);
+  await expect(dialog).toBeVisible();
+  const id = await page.evaluate(
+    () => window.dictationTest.snapshot.dictationProfiles?.find((p) => p.name === "Email")?.id,
+  );
+  await dialog.getByLabel("Profile name").fill("Work email");
+  await dialog.getByRole("button", { name: "Done", exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  expect(
+    await page.evaluate(() =>
+      window.dictationTest.snapshot.dictationProfiles?.filter((p) => p.name !== "Default"),
+    ),
+  ).toEqual([expect.objectContaining({ id, name: "Work email" })]);
+});
+
+test("auto-save transcript stays open, never saves empty text, and Done flushes immediately", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    window.dictationTest.snapshot.history = [
+      {
+        id: "auto",
+        createdAt: "2026-10-23T12:00:00Z",
+        durationMs: 1000,
+        rawTranscript: "Original",
+        finalTranscript: "Original",
+        speechModel: "base",
+        language: "en",
+        audioPath: "",
+      },
+    ];
+  });
+  await page.goto("/#/history/auto");
+  await page.getByRole("button", { name: "Edit transcript", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Edit transcript", exact: true });
+  const input = dialog.getByRole("textbox", { name: "Editable text" });
+  await input.fill("First correction");
+  await expect
+    .poll(() => page.evaluate(() => window.dictationTest.snapshot.history[0].finalTranscript))
+    .toBe("First correction");
+  await expect(dialog).toBeVisible();
+  await input.fill("");
+  await expect(dialog.getByRole("status").filter({ hasText: "Not saved yet:" })).toBeVisible();
+  await page.waitForTimeout(1200);
+  expect(await page.evaluate(() => window.dictationTest.snapshot.history[0].finalTranscript)).toBe(
+    "First correction",
+  );
+  await input.fill("Close correction");
+  await dialog.getByRole("button", { name: "Done", exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  expect(await page.evaluate(() => window.dictationTest.snapshot.history[0].finalTranscript)).toBe(
+    "Close correction",
+  );
+  expect(await page.evaluate(() => window.dictationTest.snapshot.history[0].rawTranscript)).toBe(
+    "Original",
+  );
+});
+
+test("auto-save revision history restores prompt content and blocks chains with missing prompts", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const config = window.dictationTest.snapshot.textProcessing;
+    config.enabled = true;
+    config.model = "local-model";
+    config.autoPromptId = "other";
+    config.chains = [
+      {
+        id: "chain",
+        name: "Chain",
+        steps: [{ id: "step", promptId: "summary", input: "original" }],
+      },
+      {
+        id: "other",
+        name: "Other chain",
+        steps: [{ id: "other-step", promptId: "summary", input: "original" }],
+      },
+    ];
+    const app = Reflect.get(window, "go").main.App;
+    app.GetRevisions = async (kind: string) => [
+      {
+        id: 1,
+        createdAt: "2026-10-22T12:00:00Z",
+        updatedAt: "2026-10-22T12:00:00Z",
+        value: JSON.stringify(
+          kind === "prompt"
+            ? { id: "cleanup", name: "Earlier cleanup", instruction: "Earlier instructions" }
+            : {
+                id: "chain",
+                name: "Earlier chain",
+                steps: [{ id: "step", promptId: "deleted", input: "original" }],
+              },
+        ),
+      },
+    ];
+  });
+  await page.goto("/#/prompts");
+  await page.getByRole("button", { name: "More prompt actions", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Version history", exact: true }).click();
+  const history = page.getByRole("dialog", { name: "Prompt version history" });
+  await expect(history.getByRole("region", { name: "Version preview" })).toContainText(
+    "Earlier instructions",
+  );
+  await history.getByRole("button", { name: "Restore version", exact: true }).click();
+  await expect(page.getByLabel("Name", { exact: true })).toHaveValue("Earlier cleanup");
+  await expect
+    .poll(() =>
+      page.evaluate(() => window.dictationTest.snapshot.textProcessing.prompts[0].instruction),
+    )
+    .toBe("Earlier instructions");
+  await page.getByRole("tab", { name: "Chains", exact: true }).click();
+  await page.getByRole("button", { name: "Version history", exact: true }).click();
+  const chainHistory = page.getByRole("dialog", { name: "Chain version history" });
+  await expect(chainHistory.getByRole("alert")).toContainText("prompt that no longer exists");
+  await expect(chainHistory.getByRole("button", { name: "Restore version" })).toBeDisabled();
+  await chainHistory.getByRole("button", { name: "Close", exact: true }).first().click();
+  await page.evaluate(() => {
+    const app = Reflect.get(window, "go").main.App;
+    app.GetRevisions = async () => [
+      {
+        id: 1,
+        createdAt: "2026-10-22T12:00:00Z",
+        updatedAt: "2026-10-22T12:00:00Z",
+        value: JSON.stringify({
+          id: "chain",
+          name: "Earlier chain",
+          steps: [{ id: "step", promptId: "summary", input: "original" }],
+        }),
+      },
+    ];
+  });
+  await page.getByRole("button", { name: "Version history", exact: true }).click();
+  await chainHistory.getByRole("button", { name: "Restore version", exact: true }).click();
+  await expect
+    .poll(() => page.evaluate(() => window.dictationTest.snapshot.textProcessing.chains?.[0].name))
+    .toBe("Earlier chain");
+  expect(await page.evaluate(() => window.dictationTest.snapshot.textProcessing.autoPromptId)).toBe(
+    "other",
+  );
+  expect(
+    await page.evaluate(() => window.dictationTest.snapshot.textProcessing.chains?.length),
+  ).toBe(2);
+});
+
+test("auto-save history restores the vocabulary list and transcript, marks current versions, and retries loading", async ({
+  page,
+}, testInfo) => {
+  await page.addInitScript(() => {
+    const state = window.dictationTest;
+    state.snapshot.vocabulary = [
+      { id: "current", canonical: "Current term", aliases: [], enabled: true },
+    ];
+    state.snapshot.history = [
+      {
+        id: "history",
+        createdAt: "2026-10-23T12:00:00Z",
+        durationMs: 1000,
+        rawTranscript: "Original speech",
+        finalTranscript: "Current correction",
+        speechModel: "base",
+        language: "en",
+        audioPath: "",
+      },
+    ];
+    const app = Reflect.get(window, "go").main.App;
+    Reflect.set(window, "failRevisionLoad", true);
+    app.GetRevisions = async (kind: string) => {
+      if (Reflect.get(window, "failRevisionLoad")) throw new Error("History load failed");
+      return [
+        {
+          id: 2,
+          createdAt: "2026-10-23T12:00:00Z",
+          updatedAt: "2026-10-23T12:00:00Z",
+          value:
+            kind === "vocabulary"
+              ? JSON.stringify(state.snapshot.vocabulary)
+              : "Current correction",
+        },
+        {
+          id: 1,
+          createdAt: "2026-10-22T12:00:00Z",
+          updatedAt: "2026-10-22T12:00:00Z",
+          value:
+            kind === "vocabulary"
+              ? JSON.stringify([
+                  {
+                    id: "previous",
+                    canonical: "Earlier term",
+                    aliases: ["earlier"],
+                    enabled: true,
+                  },
+                ])
+              : "Earlier correction",
+        },
+      ];
+    };
+  });
+  await page.goto("/#/vocabulary");
+  await page.getByRole("button", { name: "Version history", exact: true }).click();
+  const vocabularyHistory = page.getByRole("dialog", { name: "Vocabulary version history" });
+  await expect(vocabularyHistory.getByRole("alert")).toHaveText("History load failed");
+  await page.evaluate(() => Reflect.set(window, "failRevisionLoad", false));
+  await vocabularyHistory.getByRole("button", { name: "Retry", exact: true }).click();
+  await expect(
+    vocabularyHistory.getByRole("button", { name: "Restore version", exact: true }),
+  ).toBeDisabled();
+  await expect(vocabularyHistory.getByText("Current", { exact: true })).toBeVisible();
+  await vocabularyHistory
+    .getByRole("navigation", { name: "Versions", exact: true })
+    .getByRole("button")
+    .last()
+    .click();
+  await page.setViewportSize({ width: 360, height: 720 });
+  expect(
+    await vocabularyHistory.evaluate((element) => element.scrollWidth <= element.clientWidth),
+  ).toBe(true);
+  await page.screenshot({
+    path: testInfo.outputPath("vocabulary-revision-history.png"),
+    animations: "disabled",
+  });
+  await vocabularyHistory.getByRole("button", { name: "Restore version", exact: true }).click();
+  await expect
+    .poll(() => page.evaluate(() => window.dictationTest.snapshot.vocabulary[0].canonical))
+    .toBe("Earlier term");
+  await page.goto("/#/history/history");
+  await page.getByRole("button", { name: "Edit transcript", exact: true }).click();
+  const editor = page.getByRole("dialog", { name: "Edit transcript", exact: true });
+  await editor.getByRole("button", { name: "Version history", exact: true }).click();
+  const history = page.getByRole("dialog", { name: "Transcript version history", exact: true });
+  await history
+    .getByRole("navigation", { name: "Versions", exact: true })
+    .getByRole("button")
+    .last()
+    .click();
+  await expect(history.locator("del")).toContainText("Current");
+  await expect(history.locator("ins")).toContainText("Earlier");
+  await history.getByRole("button", { name: "Restore version", exact: true }).click();
+  await expect(editor.getByRole("textbox", { name: "Editable text" })).toHaveValue(
+    "Earlier correction",
+  );
+  await editor.getByRole("button", { name: "Done", exact: true }).click();
+  await expect
+    .poll(() => page.evaluate(() => window.dictationTest.snapshot.history[0].finalTranscript))
+    .toBe("Earlier correction");
+  expect(await page.evaluate(() => window.dictationTest.snapshot.history[0].rawTranscript)).toBe(
+    "Original speech",
+  );
 });

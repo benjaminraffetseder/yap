@@ -1,5 +1,7 @@
+import { AutoSaveStatus } from "@/components/auto-save-status";
 import { useDictation } from "@/components/dictation-provider";
 import { MarkdownContent } from "@/components/markdown-content";
+import { RevisionHistory } from "@/components/revision-history";
 import { TextPanel } from "@/components/text-panel";
 import { TranscriptDiff } from "@/components/transcript-diff";
 import { TranscriptProcessor } from "@/components/transcript-processor";
@@ -16,6 +18,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { backend, isBusy, isDesktop, message, type Session } from "@/lib/backend";
+import { useAutoSave } from "@/lib/use-auto-save";
+import { useSavedDraft } from "@/lib/use-saved-draft";
 import { useEffect, useRef, useState, type RefObject } from "react";
 import { Link } from "react-router";
 
@@ -31,8 +35,10 @@ export function TranscriptEditor({
   onSaved: () => void;
 }) {
   const initial = session.finalTranscript ?? session.rawTranscript;
-  const [text, setText] = useState(initial);
-  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(initial);
+  const [text, setText, draftState] = useSavedDraft(`transcript:${session.id}`, saved);
+  const [closing, setClosing] = useState(false);
+  const [history, setHistory] = useState(false);
   const [error, setError] = useState("");
   const [selection, setSelection] = useState("");
   const [term, setTerm] = useState<string | null>(null);
@@ -48,28 +54,48 @@ export function TranscriptEditor({
   }, [term, processing]);
   const dirty = text !== initial;
   if (!dirty && referenceTab === "changes") setReferenceTab("original");
-  const canSave = dirty && !!text.trim() && !saving;
+  const reason = !text.trim()
+    ? "Enter transcript text."
+    : text.includes("\0")
+      ? "Remove null characters from the transcript."
+      : Array.from(text).length > 100000
+        ? "Use at most 100,000 characters."
+        : "";
   async function save() {
-    if (!canSave) return;
-    setSaving(true);
     setError("");
     try {
       await backend.saveTranscript(session.id, text);
+      draftState.markSubmitted(text);
+      setSaved(text);
       onSaved();
     } catch (cause) {
       setError(message(cause));
-      setSaving(false);
+      throw cause;
     }
+  }
+  const autoSave = useAutoSave({
+    draftKey: text,
+    dirty: draftState.dirty,
+    canSave: isDesktop && !reason,
+    save,
+    delay: 1000,
+  });
+  const saving = autoSave.saving;
+  async function close() {
+    if (closing || adding) return;
+    setClosing(true);
+    if (!draftState.dirty || reason || (await autoSave.retry())) onClose();
+    setClosing(false);
   }
   return (
     <Dialog
       open
       disablePointerDismissal
       onOpenChange={(open) => {
-        if (!open && !saving && !adding) {
+        if (!open && !adding) {
           if (processing) setProcessing(false);
           else if (term !== null) setTerm(null);
-          else onClose();
+          else void close();
         }
       }}
     >
@@ -91,7 +117,7 @@ export function TranscriptEditor({
               setText(result);
               setSelection("");
               setProcessing(false);
-              setNotice("Result applied to draft. Save to update History.");
+              setNotice("Result applied. Changes save automatically.");
             }}
           />
         ) : term !== null ? (
@@ -129,7 +155,7 @@ export function TranscriptEditor({
                     ref={input}
                     id="transcript-editor"
                     value={text}
-                    disabled={saving}
+                    disabled={closing}
                     maxLength={100000}
                     rows={12}
                     aria-invalid={!!error}
@@ -156,7 +182,7 @@ export function TranscriptEditor({
                     onKeyDown={(event) => {
                       if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
                         event.preventDefault();
-                        void save();
+                        void autoSave.retry();
                       }
                     }}
                   />
@@ -166,19 +192,24 @@ export function TranscriptEditor({
                   onValueChange={(value) => setReferenceTab(String(value))}
                   className="min-w-0 gap-3"
                 >
-                  <TabsList
-                    aria-label="Editor reference"
-                    className="group-data-[orientation=horizontal]/tabs:h-8"
-                  >
-                    <TabsTrigger value="original" className="px-3 text-xs">
-                      Original
-                    </TabsTrigger>
-                    {dirty && (
-                      <TabsTrigger value="changes" className="px-3 text-xs">
-                        Changes
+                  <div className="flex flex-wrap items-center gap-2">
+                    <TabsList
+                      aria-label="Editor reference"
+                      className="group-data-[orientation=horizontal]/tabs:h-8"
+                    >
+                      <TabsTrigger value="original" className="px-3 text-xs">
+                        Original
                       </TabsTrigger>
-                    )}
-                  </TabsList>
+                      {dirty && (
+                        <TabsTrigger value="changes" className="px-3 text-xs">
+                          Changes
+                        </TabsTrigger>
+                      )}
+                    </TabsList>
+                    <Button variant="ghost" size="sm" onClick={() => setHistory(true)}>
+                      Version history
+                    </Button>
+                  </div>
                   <TabsContent value="original" keepMounted>
                     <TextPanel
                       title="Original transcription"
@@ -227,7 +258,7 @@ export function TranscriptEditor({
                 {!snapshot.textProcessing.enabled && (
                   <Link
                     to="/prompts"
-                    onClick={onClose}
+                    onClick={() => void close()}
                     className="text-xs text-muted-foreground underline"
                   >
                     Set up text model
@@ -260,22 +291,30 @@ export function TranscriptEditor({
               )}
             </div>
             <DialogFooter className="shrink-0 flex-row flex-wrap items-center justify-between gap-3 border-t bg-muted/20 px-5 py-4 sm:justify-between sm:px-7">
-              <div className="text-xs text-muted-foreground" role="status">
-                {dirty ? "Unsaved changes" : "All changes saved"}
-                <span className="mt-1 hidden text-[11px] sm:block">Ctrl / ⌘ + Enter to save</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <Button variant="outline" disabled={saving} onClick={onClose}>
-                  Cancel
-                </Button>
-                <Button disabled={!canSave} onClick={() => void save()}>
-                  {saving ? "Saving…" : "Save transcript"}
-                </Button>
-              </div>
+              <AutoSaveStatus
+                status={autoSave.status}
+                reason={reason}
+                retry={autoSave.retry}
+                discard={() => setText(saved)}
+                disabled={closing}
+              />
+              <Button variant="outline" disabled={closing} onClick={() => void close()}>
+                Done
+              </Button>
             </DialogFooter>
           </>
         )}
       </DialogContent>
+      {history && (
+        <RevisionHistory
+          kind="transcript"
+          itemId={session.id}
+          title="Transcript version history"
+          current={text}
+          onClose={() => setHistory(false)}
+          onRestore={setText}
+        />
+      )}
     </Dialog>
   );
 }

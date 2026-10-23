@@ -1,4 +1,5 @@
 import { AudioSupportPanel } from "@/components/audio-support-panel";
+import { AutoSaveStatus } from "@/components/auto-save-status";
 import { BackupPanel } from "@/components/backup-panel";
 import { DiagnosticsPanel } from "@/components/diagnostics-panel";
 import { ProfilesPanel } from "@/components/dictation-profiles";
@@ -30,8 +31,9 @@ import { toastManager } from "@/components/ui/toast";
 import { UpdatePanel } from "@/components/update-panel";
 import { backend, isBusy, isDesktop, message, type Microphone } from "@/lib/backend";
 import { languages } from "@/lib/languages";
+import { useAutoSave } from "@/lib/use-auto-save";
 import { useSavedDraft } from "@/lib/use-saved-draft";
-import { Check, FolderOpen, Loader2, Monitor, Moon, RefreshCw, Sun } from "lucide-react";
+import { FolderOpen, Monitor, Moon, RefreshCw, Sun } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
 const sections = [
@@ -71,16 +73,15 @@ export function SettingsPage() {
     : "dictation";
   const { theme, setTheme } = useTheme();
   const { snapshot, run, refresh, clearError, loading } = useDictation();
-  const [settings, setSettings] = useSavedDraft("settings", snapshot.settings);
+  const [settings, setSettings, settingsDraft] = useSavedDraft("settings", snapshot.settings);
   const savedProfileShortcut = snapshot.profileShortcut ?? "";
-  const [profileShortcut, setProfileShortcut] = useSavedDraft(
+  const [profileShortcut, setProfileShortcut, shortcutDraft] = useSavedDraft(
     "profile-shortcut",
     savedProfileShortcut,
   );
-  const [saving, setSaving] = useState(false);
-  const [failedDraft, setFailedDraft] = useState("");
   const [editingText, setEditingText] = useState(false);
   const [confirmRetention, setConfirmRetention] = useState(false);
+  const retentionApproved = useRef(false);
   const [microphones, setMicrophones] = useState<Microphone[]>([]);
   const [loadingMicrophones, setLoadingMicrophones] = useState(false);
   const [microphoneError, setMicrophoneError] = useState("");
@@ -88,11 +89,10 @@ export function SettingsPage() {
   const microphoneRequest = useRef(0);
   const busy = isBusy(snapshot.status.phase);
   const controlsDisabled = !isDesktop || busy || loading;
-  const settingsDirty = JSON.stringify(settings) !== JSON.stringify(snapshot.settings);
-  const profileShortcutDirty = profileShortcut !== savedProfileShortcut;
+  const settingsDirty = settingsDraft.dirty;
+  const profileShortcutDirty = shortcutDraft.dirty;
   const dirty = settingsDirty || profileShortcutDirty;
   const draftKey = JSON.stringify([settings, profileShortcut]);
-  const failed = dirty && failedDraft === draftKey;
   const retentionNeedsConfirm =
     settings.historyRetentionDays > 0 &&
     settings.historyRetentionDays !== snapshot.settings.historyRetentionDays;
@@ -153,14 +153,13 @@ export function SettingsPage() {
         }));
     }, false);
   }
-  async function save(confirmed = false) {
-    if (loading || saving || busy) return;
-    if (!confirmed && retentionNeedsConfirm) {
+  async function save() {
+    if (loading || busy) return false;
+    if (!retentionApproved.current && retentionNeedsConfirm) {
       setConfirmRetention(true);
-      return;
+      return false;
     }
-    const attempt = draftKey;
-    setSaving(true);
+    retentionApproved.current = false;
     setConfirmRetention(false);
     clearError();
     toastManager.close("settings-save");
@@ -180,10 +179,10 @@ export function SettingsPage() {
       if (profileShortcut.trim() && sameShortcut(profileShortcut, settings.shortcut))
         throw new Error("Recording and profile cycling must use different shortcuts.");
       for (const step of steps) await step();
-      setFailedDraft("");
+      settingsDraft.markSubmitted(settings);
+      shortcutDraft.markSubmitted(profileShortcut);
       await refresh();
     } catch (cause) {
-      setFailedDraft(attempt);
       await refresh().catch(() => {});
       toastManager.add({
         id: "settings-save",
@@ -192,36 +191,22 @@ export function SettingsPage() {
         priority: "high",
         timeout: 8000,
       });
-    } finally {
-      setSaving(false);
+      throw cause;
     }
   }
-  const canAutosave =
-    dirty &&
-    !failed &&
-    !editingText &&
-    !saving &&
-    !loading &&
-    !busy &&
-    !confirmRetention &&
-    !(selectedMicrophoneMissing && settings.microphoneId !== snapshot.settings.microphoneId);
-  const autosave = useRef({ canAutosave, save, draftKey });
-  autosave.current = { canAutosave, save, draftKey };
-  const mountedDraft = useRef(draftKey);
-  useEffect(() => {
-    if (!canAutosave) return;
-    const timer = setTimeout(() => void autosave.current.save(), 400);
-    return () => clearTimeout(timer);
-  }, [canAutosave, draftKey]);
-  // Leaving the page cancels the debounce, so save edits made here. A draft
-  // restored on mount may predate backend changes until it is reconciled.
-  useEffect(
-    () => () => {
-      const latest = autosave.current;
-      if (latest.canAutosave && latest.draftKey !== mountedDraft.current) void latest.save();
-    },
-    [],
-  );
+  const autoSave = useAutoSave({
+    draftKey,
+    dirty,
+    canSave:
+      isDesktop &&
+      !loading &&
+      !busy &&
+      !(selectedMicrophoneMissing && settings.microphoneId !== snapshot.settings.microphoneId),
+    save,
+    delay: 400,
+    waitForBlur: editingText,
+  });
+  const saving = autoSave.saving;
   function cancelRetention() {
     setConfirmRetention(false);
     setSettings((old) => ({
@@ -232,7 +217,6 @@ export function SettingsPage() {
   function discard() {
     setSettings(snapshot.settings);
     setProfileShortcut(savedProfileShortcut);
-    setFailedDraft("");
   }
   const textInput = (target: EventTarget): target is HTMLInputElement =>
     target instanceof HTMLInputElement && !["checkbox", "radio", "hidden"].includes(target.type);
@@ -285,45 +269,12 @@ export function SettingsPage() {
             ))}
           </TabsList>
           <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
-            {failed ? (
-              <>
-                <span role="status" className="text-xs text-destructive">
-                  Changes not saved
-                </span>
-                <Button variant="ghost" disabled={controlsDisabled} onClick={discard}>
-                  Discard changes
-                </Button>
-                <Button
-                  variant="outline"
-                  disabled={controlsDisabled}
-                  onClick={() => setFailedDraft("")}
-                >
-                  Retry
-                </Button>
-              </>
-            ) : (
-              <span
-                role="status"
-                className="flex items-center gap-1.5 text-xs text-muted-foreground"
-              >
-                {saving || (dirty && !editingText) ? (
-                  <>
-                    <Loader2
-                      aria-hidden="true"
-                      className="size-3.5 animate-spin motion-reduce:animate-none"
-                    />
-                    Saving…
-                  </>
-                ) : dirty && editingText ? (
-                  "Saves when you leave the field"
-                ) : (
-                  <>
-                    <Check aria-hidden="true" className="size-3.5" />
-                    Changes save automatically
-                  </>
-                )}
-              </span>
-            )}
+            <AutoSaveStatus
+              status={autoSave.status}
+              retry={autoSave.retry}
+              discard={discard}
+              disabled={controlsDisabled}
+            />
           </div>
         </header>
         <TabsContent value="dictation" keepMounted className="space-y-5">
@@ -733,7 +684,10 @@ export function SettingsPage() {
             <Button
               variant="destructive"
               disabled={busy || saving || loading}
-              onClick={() => void save(true)}
+              onClick={() => {
+                retentionApproved.current = true;
+                void autoSave.retry();
+              }}
             >
               Save and delete older history
             </Button>

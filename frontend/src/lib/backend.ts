@@ -25,6 +25,7 @@ import {
   GetMicrophones,
   GetProfileApplications,
   GetRecentlyDeleted,
+  GetRevisions,
   GetSession,
   GetSessionOutputs,
   GetSnapshot,
@@ -73,6 +74,8 @@ export type DictationProfile = {
 export type ProfileApplication = { id: string; name: string };
 export type AppProfileRule = { applicationId: string; applicationName: string; profileId: string };
 export type TextPrompt = { id: string; name: string; instruction: string };
+export type RevisionKind = "prompt" | "chain" | "vocabulary" | "transcript";
+export type Revision = { id: number; createdAt: string; updatedAt: string; value: string };
 export type PromptChainStep = { id: string; promptId: string; input: string };
 export type PromptChain = { id: string; name: string; steps: PromptChainStep[] };
 export type TextProcessing = {
@@ -317,6 +320,8 @@ function requireProfileAPI(name: string) {
 }
 
 export const backend = {
+  revisions: (kind: RevisionKind, itemId: string): Promise<Revision[]> =>
+    GetRevisions(kind, itemId),
   profileApplications: async (): Promise<ProfileApplication[]> => {
     requireProfileAPI("GetProfileApplications");
     return GetProfileApplications();

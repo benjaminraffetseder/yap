@@ -29,8 +29,9 @@ window has focus. Stop and Cancel are available there and in the tray menu.
 
 Under **Settings → Dictation → Dictation profiles**, choose **New profile** to
 start from your saved settings. Name it, then choose its speech model, spoken
-language, light cleanup, and optional **After dictation** prompt. Save the profile,
-then choose **Use** or select it in the **Profile** menu on Dictate. You can save
+language, light cleanup, and optional **After dictation** prompt. Changes save
+automatically once a name and model are present; choose **Done** to close the editor.
+Choose **Use** or select it in the **Profile** menu on Dictate to activate it. You can save
 up to 20 additional profiles and edit or delete them from Settings. Yap creates
 and selects **Default** from your setup choices or existing saved settings.
 Default stays available and can be edited, but cannot be renamed or deleted.
@@ -65,10 +66,14 @@ as shortcuts and file paths save when you leave the field or press Enter. If a s
 fails, Settings keeps your edit and offers **Retry** or **Discard changes**. Turning on
 automatic history deletion still asks for confirmation first.
 
-Unsaved edits in Prompts and Vocabulary remain available when you move between
-pages. Use their Save or **Discard changes** action to finish editing. Background
-updates preserve edited fields and refresh untouched settings. These drafts stay in
-memory for the current app session; save before quitting or reloading.
+Prompts, chains, the text model, and Vocabulary save automatically after a short
+pause, including while you type instructions. Valid edits also save when you leave
+the page. The status shows progress; invalid drafts pause saving and explain what
+needs fixing. Completely empty new vocabulary rows are skipped. Failed saves keep
+the draft and offer **Retry** or **Discard changes**. Deleting a prompt or chain
+shows an **Undo** action. Background updates preserve edited fields and refresh
+untouched settings. Unsaved drafts stay in memory for the current app session;
+resolve any save errors before quitting or reloading.
 
 ### Automatic profiles and profile cycling
 
@@ -141,9 +146,10 @@ source in **Edit transcript**. Copy and export keep the source text and formatti
 markers so you can reuse them elsewhere.
 
 **Edit transcript** changes the saved result while keeping the original
-transcription. Ctrl/Cmd+Enter saves; Escape cancels. To reuse a corrected spelling,
-select a name or phrase and choose **Add to vocabulary**. Save the transcript
-separately if you also want to keep the edit.
+transcription. Edits save after a short pause; **Done** and Escape also save before
+closing. Empty text is never saved. Ctrl/Cmd+Enter saves immediately and keeps the
+editor open. To reuse a corrected spelling, select a name or phrase and choose
+**Add to vocabulary**; the transcript continues to save automatically.
 
 Vocabulary entries have a preferred spelling and optional aliases. For example,
 `postgres` can map to `PostgreSQL`. Matching uses whole words or phrases, not
@@ -175,8 +181,8 @@ See [Audio support](audio-support.md) for manual setup and download details.
 Text processing is optional. It needs a running model server on your computer;
 Yap doesn't install the server or load a GGUF file itself.
 
-In **Prompts → Text model**, select a server and model, enable LLM processing, save, and choose
-**Test model**. The presets use these base URLs:
+In **Prompts → Text model**, select a server and model, enable LLM processing, wait
+until the changes are saved, and choose **Test model**. The presets use these base URLs:
 
 | Server | URL |
 | --- | --- |
@@ -193,8 +199,8 @@ Cleanup and Summary prompts are included. Select one from the saved prompt libra
 (or the **Saved prompt** picker in a narrow window). Edit it or add your own; there can
 be up to 30 prompts, each with up to 8,000 characters of instructions. The text
 is supplied separately, so you don't need placeholders. **Refine prompt** uses
-the selected model to suggest clearer instructions. Review and save the suggestion
-if you want to keep it.
+the selected model to suggest clearer instructions. Review and apply the suggestion
+if you want to keep it; applied instructions save automatically.
 
 There are three ways to process text:
 
@@ -203,12 +209,12 @@ There are three ways to process text:
   its input, instructions, and model details.
   **Regenerate** uses that saved input and prompt with your current model.
 - **Process text** in the transcript editor previews a result from your draft.
-  Choose **Replace draft**, then **Save transcript** to keep it.
+  Choose **Replace draft** to apply the result; it saves automatically.
 - **Run after dictation**, inside a prompt's details, runs that prompt before
   copying or pasting new dictations. Only one prompt or chain can run automatically:
   turning another prompt or chain's switch on replaces the current selection, and turning
   the active switch off disables it. The **Automatic** badge marks your selection.
-  Choose **Save changes** to keep prompt edits and the automatic selection.
+  Prompt edits and the automatic selection save automatically.
   If processing fails or is cancelled, the speech transcript stays
   in History, but nothing is copied or pasted.
 
@@ -227,7 +233,7 @@ the original, Summary can use Cleanup, and Email can use either Summary or
 Cleanup. Only earlier steps are available as inputs. Reordering preserves those
 references; moves that would put an input after its dependent are disabled.
 Open a step's actions menu to move or remove it. Change dependent inputs before
-removing a step. Save changes to keep the chain.
+removing a step. Valid chain changes save automatically.
 There can be up to 30 chains, each containing 1–10 steps.
 
 To run a chain manually, open a dictation's **Outputs** tab, choose the chain in
@@ -257,6 +263,23 @@ Long input and output must still fit your model's context window. If truncation
 persists, increase the context window or output limit in your local server, use a
 model with a larger context window, or process a shorter passage. Saved outputs
 remain available when text processing is disabled.
+
+### Version history
+
+Open **Version history** from a prompt's **More prompt actions** menu, a chain's
+actions, the Vocabulary header, or the transcript editor beside **Original** and
+**Changes**. Select a version to preview it, then choose **Restore version** to
+load it into the draft. Restored content saves automatically. Transcript and prompt
+previews also show a text comparison. A chain cannot be restored if one of its
+steps refers to a prompt that no longer exists.
+
+History is tracked separately for each prompt, chain, and transcript, and for the
+whole vocabulary list. The first change preserves the prior content. Saves within
+a ten-minute editing window are grouped, with up to 50 versions kept per item.
+Restoring preserves the version you restored from, so you can undo a restore.
+The original transcription remains available separately. Transcript versions stay
+with dictations in Recently Deleted and are removed on permanent deletion.
+Version history stays on this computer and is excluded from portable backups.
 
 ## Storage and backups
 
