@@ -10,6 +10,7 @@ import (
 
 	"github.com/google/uuid"
 	"yap/internal/inference/text"
+	"yap/internal/platform"
 )
 
 // Profiles reference this computer's speech models and shared saved prompts.
@@ -77,6 +78,9 @@ func NormalizeProfiles(library ProfileLibrary) (ProfileLibrary, error) {
 	for i, rule := range library.AppRules {
 		rule.ApplicationID = strings.ToLower(strings.TrimSpace(rule.ApplicationID))
 		rule.ApplicationName = strings.TrimSpace(rule.ApplicationName)
+		if strings.HasPrefix(rule.ApplicationID, "windows:") {
+			rule.ApplicationName = platform.ApplicationName(rule.ApplicationName)
+		}
 		if rule.ApplicationID == "" || len(rule.ApplicationID) > 512 || !utf8.ValidString(rule.ApplicationID) || strings.ContainsAny(rule.ApplicationID, "\r\n\x00") || apps[rule.ApplicationID] {
 			return ProfileLibrary{}, errors.New("choose each application only once")
 		}

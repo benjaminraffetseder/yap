@@ -8063,92 +8063,157 @@ test("temporary prompt chains expose completed results after an interrupted run"
   expect(await page.evaluate(() => window.dictationTest.snapshot.history)).toEqual([]);
 });
 
-test("automatic profile rules save, survive navigation, and can be removed", async ({
-  page,
-}, testInfo) => {
+test("profile cards add, keep, and remove automatic apps as badges", async ({ page }, testInfo) => {
   await homeModelScenario(page);
   await page.getByRole("link", { name: "Settings", exact: true }).click();
-  await page.getByRole("button", { name: "Refresh open applications" }).click();
-  await page
-    .getByRole("combobox", { name: "Application for automatic profile", exact: true })
-    .click();
+  const apps = page.getByRole("group", { name: "Apps for Default", exact: true });
+  await apps.getByRole("combobox", { name: "Add app to Default", exact: true }).click();
   await page.getByRole("option", { name: "Outlook", exact: true }).click();
-  await page
-    .getByRole("combobox", { name: "Profile for new application rule", exact: true })
-    .click();
-  await page.getByRole("option", { name: "Default", exact: true }).click();
-  await page.getByRole("button", { name: "Add rule", exact: true }).click();
-  await page.getByLabel("Cycle profiles shortcut", { exact: true }).fill("Ctrl+Alt+P");
+  await expect
+    .poll(() => page.evaluate(() => window.dictationTest.snapshot.appProfileRules))
+    .toEqual([
+      { applicationId: "windows:outlook.exe", applicationName: "Outlook", profileId: "default" },
+    ]);
+  await expect(apps.getByText("Outlook", { exact: true })).toBeVisible();
   await page.getByRole("link", { name: "Dictate", exact: true }).click();
   await page.getByRole("link", { name: "Settings", exact: true }).click();
-  await expect(
-    page.getByRole("combobox", { name: "Profile for Outlook", exact: true }),
-  ).toContainText("Default");
-  await expect(page.getByLabel("Cycle profiles shortcut", { exact: true })).toHaveValue(
-    "Ctrl+Alt+P",
-  );
-  await page.getByRole("button", { name: "Save profile automation", exact: true }).click();
-  await expect(
-    page.getByRole("button", { name: "Save profile automation", exact: true }),
-  ).toBeDisabled();
-  await expect
-    .poll(() =>
-      page.evaluate(() => ({
-        rules: window.dictationTest.snapshot.appProfileRules?.length,
-        shortcut: window.dictationTest.snapshot.profileShortcut,
-      })),
-    )
-    .toEqual({ rules: 1, shortcut: "Ctrl+Alt+P" });
+  await expect(apps.getByText("Outlook", { exact: true })).toBeVisible();
   await page.setViewportSize({ width: 760, height: 760 });
-  await page
-    .getByRole("heading", { name: "Automatic profiles & shortcuts", exact: true })
-    .scrollIntoViewIfNeeded();
+  await apps.scrollIntoViewIfNeeded();
   await expect
     .poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
     .toBe(true);
-  await page.screenshot({ path: testInfo.outputPath("profile-automation.png") });
-  await page.getByRole("button", { name: "Remove rule for Outlook", exact: true }).click();
-  await page.getByLabel("Cycle profiles shortcut", { exact: true }).fill("");
-  await page.getByRole("button", { name: "Save profile automation", exact: true }).click();
+  await page.screenshot({ path: testInfo.outputPath("profile-apps.png") });
+  await apps.getByRole("button", { name: "Remove Outlook from Default", exact: true }).click();
   await expect
-    .poll(() =>
-      page.evaluate(() => ({
-        rules: window.dictationTest.snapshot.appProfileRules,
-        shortcut: window.dictationTest.snapshot.profileShortcut,
-      })),
-    )
-    .toEqual({ rules: [], shortcut: "" });
+    .poll(() => page.evaluate(() => window.dictationTest.snapshot.appProfileRules))
+    .toEqual([]);
+  await expect(apps.getByText("Outlook", { exact: true })).toHaveCount(0);
 });
 
-test("profile automation keeps drafts after failure and reports shortcut conflicts", async ({
+test("adding an app to another profile moves its badge and the picker names its owner", async ({
+  page,
+}, testInfo) => {
+  await page.addInitScript(() => {
+    const state = window.dictationTest;
+    const base = { modelPath: "/tiny", language: "auto", cleanText: false, autoPromptId: "" };
+    state.snapshot.dictationProfiles = [
+      { ...base, id: "default", name: "Default" },
+      { ...base, id: "email", name: "Email" },
+      { ...base, id: "casual", name: "Casual" },
+      { ...base, id: "technical", name: "Technical" },
+    ];
+    state.snapshot.defaultProfileId = "default";
+    state.snapshot.activeProfileId = "default";
+    state.snapshot.appProfileRules = [
+      { applicationId: "windows:outlook.exe", applicationName: "Outlook", profileId: "email" },
+      { applicationId: "windows:slack.exe", applicationName: "Slack", profileId: "casual" },
+    ];
+    Reflect.get(window, "go").main.App.GetProfileApplications = async () => [
+      { id: "windows:outlook.exe", name: "Outlook" },
+      { id: "windows:slack.exe", name: "Slack" },
+      { id: "windows:code.exe", name: "Visual Studio Code" },
+    ];
+  });
+  await homeModelScenario(page);
+  await page.getByRole("link", { name: "Settings", exact: true }).click();
+  const email = page.getByRole("group", { name: "Apps for Email", exact: true });
+  const technical = page.getByRole("group", { name: "Apps for Technical", exact: true });
+  await expect(email.getByText("Outlook", { exact: true })).toBeVisible();
+  await expect(
+    page.getByRole("group", { name: "Apps for Casual", exact: true }).getByText("Slack"),
+  ).toBeVisible();
+
+  const add = technical.getByRole("combobox", { name: "Add app to Technical", exact: true });
+  await add.click();
+  await expect(page.getByRole("option", { name: /^Outlook/ })).toContainText("Email");
+  await expect(page.getByRole("option", { name: /^Slack/ })).toContainText("Casual");
+  await page.getByRole("option", { name: "Visual Studio Code", exact: true }).click();
+  await expect(technical.getByText("Visual Studio Code", { exact: true })).toBeVisible();
+  await add.click();
+  await page.getByRole("option", { name: /^Outlook/ }).click();
+  await expect(technical.getByText("Outlook", { exact: true })).toBeVisible();
+  await expect(email.getByText("Outlook", { exact: true })).toHaveCount(0);
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        window.dictationTest.snapshot.appProfileRules?.map((rule) => rule.profileId),
+      ),
+    )
+    .toEqual(["technical", "casual", "technical"]);
+
+  const panel = page
+    .getByRole("heading", { name: "Dictation profiles", exact: true })
+    .locator("..");
+  for (const width of [1140, 760]) {
+    await page.setViewportSize({ width, height: 1000 });
+    await page.evaluate(
+      (dark) => document.documentElement.classList.toggle("dark", dark),
+      width === 1140,
+    );
+    await page.mouse.move(0, 0);
+    await expect
+      .poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
+      .toBe(true);
+    await panel.screenshot({ path: testInfo.outputPath(`profile-apps-${width}.png`) });
+  }
+});
+
+test("shortcuts are grouped in one section and the cycle shortcut saves with settings", async ({
   page,
 }) => {
   await homeModelScenario(page);
   await page.getByRole("link", { name: "Settings", exact: true }).click();
-  await page.getByLabel("Cycle profiles shortcut", { exact: true }).fill("Ctrl+Alt+P");
+  const shortcuts = page.getByRole("heading", { name: "Shortcuts", exact: true }).locator("..");
+  await expect(shortcuts.getByLabel("Global shortcut", { exact: true })).toBeVisible();
+  await expect(shortcuts.getByText("Recording mode", { exact: true })).toBeVisible();
+  const cycle = shortcuts.getByLabel("Cycle profiles shortcut", { exact: true });
+  await cycle.fill("Ctrl+Alt+P");
+  await expect(page.getByText("Unsaved changes", { exact: true })).toBeVisible();
+  await page.getByRole("link", { name: "Dictate", exact: true }).click();
+  await page.getByRole("link", { name: "Settings", exact: true }).click();
+  await expect(cycle).toHaveValue("Ctrl+Alt+P");
+  const save = page.getByRole("button", { name: "Save settings", exact: true });
+  await save.click();
+  await expect
+    .poll(() => page.evaluate(() => window.dictationTest.snapshot.profileShortcut))
+    .toBe("Ctrl+Alt+P");
+  await expect(save).toBeDisabled();
+  await cycle.fill("");
+  await save.click();
+  await expect
+    .poll(() => page.evaluate(() => window.dictationTest.snapshot.profileShortcut))
+    .toBe("");
+});
+
+test("cycle shortcut keeps its draft after failure and reports shortcut conflicts", async ({
+  page,
+}) => {
+  await homeModelScenario(page);
+  await page.getByRole("link", { name: "Settings", exact: true }).click();
+  const cycle = page.getByLabel("Cycle profiles shortcut", { exact: true });
+  const save = page.getByRole("button", { name: "Save settings", exact: true });
+  await cycle.fill("Ctrl+Alt+P");
   await page.evaluate(() => {
     window.dictationTest.failSave = true;
   });
-  await page.getByRole("button", { name: "Save profile automation", exact: true }).click();
+  await save.click();
   await expect(
     page.getByRole("alert").filter({ hasText: "Could not save profile automation" }),
   ).toBeVisible();
-  await expect(page.getByLabel("Cycle profiles shortcut", { exact: true })).toHaveValue(
-    "Ctrl+Alt+P",
-  );
+  await expect(cycle).toHaveValue("Ctrl+Alt+P");
   await page.evaluate(() => {
     window.dictationTest.failSave = false;
   });
-  await page.getByLabel("Cycle profiles shortcut", { exact: true }).fill("Ctrl+Alt+Space");
-  await page.getByRole("button", { name: "Save profile automation", exact: true }).click();
+  await cycle.fill("Ctrl+Alt+Space");
+  await save.click();
   await expect(
-    page.getByRole("alert").filter({ hasText: "must use different shortcuts" }),
+    page.getByRole("alert").filter({ hasText: /must use different shortcuts/i }),
   ).toBeVisible();
-  await page.getByLabel("Cycle profiles shortcut", { exact: true }).fill("Ctrl+Alt+P");
-  await page.getByRole("button", { name: "Save profile automation", exact: true }).click();
-  await expect(
-    page.getByRole("button", { name: "Save profile automation", exact: true }),
-  ).toBeDisabled();
+  expect(await page.evaluate(() => window.dictationTest.snapshot.profileShortcut ?? "")).toBe("");
+  await cycle.fill("Ctrl+Alt+P");
+  await save.click();
+  await expect(save).toBeDisabled();
 });
 
 test("recording shows its automatic profile while manual selection stays unchanged", async ({

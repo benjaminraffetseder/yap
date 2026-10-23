@@ -48,7 +48,7 @@ func windowApplication(window uintptr) Application {
 		return Application{}
 	}
 	name := filepath.Base(windows.UTF16ToString(buffer[:size]))
-	return Application{ID: "windows:" + strings.ToLower(name), Name: name}
+	return Application{ID: "windows:" + strings.ToLower(name), Name: ApplicationName(name)}
 }
 
 func ActiveApplication() string {

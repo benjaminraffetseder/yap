@@ -10,6 +10,15 @@ type Application struct {
 	Name string `json:"name"`
 }
 
+// ApplicationName drops the Windows executable extension for display only;
+// rules keep matching on the full executable identity.
+func ApplicationName(name string) string {
+	if len(name) > 4 && strings.EqualFold(name[len(name)-4:], ".exe") {
+		return name[:len(name)-4]
+	}
+	return name
+}
+
 func sortedApplications(apps map[string]Application) []Application {
 	result := make([]Application, 0, len(apps))
 	for _, app := range apps {

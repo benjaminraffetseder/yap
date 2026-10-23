@@ -13,7 +13,7 @@ func TestWindowsApplicationsHaveUniqueExecutableIdentities(t *testing.T) {
 	}
 	seen := map[string]bool{}
 	for _, app := range apps {
-		if app.Name == "" || app.ID != "windows:"+strings.ToLower(app.Name) || seen[app.ID] {
+		if app.Name == "" || strings.HasSuffix(strings.ToLower(app.Name), ".exe") || !strings.HasPrefix(app.ID, "windows:"+strings.ToLower(app.Name)) || seen[app.ID] {
 			t.Fatal("invalid application identity", app)
 		}
 		seen[app.ID] = true

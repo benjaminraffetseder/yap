@@ -1,10 +1,10 @@
 import { AudioSupportPanel } from "@/components/audio-support-panel";
 import { BackupPanel } from "@/components/backup-panel";
-import { UpdatePanel } from "@/components/update-panel";
 import { DiagnosticsPanel } from "@/components/diagnostics-panel";
+import { ProfilesPanel } from "@/components/dictation-profiles";
 import { useDictation } from "@/components/dictation-provider";
+import { ProfileSettingIndicator } from "@/components/profile-setting-indicator";
 import { SettingRow, SettingsSection, ToggleSetting } from "@/components/settings-section";
-import { ProfileAutomationPanel } from "@/components/profile-automation";
 import { ShortcutInput } from "@/components/shortcut-input";
 import { ShortcutStatus } from "@/components/shortcut-status";
 import { useTheme } from "@/components/theme-provider";
@@ -27,14 +27,13 @@ import {
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toastManager } from "@/components/ui/toast";
+import { UpdatePanel } from "@/components/update-panel";
 import { backend, isBusy, isDesktop, message, type Microphone } from "@/lib/backend";
+import { languages } from "@/lib/languages";
+import { useSavedDraft } from "@/lib/use-saved-draft";
 import { FolderOpen, Monitor, Moon, RefreshCw, Save, Sun } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
-import { useSavedDraft } from "@/lib/use-saved-draft";
-import { languages } from "@/lib/languages";
-import { ProfilesPanel } from "@/components/dictation-profiles";
-import { ProfileSettingIndicator } from "@/components/profile-setting-indicator";
 const sections = [
   { value: "dictation", label: "Dictation" },
   { value: "general", label: "General" },
@@ -56,6 +55,14 @@ const retentionOptions = [
   { value: "30", label: "30 days" },
   { value: "90", label: "90 days" },
 ];
+const shortcutKeys = (value: string) =>
+  value
+    .split("+")
+    .map((key) => key.trim().toLowerCase())
+    .sort()
+    .join("+");
+const sameShortcut = (left: string, right: string) =>
+  !!left.trim() && shortcutKeys(left) === shortcutKeys(right);
 export function SettingsPage() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -65,6 +72,11 @@ export function SettingsPage() {
   const { theme, setTheme } = useTheme();
   const { snapshot, run, refresh, clearError, loading } = useDictation();
   const [settings, setSettings] = useSavedDraft("settings", snapshot.settings);
+  const savedProfileShortcut = snapshot.profileShortcut ?? "";
+  const [profileShortcut, setProfileShortcut] = useSavedDraft(
+    "profile-shortcut",
+    savedProfileShortcut,
+  );
   const [saving, setSaving] = useState(false);
   const [confirmRetention, setConfirmRetention] = useState(false);
   const [microphones, setMicrophones] = useState<Microphone[]>([]);
@@ -74,7 +86,9 @@ export function SettingsPage() {
   const microphoneRequest = useRef(0);
   const busy = isBusy(snapshot.status.phase);
   const controlsDisabled = !isDesktop || busy || saving || loading;
-  const dirty = JSON.stringify(settings) !== JSON.stringify(snapshot.settings);
+  const settingsDirty = JSON.stringify(settings) !== JSON.stringify(snapshot.settings);
+  const profileShortcutDirty = profileShortcut !== savedProfileShortcut;
+  const dirty = settingsDirty || profileShortcutDirty;
   const selectedMicrophoneMissing =
     microphonesLoaded &&
     !microphoneError &&
@@ -146,8 +160,22 @@ export function SettingsPage() {
     setConfirmRetention(false);
     clearError();
     toastManager.close("settings-save");
+    const saveSettings = () => backend.settings(settings);
+    const saveProfileShortcut = () =>
+      backend.saveProfileAutomation(snapshot.appProfileRules ?? [], profileShortcut);
+    // Each save rejects a shortcut the other one still holds, so free the
+    // recording shortcut's new combination first when it was the profile one.
+    const steps = !profileShortcutDirty
+      ? [saveSettings]
+      : !settingsDirty
+        ? [saveProfileShortcut]
+        : sameShortcut(settings.shortcut, savedProfileShortcut)
+          ? [saveProfileShortcut, saveSettings]
+          : [saveSettings, saveProfileShortcut];
     try {
-      await backend.settings(settings);
+      if (profileShortcut.trim() && sameShortcut(profileShortcut, settings.shortcut))
+        throw new Error("Recording and profile cycling must use different shortcuts.");
+      for (const step of steps) await step();
       await refresh();
       toastManager.add({
         id: "settings-save",
@@ -155,6 +183,7 @@ export function SettingsPage() {
         title: "Settings saved.",
       });
     } catch (cause) {
+      await refresh().catch(() => {});
       toastManager.add({
         id: "settings-save",
         type: "error",
@@ -206,7 +235,10 @@ export function SettingsPage() {
                 <Button
                   variant="ghost"
                   disabled={controlsDisabled}
-                  onClick={() => setSettings(snapshot.settings)}
+                  onClick={() => {
+                    setSettings(snapshot.settings);
+                    setProfileShortcut(savedProfileShortcut);
+                  }}
                 >
                   Discard changes
                 </Button>
@@ -229,8 +261,57 @@ export function SettingsPage() {
         </header>
         <TabsContent value="dictation" keepMounted className="space-y-5">
           <ProfilesPanel disabled={controlsDisabled || dirty} />
-          <ProfileAutomationPanel disabled={controlsDisabled || dirty} />
           <fieldset disabled={controlsDisabled} className="space-y-5 disabled:opacity-60">
+            <SettingsSection title="Shortcuts">
+              <SettingRow
+                title="Global shortcut"
+                htmlFor="shortcut"
+                description="Starts dictation from any app. Use Ctrl, Alt, or Shift with Space, a letter, or F1–F12."
+              >
+                <ShortcutInput
+                  id="shortcut"
+                  value={settings.shortcut}
+                  disabled={controlsDisabled}
+                  onChange={(shortcut) => setSettings((old) => ({ ...old, shortcut }))}
+                />
+                <ShortcutStatus disabled={controlsDisabled} />
+              </SettingRow>
+              <SettingRow title="Recording mode" htmlFor="interaction">
+                <Select
+                  items={recordingModes}
+                  value={settings.interaction}
+                  disabled={controlsDisabled}
+                  onValueChange={(value) => {
+                    if (value !== null) setSettings((old) => ({ ...old, interaction: value }));
+                  }}
+                >
+                  <SelectTrigger id="interaction" className="h-9 w-full min-w-0 bg-background">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent alignItemWithTrigger={false} align="start">
+                    {recordingModes.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </SettingRow>
+              <SettingRow
+                title="Cycle profiles shortcut"
+                htmlFor="profile-cycle-shortcut"
+                description="Optional. Switches to the next available profile, overriding the app's profile for your next dictation there. Leave empty to disable."
+              >
+                <ShortcutInput
+                  id="profile-cycle-shortcut"
+                  recordLabel="Record profile shortcut"
+                  value={profileShortcut}
+                  disabled={controlsDisabled}
+                  onChange={setProfileShortcut}
+                />
+                <ShortcutStatus profile disabled={controlsDisabled} />
+              </SettingRow>
+            </SettingsSection>
             <SettingsSection title="Recording">
               <SettingRow title="Microphone" htmlFor="microphone">
                 <div className="flex gap-2">
@@ -303,40 +384,6 @@ export function SettingsPage() {
                   </SelectTrigger>
                   <SelectContent alignItemWithTrigger={false} align="start">
                     {languages.map((option) => (
-                      <SelectItem key={option.value} value={option.value}>
-                        {option.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </SettingRow>
-              <SettingRow
-                title="Global shortcut"
-                htmlFor="shortcut"
-                description="Use Ctrl, Alt, or Shift with Space, a letter, or F1–F12."
-              >
-                <ShortcutInput
-                  id="shortcut"
-                  value={settings.shortcut}
-                  disabled={controlsDisabled}
-                  onChange={(shortcut) => setSettings((old) => ({ ...old, shortcut }))}
-                />
-                <ShortcutStatus disabled={controlsDisabled} />
-              </SettingRow>
-              <SettingRow title="Recording mode" htmlFor="interaction">
-                <Select
-                  items={recordingModes}
-                  value={settings.interaction}
-                  disabled={controlsDisabled}
-                  onValueChange={(value) => {
-                    if (value !== null) setSettings((old) => ({ ...old, interaction: value }));
-                  }}
-                >
-                  <SelectTrigger id="interaction" className="h-9 w-full min-w-0 bg-background">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent alignItemWithTrigger={false} align="start">
-                    {recordingModes.map((option) => (
                       <SelectItem key={option.value} value={option.value}>
                         {option.label}
                       </SelectItem>

@@ -19,6 +19,11 @@ func TestApplicationRulesNormalizePersistAndRejectAmbiguity(t *testing.T) {
 	if library.AppRules[0].ApplicationName != " Outlook " {
 		t.Fatal("normalization mutated caller's rules")
 	}
+	legacy := library
+	legacy.AppRules = []AppProfileRule{{ApplicationID: "windows:code.exe", ApplicationName: "Code.EXE", ProfileID: "email"}, {ApplicationID: "macos:com.example.exe", ApplicationName: "Tool.exe", ProfileID: "email"}}
+	if got, err := NormalizeProfiles(legacy); err != nil || got.AppRules[0].ApplicationName != "Code" || got.AppRules[0].ApplicationID != "windows:code.exe" || got.AppRules[1].ApplicationName != "Tool.exe" {
+		t.Fatal("Windows rule names keep the executable extension", got, err)
+	}
 	if err := s.SaveDictationProfiles(library); err != nil {
 		t.Fatal(err)
 	}

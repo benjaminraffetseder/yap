@@ -1,14 +1,8 @@
-import { useRef, useState } from "react";
-import { Link } from "react-router";
-import { Pencil, Plus, Settings2, Trash2 } from "lucide-react";
 import { useDictation } from "@/components/dictation-provider";
+import { ProfileApps } from "@/components/profile-apps";
 import { ModifiedMarker } from "@/components/profile-setting-indicator";
 import { SettingsSection } from "@/components/settings-section";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   Dialog,
   DialogContent,
@@ -17,6 +11,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -24,15 +20,22 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   backend,
   isBusy,
   isDesktop,
   message,
   processingOptions,
+  type AppProfileRule,
   type DictationProfile,
+  type ProfileApplication,
 } from "@/lib/backend";
 import { languages } from "@/lib/languages";
+import { Pencil, Plus, Settings2, Trash2 } from "lucide-react";
+import { useRef, useState } from "react";
+import { Link } from "react-router";
 
 export function ProfileSelector({
   disabled = false,
@@ -133,12 +136,38 @@ export function ProfilesPanel({ disabled }: { disabled: boolean }) {
   const [deleting, setDeleting] = useState<DictationProfile | null>(null);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
+  const [apps, setApps] = useState<ProfileApplication[]>([]);
+  const [loadingApps, setLoadingApps] = useState(false);
   const profiles = snapshot.dictationProfiles ?? [];
+  const rules = snapshot.appProfileRules ?? [];
   async function apply(id: string) {
     setPending(true);
     setError("");
     try {
       await backend.applyProfile(id);
+      await refresh();
+    } catch (cause) {
+      setError(message(cause));
+    } finally {
+      setPending(false);
+    }
+  }
+  async function loadApps() {
+    if (loadingApps) return;
+    setLoadingApps(true);
+    try {
+      setApps(await backend.profileApplications());
+    } catch (cause) {
+      setError(message(cause));
+    } finally {
+      setLoadingApps(false);
+    }
+  }
+  async function saveRules(next: AppProfileRule[]) {
+    setPending(true);
+    setError("");
+    try {
+      await backend.saveProfileAutomation(next, snapshot.profileShortcut ?? "");
       await refresh();
     } catch (cause) {
       setError(message(cause));
@@ -152,8 +181,10 @@ export function ProfilesPanel({ disabled }: { disabled: boolean }) {
         <div className="space-y-4 py-4">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <p className="max-w-lg text-xs leading-5 text-muted-foreground">
-              Save a speech model, language, cleanup, and optional prompt together. Switch profiles
-              from Dictate. Save or discard any settings edits before managing profiles.
+              Save a speech model, language, cleanup, and optional prompt together. Add apps to a
+              profile to use it automatically when you start dictation with the shortcut in those
+              apps, including all browser tabs. Save or discard any settings edits before managing
+              profiles.
             </p>
             <Button
               size="sm"
@@ -268,6 +299,16 @@ export function ProfilesPanel({ disabled }: { disabled: boolean }) {
                   </Button>
                 )}
               </div>
+              <ProfileApps
+                profile={profile}
+                profiles={profiles}
+                rules={rules}
+                apps={apps}
+                loading={loadingApps}
+                disabled={disabled || pending || !isDesktop}
+                onOpen={() => void loadApps()}
+                onChange={(next) => void saveRules(next)}
+              />
             </div>
           ))}
           {error && !deleting && (
@@ -297,6 +338,9 @@ export function ProfilesPanel({ disabled }: { disabled: boolean }) {
             <DialogTitle>Delete {deleting?.name}?</DialogTitle>
             <DialogDescription>
               Your current dictation settings and saved transcripts will be kept.
+              {deleting &&
+                rules.some((rule) => rule.profileId === deleting.id) &&
+                " Its apps will use your manually selected profile again."}
             </DialogDescription>
           </DialogHeader>
           {error && (
