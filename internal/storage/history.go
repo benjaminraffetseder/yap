@@ -44,12 +44,24 @@ type HistoryPage struct {
 // Stream rather than loading all transcripts into memory. Go's Unicode case
 // folding preserves the old search behavior beyond SQLite's ASCII-only lower().
 func (s *Store) SearchHistory(query string, page int) (HistoryPage, error) {
+	return s.searchHistory(query, page, false)
+}
+
+func (s *Store) SearchRecentlyDeleted(query string, page int) (HistoryPage, error) {
+	return s.searchHistory(query, page, true)
+}
+
+func (s *Store) searchHistory(query string, page int, deleted bool) (HistoryPage, error) {
 	out := HistoryPage{Entries: []Session{}, Page: page, PageSize: HistoryPageSize}
 	if page < 0 || page > 1000000 || len(query) > 1000 {
 		return out, errors.New("invalid History search or page")
 	}
-	rows, err := s.db.Query(`SELECT r.id,r.created_at,r.duration_ms,r.transcript,r.model,r.language,r.audio_path,COALESCE(o.transcript,r.transcript)
-		FROM recordings r LEFT JOIN recording_outputs o ON r.id=o.id ORDER BY r.created_at COLLATE yap_datetime DESC,r.id DESC`)
+	filter, order := "d.id IS NULL", "r.created_at"
+	if deleted {
+		filter, order = "d.id IS NOT NULL", "d.deleted_at"
+	}
+	rows, err := s.db.Query(`SELECT r.id,r.created_at,r.duration_ms,r.transcript,r.model,r.language,r.audio_path,COALESCE(o.transcript,r.transcript),COALESCE(d.deleted_at,'')
+		FROM recordings r LEFT JOIN recording_outputs o ON r.id=o.id LEFT JOIN deleted_recordings d ON d.id=r.id WHERE ` + filter + ` ORDER BY ` + order + ` COLLATE yap_datetime DESC,r.id DESC`)
 	if err != nil {
 		return out, err
 	}
@@ -57,7 +69,7 @@ func (s *Store) SearchHistory(query string, page int) (HistoryPage, error) {
 	query = strings.ToLower(query)
 	for rows.Next() {
 		var v Session
-		if err := rows.Scan(&v.ID, &v.CreatedAt, &v.DurationMS, &v.RawTranscript, &v.SpeechModel, &v.Language, &v.AudioPath, &v.FinalTranscript); err != nil {
+		if err := rows.Scan(&v.ID, &v.CreatedAt, &v.DurationMS, &v.RawTranscript, &v.SpeechModel, &v.Language, &v.AudioPath, &v.FinalTranscript, &v.DeletedAt); err != nil {
 			return out, err
 		}
 		if query != "" && !strings.Contains(strings.ToLower(v.RawTranscript), query) && !strings.Contains(strings.ToLower(v.FinalTranscript), query) {
@@ -101,7 +113,7 @@ func (s *Store) DeleteSessions(ids []string) (int, error) {
 			return 0, errors.New("select unique dictations")
 		}
 		seen[id] = true
-		v, err := s.Session(id)
+		v, err := s.sessionIncludingDeleted(id)
 		if errors.Is(err, sql.ErrNoRows) {
 			continue
 		} // Retry after a partial cleanup safely.
@@ -131,12 +143,13 @@ func (s *Store) PruneHistory(days int, now time.Time) (int, error) {
 	if err := s.RecoverPendingDeletes(); err != nil {
 		return 0, err
 	}
-	if days == 0 {
-		return 0, nil
+	deleted, err := s.PruneRecentlyDeleted(now)
+	if err != nil || days == 0 {
+		return deleted, err
 	}
-	rows, err := s.db.Query("SELECT id,created_at FROM recordings")
+	rows, err := s.db.Query("SELECT id,created_at FROM recordings WHERE NOT EXISTS (SELECT 1 FROM deleted_recordings d WHERE d.id=recordings.id)")
 	if err != nil {
-		return 0, err
+		return deleted, err
 	}
 	cutoff := now.Add(-time.Duration(days) * 24 * time.Hour)
 	ids := []string{}
@@ -144,7 +157,7 @@ func (s *Store) PruneHistory(days int, now time.Time) (int, error) {
 		var id, created string
 		if err := rows.Scan(&id, &created); err != nil {
 			rows.Close()
-			return 0, err
+			return deleted, err
 		}
 		if at, err := time.Parse(time.RFC3339Nano, created); err == nil && at.Before(cutoff) {
 			ids = append(ids, id)
@@ -153,9 +166,8 @@ func (s *Store) PruneHistory(days int, now time.Time) (int, error) {
 	err = rows.Err()
 	rows.Close()
 	if err != nil {
-		return 0, err
+		return deleted, err
 	}
-	deleted := 0
 	for _, id := range ids {
 		if err := s.Delete(id); err != nil {
 			return deleted, fmt.Errorf("retention removed %d dictations; cleanup stopped: %w", deleted, err)

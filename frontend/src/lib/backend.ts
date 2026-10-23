@@ -24,6 +24,7 @@ import {
   GetHistory,
   GetMicrophones,
   GetProfileApplications,
+  GetRecentlyDeleted,
   GetSession,
   GetSessionOutputs,
   GetSnapshot,
@@ -33,6 +34,7 @@ import {
   InstallModel,
   ListTextModels,
   OpenUpdateDownload,
+  PermanentlyDeleteSessions,
   PreviewBackup,
   ProcessText,
   RefinePrompt,
@@ -40,6 +42,7 @@ import {
   RemoveModel,
   RestartSetup,
   RestoreBackup,
+  RestoreSessions,
   RetryShortcut,
   SaveDictationProfile,
   SaveLatestResult,
@@ -181,6 +184,7 @@ export type Session = {
   speechModel: string;
   language: string;
   audioPath: string;
+  deletedAt?: string;
 };
 export type GeneratedOutput = {
   id: string;
@@ -420,6 +424,18 @@ export const backend = {
   addVocabularyTerm: AddVocabularyTerm,
   history: async (query: string, page: number): Promise<HistoryPageResult> =>
     GetHistory(query, page),
+  recentlyDeleted: async (query: string, page: number): Promise<HistoryPageResult> => {
+    requireHistoryRecoveryAPI("GetRecentlyDeleted");
+    return GetRecentlyDeleted(query, page);
+  },
+  restoreSessions: async (ids: string[]): Promise<void> => {
+    requireHistoryRecoveryAPI("RestoreSessions");
+    return RestoreSessions(ids);
+  },
+  permanentlyDeleteSessions: async (ids: string[]): Promise<void> => {
+    requireHistoryRecoveryAPI("PermanentlyDeleteSessions");
+    return PermanentlyDeleteSessions(ids);
+  },
   session: async (id: string): Promise<Session | null> => {
     const api = (window as unknown as { go?: { main?: { App?: Record<string, unknown> } } }).go
       ?.main?.App;
@@ -453,7 +469,11 @@ export const backend = {
     requireOutputAPI("DeleteSessionOutput");
     return DeleteSessionOutput(sessionID, outputID);
   },
-  removeSessions: DeleteSessions,
+  removeSessions: async (ids: string[]): Promise<void> => {
+    // Older backends delete permanently and cannot honor the Undo action.
+    requireHistoryRecoveryAPI("RestoreSessions");
+    return DeleteSessions(ids);
+  },
   exportSessions: ExportSessions,
   removeModel: RemoveModel,
   beginShortcutCapture: BeginShortcutCapture,
@@ -494,6 +514,14 @@ export const backend = {
     return ListTextModels(id, endpoint);
   },
 };
+function requireHistoryRecoveryAPI(name: string) {
+  const api = (window as unknown as { go?: { main?: { App?: Record<string, unknown> } } }).go?.main
+    ?.App;
+  if (typeof api?.[name] !== "function")
+    throw new Error(
+      "History recovery needs the current backend. Quit and reopen Yap; in development, restart wails dev.",
+    );
+}
 function requireAudioSupportAPI(name: string) {
   const api = (window as unknown as { go?: { main?: { App?: Record<string, unknown> } } }).go?.main
     ?.App;

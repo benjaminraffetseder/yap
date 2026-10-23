@@ -7,6 +7,7 @@ import type {
   DictationProfile,
   GeneratedOutput,
   Settings,
+  Session,
   Snapshot,
   Status,
   TextProcessing,
@@ -2108,6 +2109,7 @@ declare global {
   interface Window {
     dictationTest: {
       snapshot: Snapshot;
+      recentlyDeleted: Session[];
       indicatorThemes: boolean[];
       callbacks: Record<string, (...args: unknown[]) => void>;
       deferSnapshots: boolean;
@@ -2179,6 +2181,7 @@ declare global {
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {
     const state: Window["dictationTest"] = {
+      recentlyDeleted: [],
       snapshot: {
         textProcessing: {
           enabled: false,
@@ -2531,12 +2534,51 @@ test.beforeEach(async ({ page }) => {
                 });
               return value;
             },
-            DeleteSessions: async (ids: string[]) => {
-              if (state.failSave) throw new Error("History deletion failed");
-              state.snapshot.history = state.snapshot.history.filter(
+            GetRecentlyDeleted: async (query: string, page: number) => {
+              if (state.failHistory) throw new Error("History load failed");
+              const entries = state.recentlyDeleted.filter((entry) =>
+                [entry.rawTranscript, entry.finalTranscript].some((text) =>
+                  text.toLowerCase().includes(query.toLowerCase()),
+                ),
+              );
+              return {
+                entries: structuredClone(entries.slice(page * 50, (page + 1) * 50)),
+                total: entries.length,
+                page,
+                pageSize: 50,
+              };
+            },
+            RestoreSessions: async (ids: string[]) => {
+              if (state.failSave) throw new Error("History restoration failed");
+              const restored = state.recentlyDeleted.filter((entry) => ids.includes(entry.id));
+              state.snapshot.history.push(
+                ...restored.map((entry) => ({ ...entry, deletedAt: undefined })),
+              );
+              state.recentlyDeleted = state.recentlyDeleted.filter(
+                (entry) => !ids.includes(entry.id),
+              );
+              state.history();
+            },
+            PermanentlyDeleteSessions: async (ids: string[]) => {
+              if (state.failSave) throw new Error("Permanent deletion failed");
+              if (state.snapshot.history.some((entry) => ids.includes(entry.id)))
+                throw new Error("Only Recently Deleted dictations can be permanently deleted");
+              state.recentlyDeleted = state.recentlyDeleted.filter(
                 (entry) => !ids.includes(entry.id),
               );
               state.outputs = state.outputs.filter((output) => !ids.includes(output.sessionId));
+              state.history();
+            },
+            DeleteSessions: async (ids: string[]) => {
+              if (state.failSave) throw new Error("History deletion failed");
+              state.recentlyDeleted.push(
+                ...state.snapshot.history
+                  .filter((entry) => ids.includes(entry.id))
+                  .map((entry) => ({ ...entry, deletedAt: new Date().toISOString() })),
+              );
+              state.snapshot.history = state.snapshot.history.filter(
+                (entry) => !ids.includes(entry.id),
+              );
               state.history();
             },
             ExportSessions: async (ids: string[]) => {
@@ -4052,25 +4094,35 @@ test("dictation pages preserve the History search and page when returning and de
   await expect(page.getByLabel("Search transcripts")).toHaveValue("Original");
   await expect(page.getByText("Page 2 of 2", { exact: true })).toBeVisible();
   await page.getByRole("link", { name: /Dictation 50\b/ }).click();
-  await page.getByRole("button", { name: "Delete", exact: true }).click();
-  const dialog = page.getByRole("dialog", {
-    name: "Delete this dictation?",
-    exact: true,
-  });
   await page.evaluate(() => {
     window.dictationTest.failSave = true;
   });
-  await dialog.getByRole("button", { name: "Delete dictation", exact: true }).click();
-  await expect(dialog.getByRole("alert")).toHaveText("History deletion failed");
+  await page.getByRole("button", { name: "Delete", exact: true }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(page.getByRole("alert")).toHaveText("History deletion failed");
   await page.evaluate(() => {
     window.dictationTest.failSave = false;
   });
-  await dialog.getByRole("button", { name: "Delete dictation", exact: true }).click();
+  await page.getByRole("button", { name: "Delete", exact: true }).click();
   await expect(page).toHaveURL(/#\/history\?q=Original&page=1$/);
   await expect(page.getByLabel("Search transcripts")).toHaveValue("Original");
   await expect(page.getByText("Page 2 of 2", { exact: true })).toBeVisible();
   await expect(page.getByRole("link", { name: /Dictation 51\b/ })).toBeVisible();
   await expect(page.getByRole("link", { name: /Dictation 50\b/ })).toHaveCount(0);
+  const toast = page.locator('[data-slot="toast"]').last();
+  await expect(toast).toBeVisible();
+  await expect(toast).toContainText("Dictation deleted");
+  await page.evaluate(() => {
+    window.dictationTest.failSave = true;
+  });
+  await toast.getByRole("button", { name: "Undo", exact: true }).click();
+  await expect(toast).toContainText("History restoration failed");
+  await page.evaluate(() => {
+    window.dictationTest.failSave = false;
+  });
+  await toast.getByRole("button", { name: "Undo", exact: true }).click();
+  await expect(page.getByRole("link", { name: /Dictation 50\b/ })).toBeVisible();
+  await expect(toast).toContainText("Dictation restored");
 });
 
 test("direct dictation pages load older entries outside the snapshot, retry errors and handle missing entries", async ({
@@ -5106,38 +5158,232 @@ test("History pages select and export only the current page, and recover after d
   await expect
     .poll(() => page.evaluate(() => window.dictationTest.exportedText))
     .toBe("Dictation 50\nDictation 51");
-  await page.getByRole("button", { name: "Delete selected", exact: true }).click();
-  let dialog = page.getByRole("dialog", { name: "Delete 2 dictations?" });
-  await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
-  await expect
-    .poll(() => page.evaluate(() => window.dictationTest.snapshot.history.length))
-    .toBe(52);
-  await page.getByRole("button", { name: "Delete selected", exact: true }).click();
-  dialog = page.getByRole("dialog", { name: "Delete 2 dictations?" });
   await page.evaluate(() => {
     window.dictationTest.failSave = true;
   });
-  await dialog.getByRole("button", { name: "Delete dictations", exact: true }).click();
-  await expect(dialog.getByRole("alert")).toHaveText("History deletion failed");
+  await page.getByRole("button", { name: "Delete selected", exact: true }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(page.getByRole("alert")).toHaveText("History deletion failed");
   await page.evaluate(() => {
     window.dictationTest.failSave = false;
   });
-  await dialog.getByRole("button", { name: "Delete dictations", exact: true }).click();
-  await expect(dialog).toHaveCount(0);
+  await page.getByRole("button", { name: "Delete selected", exact: true }).click();
   await expect
     .poll(() => page.evaluate(() => window.dictationTest.snapshot.history.length))
     .toBe(50);
   await expect(page.getByText("50 dictations", { exact: true })).toBeVisible();
   await expect(page.getByRole("link", { name: /Dictation 0\b/ })).toBeVisible();
   await expect(page.getByRole("navigation", { name: "History pages" })).toHaveCount(0);
+  await page
+    .locator('[data-slot="toast"]')
+    .getByRole("button", { name: "Dismiss notification" })
+    .click();
+  await page.getByRole("button", { name: "Show Recently Deleted", exact: true }).click();
+  await expect(
+    page.getByRole("button", { name: "Show all dictations", exact: true }),
+  ).toBeFocused();
+  await expect(page.getByRole("heading", { name: "Recently Deleted", exact: true })).toBeVisible();
+  await expect(page.getByText("Dictation 50", { exact: true })).toBeVisible();
+  await expect(page.getByText(/30 days left to restore/)).toHaveCount(2);
+  await page.getByLabel("Search transcripts").fill("Original 50");
+  await expect(page.getByText("Dictation 51", { exact: true })).toHaveCount(0);
+  await page.getByRole("button", { name: "Restore", exact: true }).click();
+  await expect(page.getByText("No matching transcripts", { exact: true })).toBeVisible();
+  await page.getByLabel("Search transcripts").fill("");
+  await expect(page.getByText("Dictation 51", { exact: true })).toBeVisible();
+  await page.getByRole("checkbox", { name: "Select page", exact: true }).check();
+  await page.getByRole("button", { name: "Restore selected", exact: true }).click();
+  await expect(page.getByText("No recently deleted dictations", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Show all dictations", exact: true }).click();
+  await expect(page.getByText("52 dictations", { exact: true })).toBeVisible();
 });
 
-test("History keeps its header, search and selection controls visible while scrolling", async ({
+test("Recently Deleted supports retry and restoration on narrow screens after the toast is gone", async ({
+  page,
+}, testInfo) => {
+  await page.setViewportSize({ width: 480, height: 850 });
+  await page.addInitScript(() => {
+    localStorage.setItem("desktop-theme", "dark");
+    localStorage.setItem("yap-sidebar-collapsed", "true");
+    const state = window.dictationTest;
+    state.failHistory = true;
+    state.recentlyDeleted = [
+      {
+        id: "deleted-one",
+        createdAt: "2026-10-07",
+        durationMs: 17000,
+        rawTranscript: "Meeting notes from the design review.",
+        finalTranscript:
+          "Meeting notes from the design review. Keep the deletion flow simple and make recovery easy to find.",
+        speechModel: "base",
+        language: "en",
+        audioPath: "/recordings/one.wav",
+        deletedAt: new Date(Date.now() - 86400000).toISOString(),
+      },
+    ];
+  });
+  await page.goto("/#/history?view=deleted");
+  await expect(page.getByRole("alert")).toContainText("History load failed");
+  await page.evaluate(() => {
+    window.dictationTest.failHistory = false;
+  });
+  await page.getByRole("button", { name: "Retry", exact: true }).click();
+  await expect(page.getByText(/29 days left to restore/)).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Show all dictations", exact: true }),
+  ).toHaveAttribute("aria-pressed", "true");
+  const selectPage = page.getByRole("checkbox", { name: "Select page", exact: true });
+  const uncheckedBounds = (await selectPage.boundingBox())!;
+  await selectPage.check();
+  const checkedBounds = (await selectPage.boundingBox())!;
+  expect(checkedBounds.x).toBeCloseTo(uncheckedBounds.x, 0);
+  expect(checkedBounds.y).toBeCloseTo(uncheckedBounds.y, 0);
+  await expect(page.getByRole("region", { name: "Selection actions", exact: true })).toBeVisible();
+  for (const width of [1086, 360]) {
+    await page.setViewportSize({ width, height: 850 });
+    const restore = page.getByRole("button", { name: "Restore", exact: true });
+    const remove = page.getByRole("button", { name: "Delete permanently", exact: true });
+    const restoreBounds = (await restore.boundingBox())!;
+    const removeBounds = (await remove.boundingBox())!;
+    expect(Math.abs(restoreBounds.x - removeBounds.x)).toBeLessThan(1);
+    expect(removeBounds.y).toBeGreaterThanOrEqual(restoreBounds.y + restoreBounds.height);
+    await expect(restore).toHaveText("");
+    await expect(remove).toHaveText("");
+    await remove.hover();
+    const tooltip = page
+      .locator('[data-slot="tooltip-content"]')
+      .filter({ hasText: "Delete permanently" });
+    await expect(tooltip).toBeVisible();
+    await page.getByRole("heading", { name: "Recently Deleted", exact: true }).hover();
+    await expect(tooltip).toBeHidden();
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+    ).toBe(true);
+    await page.screenshot({
+      path: testInfo.outputPath(`recently-deleted-icons-${width}.png`),
+      fullPage: true,
+    });
+  }
+  await page.evaluate(() => {
+    window.dictationTest.failSave = true;
+  });
+  await page.getByRole("button", { name: "Restore", exact: true }).click();
+  await expect(page.getByRole("alert")).toHaveText("History restoration failed");
+  await expect(page.getByRole("button", { name: "Restore", exact: true })).toBeEnabled();
+  await page.evaluate(() => {
+    window.dictationTest.failSave = false;
+  });
+  await page.getByRole("button", { name: "Restore", exact: true }).click();
+  await expect(page.getByText("No recently deleted dictations", { exact: true })).toBeVisible();
+});
+
+test("Recently Deleted permanently deletes individual entries and selections without a modal", async ({
+  page,
+}, testInfo) => {
+  await page.addInitScript(() => {
+    localStorage.setItem("yap-sidebar-collapsed", "true");
+    const state = window.dictationTest;
+    state.recentlyDeleted = Array.from({ length: 52 }, (_, index) => ({
+      id: `deleted-${index}`,
+      createdAt: "2026-10-07",
+      durationMs: 1000,
+      rawTranscript: `Original ${index}`,
+      finalTranscript: `Deleted dictation ${index}`,
+      speechModel: "base",
+      language: "en",
+      audioPath: "",
+      deletedAt: new Date().toISOString(),
+    }));
+  });
+  await page.goto("/#/history?view=deleted&page=1");
+  await expect(page.getByText("Page 2 of 2", { exact: true })).toBeVisible();
+  await page.setViewportSize({ width: 360, height: 850 });
+  await expect(
+    page.getByRole("button", { name: "Delete permanently", exact: true }).first(),
+  ).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
+    true,
+  );
+  await page.screenshot({
+    path: testInfo.outputPath("recently-deleted-permanent-360.png"),
+    fullPage: true,
+  });
+  await page.evaluate(() => {
+    window.dictationTest.failSave = true;
+  });
+  await page
+    .getByRole("article")
+    .first()
+    .getByRole("button", { name: "Delete permanently", exact: true })
+    .click();
+  await expect(page.locator('[data-slot="dialog-content"]')).toHaveCount(0);
+  await expect(page.getByRole("alert")).toHaveText("Permanent deletion failed");
+  await expect(page.getByText("Deleted dictation 50", { exact: true })).toBeVisible();
+  await page.evaluate(() => {
+    window.dictationTest.failSave = false;
+  });
+  await page
+    .getByRole("article")
+    .first()
+    .getByRole("button", { name: "Delete permanently", exact: true })
+    .click();
+  await expect(page.getByText("Deleted dictation 50", { exact: true })).toHaveCount(0);
+  const toast = page
+    .locator('[data-slot="toast"]')
+    .filter({ hasText: "Dictation permanently deleted" });
+  await expect(toast).toBeVisible();
+  await expect(toast.getByRole("button", { name: "Undo", exact: true })).toHaveCount(0);
+  await page.getByRole("checkbox", { name: "Select page", exact: true }).check();
+  const selectionBounds = (await page
+    .getByRole("region", { name: "Selection actions", exact: true })
+    .boundingBox())!;
+  const toastBounds = (await toast.boundingBox())!;
+  expect(toastBounds.y + toastBounds.height).toBeLessThanOrEqual(selectionBounds.y);
+  await page.getByRole("button", { name: "Delete selected permanently", exact: true }).click();
+  await expect(page.locator('[data-slot="dialog-content"]')).toHaveCount(0);
+  await expect(page.getByText("50 dictations", { exact: true })).toBeVisible();
+  await expect(page).toHaveURL(/view=deleted$/);
+  await page.getByRole("checkbox", { name: "Select page", exact: true }).check();
+  await page.getByRole("button", { name: "Delete selected permanently", exact: true }).click();
+  await expect(page.getByText("No recently deleted dictations", { exact: true })).toBeVisible();
+  await expect.poll(() => page.evaluate(() => window.dictationTest.recentlyDeleted.length)).toBe(0);
+});
+
+test("deletion Undo remains available after navigating away from History", async ({ page }) => {
+  await page.addInitScript(() => {
+    window.dictationTest.snapshot.history = [
+      {
+        id: "undo-across-navigation",
+        createdAt: new Date().toISOString(),
+        durationMs: 1000,
+        rawTranscript: "Original transcript",
+        finalTranscript: "Corrected transcript",
+        speechModel: "base",
+        language: "en",
+        audioPath: "",
+      },
+    ];
+  });
+  await page.goto("/#/history");
+  await page.getByRole("link", { name: /Corrected transcript/ }).click();
+  await page.getByRole("button", { name: "Delete", exact: true }).click();
+  await page.getByRole("link", { name: "Settings", exact: true }).click();
+  await page
+    .locator('[data-slot="toast"]')
+    .getByRole("button", { name: "Undo", exact: true })
+    .click();
+  await expect.poll(() => page.evaluate(() => window.dictationTest.recentlyDeleted.length)).toBe(0);
+  await page.getByRole("link", { name: "History", exact: true }).click();
+  await expect(page.getByRole("link", { name: /Corrected transcript/ })).toBeVisible();
+});
+
+test("History keeps its header stable and selection actions at the bottom while scrolling", async ({
   page,
 }, testInfo) => {
   await page.addInitScript(() => {
     localStorage.setItem("yap-sidebar-collapsed", "true");
     localStorage.setItem("desktop-theme", "dark");
+    window.dictationTest.snapshot.floatingIndicator = false;
     window.dictationTest.snapshot.history = Array.from({ length: 40 }, (_, index) => ({
       id: `sticky-${index}`,
       createdAt: "2026-10-09",
@@ -5174,22 +5420,32 @@ test("History keeps its header, search and selection controls visible while scro
     path: testInfo.outputPath("history-header-desktop.png"),
     animations: "disabled",
   });
+  const selectPage = page.getByRole("checkbox", { name: "Select page", exact: true });
+  const checkboxBefore = (await selectPage.boundingBox())!;
+  const selectionBar = page.getByRole("region", { name: "Selection actions", exact: true });
+  await expect(selectionBar).toHaveCount(0);
   await page.getByRole("checkbox", { name: "Select dictation 1", exact: true }).check();
+  const checkboxAfter = (await selectPage.boundingBox())!;
+  expect(checkboxAfter.x).toBeCloseTo(checkboxBefore.x, 0);
+  expect(checkboxAfter.y).toBeCloseTo(checkboxBefore.y, 0);
+  await expect(selectionBar).toBeVisible();
   for (const width of [1280, 760, 360]) {
     await page.setViewportSize({ width, height: 720 });
     await page.evaluate(() => window.scrollTo(0, 900));
     await expect.poll(async () => (await title.boundingBox())!.y).toBeLessThan(30);
-    const controls = [
-      title,
-      search,
-      importAudio,
-      page.getByRole("button", { name: "Export selected", exact: true }),
-      page.getByRole("button", { name: "Delete selected", exact: true }),
-    ];
+    const controls = [title, search, importAudio, selectPage];
     for (const control of controls) {
       const bounds = await control.boundingBox();
       expect(bounds!.y).toBeGreaterThanOrEqual(0);
       expect(bounds!.y + bounds!.height).toBeLessThan(width === 360 ? 380 : 300);
+    }
+    const barBounds = (await selectionBar.boundingBox())!;
+    expect(barBounds.y).toBeGreaterThan(720 - 160);
+    expect(barBounds.y + barBounds.height).toBeLessThanOrEqual(720 - 12);
+    for (const name of ["Export selected", "Delete selected"]) {
+      const bounds = (await selectionBar.getByRole("button", { name, exact: true }).boundingBox())!;
+      expect(bounds.y).toBeGreaterThanOrEqual(barBounds.y);
+      expect(bounds.y + bounds.height).toBeLessThanOrEqual(barBounds.y + barBounds.height);
     }
     expect(await page.evaluate(() => window.scrollY)).toBeGreaterThan(800);
     await page.screenshot({
@@ -5200,6 +5456,20 @@ test("History keeps its header, search and selection controls visible while scro
       await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
     ).toBe(true);
   }
+  await page.evaluate(() => window.dictationTest.status("recording"));
+  const recordingControls = page.getByRole("status").filter({ hasText: /Recording ·/ });
+  await expect(recordingControls).toBeVisible();
+  const recordingBounds = (await recordingControls.boundingBox())!;
+  const barBounds = (await selectionBar.boundingBox())!;
+  expect(recordingBounds.y + recordingBounds.height).toBeLessThanOrEqual(barBounds.y);
+  await page.evaluate(() => window.dictationTest.status("idle"));
+  await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+  const lastRow = (await page.getByRole("article").last().boundingBox())!;
+  expect(lastRow.y + lastRow.height).toBeLessThanOrEqual((await selectionBar.boundingBox())!.y);
+  await selectionBar.getByRole("button", { name: "Clear selection", exact: true }).click();
+  await expect(selectionBar).toHaveCount(0);
+  await expect(selectPage).not.toBeChecked();
+  await expect(selectPage).toBeFocused();
   await page.getByLabel("Search transcripts", { exact: true }).fill("Dictation 39");
   await expect(page.getByText("1 dictation", { exact: true })).toBeVisible();
   await expect(page.getByRole("link", { name: /Dictation 39/ })).toBeVisible();

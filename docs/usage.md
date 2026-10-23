@@ -126,8 +126,14 @@ location and turn **Launch at login** off and on again.
 ## History and vocabulary
 
 History lets you search original and edited text, open a dictation, and copy or
-export it. Select entries to export or delete several at once. Deleting an entry
-also deletes its retained audio and generated outputs.
+export it. Select entries to export or delete several at once. Deletion moves
+dictations to **History → Recently Deleted** immediately, with an **Undo** toast.
+Restore them individually or in a selection for 30 days, or choose **Delete
+permanently** to remove an entry right away. **Delete selected permanently**
+removes a selection. Permanent deletion cannot be undone. Transcripts, edits,
+retained audio, and generated outputs stay together during that window. After
+30 days, Yap permanently removes them during cleanup, including on its next
+launch if it was closed. Recently Deleted is excluded from portable backups.
 
 Transcriptions, generated outputs, and processing previews display Markdown,
 including headings, emphasis, lists, tables, and code blocks. Edit the Markdown
@@ -260,8 +266,11 @@ configuration folder: `%APPDATA%\yap` on Windows or
 
 Audio retention is off by default. History retention defaults to **Keep forever**;
 you can choose 7, 30, or 90 days under Settings → History & storage. Cleanup runs
-when you save that setting, start Yap, and finish a dictation. Turning it off
-doesn't recover deleted entries, so export anything you want to keep first.
+when you save that setting, start Yap, finish a dictation, and hourly while Yap
+is running. This policy permanently removes expired active entries; manually
+deleted dictations keep their separate 30-day recovery window. Turning retention
+off doesn't recover entries already removed by the policy, so export anything
+you want to keep first.
 
 In Models, switch away from a model before removing it. Yap only removes managed
 downloads, not custom files. **Repair & use** replaces a damaged model;

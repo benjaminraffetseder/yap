@@ -21,6 +21,40 @@ func (a *App) GetHistory(query string, page int) (storage.HistoryPage, error) {
 	return a.store.SearchHistory(query, page)
 }
 
+func (a *App) GetRecentlyDeleted(query string, page int) (storage.HistoryPage, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if err := a.historyAvailableLocked(); err != nil {
+		return storage.HistoryPage{}, err
+	}
+	a.pruneHistoryLocked()
+	return a.store.SearchRecentlyDeleted(query, page)
+}
+
+func (a *App) RestoreSessions(ids []string) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if err := a.historyAvailableLocked(); err != nil {
+		return err
+	}
+	if err := a.store.RestoreSessions(ids, time.Now()); err != nil {
+		return err
+	}
+	a.event("dictation:history")
+	return nil
+}
+
+func (a *App) PermanentlyDeleteSessions(ids []string) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if err := a.historyAvailableLocked(); err != nil {
+		return err
+	}
+	_, err := a.store.PermanentlyDeleteSessions(ids)
+	a.event("dictation:history") // Refresh even if audio cleanup only partially succeeded.
+	return err
+}
+
 func (a *App) GetSession(id string) (*storage.Session, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -50,10 +84,28 @@ func (a *App) DeleteSessions(ids []string) error {
 			}
 		}
 	}
-	_, err := a.store.DeleteSessions(ids)
+	err := a.store.TrashSessions(ids, time.Now())
 	a.clearDeletedResultLocked()
-	a.event("dictation:history") // Also refresh after a partially failed audio cleanup.
+	a.event("dictation:history")
 	return err
+}
+
+// Run while the desktop app stays open, including when hidden in the tray.
+// Startup and normal history cleanup also catch expiry after time spent closed.
+func (a *App) scheduleHistoryCleanupLocked() {
+	a.historyCleanupTimer = time.AfterFunc(time.Hour, func() {
+		a.mu.Lock()
+		defer a.mu.Unlock()
+		if a.closing {
+			return
+		}
+		previousError := a.status.HistoryError
+		a.pruneHistoryLocked()
+		if previousError != a.status.HistoryError {
+			a.emit()
+		}
+		a.scheduleHistoryCleanupLocked()
+	})
 }
 
 func formatHistoryExport(entries []storage.Session) string {

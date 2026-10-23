@@ -40,7 +40,7 @@ func (s *Store) Delete(id string) error {
 	if err := s.RecoverPendingDeletes(); err != nil {
 		return err
 	}
-	v, err := s.Session(id)
+	v, err := s.sessionIncludingDeleted(id)
 	if err != nil {
 		return err
 	}
@@ -136,7 +136,7 @@ func (s *Store) RecoverPendingDeletes() error {
 			return err
 		}
 		if present {
-			v, err := s.Session(p.id)
+			v, err := s.sessionIncludingDeleted(p.id)
 			if errors.Is(err, sql.ErrNoRows) {
 				if err = os.Remove(p.staged); err != nil {
 					return err

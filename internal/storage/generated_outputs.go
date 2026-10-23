@@ -92,7 +92,7 @@ func insertGeneratedOutput(tx *sql.Tx, v GeneratedOutput) error {
 	// Parent existence and insertion are one statement: deletion during inference
 	// cannot create an orphan, and duplicate output IDs never overwrite a version.
 	result, err := tx.Exec(`INSERT INTO generated_outputs
-		SELECT ?,id,?,?,?,?,?,?,?,? FROM recordings WHERE id=?`,
+		SELECT ?,id,?,?,?,?,?,?,?,? FROM recordings WHERE id=? AND NOT EXISTS (SELECT 1 FROM deleted_recordings d WHERE d.id=recordings.id)`,
 		v.ID, v.CreatedAt, v.Prompt.ID, v.Prompt.Name, v.Prompt.Instruction, v.Model, v.Endpoint, v.Input, v.Text, v.SessionID)
 	if err != nil {
 		return err
@@ -123,7 +123,7 @@ func scanGeneratedOutput(row interface{ Scan(...any) error }, v *GeneratedOutput
 }
 
 func (s *Store) GeneratedOutputs(sessionID string) ([]GeneratedOutput, error) {
-	rows, err := s.db.Query("SELECT "+generatedOutputColumns+" FROM generated_outputs WHERE recording_id=? ORDER BY created_at COLLATE yap_datetime DESC,id DESC", sessionID)
+	rows, err := s.db.Query("SELECT "+generatedOutputColumns+" FROM generated_outputs WHERE recording_id=? AND NOT EXISTS (SELECT 1 FROM deleted_recordings d WHERE d.id=generated_outputs.recording_id) ORDER BY created_at COLLATE yap_datetime DESC,id DESC", sessionID)
 	if err != nil {
 		return nil, err
 	}
@@ -141,11 +141,11 @@ func (s *Store) GeneratedOutputs(sessionID string) ([]GeneratedOutput, error) {
 
 func (s *Store) GeneratedOutput(sessionID, outputID string) (GeneratedOutput, error) {
 	var v GeneratedOutput
-	err := scanGeneratedOutput(s.db.QueryRow("SELECT "+generatedOutputColumns+" FROM generated_outputs WHERE recording_id=? AND id=?", sessionID, outputID), &v)
+	err := scanGeneratedOutput(s.db.QueryRow("SELECT "+generatedOutputColumns+" FROM generated_outputs WHERE recording_id=? AND id=? AND NOT EXISTS (SELECT 1 FROM deleted_recordings d WHERE d.id=generated_outputs.recording_id)", sessionID, outputID), &v)
 	return v, err
 }
 
 func (s *Store) DeleteGeneratedOutput(sessionID, outputID string) error {
-	_, err := s.db.Exec("DELETE FROM generated_outputs WHERE recording_id=? AND id=?", sessionID, outputID)
+	_, err := s.db.Exec("DELETE FROM generated_outputs WHERE recording_id=? AND id=? AND NOT EXISTS (SELECT 1 FROM deleted_recordings d WHERE d.id=generated_outputs.recording_id)", sessionID, outputID)
 	return err
 }

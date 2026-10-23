@@ -1,7 +1,7 @@
-import { useEffect, useState } from "react";
-import { AudioLines, Loader2, Square, X } from "lucide-react";
 import { useDictation } from "@/components/dictation-provider";
 import { backend, duration } from "@/lib/backend";
+import { AudioLines, Loader2, Square, X } from "lucide-react";
+import { useEffect, useState } from "react";
 export function RecordingStatus() {
   const {
     snapshot: { status, floatingIndicator, recordingSaveHistory },
@@ -27,7 +27,7 @@ export function RecordingStatus() {
   )
     return null;
   return (
-    <div className="pointer-events-none fixed bottom-6 left-[var(--sidebar-width)] right-0 z-50 flex justify-center px-4 transition-[left] duration-200 motion-reduce:transition-none">
+    <div className="pointer-events-none fixed bottom-6 left-[var(--sidebar-width)] right-0 z-50 flex justify-center px-4 transition-[left] duration-200 motion-reduce:transition-none group-has-[[data-slot=history-selection-bar]]/layout:bottom-32">
       <div
         role="status"
         aria-live="polite"

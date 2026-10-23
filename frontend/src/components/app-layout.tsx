@@ -70,7 +70,7 @@ export function AppLayout() {
   return (
     <TooltipProvider delay={250}>
       <div
-        className="flex min-h-screen"
+        className="group/layout flex min-h-screen"
         style={
           {
             "--sidebar-width": collapsed ? "4.5rem" : "13.75rem",

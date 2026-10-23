@@ -5,16 +5,9 @@ import { TextPanel } from "@/components/text-panel";
 import { TranscriptDiff } from "@/components/transcript-diff";
 import { TranscriptEditor } from "@/components/transcript-editor";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { backend, duration, isDesktop, message, type Session } from "@/lib/backend";
+import { deleteTranscriptions } from "@/lib/delete-transcriptions";
 import {
   ArrowLeft,
   AudioLines,
@@ -48,7 +41,6 @@ function EntryDetail({ id }: { id: string }) {
   const [activeTab, setActiveTab] = useState("transcription");
   const editTrigger = useRef<HTMLButtonElement>(null);
   const title = useRef<HTMLHeadingElement>(null);
-  const [deleting, setDeleting] = useState(false);
   const [deletingNow, setDeletingNow] = useState(false);
   const [deleteError, setDeleteError] = useState("");
   const [audio, setAudio] = useState("");
@@ -96,9 +88,9 @@ function EntryDetail({ id }: { id: string }) {
     setDeletingNow(true);
     setDeleteError("");
     try {
-      await backend.removeSessions([id]);
-      await run(refresh, false);
+      await deleteTranscriptions([id], () => run(refresh, false));
       navigate(back, { replace: true });
+      void run(refresh, false);
     } catch (cause) {
       setDeleteError(message(cause));
       setReload((old) => old + 1);
@@ -192,10 +184,7 @@ function EntryDetail({ id }: { id: string }) {
                 title="Delete dictation"
                 disabled={unavailable}
                 className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-                onClick={() => {
-                  setDeleteError("");
-                  setDeleting(true);
-                }}
+                onClick={() => void remove()}
               >
                 <Trash2 className="size-3.5" />
               </Button>
@@ -204,6 +193,11 @@ function EntryDetail({ id }: { id: string }) {
         </div>
         {audio && <audio controls autoPlay src={audio} className="h-10 w-full" />}
       </header>
+      {deleteError && (
+        <p role="alert" className="text-sm text-destructive">
+          {deleteError}
+        </p>
+      )}
       {loading && (
         <p role="status" className="text-sm text-muted-foreground">
           Loading dictation…
@@ -341,35 +335,6 @@ function EntryDetail({ id }: { id: string }) {
           }}
         />
       )}
-      <Dialog
-        open={deleting}
-        disablePointerDismissal
-        onOpenChange={(value) => {
-          if (!value && !deletingNow) setDeleting(false);
-        }}
-      >
-        <DialogContent showCloseButton={false}>
-          <DialogHeader>
-            <DialogTitle>Delete this dictation?</DialogTitle>
-            <DialogDescription>
-              The transcript and retained audio will be permanently removed from this device.
-            </DialogDescription>
-          </DialogHeader>
-          {deleteError && (
-            <p role="alert" className="text-sm text-destructive">
-              {deleteError}
-            </p>
-          )}
-          <DialogFooter>
-            <Button variant="outline" disabled={deletingNow} onClick={() => setDeleting(false)}>
-              Cancel
-            </Button>
-            <Button variant="destructive" disabled={deletingNow} onClick={() => void remove()}>
-              {deletingNow ? "Deleting…" : "Delete dictation"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

@@ -46,6 +46,7 @@ type Session struct {
 	SpeechModel     string `json:"speechModel"`
 	Language        string `json:"language"`
 	AudioPath       string `json:"audioPath"`
+	DeletedAt       string `json:"deletedAt,omitempty"`
 }
 
 type Store struct {
@@ -79,6 +80,8 @@ func Open(dir string) (*Store, error) {
 	CREATE TABLE IF NOT EXISTS text_processing (id INTEGER PRIMARY KEY CHECK(id=1), value TEXT NOT NULL);
 	CREATE TABLE IF NOT EXISTS pending_audio_deletions (id TEXT PRIMARY KEY, original TEXT NOT NULL, staged TEXT NOT NULL);
 	CREATE TABLE IF NOT EXISTS discarded_audio (path TEXT PRIMARY KEY);
+	CREATE TABLE IF NOT EXISTS deleted_recordings (id TEXT PRIMARY KEY, deleted_at TEXT NOT NULL);
+	CREATE TRIGGER IF NOT EXISTS delete_recording_tombstone AFTER DELETE ON recordings BEGIN DELETE FROM deleted_recordings WHERE id=OLD.id; END;
 	CREATE TRIGGER IF NOT EXISTS delete_recording_output AFTER DELETE ON recordings BEGIN DELETE FROM recording_outputs WHERE id=OLD.id; END;`)
 	if err != nil {
 		db.Close()
@@ -165,7 +168,7 @@ func (s *Store) AddWithOutputs(v Session, outputs []GeneratedOutput) error {
 	return tx.Commit()
 }
 func (s *Store) History() ([]Session, error) {
-	rows, err := s.db.Query("SELECT r.id,r.created_at,r.duration_ms,r.transcript,r.model,r.language,r.audio_path,COALESCE(o.transcript,r.transcript) FROM recordings r LEFT JOIN recording_outputs o ON r.id=o.id ORDER BY r.created_at COLLATE yap_datetime DESC,r.id DESC LIMIT 500")
+	rows, err := s.db.Query("SELECT r.id,r.created_at,r.duration_ms,r.transcript,r.model,r.language,r.audio_path,COALESCE(o.transcript,r.transcript) FROM recordings r LEFT JOIN recording_outputs o ON r.id=o.id WHERE NOT EXISTS (SELECT 1 FROM deleted_recordings d WHERE d.id=r.id) ORDER BY r.created_at COLLATE yap_datetime DESC,r.id DESC LIMIT 500")
 	if err != nil {
 		return nil, err
 	}
@@ -181,8 +184,16 @@ func (s *Store) History() ([]Session, error) {
 	return out, rows.Err()
 }
 func (s *Store) Session(id string) (Session, error) {
+	v, err := s.sessionIncludingDeleted(id)
+	if err == nil && v.DeletedAt != "" {
+		return Session{}, sql.ErrNoRows
+	}
+	return v, err
+}
+
+func (s *Store) sessionIncludingDeleted(id string) (Session, error) {
 	var v Session
-	err := s.db.QueryRow("SELECT r.id,r.created_at,r.duration_ms,r.transcript,r.model,r.language,r.audio_path,COALESCE(o.transcript,r.transcript) FROM recordings r LEFT JOIN recording_outputs o ON r.id=o.id WHERE r.id=?", id).Scan(&v.ID, &v.CreatedAt, &v.DurationMS, &v.RawTranscript, &v.SpeechModel, &v.Language, &v.AudioPath, &v.FinalTranscript)
+	err := s.db.QueryRow("SELECT r.id,r.created_at,r.duration_ms,r.transcript,r.model,r.language,r.audio_path,COALESCE(o.transcript,r.transcript),COALESCE(d.deleted_at,'') FROM recordings r LEFT JOIN recording_outputs o ON r.id=o.id LEFT JOIN deleted_recordings d ON d.id=r.id WHERE r.id=?", id).Scan(&v.ID, &v.CreatedAt, &v.DurationMS, &v.RawTranscript, &v.SpeechModel, &v.Language, &v.AudioPath, &v.FinalTranscript, &v.DeletedAt)
 	return v, err
 }
 
@@ -200,7 +211,7 @@ func (s *Store) UpdateTranscript(id, text string) error {
 		return errors.New("use at most 100,000 characters in a transcript")
 	}
 	result, err := s.db.Exec(`INSERT INTO recording_outputs(id,transcript)
-		SELECT id,? FROM recordings WHERE id=?
+		SELECT id,? FROM recordings WHERE id=? AND NOT EXISTS (SELECT 1 FROM deleted_recordings d WHERE d.id=recordings.id)
 		ON CONFLICT(id) DO UPDATE SET transcript=excluded.transcript`, text, id)
 	if err != nil {
 		return fmt.Errorf("could not save transcript: %w", err)

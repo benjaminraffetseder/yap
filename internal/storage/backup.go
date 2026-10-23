@@ -170,7 +170,7 @@ func backupSnapshotBounded(ctx context.Context, tx *sql.Tx, limit int64) (backup
 		used += size
 		return nil
 	}
-	rows, err := tx.QueryContext(ctx, `SELECT r.id,r.created_at,r.duration_ms,r.transcript,r.model,r.language,r.audio_path,COALESCE(o.transcript,r.transcript) FROM recordings r LEFT JOIN recording_outputs o ON r.id=o.id ORDER BY r.created_at COLLATE yap_datetime DESC,r.id DESC`)
+	rows, err := tx.QueryContext(ctx, `SELECT r.id,r.created_at,r.duration_ms,r.transcript,r.model,r.language,r.audio_path,COALESCE(o.transcript,r.transcript) FROM recordings r LEFT JOIN recording_outputs o ON r.id=o.id WHERE NOT EXISTS (SELECT 1 FROM deleted_recordings d WHERE d.id=r.id) ORDER BY r.created_at COLLATE yap_datetime DESC,r.id DESC`)
 	if err != nil {
 		return m, err
 	}
@@ -206,7 +206,7 @@ func backupSnapshotBounded(ctx context.Context, tx *sql.Tx, limit int64) (backup
 	if err != nil {
 		return m, err
 	}
-	rows, err = tx.QueryContext(ctx, "SELECT "+generatedOutputColumns+" FROM generated_outputs ORDER BY created_at COLLATE yap_datetime,id")
+	rows, err = tx.QueryContext(ctx, "SELECT "+generatedOutputColumns+" FROM generated_outputs WHERE NOT EXISTS (SELECT 1 FROM deleted_recordings d WHERE d.id=generated_outputs.recording_id) ORDER BY created_at COLLATE yap_datetime,id")
 	if err != nil {
 		return m, err
 	}

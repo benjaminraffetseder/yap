@@ -121,6 +121,7 @@ type App struct {
 	cancel                           context.CancelFunc
 	wg                               sync.WaitGroup
 	closing                          bool
+	historyCleanupTimer              *time.Timer
 	shutdownOnce                     sync.Once
 	notify                           func(string, ...interface{})
 	copyText                         func(string) error
@@ -203,6 +204,7 @@ func (a *App) startup(ctx context.Context) {
 		return
 	}
 	a.pruneHistoryLocked()
+	a.scheduleHistoryCleanupLocked()
 	a.vocabulary, err = a.store.Vocabulary()
 	if err != nil {
 		a.fail(err)
@@ -348,6 +350,9 @@ func (a *App) shutdown(ctx context.Context) {
 	a.shutdownOnce.Do(func() {
 		a.mu.Lock()
 		a.closing = true
+		if a.historyCleanupTimer != nil {
+			a.historyCleanupTimer.Stop()
+		}
 		a.latestResult = nil
 		a.status.Transcript = ""
 		if a.updateCancel != nil {

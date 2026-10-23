@@ -1,9 +1,9 @@
-import { useMotionPreference } from "@/lib/use-motion-preference";
 import { Button } from "@/components/ui/button";
+import { fade, motionTransition } from "@/lib/motion";
+import { useMotionPreference } from "@/lib/use-motion-preference";
 import { Toast } from "@base-ui/react/toast";
 import { CircleAlert, CircleCheck, X } from "lucide-react";
 import { motion } from "motion/react";
-import { fade, motionTransition } from "@/lib/motion";
 
 export const toastManager = Toast.createToastManager();
 
@@ -13,7 +13,7 @@ export function Toaster() {
       <Toast.Portal>
         <Toast.Viewport
           aria-label="Notifications"
-          className="pointer-events-none fixed right-5 bottom-[calc(var(--setup-footer-height,0px)+1.25rem)] z-[100] flex w-96 max-w-[calc(100vw-2.5rem)] flex-col gap-3 outline-none"
+          className="pointer-events-none fixed right-5 bottom-[calc(var(--setup-footer-height,0px)+1.25rem)] z-[100] flex w-96 max-w-[calc(100vw-2.5rem)] flex-col gap-3 outline-none [body:has([data-slot=history-selection-bar])_&]:bottom-32"
         >
           <ToastList />
         </Toast.Viewport>
@@ -48,30 +48,28 @@ function ToastList() {
           }
         />
       }
-      className="pointer-events-auto rounded-xl border bg-card p-4 text-card-foreground shadow-lg data-limited:hidden"
+      className="pointer-events-auto rounded-xl border bg-card px-3 py-2.5 text-card-foreground shadow-lg data-limited:hidden"
     >
-      <Toast.Content className="flex items-start gap-3">
+      <Toast.Content className="flex items-center gap-2.5">
         {toast.type === "error" || toast.type === "warning" ? (
           <CircleAlert
-            className={`mt-0.5 size-5 shrink-0 ${toast.type === "warning" ? "text-amber-600 dark:text-amber-400" : "text-destructive"}`}
+            className={`size-4 shrink-0 ${toast.type === "warning" ? "text-amber-600 dark:text-amber-400" : "text-destructive"}`}
             aria-hidden="true"
           />
         ) : (
-          <CircleCheck className="mt-0.5 size-5 shrink-0 text-primary" aria-hidden="true" />
+          <CircleCheck className="size-4 shrink-0 text-primary" aria-hidden="true" />
         )}
         <div className="min-w-0 flex-1">
-          <Toast.Title className="break-words text-sm font-medium leading-6" />
+          <Toast.Title className="break-words text-sm font-medium leading-5" />
           {toast.description && (
-            <Toast.Description className="mt-1 break-words text-xs leading-5 text-muted-foreground" />
-          )}
-          {toast.actionProps && (
-            <Toast.Action render={<Button size="sm" variant="outline" className="mt-3" />} />
+            <Toast.Description className="mt-0.5 break-words text-xs leading-4 text-muted-foreground" />
           )}
         </div>
+        {toast.actionProps && <Toast.Action render={<Button size="xs" variant="outline" />} />}
         <Toast.Close
           aria-label="Dismiss notification"
           aria-hidden={false}
-          render={<Button variant="ghost" size="icon-sm" className="-mt-1 -mr-1" />}
+          render={<Button variant="ghost" size="icon-xs" className="-mr-1" />}
         >
           <X aria-hidden="true" className="size-4" />
         </Toast.Close>
