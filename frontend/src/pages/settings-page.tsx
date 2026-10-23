@@ -31,7 +31,7 @@ import { UpdatePanel } from "@/components/update-panel";
 import { backend, isBusy, isDesktop, message, type Microphone } from "@/lib/backend";
 import { languages } from "@/lib/languages";
 import { useSavedDraft } from "@/lib/use-saved-draft";
-import { FolderOpen, Monitor, Moon, RefreshCw, Save, Sun } from "lucide-react";
+import { Check, FolderOpen, Loader2, Monitor, Moon, RefreshCw, Sun } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
 const sections = [
@@ -78,6 +78,8 @@ export function SettingsPage() {
     savedProfileShortcut,
   );
   const [saving, setSaving] = useState(false);
+  const [failedDraft, setFailedDraft] = useState("");
+  const [editingText, setEditingText] = useState(false);
   const [confirmRetention, setConfirmRetention] = useState(false);
   const [microphones, setMicrophones] = useState<Microphone[]>([]);
   const [loadingMicrophones, setLoadingMicrophones] = useState(false);
@@ -85,10 +87,15 @@ export function SettingsPage() {
   const [microphonesLoaded, setMicrophonesLoaded] = useState(false);
   const microphoneRequest = useRef(0);
   const busy = isBusy(snapshot.status.phase);
-  const controlsDisabled = !isDesktop || busy || saving || loading;
+  const controlsDisabled = !isDesktop || busy || loading;
   const settingsDirty = JSON.stringify(settings) !== JSON.stringify(snapshot.settings);
   const profileShortcutDirty = profileShortcut !== savedProfileShortcut;
   const dirty = settingsDirty || profileShortcutDirty;
+  const draftKey = JSON.stringify([settings, profileShortcut]);
+  const failed = dirty && failedDraft === draftKey;
+  const retentionNeedsConfirm =
+    settings.historyRetentionDays > 0 &&
+    settings.historyRetentionDays !== snapshot.settings.historyRetentionDays;
   const selectedMicrophoneMissing =
     microphonesLoaded &&
     !microphoneError &&
@@ -148,14 +155,11 @@ export function SettingsPage() {
   }
   async function save(confirmed = false) {
     if (loading || saving || busy) return;
-    if (
-      !confirmed &&
-      settings.historyRetentionDays > 0 &&
-      settings.historyRetentionDays !== snapshot.settings.historyRetentionDays
-    ) {
+    if (!confirmed && retentionNeedsConfirm) {
       setConfirmRetention(true);
       return;
     }
+    const attempt = draftKey;
     setSaving(true);
     setConfirmRetention(false);
     clearError();
@@ -176,13 +180,10 @@ export function SettingsPage() {
       if (profileShortcut.trim() && sameShortcut(profileShortcut, settings.shortcut))
         throw new Error("Recording and profile cycling must use different shortcuts.");
       for (const step of steps) await step();
+      setFailedDraft("");
       await refresh();
-      toastManager.add({
-        id: "settings-save",
-        type: "success",
-        title: "Settings saved.",
-      });
     } catch (cause) {
+      setFailedDraft(attempt);
       await refresh().catch(() => {});
       toastManager.add({
         id: "settings-save",
@@ -195,8 +196,65 @@ export function SettingsPage() {
       setSaving(false);
     }
   }
+  const canAutosave =
+    dirty &&
+    !failed &&
+    !editingText &&
+    !saving &&
+    !loading &&
+    !busy &&
+    !confirmRetention &&
+    !(selectedMicrophoneMissing && settings.microphoneId !== snapshot.settings.microphoneId);
+  const autosave = useRef({ canAutosave, save, draftKey });
+  autosave.current = { canAutosave, save, draftKey };
+  const mountedDraft = useRef(draftKey);
+  useEffect(() => {
+    if (!canAutosave) return;
+    const timer = setTimeout(() => void autosave.current.save(), 400);
+    return () => clearTimeout(timer);
+  }, [canAutosave, draftKey]);
+  // Leaving the page cancels the debounce, so save edits made here. A draft
+  // restored on mount may predate backend changes until it is reconciled.
+  useEffect(
+    () => () => {
+      const latest = autosave.current;
+      if (latest.canAutosave && latest.draftKey !== mountedDraft.current) void latest.save();
+    },
+    [],
+  );
+  function cancelRetention() {
+    setConfirmRetention(false);
+    setSettings((old) => ({
+      ...old,
+      historyRetentionDays: snapshot.settings.historyRetentionDays,
+    }));
+  }
+  function discard() {
+    setSettings(snapshot.settings);
+    setProfileShortcut(savedProfileShortcut);
+    setFailedDraft("");
+  }
+  const textInput = (target: EventTarget): target is HTMLInputElement =>
+    target instanceof HTMLInputElement && !["checkbox", "radio", "hidden"].includes(target.type);
   return (
-    <div className="@container space-y-5">
+    <div
+      className="@container space-y-5"
+      onFocusCapture={(event) => {
+        if (textInput(event.target) && event.currentTarget.contains(event.target))
+          setEditingText(true);
+      }}
+      onBlurCapture={(event) => {
+        if (textInput(event.target)) setEditingText(false);
+      }}
+      onKeyDownCapture={(event) => {
+        if (
+          event.key === "Enter" &&
+          textInput(event.target) &&
+          event.currentTarget.contains(event.target)
+        )
+          event.target.blur();
+      }}
+    >
       <Tabs
         value={section}
         onValueChange={(value) => {
@@ -227,40 +285,49 @@ export function SettingsPage() {
             ))}
           </TabsList>
           <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
-            {dirty && (
+            {failed ? (
               <>
-                <span role="status" className="text-xs text-muted-foreground">
-                  Unsaved changes
+                <span role="status" className="text-xs text-destructive">
+                  Changes not saved
                 </span>
-                <Button
-                  variant="ghost"
-                  disabled={controlsDisabled}
-                  onClick={() => {
-                    setSettings(snapshot.settings);
-                    setProfileShortcut(savedProfileShortcut);
-                  }}
-                >
+                <Button variant="ghost" disabled={controlsDisabled} onClick={discard}>
                   Discard changes
                 </Button>
+                <Button
+                  variant="outline"
+                  disabled={controlsDisabled}
+                  onClick={() => setFailedDraft("")}
+                >
+                  Retry
+                </Button>
               </>
+            ) : (
+              <span
+                role="status"
+                className="flex items-center gap-1.5 text-xs text-muted-foreground"
+              >
+                {saving || (dirty && !editingText) ? (
+                  <>
+                    <Loader2
+                      aria-hidden="true"
+                      className="size-3.5 animate-spin motion-reduce:animate-none"
+                    />
+                    Saving…
+                  </>
+                ) : dirty && editingText ? (
+                  "Saves when you leave the field"
+                ) : (
+                  <>
+                    <Check aria-hidden="true" className="size-3.5" />
+                    Changes save automatically
+                  </>
+                )}
+              </span>
             )}
-            <Button
-              pressFeedback
-              disabled={
-                controlsDisabled ||
-                (!dirty && !(settings.launchAtLogin && snapshot.launchAtLoginAvailable)) ||
-                (selectedMicrophoneMissing &&
-                  settings.microphoneId !== snapshot.settings.microphoneId)
-              }
-              onClick={() => void save()}
-            >
-              <Save aria-hidden="true" className="size-4" />
-              {saving ? "Saving…" : "Save settings"}
-            </Button>
           </div>
         </header>
         <TabsContent value="dictation" keepMounted className="space-y-5">
-          <ProfilesPanel disabled={controlsDisabled || dirty} />
+          <ProfilesPanel disabled={controlsDisabled || saving || dirty} />
           <fieldset disabled={controlsDisabled} className="space-y-5 disabled:opacity-60">
             <SettingsSection title="Shortcuts">
               <SettingRow
@@ -538,7 +605,7 @@ export function SettingsPage() {
               )}
             </SettingsSection>
           </fieldset>
-          <BackupPanel disabled={controlsDisabled || dirty} unsaved={dirty} />
+          <BackupPanel disabled={controlsDisabled || saving || dirty} unsaved={dirty} />
           {snapshot.dataDir && (
             <SettingsSection title="Local storage">
               <SettingRow title="Data folder">
@@ -624,7 +691,7 @@ export function SettingsPage() {
             >
               <Button
                 variant="outline"
-                disabled={controlsDisabled || dirty}
+                disabled={controlsDisabled || saving || dirty}
                 onClick={() =>
                   void run(async () => {
                     await backend.restartSetup();
@@ -636,14 +703,20 @@ export function SettingsPage() {
               </Button>
               {dirty && (
                 <p className="mt-2 text-xs text-muted-foreground">
-                  Save settings before running setup.
+                  Finish saving settings before running setup.
                 </p>
               )}
             </SettingRow>
           </SettingsSection>
         </TabsContent>
       </Tabs>
-      <Dialog open={confirmRetention} disablePointerDismissal onOpenChange={setConfirmRetention}>
+      <Dialog
+        open={confirmRetention}
+        disablePointerDismissal
+        onOpenChange={(open) => {
+          if (!open) cancelRetention();
+        }}
+      >
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Enable automatic deletion?</DialogTitle>
@@ -654,7 +727,7 @@ export function SettingsPage() {
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setConfirmRetention(false)}>
+            <Button variant="outline" onClick={cancelRetention}>
               Cancel
             </Button>
             <Button

@@ -184,12 +184,10 @@ export function PromptChainsEditor({
                 const inputOptions = [
                   { value: "original", label: "Original transcription" },
                   { value: "transcript", label: "Saved transcript (including edits)" },
-                  ...chain.steps
-                    .slice(0, index)
-                    .map((earlier, earlierIndex) => ({
-                      value: `step:${earlier.id}`,
-                      label: `Step ${earlierIndex + 1}: ${config.prompts.find((prompt) => prompt.id === earlier.promptId)?.name || "Untitled prompt"}`,
-                    })),
+                  ...chain.steps.slice(0, index).map((earlier, earlierIndex) => ({
+                    value: `step:${earlier.id}`,
+                    label: `Step ${earlierIndex + 1}: ${config.prompts.find((prompt) => prompt.id === earlier.promptId)?.name || "Untitled prompt"}`,
+                  })),
                 ];
                 const referenced = chain.steps.some((other) => other.input === `step:${step.id}`);
                 return (

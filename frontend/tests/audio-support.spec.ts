@@ -214,7 +214,7 @@ test("FFmpeg settings show status, confirmation cancellation, progress, and inst
   await page.screenshot({ path: testInfo.outputPath("ffmpeg-settings.png"), fullPage: true });
 });
 
-test("FFmpeg settings handle old backends and preserve unsaved preferences", async ({ page }) => {
+test("FFmpeg settings handle old backends and preserve preferences", async ({ page }) => {
   await page.goto("/#/settings");
   await page.getByRole("checkbox", { name: /^Light cleanup/ }).check();
   await page.evaluate(() => {
@@ -226,5 +226,4 @@ test("FFmpeg settings handle old backends and preserve unsaved preferences", asy
   await expect(panel.getByRole("button", { name: /Download audio support/ })).toBeHidden();
   await page.getByRole("tab", { name: "Dictation", exact: true }).click();
   await expect(page.getByRole("checkbox", { name: /^Light cleanup/ })).toBeChecked();
-  await expect(page.getByRole("button", { name: "Save settings", exact: true })).toBeEnabled();
 });

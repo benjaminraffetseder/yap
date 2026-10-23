@@ -73,7 +73,7 @@ export function ProfileSettingIndicator({
         <p className="font-medium">Changed from {profile.name}</p>
         <p>Profile: {display(profile[field])}</p>
         <p>Current: {currentLabel ?? display(value)}</p>
-        {savedValue !== value && <p>Unsaved change — save to apply.</p>}
+        {savedValue !== value && <p>Not saved yet.</p>}
       </TooltipContent>
     </Tooltip>
   );

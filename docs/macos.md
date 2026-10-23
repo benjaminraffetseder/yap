@@ -148,7 +148,7 @@ The desktop behavior still needs testing, particularly:
 - Accessibility prompt on first launch without access; denial must leave clear
   guidance without repeated prompts. Grant access, return to Yap, and verify
   the error clears and the saved shortcut works without restarting. Also test
-  the Retry shortcut button and ensure retry does not save unsaved settings.
+  the Retry shortcut button and ensure retry keeps any shortcut edit in progress.
 - Paste into another app, and clipboard fallback after switching windows.
 - The floating panel's focus, dragging, and position after disconnecting a display.
 - Closing to the menu bar, reopening, and quitting during recording.

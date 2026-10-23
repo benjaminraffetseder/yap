@@ -86,7 +86,9 @@ export function DiagnosticsPanel({ disabled = false }: { disabled?: boolean }) {
         </p>
       )}
       {disabled && (
-        <p className="text-xs text-muted-foreground">Save settings before testing the changes.</p>
+        <p className="text-xs text-muted-foreground">
+          Finish saving settings before testing the changes.
+        </p>
       )}
       <p className="text-sm text-muted-foreground">
         Say a short sentence to verify your saved runtime and model. Test audio is deleted; the

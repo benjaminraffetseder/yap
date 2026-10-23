@@ -150,7 +150,9 @@ export function BackupPanel({ disabled, unsaved }: { disabled: boolean; unsaved:
         </Button>
       </div>
       {unsaved && (
-        <p className="text-xs text-muted-foreground">Save your settings before using backups.</p>
+        <p className="text-xs text-muted-foreground">
+          Finish saving settings before using backups.
+        </p>
       )}
       {(working || backupRunning) && (
         <div role="status" className="flex items-center gap-3 text-sm">

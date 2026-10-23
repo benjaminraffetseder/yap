@@ -607,9 +607,7 @@ async function shortcutPermissionScenario(page: Page, setup = false) {
 }
 
 for (const recovery of ["button", "focus"] as const) {
-  test(`shortcut permission recovery via ${recovery} preserves unsaved settings`, async ({
-    page,
-  }) => {
+  test(`shortcut permission recovery via ${recovery} keeps settings edits`, async ({ page }) => {
     await shortcutPermissionScenario(page);
     await page.goto("/#/settings");
     const retry = page.getByRole("button", {
@@ -628,9 +626,9 @@ for (const recovery of ["button", "focus"] as const) {
     else await page.evaluate(() => window.dispatchEvent(new Event("focus")));
     await expect(retry).toBeHidden();
     await expect(page.getByLabel("Global shortcut", { exact: true })).toHaveValue("Ctrl+Alt+J");
-    expect(await page.evaluate(() => window.dictationTest.snapshot.settings.shortcut)).toBe(
-      "Ctrl+Alt+Space",
-    );
+    await expect
+      .poll(() => page.evaluate(() => window.dictationTest.snapshot.settings.shortcut))
+      .toBe("Ctrl+Alt+J");
     expect(await page.evaluate(() => window.dictationTest.snapshot.status.phase)).toBe("idle");
   });
 }
@@ -700,7 +698,6 @@ test("settings sections keep navigation above full-width content and preserve ed
   });
   await page.getByRole("tab", { name: "History & data", exact: true }).click();
   await page.getByRole("checkbox", { name: /^Keep recordings/ }).check();
-  await page.getByRole("button", { name: "Save settings", exact: true }).click();
   await expect
     .poll(() =>
       page.evaluate(() => ({
@@ -721,10 +718,6 @@ test("settings sections keep navigation above full-width content and preserve ed
     animations: "disabled",
   });
   await page.getByRole("tab", { name: "Dictation", exact: true }).click();
-  await page.getByLabel("Global shortcut", { exact: true }).fill("Ctrl+Alt+K");
-  await page.getByRole("tab", { name: "General", exact: true }).click();
-  await page.getByRole("button", { name: "Discard changes", exact: true }).click();
-  await page.getByRole("tab", { name: "Dictation", exact: true }).click();
   await expect(page.getByLabel("Global shortcut", { exact: true })).toHaveValue("Ctrl+Alt+J");
   await page.setViewportSize({ width: 760, height: 680 });
   await page.getByRole("button", { name: "Expand sidebar", exact: true }).click();
@@ -744,51 +737,62 @@ test("settings sections keep navigation above full-width content and preserve ed
   );
 });
 
-test("settings saves use dismissible success and error toasts and preserve failed drafts", async ({
+test("settings save automatically, keep failed drafts, and offer retry or discard", async ({
   page,
 }, testInfo) => {
   await page.goto("/#/settings");
   const shortcut = page.getByLabel("Global shortcut", { exact: true });
-  const save = page.getByRole("button", { name: "Save settings", exact: true });
-  const saved = page.locator('[data-slot="toast"]').filter({ hasText: "Settings saved." });
+  const status = page.locator('header[aria-label="Settings"]').getByRole("status");
   const failed = page.locator('[data-slot="toast"]').filter({ hasText: "Settings save failed" });
+  await expect(page.getByRole("button", { name: "Save settings", exact: true })).toHaveCount(0);
+  await expect(status).toHaveText("Changes save automatically");
   await shortcut.fill("Ctrl+Alt+J");
-  await save.click();
-  await expect(saved).toBeVisible();
-  await expect(page.getByText("Unsaved changes", { exact: true })).toHaveCount(0);
+  await expect(status).toHaveText("Saves when you leave the field");
+  await page.waitForTimeout(600);
   expect(await page.evaluate(() => window.dictationTest.snapshot.settings.shortcut)).toBe(
-    "Ctrl+Alt+J",
+    "Ctrl+Alt+Space",
   );
+  await shortcut.press("Enter");
+  await expect
+    .poll(() => page.evaluate(() => window.dictationTest.snapshot.settings.shortcut))
+    .toBe("Ctrl+Alt+J");
+  await expect(status).toHaveText("Changes save automatically");
   await page.screenshot({
-    path: testInfo.outputPath("settings-save-toast.png"),
+    path: testInfo.outputPath("settings-autosaved.png"),
     animations: "disabled",
   });
-  await saved.getByRole("button", { name: "Dismiss notification" }).click();
-  await expect(saved).toBeHidden();
-  await shortcut.fill("Ctrl+Alt+K");
   await page.evaluate(() => {
     window.dictationTest.failSave = true;
   });
-  await save.click();
+  await shortcut.fill("Ctrl+Alt+K");
+  await shortcut.press("Enter");
   await expect(failed).toBeVisible();
-  await expect(saved).toHaveCount(0);
+  await expect(status).toHaveText("Changes not saved");
   await expect(shortcut).toHaveValue("Ctrl+Alt+K");
-  await expect(save).toBeEnabled();
   expect(await page.evaluate(() => window.dictationTest.snapshot.settings.shortcut)).toBe(
     "Ctrl+Alt+J",
   );
   await page.keyboard.press("F6");
   await failed.getByRole("button", { name: "Dismiss notification" }).click();
+  await page.waitForTimeout(600);
+  await expect(failed).toHaveCount(0);
   await page.evaluate(() => {
     window.dictationTest.failSave = false;
   });
-  await save.click();
-  await expect(saved).toBeVisible();
-  await expect(saved).toHaveCount(1);
-  await expect(failed).toHaveCount(0);
-  expect(await page.evaluate(() => window.dictationTest.snapshot.settings.shortcut)).toBe(
-    "Ctrl+Alt+K",
-  );
+  await page.getByRole("button", { name: "Retry", exact: true }).click();
+  await expect
+    .poll(() => page.evaluate(() => window.dictationTest.snapshot.settings.shortcut))
+    .toBe("Ctrl+Alt+K");
+  await expect(status).toHaveText("Changes save automatically");
+  await page.evaluate(() => {
+    window.dictationTest.failSave = true;
+  });
+  await shortcut.fill("Ctrl+Alt+L");
+  await shortcut.press("Enter");
+  await expect(status).toHaveText("Changes not saved");
+  await page.getByRole("button", { name: "Discard changes", exact: true }).click();
+  await expect(shortcut).toHaveValue("Ctrl+Alt+K");
+  await expect(status).toHaveText("Changes save automatically");
 });
 
 for (const theme of ["light", "dark"] as const) {
@@ -1565,32 +1569,12 @@ test("disconnected saved microphone allows unrelated settings saves", async ({ p
     page.getByText("Reconnect the selected microphone or choose another input.", { exact: true }),
   ).toBeVisible();
   await page.getByRole("checkbox", { name: "Light cleanup" }).check();
-  await expect(page.getByRole("button", { name: "Save settings", exact: true })).toBeEnabled();
-  await page.getByRole("button", { name: "Save settings", exact: true }).click();
   await expect
     .poll(() => page.evaluate(() => window.dictationTest.snapshot.settings.cleanText))
     .toBe(true);
   await expect
     .poll(() => page.evaluate(() => window.dictationTest.snapshot.settings.microphoneId))
     .toBe("unplugged");
-});
-
-test("unchanged enabled startup registration can refresh its path", async ({ page }) => {
-  await page.addInitScript(() => {
-    window.dictationTest.snapshot.settings.launchAtLogin = true;
-  });
-  await page.goto("/#/settings");
-  await expect(page.getByRole("button", { name: "Save settings", exact: true })).toBeEnabled();
-  await page.evaluate(() => {
-    window.dictationTest.failSave = true;
-  });
-  await page.getByRole("button", { name: "Save settings", exact: true }).click();
-  await expect(
-    page.locator('[data-slot="toast"]').filter({ hasText: "Settings save failed" }),
-  ).toBeVisible();
-  await expect
-    .poll(() => page.evaluate(() => window.dictationTest.snapshot.settings.launchAtLogin))
-    .toBe(true);
 });
 
 test("setup ignores an older microphone enumeration reply", async ({ page }) => {
@@ -2931,7 +2915,7 @@ async function settle(page: Page) {
   });
 }
 
-test("startup options apply only on save and survive refreshes and failed saves", async ({
+test("startup options save automatically and survive refreshes and failed saves", async ({
   page,
 }) => {
   await page.goto("/#/settings?section=general");
@@ -2945,22 +2929,16 @@ test("startup options apply only on save and survive refreshes and failed saves"
   await expect(login).toBeEnabled();
   await expect(login).not.toBeChecked();
   await expect(background).not.toBeChecked();
-  await login.check();
-  await background.check();
-  await expect
-    .poll(() => page.evaluate(() => window.dictationTest.snapshot.settings.launchAtLogin))
-    .toBe(false);
   await page.evaluate(() => {
-    window.dictationTest.history();
     window.dictationTest.failSave = true;
   });
-  await settle(page);
-  await expect(login).toBeChecked();
-  await expect(background).toBeChecked();
-  await page.getByRole("button", { name: "Save settings", exact: true }).click();
+  await login.check();
+  await background.check();
   await expect(
     page.locator('[data-slot="toast"]').filter({ hasText: "Settings save failed" }),
   ).toBeVisible();
+  await page.evaluate(() => window.dictationTest.history());
+  await settle(page);
   await expect(login).toBeChecked();
   await expect(background).toBeChecked();
   await expect
@@ -2969,8 +2947,7 @@ test("startup options apply only on save and survive refreshes and failed saves"
   await page.evaluate(() => {
     window.dictationTest.failSave = false;
   });
-  await page.getByRole("button", { name: "Save settings", exact: true }).click();
-  await expect(page.getByText("Unsaved changes", { exact: true })).toHaveCount(0);
+  await page.getByRole("button", { name: "Retry", exact: true }).click();
   await expect
     .poll(() =>
       page.evaluate(
@@ -2982,7 +2959,6 @@ test("startup options apply only on save and survive refreshes and failed saves"
     .toBe(true);
   await login.uncheck();
   await background.uncheck();
-  await page.getByRole("button", { name: "Save settings", exact: true }).click();
   await expect
     .poll(() =>
       page.evaluate(
@@ -3017,19 +2993,20 @@ test("unsupported startup controls are disabled and registration errors are visi
   ).toBeVisible();
 });
 
-test("history refresh preserves edits, and saving clears the dirty state", async ({ page }) => {
+test("history refresh preserves an uncommitted field and autosave saves it", async ({ page }) => {
   await page.goto("/#/settings");
   const shortcut = page.getByLabel("Global shortcut", { exact: true });
   await expect(shortcut).toHaveValue("Ctrl+Alt+Space");
   await shortcut.fill("Ctrl+Alt+P");
-  await page.getByRole("combobox", { name: "Microphone" }).click();
-  await page.getByRole("option", { name: "USB microphone", exact: true }).click();
   await page.evaluate(() => window.dictationTest.history());
   await settle(page);
   await expect(shortcut).toHaveValue("Ctrl+Alt+P");
+  await page.getByRole("combobox", { name: "Microphone" }).click();
+  await page.getByRole("option", { name: "USB microphone", exact: true }).click();
   await expect(page.getByRole("combobox", { name: "Microphone" })).toContainText("USB microphone");
-  await page.getByRole("button", { name: "Save settings", exact: true }).click();
-  await expect(page.getByText("Unsaved changes", { exact: true })).toHaveCount(0);
+  await expect
+    .poll(() => page.evaluate(() => window.dictationTest.snapshot.settings.shortcut))
+    .toBe("Ctrl+Alt+P");
   await expect
     .poll(() => page.evaluate(() => window.dictationTest.snapshot.settings.microphoneId))
     .toBe("usb");
@@ -3051,7 +3028,7 @@ test("pristine settings follow backend changes while failed saves retain edits",
   await page.evaluate(() => {
     window.dictationTest.failSave = true;
   });
-  await page.getByRole("button", { name: "Save settings", exact: true }).click();
+  await shortcut.press("Enter");
   await expect(
     page.locator('[data-slot="toast"]').filter({ hasText: "Settings save failed" }),
   ).toBeVisible();
@@ -3061,7 +3038,7 @@ test("pristine settings follow backend changes while failed saves retain edits",
   });
   await settle(page);
   await expect(shortcut).toHaveValue("Ctrl+Alt+P");
-  await expect(page.getByText("Unsaved changes", { exact: true })).toBeVisible();
+  await expect(page.getByText("Changes not saved", { exact: true })).toBeVisible();
 });
 
 test("history replies preserve newer recording events and still update history", async ({
@@ -3304,18 +3281,11 @@ test("automatic clipboard copying defaults on and persists with manual copying a
   const paste = page.getByRole("checkbox", { name: /Paste automatically/ });
   await expect(copy).toBeChecked();
   await expect(paste).toBeEnabled();
-  await copy.uncheck();
-  await expect(paste).toBeDisabled();
-  await expect
-    .poll(() => page.evaluate(() => window.dictationTest.snapshot.settings.autoCopy))
-    .toBe(true);
-  await page.getByRole("button", { name: "Discard changes", exact: true }).click();
-  await expect(copy).toBeChecked();
-  await copy.uncheck();
   await page.evaluate(() => {
     window.dictationTest.failSave = true;
   });
-  await page.getByRole("button", { name: "Save settings", exact: true }).click();
+  await copy.uncheck();
+  await expect(paste).toBeDisabled();
   await expect(
     page.locator('[data-slot="toast"]').filter({ hasText: "Settings save failed" }),
   ).toBeVisible();
@@ -3323,10 +3293,12 @@ test("automatic clipboard copying defaults on and persists with manual copying a
   await expect
     .poll(() => page.evaluate(() => window.dictationTest.snapshot.settings.autoCopy))
     .toBe(true);
+  await page.getByRole("button", { name: "Discard changes", exact: true }).click();
+  await expect(copy).toBeChecked();
   await page.evaluate(() => {
     window.dictationTest.failSave = false;
   });
-  await page.getByRole("button", { name: "Save settings", exact: true }).click();
+  await copy.uncheck();
   await expect
     .poll(() => page.evaluate(() => window.dictationTest.snapshot.settings.autoCopy))
     .toBe(false);
@@ -3340,24 +3312,19 @@ test("automatic clipboard copying defaults on and persists with manual copying a
   await expect(copy).not.toBeChecked();
   await copy.check();
   await expect(paste).toBeEnabled();
-  await page.getByRole("button", { name: "Save settings", exact: true }).click();
   await expect
     .poll(() => page.evaluate(() => window.dictationTest.snapshot.settings.autoCopy))
     .toBe(true);
 });
 
-test("light cleanup defaults off and applies only after settings save", async ({ page }) => {
+test("light cleanup defaults off and saves automatically", async ({ page }) => {
   await page.goto("/#/settings");
   const cleanup = page.getByRole("checkbox", { name: /Light cleanup/ });
   await expect(cleanup).not.toBeChecked();
   await cleanup.check();
-  await expect
-    .poll(() => page.evaluate(() => window.dictationTest.snapshot.settings.cleanText))
-    .toBe(false);
   await page.evaluate(() => window.dictationTest.history());
   await settle(page);
   await expect(cleanup).toBeChecked();
-  await page.getByRole("button", { name: "Save settings", exact: true }).click();
   await expect
     .poll(() => page.evaluate(() => window.dictationTest.snapshot.settings.cleanText))
     .toBe(true);
@@ -4562,7 +4529,7 @@ test("microphone test remains stoppable after navigating away from setup", async
     0,
   );
   await page.getByRole("link", { name: "Settings", exact: true }).click();
-  await expect(page.getByRole("button", { name: "Save settings", exact: true })).toBeDisabled();
+  await expect(page.getByLabel("Global shortcut", { exact: true })).toBeDisabled();
   await expect(
     page.getByRole("button", { name: "Stop microphone test", exact: true }),
   ).toBeVisible();
@@ -4631,15 +4598,22 @@ test("diagnostics block unsaved settings and unavailable files until refreshed",
   });
   await expect(testDictation).toBeEnabled();
   await page.getByRole("tab", { name: "Dictation", exact: true }).click();
+  await page.evaluate(() => {
+    window.dictationTest.failSave = true;
+  });
   await page.getByLabel("Global shortcut", { exact: true }).fill("Ctrl+Alt+P");
   await page.getByRole("tab", { name: "Advanced", exact: true }).click();
+  await expect(page.getByText("Changes not saved", { exact: true })).toBeVisible();
   await expect(testDictation).toBeDisabled();
   await expect(
-    page.getByText("Save settings before testing the changes.", {
+    page.getByText("Finish saving settings before testing the changes.", {
       exact: true,
     }),
   ).toBeVisible();
-  await page.getByRole("button", { name: "Save settings", exact: true }).click();
+  await page.evaluate(() => {
+    window.dictationTest.failSave = false;
+  });
+  await page.getByRole("button", { name: "Retry", exact: true }).click();
   await expect(testDictation).toBeEnabled();
   await page.evaluate(() => {
     window.dictationTest.checks[1] = {
@@ -5323,8 +5297,8 @@ test("retention defaults to forever and requires confirmation before saving or d
   await expect(retention.locator('[data-slot="select-value"]')).toHaveText("Keep forever");
   await retention.click();
   await page.getByRole("option", { name: "30 days", exact: true }).click();
-  await page.getByRole("button", { name: "Save settings", exact: true }).click();
-  let dialog = page.getByRole("dialog", { name: "Enable automatic deletion?" });
+  const dialog = page.getByRole("dialog", { name: "Enable automatic deletion?" });
+  await expect(dialog).toBeVisible();
   await expect(page.locator('[data-slot="toast"]')).toHaveCount(0);
   await expect
     .poll(() => page.evaluate(() => window.dictationTest.snapshot.settings.historyRetentionDays))
@@ -5334,34 +5308,31 @@ test("retention defaults to forever and requires confirmation before saving or d
   await expect
     .poll(() => page.evaluate(() => window.dictationTest.snapshot.history.length))
     .toBe(1);
-  await expect(retention.locator('[data-slot="select-value"]')).toHaveText("30 days");
+  await expect(retention.locator('[data-slot="select-value"]')).toHaveText("Keep forever");
+  await page.waitForTimeout(600);
+  await expect(dialog).toHaveCount(0);
   await page.evaluate(() => {
     window.dictationTest.failSave = true;
   });
-  await page.getByRole("button", { name: "Save settings", exact: true }).click();
-  dialog = page.getByRole("dialog", { name: "Enable automatic deletion?" });
+  await retention.click();
+  await page.getByRole("option", { name: "30 days", exact: true }).click();
   await dialog.getByRole("button", { name: "Save and delete older history", exact: true }).click();
   await expect(
     page.locator('[data-slot="toast"]').filter({ hasText: "Settings save failed" }),
   ).toBeVisible();
   await expect(dialog).toHaveCount(0);
+  await expect(retention.locator('[data-slot="select-value"]')).toHaveText("30 days");
   await expect
     .poll(() => page.evaluate(() => window.dictationTest.snapshot.history.length))
     .toBe(1);
   await page.evaluate(() => {
     window.dictationTest.failSave = false;
   });
-  await page.getByRole("button", { name: "Save settings", exact: true }).click();
-  await page
-    .getByRole("dialog", { name: "Enable automatic deletion?", exact: true })
-    .getByRole("button", { name: "Save and delete older history", exact: true })
-    .click();
+  await page.getByRole("button", { name: "Retry", exact: true }).click();
+  await dialog.getByRole("button", { name: "Save and delete older history", exact: true }).click();
   await expect
     .poll(() => page.evaluate(() => window.dictationTest.snapshot.settings.historyRetentionDays))
     .toBe(30);
-  await expect(
-    page.locator('[data-slot="toast"]').filter({ hasText: "Settings saved." }),
-  ).toBeVisible();
   await expect
     .poll(() => page.evaluate(() => window.dictationTest.snapshot.settings.interaction))
     .toBe("toggle");
@@ -5373,7 +5344,6 @@ test("retention defaults to forever and requires confirmation before saving or d
     .toBe(0);
   await retention.click();
   await page.getByRole("option", { name: "Keep forever", exact: true }).click();
-  await page.getByRole("button", { name: "Save settings", exact: true }).click();
   await expect(
     page.getByRole("dialog", {
       name: "Enable automatic deletion?",
@@ -5489,7 +5459,7 @@ test("Mac recorder keeps layout letters and rejects ambiguous Option characters"
   await expect(dialog.getByRole("button", { name: "Use shortcut", exact: true })).toBeDisabled();
 });
 
-test("shortcut capture waits for key release, changes only the draft and preserves other settings edits", async ({
+test("shortcut capture waits for key release, then saves alongside other settings edits", async ({
   page,
 }) => {
   await page.goto("/#/settings?section=history");
@@ -5515,15 +5485,11 @@ test("shortcut capture waits for key release, changes only the draft and preserv
   await settle(page);
   await page.getByRole("tab", { name: "History & data", exact: true }).click();
   await expect(page.getByRole("checkbox", { name: /Keep recordings/ })).toBeChecked();
-  await expect
-    .poll(() => page.evaluate(() => window.dictationTest.snapshot.settings.shortcut))
-    .toBe("Ctrl+Alt+Space");
   await expect.poll(() => page.evaluate(() => window.dictationTest.captureToken)).toBe("");
   await expect.poll(() => page.evaluate(() => window.dictationTest.captureEnded)).toBe(1);
-  await page.getByRole("button", { name: "Save settings", exact: true }).click();
   await expect
-    .poll(() => page.evaluate(() => window.dictationTest.snapshot.settings.shortcut))
-    .toBe("Ctrl+Alt+P");
+    .poll(() => page.evaluate(() => window.dictationTest.snapshot.settings))
+    .toMatchObject({ shortcut: "Ctrl+Alt+P", saveAudio: true });
   await expect
     .poll(() => page.evaluate(() => window.dictationTest.snapshot.history.length))
     .toBe(0);
@@ -5674,6 +5640,7 @@ test("recorder reports start and restoration failures, and save conflicts keep t
   await page.evaluate(() => {
     window.dictationTest.failCapture = false;
     window.dictationTest.failRestore = true;
+    window.dictationTest.occupiedShortcut = "Ctrl+Alt+P";
   });
   dialog = await recordShortcut(page);
   await dialog.getByRole("group", { name: "Shortcut capture" }).press("Control+Alt+p");
@@ -5681,11 +5648,6 @@ test("recorder reports start and restoration failures, and save conflicts keep t
   await expect(
     page.getByRole("alert").filter({ hasText: "could not restore the saved shortcut" }),
   ).toBeVisible();
-  await page.evaluate(() => {
-    window.dictationTest.failRestore = false;
-    window.dictationTest.occupiedShortcut = "Ctrl+Alt+P";
-  });
-  await page.getByRole("button", { name: "Save settings", exact: true }).click();
   await expect(
     page.getByRole("alert").filter({ hasText: "your saved shortcut is unchanged" }),
   ).toBeVisible();
@@ -5694,9 +5656,10 @@ test("recorder reports start and restoration failures, and save conflicts keep t
     .poll(() => page.evaluate(() => window.dictationTest.snapshot.settings.shortcut))
     .toBe("Ctrl+Alt+Space");
   await page.evaluate(() => {
+    window.dictationTest.failRestore = false;
     window.dictationTest.occupiedShortcut = "";
   });
-  await page.getByRole("button", { name: "Save settings", exact: true }).click();
+  await page.getByRole("button", { name: "Retry", exact: true }).click();
   await expect
     .poll(() => page.evaluate(() => window.dictationTest.snapshot.settings.shortcut))
     .toBe("Ctrl+Alt+P");
@@ -6165,7 +6128,6 @@ for (const route of ["vocabulary", "settings"]) {
         .toBe("PostgreSQL,Benji");
     } else {
       await control.check();
-      await page.getByRole("button", { name: "Save settings", exact: true }).click();
       await expect
         .poll(() => page.evaluate(() => window.dictationTest.snapshot.settings.saveAudio))
         .toBe(true);
@@ -6767,7 +6729,7 @@ test("backups export optional audio and require a preview before a merge restore
     .check();
   await dialog.getByRole("button", { name: "Restore backup", exact: true }).click();
   await expect(page.getByLabel("Spoken language", { exact: true })).toContainText("German");
-  await expect(page.getByRole("button", { name: "Save settings", exact: true })).toBeDisabled();
+  await expect(page.getByText("Changes save automatically", { exact: true })).toBeVisible();
   await page.getByRole("link", { name: "History", exact: true }).click();
   await expect(page.getByRole("link", { name: /Restored transcription/ }).first()).toBeVisible();
 });
@@ -6781,14 +6743,22 @@ test("backup errors, busy state, unsaved settings and native cancellation preser
     name: "Backup & restore",
     exact: true,
   });
+  await page.evaluate(() => {
+    window.dictationTest.failSave = true;
+  });
   await page.getByRole("checkbox", { name: /^Keep recordings/ }).check();
+  await expect(page.getByText("Changes not saved", { exact: true })).toBeVisible();
   await expect(panel.getByRole("button", { name: "Restore backup", exact: true })).toBeDisabled();
   await expect(
-    panel.getByText("Save your settings before using backups.", {
+    panel.getByText("Finish saving settings before using backups.", {
       exact: true,
     }),
   ).toBeVisible();
-  await page.getByRole("button", { name: "Save settings", exact: true }).click();
+  await page.evaluate(() => {
+    window.dictationTest.failSave = false;
+  });
+  await page.getByRole("button", { name: "Retry", exact: true }).click();
+  await expect(panel.getByRole("button", { name: "Restore backup", exact: true })).toBeEnabled();
   await page.evaluate(() => window.dictationTest.status("recording"));
   await expect(panel.getByRole("button", { name: "Export backup", exact: true })).toBeDisabled();
   await page.evaluate(() => {
@@ -7216,7 +7186,6 @@ test("history preference is shared between Home and Settings", async ({ page }) 
   ).not.toBeChecked();
   await expect(page.getByRole("checkbox", { name: "Keep recordings" })).toBeDisabled();
   await page.getByRole("checkbox", { name: "Save dictations to history" }).click();
-  await page.getByRole("button", { name: "Save settings", exact: true }).click();
   await page.getByRole("link", { name: "Dictate", exact: true }).click();
   await expect(page.getByRole("switch", { name: "Save to history" })).toBeChecked();
 });
@@ -7274,6 +7243,9 @@ test("unsaved page drafts survive navigation and explicit discard", async ({ pag
   await page.goto("/#/settings");
   await page.getByLabel("Global shortcut", { exact: true }).fill("Ctrl+Alt+P");
   await page.getByRole("link", { name: "Prompts", exact: true }).click();
+  await expect
+    .poll(() => page.evaluate(() => window.dictationTest.snapshot.settings.shortcut))
+    .toBe("Ctrl+Alt+P");
   await page.getByRole("tab", { name: "Text model", exact: true }).click();
   await page.getByLabel("Model identifier").fill("unsaved-local-model");
   await page.getByRole("link", { name: "Vocabulary", exact: true }).click();
@@ -7282,7 +7254,6 @@ test("unsaved page drafts survive navigation and explicit discard", async ({ pag
   await page.getByRole("link", { name: "History", exact: true }).click();
   await page.getByRole("link", { name: "Settings", exact: true }).click();
   await expect(page.getByLabel("Global shortcut", { exact: true })).toHaveValue("Ctrl+Alt+P");
-  await page.getByRole("button", { name: "Discard changes", exact: true }).click();
   await page.getByRole("link", { name: "Prompts", exact: true }).click();
   await page.getByRole("tab", { name: "Text model", exact: true }).click();
   await expect(page.getByLabel("Model identifier")).toHaveValue("unsaved-local-model");
@@ -7291,7 +7262,7 @@ test("unsaved page drafts survive navigation and explicit discard", async ({ pag
   await expect(page.getByLabel("Preferred spelling", { exact: true })).toHaveValue("PostgreSQL");
   await page.getByRole("button", { name: "Discard changes", exact: true }).click();
   await page.getByRole("link", { name: "Settings", exact: true }).click();
-  await expect(page.getByLabel("Global shortcut", { exact: true })).toHaveValue("Ctrl+Alt+Space");
+  await expect(page.getByLabel("Global shortcut", { exact: true })).toHaveValue("Ctrl+Alt+P");
 });
 
 test("delivery warnings persist and recover the captured result after clipboard retry", async ({
@@ -7419,7 +7390,7 @@ test("profile failures retain drafts and selection and Escape protects edits", a
   ).toBeVisible();
 });
 
-test("profile switching rebases untouched settings while preserving an unsaved shortcut", async ({
+test("profile switching rebases untouched settings while keeping the autosaved shortcut", async ({
   page,
 }) => {
   await page.addInitScript(() => {
@@ -7448,7 +7419,6 @@ test("profile switching rebases untouched settings while preserving an unsaved s
   await expect(page.getByRole("combobox", { name: "Spoken language", exact: true })).toContainText(
     "German",
   );
-  await page.getByRole("button", { name: "Save settings", exact: true }).click();
   await expect
     .poll(() =>
       page.evaluate(() => ({
@@ -7493,7 +7463,6 @@ for (const theme of ["light", "dark"] as const) {
     await page.getByRole("link", { name: "Settings", exact: true }).click();
     await page.getByRole("combobox", { name: "Spoken language", exact: true }).click();
     await page.getByRole("option", { name: "German", exact: true }).click();
-    await page.getByRole("button", { name: "Save settings", exact: true }).click();
     await page.getByRole("link", { name: "Dictate", exact: true }).click();
     await page.setViewportSize({ width: 760, height: 560 });
     const selector = page.getByRole("combobox", { name: "Dictation profile", exact: true });
@@ -7588,14 +7557,18 @@ for (const theme of ["light", "dark"] as const) {
     });
     const tooltip = page.locator('[data-slot="tooltip-content"]');
     await expect(marker).toHaveCount(0);
+    await page.evaluate(() => {
+      window.dictationTest.failSave = true;
+    });
     await page.getByText("Light cleanup", { exact: true }).click();
     await expect(cleanup).toBeChecked();
     await expect(marker).toBeVisible();
+    await expect(page.getByText("Changes not saved", { exact: true })).toBeVisible();
     await marker.hover();
     await expect(tooltip).toContainText("Changed from Default");
     await expect(tooltip).toContainText("Profile: Off");
     await expect(tooltip).toContainText("Current: On");
-    await expect(tooltip).toContainText("Unsaved change — save to apply.");
+    await expect(tooltip).toContainText("Not saved yet.");
     expect(await page.evaluate(() => window.dictationTest.snapshot.settings.cleanText)).toBe(false);
     await marker.click();
     await expect(cleanup).toBeChecked();
@@ -7606,11 +7579,6 @@ for (const theme of ["light", "dark"] as const) {
     await expect(marker).toBeFocused();
     await expect(tooltip).toContainText("Profile: Off");
     await page.keyboard.press("Escape");
-    await page.evaluate(() => {
-      window.dictationTest.failSave = true;
-    });
-    await page.getByRole("button", { name: "Save settings", exact: true }).click();
-    await expect(page.getByRole("button", { name: "Save settings", exact: true })).toBeEnabled();
     await page.getByRole("link", { name: "Vocabulary", exact: true }).click();
     await page.getByRole("link", { name: "Settings", exact: true }).click();
     await expect(cleanup).toBeChecked();
@@ -7621,13 +7589,14 @@ for (const theme of ["light", "dark"] as const) {
       window.dictationTest.failSave = false;
     });
     await cleanup.check();
-    await page.getByRole("button", { name: "Save settings", exact: true }).click();
-    await expect(page.getByRole("button", { name: "Save settings", exact: true })).toBeDisabled();
+    await expect
+      .poll(() => page.evaluate(() => window.dictationTest.snapshot.settings.cleanText))
+      .toBe(true);
     await page.setViewportSize({ width: 760, height: 560 });
     await marker.hover();
     await expect(tooltip).toContainText("Profile: Off");
     await expect(tooltip).toContainText("Current: On");
-    await expect(tooltip).not.toContainText("Unsaved");
+    await expect(tooltip).not.toContainText("Not saved");
     await expect
       .poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
       .toBe(true);
@@ -7674,8 +7643,9 @@ test("setting indicators mark only differing profile fields and use readable lan
   );
   await page.getByLabel("Speech model", { exact: true }).fill("/tiny");
   await expect(model).toHaveCount(0);
-  await page.getByRole("button", { name: "Discard changes", exact: true }).click();
   await page.getByRole("tab", { name: "Dictation", exact: true }).click();
+  await page.getByRole("combobox", { name: "Spoken language", exact: true }).click();
+  await page.getByRole("option", { name: "Detect automatically", exact: true }).click();
   await expect(language).toHaveCount(0);
   await page.evaluate(() => {
     const state = window.dictationTest;
@@ -7718,7 +7688,7 @@ test("automatic prompt indicator explains the selected prompt and follows save d
   await marker.hover();
   await expect(tooltip).toContainText("Profile: Cleanup");
   await expect(tooltip).toContainText("Current: No automatic processing");
-  await expect(tooltip).toContainText("Unsaved change");
+  await expect(tooltip).toContainText("Not saved yet.");
   await marker.click();
   await expect(automatic).not.toBeChecked();
   await page.getByRole("button", { name: "Discard changes", exact: true }).click();
@@ -7739,7 +7709,7 @@ test("automatic prompt indicator explains the selected prompt and follows save d
   await expect(page.getByRole("button", { name: "Save changes", exact: true })).toBeDisabled();
   await marker.hover();
   await expect(tooltip).toContainText("Current: Summary");
-  await expect(tooltip).not.toContainText("Unsaved");
+  await expect(tooltip).not.toContainText("Not saved");
   await page.setViewportSize({ width: 760, height: 560 });
   await expect(marker).toBeVisible();
   await expect
@@ -8159,7 +8129,7 @@ test("adding an app to another profile moves its badge and the picker names its 
   }
 });
 
-test("shortcuts are grouped in one section and the cycle shortcut saves with settings", async ({
+test("shortcuts are grouped in one section and the cycle shortcut saves automatically", async ({
   page,
 }) => {
   await homeModelScenario(page);
@@ -8169,18 +8139,13 @@ test("shortcuts are grouped in one section and the cycle shortcut saves with set
   await expect(shortcuts.getByText("Recording mode", { exact: true })).toBeVisible();
   const cycle = shortcuts.getByLabel("Cycle profiles shortcut", { exact: true });
   await cycle.fill("Ctrl+Alt+P");
-  await expect(page.getByText("Unsaved changes", { exact: true })).toBeVisible();
-  await page.getByRole("link", { name: "Dictate", exact: true }).click();
-  await page.getByRole("link", { name: "Settings", exact: true }).click();
-  await expect(cycle).toHaveValue("Ctrl+Alt+P");
-  const save = page.getByRole("button", { name: "Save settings", exact: true });
-  await save.click();
+  await expect(page.getByText("Saves when you leave the field", { exact: true })).toBeVisible();
+  await cycle.press("Enter");
   await expect
     .poll(() => page.evaluate(() => window.dictationTest.snapshot.profileShortcut))
     .toBe("Ctrl+Alt+P");
-  await expect(save).toBeDisabled();
   await cycle.fill("");
-  await save.click();
+  await cycle.press("Enter");
   await expect
     .poll(() => page.evaluate(() => window.dictationTest.snapshot.profileShortcut))
     .toBe("");
@@ -8192,12 +8157,11 @@ test("cycle shortcut keeps its draft after failure and reports shortcut conflict
   await homeModelScenario(page);
   await page.getByRole("link", { name: "Settings", exact: true }).click();
   const cycle = page.getByLabel("Cycle profiles shortcut", { exact: true });
-  const save = page.getByRole("button", { name: "Save settings", exact: true });
-  await cycle.fill("Ctrl+Alt+P");
   await page.evaluate(() => {
     window.dictationTest.failSave = true;
   });
-  await save.click();
+  await cycle.fill("Ctrl+Alt+P");
+  await cycle.press("Enter");
   await expect(
     page.getByRole("alert").filter({ hasText: "Could not save profile automation" }),
   ).toBeVisible();
@@ -8206,14 +8170,16 @@ test("cycle shortcut keeps its draft after failure and reports shortcut conflict
     window.dictationTest.failSave = false;
   });
   await cycle.fill("Ctrl+Alt+Space");
-  await save.click();
+  await cycle.press("Enter");
   await expect(
     page.getByRole("alert").filter({ hasText: /must use different shortcuts/i }),
   ).toBeVisible();
   expect(await page.evaluate(() => window.dictationTest.snapshot.profileShortcut ?? "")).toBe("");
   await cycle.fill("Ctrl+Alt+P");
-  await save.click();
-  await expect(save).toBeDisabled();
+  await cycle.press("Enter");
+  await expect
+    .poll(() => page.evaluate(() => window.dictationTest.snapshot.profileShortcut))
+    .toBe("Ctrl+Alt+P");
 });
 
 test("recording shows its automatic profile while manual selection stays unchanged", async ({

@@ -183,8 +183,7 @@ export function ProfilesPanel({ disabled }: { disabled: boolean }) {
             <p className="max-w-lg text-xs leading-5 text-muted-foreground">
               Save a speech model, language, cleanup, and optional prompt together. Add apps to a
               profile to use it automatically when you start dictation with the shortcut in those
-              apps, including all browser tabs. Save or discard any settings edits before managing
-              profiles.
+              apps, including all browser tabs.
             </p>
             <Button
               size="sm"

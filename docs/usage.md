@@ -11,7 +11,7 @@ has moved or paste is blocked, the text stays in History and on the clipboard.
 Recording from Yap's microphone button or tray menu copies without pasting.
 
 Under **Settings → Dictation → Text & delivery**, **Copy automatically to
-clipboard** is enabled by default. Turn it off and save settings to keep completed
+clipboard** is enabled by default. Turn it off to keep completed
 dictation in History without changing the clipboard. Automatic paste also pauses
 while copying is off. You can still copy text manually from History.
 
@@ -50,8 +50,8 @@ modified icon. Hover or focus the profile name or icon to see **Modified**.
 The speech-model, language, light-cleanup, and **Run after dictation** controls also
 show an icon beside their labels when their displayed values differ from the
 selected profile. Hover or focus it to see **Changed from [profile name]**, the
-profile value, and the current value. Unsaved edits are identified in the tooltip;
-save them to apply them to dictation. Matching the profile value removes the icon.
+profile value, and the current value. Edits that aren't saved yet are identified in
+the tooltip. Matching the profile value removes the icon.
 Microphone, shortcut, and history changes do not mark it modified. Saved profiles
 are kept intact; edit and save the profile to keep your new choices, or select it
 again (or choose **Use** in Settings) to restore its saved choices.
@@ -60,20 +60,25 @@ marks it modified when those settings differ. Profiles persist locally across ap
 and are not included in portable backups because they reference this computer's
 speech-model paths.
 
-Unsaved edits in Settings, Prompts, and Vocabulary remain available when you move
-between pages. Use their Save or **Discard changes** action to finish editing.
-Background updates preserve edited fields and refresh untouched settings. These
-drafts stay in memory for the current app session; save before quitting or reloading.
+Settings save automatically. Toggles and menus save right away; typed fields such
+as shortcuts and file paths save when you leave the field or press Enter. If a save
+fails, Settings keeps your edit and offers **Retry** or **Discard changes**. Turning on
+automatic history deletion still asks for confirmation first.
+
+Unsaved edits in Prompts and Vocabulary remain available when you move between
+pages. Use their Save or **Discard changes** action to finish editing. Background
+updates preserve edited fields and refresh untouched settings. These drafts stay in
+memory for the current app session; save before quitting or reloading.
 
 ### Automatic profiles and profile cycling
 
-Under **Settings → Dictation → Automatic profiles & shortcuts**, refresh the open
-applications, choose an app and a saved profile, and select **Add rule**. Choose
-**Save profile automation** to apply your rules. Each app can have one rule; open
-the target app first if it isn't listed. Windows rules identify the executable
-name; macOS rules identify its bundle ID. Rules cover the entire application,
-including every tab in a browser. Automatic app identification requires Windows
-or a native macOS build.
+On each card under **Settings → Dictation → Dictation profiles**, choose **Add app**
+and pick an open application. Assigned apps appear as badges on the card and save
+immediately; select a badge's remove button to unassign it. Each app belongs to one
+profile, and picking an app that another profile uses moves it. Open the target app
+first if it isn't listed. Windows rules identify the executable name; macOS rules
+identify its bundle ID. Rules cover the entire application, including every tab in a
+browser. Automatic app identification requires Windows or a native macOS build.
 
 When you start dictation with the global recording shortcut, Yap uses the focused
 app's profile for that recording. The profile name appears in Dictate and the
@@ -84,8 +89,8 @@ in place. If a matching profile's model or prompt is unavailable, Yap reports th
 problem before recording; repair the profile or remove its rule. Deleting a
 profile also removes its app rules. Vocabulary remains shared across profiles.
 
-Set an optional **Cycle profiles shortcut**, such as `Ctrl+Alt+P`, then save profile
-automation. It must differ from the recording shortcut; leave it empty to disable
+Set an optional **Cycle profiles shortcut**, such as `Ctrl+Alt+P`, under
+**Settings → Dictation → Shortcuts**. It must differ from the recording shortcut; leave it empty to disable
 it. Each press selects the next available profile in library order, skipping
 profiles with unavailable models or prompts, and shows its name in the floating
 indicator. In an assigned app, cycling starts from that app's profile. Your choice
@@ -98,11 +103,12 @@ computer and aren't included in portable backups.
 
 ### Microphone and shortcut
 
-Choose a microphone under **Settings → Audio input**, then save. **System
+Choose a microphone under **Settings → Dictation → Recording**. **System
 default** follows your OS setting. If a selected microphone is unplugged, Yap
 asks you to reconnect it or choose another one.
 
-Use **Record shortcut** in Settings, then choose **Use shortcut** and save.
+Use **Record shortcut** under **Settings → Dictation → Shortcuts**, then choose
+**Use shortcut**.
 Supported combinations use Ctrl, Alt, or Shift with Space, A–Z, or F1–F12.
 Windows/Command and AltGr aren't supported. If another app has claimed the
 shortcut, choose another; the microphone button still works.
@@ -113,9 +119,9 @@ Closing the window hides Yap to the tray or Mac menu bar. Use **Open Yap** to
 bring it back and **Quit Yap** to exit.
 
 **Launch at login** and **Start in tray / menu bar** are under Settings → Startup.
-Both are off by default and need a settings save. They apply to packaged builds;
-development builds stay visible and don't register for startup. If you move the
-app, open it from its new location and save the startup setting again.
+Both are off by default. They apply to packaged builds; development builds stay
+visible and don't register for startup. If you move the app, open it from its new
+location and turn **Launch at login** off and on again.
 
 ## History and vocabulary
 
@@ -270,13 +276,13 @@ Restore shows a preview and merges new entries into your library. Existing IDs
 and conflicting local entries keep their contents; skipped items are counted.
 **Restore portable preferences** is optional. Microphone, shortcut, runtime
 paths, startup, retention, and text-server settings stay specific to this computer.
-Save any pending settings edits before starting a backup or restore.
+Backups wait until pending settings edits finish saving.
 
 ## When something goes wrong
 
 - **No microphone input:** check OS permission and the saved input device.
   **Settings → Run setup** lets you repeat the microphone and shortcut checks.
-- **Transcription fails:** save your settings, then run **Dictation diagnostics**.
+- **Transcription fails:** run **Dictation diagnostics** under Settings → Advanced.
   It records a short test and shows runtime errors without saving to History or
   changing the clipboard. Technical details can help with a bug report.
 - **Paste doesn't work:** check History and the clipboard. Yap won't switch
