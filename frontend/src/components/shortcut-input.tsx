@@ -1,8 +1,4 @@
-import { useEffect, useRef, useState, type RefObject } from "react";
-import { EventsOn } from "@wails/runtime/runtime";
-import { Keyboard } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import {
   Dialog,
   DialogContent,
@@ -11,7 +7,11 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import { backend, isDesktop, message } from "@/lib/backend";
+import { EventsOn } from "@wails/runtime/runtime";
+import { Keyboard } from "lucide-react";
+import { useEffect, useRef, useState, type RefObject } from "react";
 
 export function ShortcutInput({
   id,
@@ -165,6 +165,7 @@ function ShortcutCapture({
       }}
     >
       <DialogContent
+        data-shortcut-capture
         showCloseButton={false}
         initialFocus={area}
         finalFocus={returnFocus}

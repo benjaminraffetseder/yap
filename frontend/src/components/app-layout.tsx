@@ -1,4 +1,5 @@
 import { AudioDropImport } from "@/components/audio-drop-import";
+import { CommandMenu } from "@/components/command-menu";
 import { useDictation } from "@/components/dictation-provider";
 import { RecordingStatus } from "@/components/recording-status";
 import { RecoveryActions } from "@/components/recovery-actions";
@@ -43,6 +44,7 @@ export function AppLayout() {
   const { error, clearError, loading, run, refresh, update } = useDictation();
   const [dismissedUpdate, setDismissedUpdate] = useState("");
   const [collapsed, setCollapsed] = useState(readCollapsed);
+  const [commandOpen, setCommandOpen] = useState(false);
   const toggleLabel = collapsed ? "Expand sidebar" : "Collapse sidebar";
   const connectionFailure = !!error && (loading || error === backendVersionMismatchMessage);
   useEffect(() => {
@@ -195,6 +197,12 @@ export function AppLayout() {
           </div>
         </main>
         <RecordingStatus />
+        <CommandMenu
+          open={commandOpen}
+          onOpenChange={setCommandOpen}
+          collapsed={collapsed}
+          toggleSidebar={toggleSidebar}
+        />
         <AudioDropImport />
       </div>
     </TooltipProvider>
