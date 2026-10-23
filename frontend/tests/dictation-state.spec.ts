@@ -7739,30 +7739,31 @@ test("prompt chains can be saved with explicit sources and selected for automati
   });
   await page.goto("/#/prompts?section=chains");
   await page.getByRole("button", { name: "Add chain", exact: true }).click();
+  await expect(page.getByRole("textbox", { name: "Chain name", exact: true })).toBeFocused();
   await page.getByRole("textbox", { name: "Chain name", exact: true }).fill("Meeting follow-up");
   await expect(page.getByRole("combobox", { name: "Step 1 input", exact: true })).toContainText(
     "Original transcription",
   );
   await page.getByRole("button", { name: "Add step", exact: true }).click();
-  await page.getByRole("combobox", { name: "Step 2 prompt", exact: true }).click();
-  await page.getByRole("option", { name: "Summary", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Summary", exact: true }).click();
   await expect(page.getByRole("combobox", { name: "Step 2 input", exact: true })).toContainText(
     "Step 1: Cleanup",
   );
   await page.getByRole("button", { name: "Add step", exact: true }).click();
-  await page.getByRole("combobox", { name: "Step 3 prompt", exact: true }).click();
-  await page.getByRole("option", { name: "Email", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Email", exact: true }).click();
   await page.getByRole("combobox", { name: "Step 3 input", exact: true }).click();
   await expect(
     page.getByRole("option", { name: "Original transcription", exact: true }),
   ).toBeVisible();
-  await expect(
-    page.getByRole("option", { name: "Saved transcript (including edits)", exact: true }),
-  ).toBeVisible();
+  await expect(page.getByRole("option", { name: "Saved transcript", exact: true })).toBeVisible();
   await expect(page.getByRole("option", { name: "Step 2: Summary", exact: true })).toBeVisible();
   await page.getByRole("option", { name: "Step 1: Cleanup", exact: true }).click();
-  await expect(page.getByRole("button", { name: "Remove step 1", exact: true })).toBeDisabled();
-  await expect(page.getByRole("button", { name: "Move step 1 down", exact: true })).toBeDisabled();
+  await page.getByRole("button", { name: "Step 1 actions", exact: true }).click();
+  await expect(page.getByRole("menuitem", { name: "Remove step 1", exact: true })).toBeDisabled();
+  await expect(
+    page.getByRole("menuitem", { name: "Move step 1 down", exact: true }),
+  ).toBeDisabled();
+  await page.keyboard.press("Escape");
   await page.getByRole("switch", { name: "Run chain after dictation", exact: true }).check();
   await page.getByRole("button", { name: "Save changes", exact: true }).click();
   await expect
@@ -7847,7 +7848,13 @@ test("manual prompt chains retain intermediate results and show their input sour
   await page.goto("/#/history/chain");
   await page.getByRole("tab", { name: "Outputs", exact: true }).click();
   await page.getByRole("combobox", { name: "Output prompt", exact: true }).click();
-  await page.getByRole("option", { name: "Follow-up (chain)", exact: true }).click();
+  const chainOption = page.getByRole("option", { name: "Follow-up", exact: true });
+  await expect(chainOption.locator("svg.lucide-workflow")).toHaveCount(1);
+  await expect(chainOption).toHaveAttribute("aria-description", "Prompt chain");
+  await chainOption.click();
+  const outputPicker = page.getByRole("combobox", { name: "Output prompt", exact: true });
+  await expect(outputPicker.locator("svg.lucide-workflow")).toHaveCount(1);
+  await expect(outputPicker).not.toContainText("(chain)");
   await page.getByRole("button", { name: "Run chain", exact: true }).click();
   await expect
     .poll(() => page.evaluate(() => window.dictationTest.processing?.input))
@@ -7919,7 +7926,7 @@ test("cancelled manual prompt chains leave completed results available", async (
   await page.goto("/#/history/chain");
   await page.getByRole("tab", { name: "Outputs", exact: true }).click();
   await page.getByRole("combobox", { name: "Output prompt", exact: true }).click();
-  await page.getByRole("option", { name: "Notes (chain)", exact: true }).click();
+  await page.getByRole("option", { name: "Notes", exact: true }).click();
   await page.getByRole("button", { name: "Run chain", exact: true }).click();
   await expect
     .poll(() => page.evaluate(() => window.dictationTest.processing?.input))
@@ -7957,7 +7964,12 @@ test("dictation profiles can select saved prompt chains", async ({ page }) => {
   const dialog = page.getByRole("dialog");
   await dialog.getByLabel("Profile name").fill("Meeting");
   await dialog.getByRole("combobox", { name: "After dictation", exact: true }).click();
-  await page.getByRole("option", { name: "Meeting notes (chain)", exact: true }).click();
+  const chainOption = page.getByRole("option", { name: "Meeting notes", exact: true });
+  await expect(chainOption.locator("svg.lucide-workflow")).toHaveCount(1);
+  await chainOption.click();
+  const afterDictation = dialog.getByRole("combobox", { name: "After dictation", exact: true });
+  await expect(afterDictation.locator("svg.lucide-workflow")).toHaveCount(1);
+  await expect(afterDictation).not.toContainText("(chain)");
   await dialog.getByRole("button", { name: "Save profile", exact: true }).click();
   await expect(dialog).toHaveCount(0);
   await expect
@@ -8218,4 +8230,151 @@ test("recording shows its automatic profile while manual selection stays unchang
     state.callbacks["dictation:status"](state.snapshot.status);
   });
   await expect(selector).toContainText("Default");
+});
+
+for (const theme of ["light", "dark"]) {
+  test(`chain editor shows a compact readable sequence in ${theme}`, async ({ page }, testInfo) => {
+    await page.addInitScript((theme) => {
+      localStorage.setItem("desktop-theme", theme);
+      const config = window.dictationTest.snapshot.textProcessing;
+      config.enabled = true;
+      config.model = "local-model";
+      config.prompts.push(
+        { id: "social", name: "Social post", instruction: "Write a social post." },
+        { id: "email", name: "Email", instruction: "Write an email." },
+      );
+      config.chains = [
+        {
+          id: "follow-up",
+          name: "Meeting follow-up",
+          steps: [
+            { id: "clean", promptId: "cleanup", input: "original" },
+            { id: "sum", promptId: "summary", input: "step:clean" },
+            { id: "social", promptId: "social", input: "step:sum" },
+            { id: "mail", promptId: "email", input: "step:clean" },
+          ],
+        },
+      ];
+    }, theme);
+    await page.setViewportSize({ width: 1208, height: 1000 });
+    await page.goto("/#/prompts?section=chains");
+    const editor = page.getByRole("region", { name: "Prompt chains", exact: true });
+    await expect(editor.getByRole("listitem")).toHaveCount(4);
+    await expect(editor.getByText("Final output", { exact: true })).toHaveCount(1);
+    await expect(editor.getByText("Later steps use this result.", { exact: false })).toHaveCount(0);
+    await expect(
+      editor
+        .getByRole("combobox", { name: "Saved chain", exact: true })
+        .locator("svg.lucide-workflow"),
+    ).toHaveCount(1);
+    const row = editor.getByRole("listitem").first();
+    expect((await row.boundingBox())!.height).toBeLessThan(120);
+    await editor.screenshot({ path: testInfo.outputPath(`chain-editor-${theme}.png`) });
+    await page.setViewportSize({ width: 760, height: 600 });
+    await expect
+      .poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
+      .toBe(true);
+    await expect(editor.getByRole("combobox", { name: "Step 4 input", exact: true })).toContainText(
+      "Step 1: Cleanup",
+    );
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await page.screenshot({
+      path: testInfo.outputPath(`chain-editor-${theme}-narrow.png`),
+      fullPage: true,
+    });
+    await page
+      .getByRole("textbox", { name: "Chain name", exact: true })
+      .fill("Long chain name ".repeat(5).slice(0, 80));
+    await editor.getByRole("combobox", { name: "Step 4 input", exact: true }).click();
+    await expect(page.getByRole("option", { name: "Step 4: Email", exact: true })).toHaveCount(0);
+    await expect(page.getByRole("option", { name: "Saved transcript", exact: true })).toContainText(
+      "Includes saved corrections",
+    );
+    await page.keyboard.press("Escape");
+    await expect
+      .poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
+      .toBe(true);
+    const longPromptName = "Detailed follow-up ".repeat(5).slice(0, 80);
+    await page.evaluate((name) => {
+      window.dictationTest.snapshot.textProcessing.prompts.push({
+        id: "long",
+        name,
+        instruction: "Write detailed notes.",
+      });
+      window.dictationTest.callbacks["setup:changed"]();
+    }, longPromptName);
+    await page.getByRole("button", { name: "Add step", exact: true }).click();
+    const longPrompt = page.getByRole("menuitem", { name: longPromptName, exact: true });
+    await expect(longPrompt).toBeVisible();
+    const longPromptBounds = (await longPrompt.boundingBox())!;
+    expect(longPromptBounds.x).toBeGreaterThanOrEqual(0);
+    expect(longPromptBounds.x + longPromptBounds.width).toBeLessThanOrEqual(760);
+    await longPrompt.click();
+    await expect(page.getByRole("combobox", { name: "Step 5 prompt", exact: true })).toContainText(
+      longPromptName,
+    );
+    await expect(page.getByRole("combobox", { name: "Step 5 input", exact: true })).toContainText(
+      "Step 4: Email",
+    );
+    await expect
+      .poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
+      .toBe(true);
+  });
+}
+
+test("chain editor adds prompts with the keyboard and preserves references when managing steps", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const config = window.dictationTest.snapshot.textProcessing;
+    config.enabled = true;
+    config.model = "local-model";
+    config.prompts.push({ id: "email", name: "Email", instruction: "Write an email." });
+  });
+  await page.goto("/#/prompts?section=chains");
+  await page.getByRole("button", { name: "Add chain", exact: true }).click();
+  await page.getByRole("textbox", { name: "Chain name", exact: true }).fill("Work notes");
+  const addStep = page.getByRole("button", { name: "Add step", exact: true });
+  await addStep.focus();
+  await page.keyboard.press("Enter");
+  const summary = page.getByRole("menuitem", { name: "Summary", exact: true });
+  await summary.focus();
+  await page.keyboard.press("Enter");
+  await expect(page.getByRole("combobox", { name: "Step 2 prompt", exact: true })).toContainText(
+    "Summary",
+  );
+  await expect(page.getByRole("combobox", { name: "Step 2 input", exact: true })).toContainText(
+    "Step 1: Cleanup",
+  );
+  await addStep.click();
+  await page.getByRole("menuitem", { name: "Email", exact: true }).click();
+  await page.getByRole("combobox", { name: "Step 3 input", exact: true }).click();
+  await page.getByRole("option", { name: "Original transcription", exact: true }).click();
+  await page.getByRole("button", { name: "Step 3 actions", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Move step 3 up", exact: true }).click();
+  await expect(page.getByRole("combobox", { name: "Step 2 prompt", exact: true })).toContainText(
+    "Email",
+  );
+  await expect(page.getByRole("combobox", { name: "Step 3 prompt", exact: true })).toContainText(
+    "Summary",
+  );
+  await expect(page.getByRole("combobox", { name: "Step 3 input", exact: true })).toContainText(
+    "Step 1: Cleanup",
+  );
+  await page.getByRole("button", { name: "Step 2 actions", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Remove step 2", exact: true }).click();
+  await expect(
+    page.getByRole("region", { name: "Prompt chains", exact: true }).getByRole("listitem"),
+  ).toHaveCount(2);
+  await expect(page.getByRole("combobox", { name: "Step 2 prompt", exact: true })).toContainText(
+    "Summary",
+  );
+  await page.getByRole("button", { name: "Save changes", exact: true }).click();
+  const chain = await page.evaluate(() => window.dictationTest.snapshot.textProcessing.chains![0]);
+  expect(chain.steps.map((step) => step.promptId)).toEqual(["cleanup", "summary"]);
+  expect(chain.steps[1].input).toBe(`step:${chain.steps[0].id}`);
+  await page.evaluate(() => window.dictationTest.status("recording"));
+  await expect(addStep).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Step 1 actions", exact: true })).toBeDisabled();
+  await expect(page.getByRole("combobox", { name: "Step 1 input", exact: true })).toBeDisabled();
 });

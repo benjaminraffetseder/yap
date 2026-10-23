@@ -1,20 +1,18 @@
 import {
   AddVocabularyTerm,
   ApplyDictationProfile,
-  GetProfileApplications,
-  SaveProfileAutomation,
-  SaveDictationProfile,
-  DeleteDictationProfile,
   BeginShortcutCapture,
   Cancel,
   CancelTextProcessing,
   CheckForUpdates,
   CompleteSetup,
   CopyText,
+  DeleteDictationProfile,
   DeleteSession,
   DeleteSessionOutput,
   DeleteSessions,
   DiscardBackupPreview,
+  DismissLatestResult,
   EndShortcutCapture,
   ExportBackup,
   ExportSession,
@@ -25,6 +23,7 @@ import {
   GetDiagnosticChecks,
   GetHistory,
   GetMicrophones,
+  GetProfileApplications,
   GetSession,
   GetSessionOutputs,
   GetSnapshot,
@@ -42,14 +41,15 @@ import {
   RestartSetup,
   RestoreBackup,
   RetryShortcut,
-  SaveSettings,
-  SetSaveHistory,
+  SaveDictationProfile,
   SaveLatestResult,
-  DismissLatestResult,
+  SaveProfileAutomation,
+  SaveSettings,
   SaveTextProcessing,
   SaveTranscript,
   SaveVocabulary,
   SelectFile,
+  SetSaveHistory,
   StartDiagnosticTest,
   StartMicrophoneTest,
   StartRecording,
@@ -80,10 +80,15 @@ export type TextProcessing = {
   prompts: TextPrompt[];
   chains?: PromptChain[];
 };
-export function processingOptions(config: TextProcessing) {
+export type ProcessingOption = { value: string; label: string; isChain?: boolean };
+export function processingOptions(config: TextProcessing): ProcessingOption[] {
   return [
     ...config.prompts.map((prompt) => ({ value: prompt.id, label: prompt.name })),
-    ...(config.chains ?? []).map((chain) => ({ value: chain.id, label: `${chain.name} (chain)` })),
+    ...(config.chains ?? []).map((chain) => ({
+      value: chain.id,
+      label: chain.name,
+      isChain: true,
+    })),
   ];
 }
 export const defaultTextProcessing: TextProcessing = {

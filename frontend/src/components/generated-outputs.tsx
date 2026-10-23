@@ -1,5 +1,7 @@
 import { useDictation } from "@/components/dictation-provider";
 import { MarkdownContent } from "@/components/markdown-content";
+import { MotionReveal } from "@/components/motion-reveal";
+import { ProcessingSelectItems } from "@/components/processing-select-items";
 import { TextPanel } from "@/components/text-panel";
 import { Button } from "@/components/ui/button";
 import {
@@ -11,19 +13,12 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { Select, SelectContent, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { backend, isBusy, message, processingOptions, type GeneratedOutput } from "@/lib/backend";
 import { useTextRequest } from "@/lib/use-text-request";
-import { Copy, Loader2, RefreshCw, Sparkles, Trash2 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { Copy, Loader2, RefreshCw, Sparkles, Trash2, Workflow } from "lucide-react";
 import { AnimatePresence } from "motion/react";
-import { MotionReveal } from "@/components/motion-reveal";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router";
 
 export function GeneratedOutputs({
@@ -129,18 +124,16 @@ export function GeneratedOutputs({
             >
               <SelectTrigger
                 id="output-prompt"
+                aria-description={selectedChain ? "Prompt chain" : undefined}
                 className="w-28 min-w-0 border-transparent bg-transparent text-xs data-[size=default]:h-8 hover:bg-muted/50 sm:w-44 dark:bg-transparent"
               >
+                {selectedChain && (
+                  <Workflow aria-hidden="true" className="size-3.5 text-muted-foreground" />
+                )}
                 <SelectValue className="min-w-0" placeholder="Choose a prompt" />
               </SelectTrigger>
               <SelectContent alignItemWithTrigger={false} align="start">
-                <div className="p-1">
-                  {options.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>
-                      {option.label}
-                    </SelectItem>
-                  ))}
-                </div>
+                <ProcessingSelectItems options={options} />
               </SelectContent>
             </Select>
             {generation.pending ? (

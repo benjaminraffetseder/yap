@@ -1,4 +1,5 @@
 import { useDictation } from "@/components/dictation-provider";
+import { ProcessingSelectItems } from "@/components/processing-select-items";
 import { ProfileApps } from "@/components/profile-apps";
 import { ModifiedMarker } from "@/components/profile-setting-indicator";
 import { SettingsSection } from "@/components/settings-section";
@@ -16,7 +17,9 @@ import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectSeparator,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
@@ -30,10 +33,11 @@ import {
   processingOptions,
   type AppProfileRule,
   type DictationProfile,
+  type ProcessingOption,
   type ProfileApplication,
 } from "@/lib/backend";
 import { languages } from "@/lib/languages";
-import { Pencil, Plus, Settings2, Trash2 } from "lucide-react";
+import { Pencil, Plus, Settings2, Trash2, Workflow } from "lucide-react";
 import { useRef, useState } from "react";
 import { Link } from "react-router";
 
@@ -404,15 +408,18 @@ function ProfileEditor({
   const languageOptions = languages.some((language) => language.value === draft.language)
     ? languages
     : [...languages, { value: draft.language, label: draft.language }];
-  const prompts = [
+  const processing = processingOptions(snapshot.textProcessing);
+  const prompts: ProcessingOption[] = [
     { value: "", label: "No automatic processing" },
-    ...processingOptions(snapshot.textProcessing),
+    ...processing,
   ];
-  if (!prompts.some((p) => p.value === draft.autoPromptId))
+  const unavailablePrompt = !prompts.some((p) => p.value === draft.autoPromptId);
+  if (unavailablePrompt)
     prompts.push({
       value: draft.autoPromptId,
       label: "Prompt or chain unavailable — choose another",
     });
+  const selectedPrompt = prompts.find((prompt) => prompt.value === draft.autoPromptId);
   function close() {
     if (!saving) {
       if (dirty) setConfirmDiscard(true);
@@ -506,15 +513,27 @@ function ProfileEditor({
                 if (value !== null) setDraft({ ...draft, autoPromptId: value });
               }}
             >
-              <SelectTrigger id="profile-prompt" className="w-full">
+              <SelectTrigger
+                id="profile-prompt"
+                className="w-full"
+                aria-description={selectedPrompt?.isChain ? "Prompt chain" : undefined}
+              >
+                {selectedPrompt?.isChain && (
+                  <Workflow aria-hidden="true" className="size-3.5 text-muted-foreground" />
+                )}
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {prompts.map((prompt) => (
-                  <SelectItem key={prompt.value} value={prompt.value}>
-                    {prompt.label}
-                  </SelectItem>
-                ))}
+                <SelectGroup>
+                  <SelectItem value="">No automatic processing</SelectItem>
+                  {unavailablePrompt && (
+                    <SelectItem value={draft.autoPromptId}>
+                      Prompt or chain unavailable — choose another
+                    </SelectItem>
+                  )}
+                </SelectGroup>
+                {processing.length > 0 && <SelectSeparator />}
+                <ProcessingSelectItems options={processing} />
               </SelectContent>
             </Select>
             <p className="text-xs leading-5 text-muted-foreground">

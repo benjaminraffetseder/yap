@@ -208,11 +208,11 @@ There are three ways to process text:
 
 ### Prompt chains
 
-Open **Prompts → Chains → Add chain**, give it a name, and add steps. Each step
-selects an existing saved prompt and **Use text from**:
+Open **Prompts → Chains → Add chain**, give it a name, then select **Add step**
+and choose a saved prompt. For each step, choose **Use text from**:
 
 - **Original transcription** uses the speech recognizer's unedited text.
-- **Saved transcript (including edits)** uses the transcript captured when the
+- **Saved transcript** uses the transcript captured when the
   run starts, including light cleanup, vocabulary replacements, and saved edits.
 - **Step N: Prompt name** uses the result of that particular earlier step.
 
@@ -220,7 +220,8 @@ New steps default to the preceding step's result. For example, Cleanup can use
 the original, Summary can use Cleanup, and Email can use either Summary or
 Cleanup. Only earlier steps are available as inputs. Reordering preserves those
 references; moves that would put an input after its dependent are disabled.
-Change dependent inputs before removing a step. Save changes to keep the chain.
+Open a step's actions menu to move or remove it. Change dependent inputs before
+removing a step. Save changes to keep the chain.
 There can be up to 30 chains, each containing 1–10 steps.
 
 To run a chain manually, open a dictation's **Outputs** tab, choose the chain in
