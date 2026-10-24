@@ -282,10 +282,10 @@ function CommandMenuContent({
             ]
           : []),
         {
-          label: "Import audio file…",
+          label: "Import audio files…",
           icon: Upload,
           keywords: ["transcribe", "file", "wav", "mp3"],
-          disabled: unavailable || !snapshot.ready || busy,
+          disabled: unavailable || !snapshot.ready,
           action: native(backend.importAudio),
         },
         {

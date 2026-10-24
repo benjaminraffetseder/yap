@@ -328,6 +328,7 @@
     @apply border-border outline-ring/50;
   }
   body {
+    position: relative;
     @apply bg-background text-foreground antialiased;
     margin: 0;
     min-width: 360px;
@@ -342,5 +343,24 @@
   button:not(:disabled),
   [role="button"]:not([aria-disabled="true"]) {
     cursor: pointer;
+  }
+}
+
+@keyframes import-progress {
+  from {
+    transform: translateX(-100%) scaleX(0.35);
+  }
+  to {
+    transform: translateX(100%) scaleX(0.35);
+  }
+}
+[data-slot="progress-indicator"][data-indeterminate] {
+  animation: import-progress 1.4s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-slot="progress-indicator"][data-indeterminate] {
+    animation: none;
+    transform: scaleX(0.35);
+    opacity: 0.65;
   }
 }

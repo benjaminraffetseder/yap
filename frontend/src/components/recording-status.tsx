@@ -21,6 +21,7 @@ export function RecordingStatus() {
     return () => clearInterval(timer);
   }, [capturing]);
   if (
+    status.importId ||
     (status.phase === "mic-test" && microphoneTestVisible) ||
     (!testing && floatingIndicator) ||
     (!capturing && status.phase !== "transcribing" && status.phase !== "diagnostic-transcribing")

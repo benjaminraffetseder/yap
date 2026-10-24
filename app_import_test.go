@@ -185,32 +185,23 @@ func TestDroppedAudioImportUsesSharedPipeline(t *testing.T) {
 	}
 }
 
-func TestDroppedAudioImportRejectsInvalidSelectionsAndUnavailableState(t *testing.T) {
+func TestDroppedAudioImportValidatesBatchAndUnavailableState(t *testing.T) {
 	a := testApp(t)
+	a.engine = importedSpeech{}
 	source := importedWAV(t)
-	unsupported := filepath.Join(t.TempDir(), "notes.txt")
-	if err := os.WriteFile(unsupported, []byte("not audio"), 0600); err != nil {
-		t.Fatal(err)
-	}
-	for _, paths := range [][]string{nil, {}, {""}, {"  "}, {source, source}, {unsupported}, {filepath.Join(t.TempDir(), "missing.wav")}, {t.TempDir()}} {
-		if err := a.ImportDroppedAudio(paths); err == nil {
-			t.Fatalf("accepted invalid drop: %v", paths)
-		}
+	if err := a.ImportDroppedAudio(nil); err == nil {
+		t.Fatal("accepted empty drop")
 	}
 	a.status.Phase = "recording"
-	if err := a.ImportDroppedAudio([]string{source}); err == nil {
-		t.Fatal("accepted drop while busy")
+	if err := a.ImportDroppedAudio([]string{source, "", filepath.Join(t.TempDir(), "missing.wav")}); err != nil {
+		t.Fatal(err)
 	}
-	a.status.Phase = "idle"
+	if len(a.importQueue) != 3 || a.importQueue[0].State != "queued" || a.importQueue[1].State != "failed" || a.importQueue[2].State != "failed" {
+		t.Fatal(a.importSnapshotLocked())
+	}
 	a.settings.ModelPath = ""
 	if err := a.ImportDroppedAudio([]string{source}); err == nil {
-		t.Fatal("accepted drop without a speech model")
-	}
-	if entries, err := a.store.History(); err != nil || len(entries) != 0 {
-		t.Fatalf("rejected drop saved history: %+v %v", entries, err)
-	}
-	if files, err := os.ReadDir(filepath.Join(a.store.Dir, "recordings")); err != nil || len(files) != 0 {
-		t.Fatalf("rejected drop left audio: %v %v", files, err)
+		t.Fatal("accepted drop without speech model")
 	}
 }
 
@@ -249,8 +240,8 @@ func TestAudioImportCancellationAndValidationLeaveNoPartialData(t *testing.T) {
 		t.Fatal("failed import left files")
 	}
 	a.status.Phase = "backup"
-	if err := a.importAudio(bad); err == nil {
-		t.Fatal("imported while busy")
+	if err := a.importAudio(bad); err != nil {
+		t.Fatal("could not queue while busy", err)
 	}
 	a.status.Phase = "idle"
 	a.settings.ModelPath = ""
@@ -343,7 +334,11 @@ func TestAudioImportRejectsRedirectedStorage(t *testing.T) {
 	if err := os.Symlink(external, recordings); err != nil {
 		t.Skip("directory symlink unavailable", err)
 	}
-	if err := a.importAudio(importedWAV(t)); err == nil {
+	if err := a.importAudio(importedWAV(t)); err != nil {
+		t.Fatal(err)
+	}
+	a.wg.Wait()
+	if a.importQueue[0].State != "failed" {
 		t.Fatal("import followed redirected storage")
 	}
 	if files, err := os.ReadDir(external); err != nil || len(files) != 0 {
@@ -396,7 +391,7 @@ func TestAudioSupportRequiresConfirmationAndResumesOriginalImport(t *testing.T) 
 				},
 			})
 			a.wg.Wait()
-			wantError := choice == "unsupported" || choice == "close" || choice == "busy"
+			wantError := choice == "close"
 			if (err != nil) != wantError {
 				t.Fatal("unexpected result", err)
 			}
@@ -440,7 +435,7 @@ func TestAudioSupportFailureAndCancellationDoNotResume(t *testing.T) {
 				<-ctx.Done()
 				return "", ctx.Err()
 			}
-			if err := a.importAudioWithDecoder(source, "", install); err != nil {
+			if err := a.prepareAudioImport(source, audioImportSupport{supported: true, resolve: func(context.Context, string, string) (string, error) { return "", audio.ErrFFmpegMissing }, confirm: func() (bool, error) { return true, nil }, install: install}); err != nil {
 				t.Fatal(err)
 			}
 			<-started

@@ -5,6 +5,7 @@ import {
   Cancel,
   CancelTextProcessing,
   CheckForUpdates,
+  ClearFinishedImports,
   CompleteSetup,
   CopyText,
   DeleteDictationProfile,
@@ -40,10 +41,13 @@ import {
   ProcessText,
   RefinePrompt,
   RegenerateSessionOutput,
+  RemoveImport,
   RemoveModel,
+  ReorderImportQueue,
   RestartSetup,
   RestoreBackup,
   RestoreSessions,
+  RetryImport,
   RetryShortcut,
   SaveDictationProfile,
   SaveLatestResult,
@@ -215,7 +219,21 @@ export type HistoryPageResult = {
   page: number;
   pageSize: number;
 };
+export type ImportJob = {
+  id: string;
+  name: string;
+  state: string;
+  message: string;
+  sessionId: string;
+  transcript: string;
+  error: string;
+  progress: number;
+};
+export const importPending = (job: ImportJob) =>
+  ["queued", "preparing", "transcribing", "processing"].includes(job.state);
+
 export type Status = {
+  importId?: string;
   profileId?: string;
   profileShortcutError?: string;
   completionWarning?: boolean;
@@ -241,6 +259,7 @@ export type Model = {
   removable: boolean;
 };
 export type Snapshot = {
+  importQueue?: ImportJob[];
   appProfileRules?: AppProfileRule[];
   profileShortcut?: string;
   dictationProfiles?: DictationProfile[];
@@ -319,6 +338,12 @@ function requireProfileAPI(name: string) {
     );
 }
 
+function requireImportQueueAPI(name: string) {
+  const api = (window as unknown as { go?: { main?: { App?: Record<string, unknown> } } }).go?.main
+    ?.App;
+  if (typeof api?.[name] !== "function") throw new Error(backendVersionMismatchMessage);
+}
+
 export const backend = {
   revisions: (kind: RevisionKind, itemId: string): Promise<Revision[]> =>
     GetRevisions(kind, itemId),
@@ -352,6 +377,22 @@ export const backend = {
     return CheckForUpdates(manual);
   },
   downloadUpdate: OpenUpdateDownload,
+  reorderImports: async (ids: string[]): Promise<void> => {
+    requireImportQueueAPI("ReorderImportQueue");
+    return ReorderImportQueue(ids);
+  },
+  removeImport: async (id: string): Promise<void> => {
+    requireImportQueueAPI("RemoveImport");
+    return RemoveImport(id);
+  },
+  retryImport: async (id: string): Promise<void> => {
+    requireImportQueueAPI("RetryImport");
+    return RetryImport(id);
+  },
+  clearFinishedImports: async (): Promise<void> => {
+    requireImportQueueAPI("ClearFinishedImports");
+    return ClearFinishedImports();
+  },
   importDroppedAudio: async (paths: string[]): Promise<void> => {
     const api = (window as unknown as { go?: { main?: { App?: Record<string, unknown> } } }).go
       ?.main?.App;

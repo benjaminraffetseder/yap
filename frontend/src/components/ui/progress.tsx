@@ -60,12 +60,14 @@ function ProgressIndicatorFill({
 }) {
   const { style, ...props } = elementProps;
   // Base UI supplies the normalized width, including min/max and clamping.
-  const scale = state.status === "indeterminate" ? 0 : parseFloat(String(style?.width ?? 0)) / 100;
+  const scale =
+    state.status === "indeterminate" ? 0.35 : parseFloat(String(style?.width ?? 0)) / 100;
   return useRender({
     render,
     state: { ...state },
     props: {
       ...props,
+      "data-indeterminate": state.status === "indeterminate" ? "" : undefined,
       style: { ...style, width: "100%", transform: `scaleX(${scale})` },
     },
   });
@@ -99,7 +101,14 @@ function CircularProgress({ className, value, ...props }: ProgressPrimitive.Root
       value={value}
       {...props}
     >
-      <svg viewBox="0 0 120 120" className="size-full -rotate-90" aria-hidden="true">
+      <svg
+        viewBox="0 0 120 120"
+        className={cn(
+          "size-full -rotate-90",
+          value == null && "animate-spin motion-reduce:animate-none",
+        )}
+        aria-hidden="true"
+      >
         <circle cx="60" cy="60" r="54" fill="none" strokeWidth="4" className="stroke-muted" />
         <circle
           cx="60"
@@ -109,8 +118,8 @@ function CircularProgress({ className, value, ...props }: ProgressPrimitive.Root
           strokeWidth="4"
           strokeLinecap="round"
           pathLength="100"
-          strokeDasharray="100"
-          strokeDashoffset={100 - (value ?? 0)}
+          strokeDasharray={value == null ? "24 76" : "100"}
+          strokeDashoffset={value == null ? 0 : 100 - value}
           className="stroke-primary transition-[stroke-dashoffset] duration-300 motion-reduce:transition-none"
         />
       </svg>
@@ -119,10 +128,10 @@ function CircularProgress({ className, value, ...props }: ProgressPrimitive.Root
 }
 
 export {
+  CircularProgress,
   Progress,
-  ProgressTrack,
   ProgressIndicator,
   ProgressLabel,
+  ProgressTrack,
   ProgressValue,
-  CircularProgress,
 };

@@ -32,6 +32,7 @@ import (
 )
 
 type Status struct {
+	ImportID             string  `json:"importId,omitempty"`
 	ProfileID            string  `json:"profileId,omitempty"`
 	ProfileShortcutError string  `json:"profileShortcutError,omitempty"`
 	CompletionWarning    bool    `json:"completionWarning,omitempty"`
@@ -53,6 +54,7 @@ type TemporaryResult struct {
 	Outputs []storage.GeneratedOutput `json:"outputs,omitempty"`
 }
 type Snapshot struct {
+	ImportQueue            []ImportJob                `json:"importQueue"`
 	AppProfileRules        []storage.AppProfileRule   `json:"appProfileRules"`
 	ProfileShortcut        string                     `json:"profileShortcut"`
 	DictationProfiles      []storage.DictationProfile `json:"dictationProfiles"`
@@ -77,6 +79,11 @@ type Snapshot struct {
 	StartInTrayAvailable   bool                       `json:"startInTrayAvailable"`
 }
 type App struct {
+	importQueue                      []*importJob
+	importActive                     string
+	importInstallAudioSupport        bool
+	importInstaller                  audioSupportInstaller
+	importPumpPending                bool
 	profileShortcut                  shortcutRegistration
 	profileShortcutGeneration        uint64
 	profileOverrideApp               string
@@ -410,6 +417,9 @@ func (a *App) shutdown(ctx context.Context) {
 	})
 }
 func (a *App) emit() {
+	if a.importActive == "" && a.busy() {
+		a.status.ImportID = ""
+	}
 	if a.ctx != nil && !a.closing {
 		a.updateTray()
 		if a.indicator != nil && a.indicatorActive {
@@ -430,6 +440,7 @@ func (a *App) emit() {
 		}
 		a.event("dictation:status", a.status)
 	}
+	a.pumpImportQueueLocked()
 }
 func (a *App) event(topic string, data ...interface{}) {
 	if a.notify != nil {
@@ -452,7 +463,7 @@ func (a *App) available() error {
 	return nil
 }
 func (a *App) busy() bool {
-	return a.status.Phase == "backup" || a.shortcutCaptureID != "" || a.status.Phase == "text-processing" || a.status.Phase == "recording" || a.status.Phase == "transcribing" || a.status.Phase == "downloading" || a.status.Phase == "mic-test" || a.status.Phase == "diagnostic-recording" || a.status.Phase == "diagnostic-transcribing"
+	return a.importActive != "" || a.status.Phase == "backup" || a.shortcutCaptureID != "" || a.status.Phase == "text-processing" || a.status.Phase == "recording" || a.status.Phase == "transcribing" || a.status.Phase == "downloading" || a.status.Phase == "mic-test" || a.status.Phase == "diagnostic-recording" || a.status.Phase == "diagnostic-transcribing"
 }
 func (a *App) registerShortcut() {
 	// Retired registrations can still have queued callbacks waiting on a.mu.
@@ -568,7 +579,7 @@ func (a *App) GetSnapshot() (Snapshot, error) {
 			profileModified = !p.Matches(a.settings, a.textConfig)
 		}
 	}
-	return Snapshot{AppProfileRules: append([]storage.AppProfileRule{}, a.profileLibrary.AppRules...), ProfileShortcut: a.profileLibrary.ProfileShortcut, DefaultProfileID: a.profileLibrary.DefaultID, ProfileModified: profileModified, DictationProfiles: append([]storage.DictationProfile{}, a.profileLibrary.Profiles...), ActiveProfileID: activeProfileID, RecordingSaveHistory: a.recordSettings.SaveHistory, LatestResult: latest, TextProcessing: config, Diagnostic: a.diagnostic, Vocabulary: entries, MicrophoneTested: a.microphoneTested, ShortcutTested: a.shortcutTested, Settings: a.settings, Status: a.status, History: history, Models: models.List(a.store.Dir), DataDir: a.store.Dir, Ready: ready, FloatingIndicator: a.indicator != nil, LaunchAtLoginAvailable: a.loginStart != nil, StartInTrayAvailable: a.tray != nil && !a.development}, nil
+	return Snapshot{ImportQueue: a.importSnapshotLocked(), AppProfileRules: append([]storage.AppProfileRule{}, a.profileLibrary.AppRules...), ProfileShortcut: a.profileLibrary.ProfileShortcut, DefaultProfileID: a.profileLibrary.DefaultID, ProfileModified: profileModified, DictationProfiles: append([]storage.DictationProfile{}, a.profileLibrary.Profiles...), ActiveProfileID: activeProfileID, RecordingSaveHistory: a.recordSettings.SaveHistory, LatestResult: latest, TextProcessing: config, Diagnostic: a.diagnostic, Vocabulary: entries, MicrophoneTested: a.microphoneTested, ShortcutTested: a.shortcutTested, Settings: a.settings, Status: a.status, History: history, Models: models.List(a.store.Dir), DataDir: a.store.Dir, Ready: ready, FloatingIndicator: a.indicator != nil, LaunchAtLoginAvailable: a.loginStart != nil, StartInTrayAvailable: a.tray != nil && !a.development}, nil
 }
 func (a *App) GetMicrophones() ([]audio.Device, error) {
 	a.mu.Lock()
@@ -629,6 +640,7 @@ func (a *App) start(external bool) error {
 	a.recordTextConfig, _ = textmodel.Normalize(textConfig)
 	a.status.ProfileID = profileID
 	a.recordVocabulary, _ = vocabulary.Normalize(a.vocabulary)
+	a.status.ImportID = ""
 	a.status.Phase = "recording"
 	a.status.CompletionWarning = false
 	a.status.Message = "Listening…"
@@ -683,12 +695,12 @@ func (a *App) stop() {
 	go func() {
 		defer a.wg.Done()
 		defer cancel()
-		a.transcribe(ctx, id, path, target, duration, settings, entries, textConfig, settings.AutoCopy)
+		a.transcribe(ctx, id, path, target, duration, settings, entries, textConfig, settings.AutoCopy, nil)
 	}()
 }
-func (a *App) transcribe(ctx context.Context, id, path, target string, duration int64, settings storage.Settings, entries []vocabulary.Entry, textConfig textmodel.Config, copyToClipboard bool) {
+func (a *App) transcribe(ctx context.Context, id, path, target string, duration int64, settings storage.Settings, entries []vocabulary.Entry, textConfig textmodel.Config, copyToClipboard bool, onProgress func(float64)) (sessionID, transcript string, resultErr error) {
 	persisted := false
-	text, err := a.engine.Transcribe(ctx, path, speech.Options{Executable: settings.WhisperPath, Model: settings.ModelPath, Language: settings.Language, Prompt: vocabulary.Prompt(entries)})
+	text, err := a.engine.Transcribe(ctx, path, speech.Options{Executable: settings.WhisperPath, Model: settings.ModelPath, Language: settings.Language, Prompt: vocabulary.Prompt(entries), Progress: onProgress})
 	a.mu.Lock()
 	a.status.CompletionWarning = false
 	defer a.mu.Unlock()
@@ -699,18 +711,18 @@ func (a *App) transcribe(ctx context.Context, id, path, target string, duration 
 		}
 	}()
 	if a.closing {
-		return
+		return "", "", context.Canceled
 	}
 	if ctx.Err() != nil {
 		a.status.Phase = "idle"
 		a.status.Message = "Transcription cancelled"
 		a.status.StartedAt = 0
 		a.emit()
-		return
+		return "", "", ctx.Err()
 	}
 	if err != nil {
 		a.fail(err)
-		return
+		return "", "", err
 	}
 	audioPath := ""
 	if settings.SaveHistory && settings.SaveAudio {
@@ -722,16 +734,21 @@ func (a *App) transcribe(ctx context.Context, id, path, target string, duration 
 	if settings.SaveHistory {
 		if err = a.store.Add(session); err != nil {
 			a.fail(fmt.Errorf("could not save transcript: %w", err))
-			return
+			return "", "", err
 		}
 		persisted = true
 		a.pruneHistoryLocked()
 	} else {
 		a.latestResult = &TemporaryResult{Session: session, Text: text}
 	}
+	if settings.SaveHistory {
+		sessionID = id
+	}
+	transcript = text
 	if textConfig.Enabled && textConfig.AutoPromptID != "" {
 		recipe, promptErr := textConfig.Recipe(textConfig.AutoPromptID)
 		a.status.Message = "Processing text…"
+		a.importProcessingLocked()
 		a.emit()
 		a.event("dictation:history")
 		// The successful speech result is already durable. Slow text inference
@@ -804,8 +821,10 @@ func (a *App) transcribe(ctx context.Context, id, path, target string, duration 
 			}
 		}
 	}
+	transcript = text
 	a.emit()
 	a.event("dictation:history")
+	return
 }
 func (a *App) Cancel() error {
 	a.mu.Lock()

@@ -1,6 +1,7 @@
 import { AudioDropImport } from "@/components/audio-drop-import";
 import { CommandMenu } from "@/components/command-menu";
 import { useDictation } from "@/components/dictation-provider";
+import { ImportQueue } from "@/components/import-queue/import-queue";
 import { RecordingStatus } from "@/components/recording-status";
 import { RecoveryActions } from "@/components/recovery-actions";
 import { Button } from "@/components/ui/button";
@@ -44,6 +45,7 @@ export function AppLayout() {
   const { error, clearError, loading, run, refresh, update } = useDictation();
   const [dismissedUpdate, setDismissedUpdate] = useState("");
   const [collapsed, setCollapsed] = useState(readCollapsed);
+  const sidebarWidth = collapsed ? "4.5rem" : "13.75rem";
   const [commandOpen, setCommandOpen] = useState(false);
   const toggleLabel = collapsed ? "Expand sidebar" : "Collapse sidebar";
   const connectionFailure = !!error && (loading || error === backendVersionMismatchMessage);
@@ -75,7 +77,7 @@ export function AppLayout() {
         className="group/layout flex min-h-screen"
         style={
           {
-            "--sidebar-width": collapsed ? "4.5rem" : "13.75rem",
+            "--sidebar-width": sidebarWidth,
           } as CSSProperties
         }
       >
@@ -197,6 +199,7 @@ export function AppLayout() {
           </div>
         </main>
         <RecordingStatus />
+        <ImportQueue sidebarWidth={sidebarWidth} />
         <CommandMenu
           open={commandOpen}
           onOpenChange={setCommandOpen}

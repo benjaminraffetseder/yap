@@ -139,7 +139,7 @@ test("audio support download progress and cancel survive navigation", async ({
   await expect(
     page.getByRole("status").filter({ hasText: "Downloading audio support… 42%" }),
   ).toBeVisible();
-  await expect(page.getByRole("button", { name: "Import audio", exact: true })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Import audio", exact: true })).toBeEnabled();
   await page.screenshot({ path: testInfo.outputPath("audio-support-progress.png") });
   await page.getByRole("link", { name: "Dictate", exact: true }).click();
   await expect(page.getByRole("button", { name: "Start recording", exact: true })).toBeDisabled();

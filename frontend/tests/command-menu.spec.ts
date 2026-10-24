@@ -81,7 +81,7 @@ test("browser preview enables navigation and appearance but disables native acti
   const dialog = await openMenu(page);
   for (const name of [
     "Start recording",
-    "Import audio file…",
+    "Import audio files…",
     "Turn Save to history off",
     "Check for updates",
   ]) {
@@ -395,8 +395,8 @@ test.describe("desktop commands and history", () => {
     dialog = await openMenu(page);
     await expect(dialog.getByRole("option", { name: "Stop recording", exact: true })).toBeEnabled();
     await expect(
-      dialog.getByRole("option", { name: "Import audio file…", exact: true }),
-    ).toBeDisabled();
+      dialog.getByRole("option", { name: "Import audio files…", exact: true }),
+    ).toBeEnabled();
     await expect(
       dialog.getByRole("option", { name: "Copy latest result", exact: true }),
     ).toHaveCount(0);
@@ -429,8 +429,8 @@ test.describe("desktop commands and history", () => {
     await page.evaluate(() => {
       window.commandTest.failAction = true;
     });
-    await openMenu(page, "Import audio file");
-    await dialog.getByRole("option", { name: "Import audio file…", exact: true }).click();
+    await openMenu(page, "Import audio files");
+    await dialog.getByRole("option", { name: "Import audio files…", exact: true }).click();
     await expect(
       page.locator('[data-slot="toast"]').filter({ hasText: "Command failed" }),
     ).toBeVisible();
@@ -475,14 +475,14 @@ test.describe("desktop commands and history", () => {
       window.commandTest.deferAction = true;
     });
     let dialog = await openMenu(page);
-    await dialog.getByRole("option", { name: "Import audio file…", exact: true }).click();
+    await dialog.getByRole("option", { name: "Import audio files…", exact: true }).click();
     dialog = await openMenu(page);
     await expect(
-      dialog.getByRole("option", { name: "Import audio file…", exact: true }),
+      dialog.getByRole("option", { name: "Import audio files…", exact: true }),
     ).toBeDisabled();
     await page.evaluate(() => window.commandTest.finishAction());
     await expect(
-      dialog.getByRole("option", { name: "Import audio file…", exact: true }),
+      dialog.getByRole("option", { name: "Import audio files…", exact: true }),
     ).toBeEnabled();
   });
 

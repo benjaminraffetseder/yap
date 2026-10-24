@@ -3,8 +3,11 @@ package speech
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
+	"strings"
 	"testing"
 	"time"
 )
@@ -28,6 +31,9 @@ func TestMain(m *testing.M) {
 		if mode == "prompt" && prompt != os.Getenv("YAP_EXPECT_PROMPT") {
 			os.Exit(3)
 		}
+		if mode == "progress" {
+			fmt.Fprint(os.Stderr, "whisper_print_progress_callback: progress =  10%\r\nwhisper_print_progress_callback: progress =  42%\n")
+		}
 		if mode == "empty" {
 			os.WriteFile(out+".txt", nil, 0600)
 		} else {
@@ -36,6 +42,36 @@ func TestMain(m *testing.M) {
 		os.Exit(0)
 	}
 	os.Exit(m.Run())
+}
+
+func TestProgressParserAndBoundedLog(t *testing.T) {
+	for _, line := range []string{"progress = -1%", "progress = 101%", "progress = NaN%", "other log", "notprogress = 42%"} {
+		if _, ok := parseProgress(line); ok {
+			t.Fatal("accepted invalid progress", line)
+		}
+	}
+	var values []float64
+	w := &progressLog{progress: func(value float64) { values = append(values, value) }}
+	for _, chunk := range []string{strings.Repeat("x", 8000), "\nwhisper: progr", "ess =  42%\r", "\nprogress = 100%"} {
+		w.Write([]byte(chunk))
+	}
+	w.flush()
+	if !reflect.DeepEqual(values, []float64{42, 100}) || len(w.tail) != 2000 || len(w.line) != 0 {
+		t.Fatal(values, len(w.tail), len(w.line))
+	}
+}
+
+func TestWhisperStreamsProgress(t *testing.T) {
+	t.Setenv("YAP_TEST_WHISPER", "progress")
+	opts := testOptions(t)
+	var values []float64
+	opts.Progress = func(value float64) { values = append(values, value) }
+	if _, err := (Whisper{}).Transcribe(context.Background(), "audio.wav", opts); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(values, []float64{10, 42}) {
+		t.Fatal(values)
+	}
 }
 func testOptions(t *testing.T) Options {
 	t.Helper()

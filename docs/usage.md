@@ -162,17 +162,36 @@ off by default. It doesn't need a text model or change older transcripts.
 
 ## Importing audio
 
-Choose **Import audio** in Dictate or History, or drag one audio file into the
-Yap window. Supported files are WAV, MP3, M4A,
+Choose **Import audio** in Dictate or History to select multiple files, or drag
+a group of audio files into the Yap window. Supported files are WAV, MP3, M4A,
 AAC, FLAC, OGG, Opus, AIFF, and WMA, from 0.3 seconds to 25 minutes long and up
 to 256 MiB. Longer files are rejected rather than cut short.
 
-Imports use your saved speech and text-processing settings. The result goes into
-History without changing the source file or clipboard. **Keep recordings** saves
-a converted copy for playback and backup.
+Files enter a backend queue and run one at a time, including while Yap is hidden
+in the tray. You can add more files while dictating or importing. The next file
+waits for dictation or another operation to finish; an import already running
+must finish or be cancelled before you can record. Invalid files appear as failed
+rows without stopping the rest of the batch.
+
+The small bottom drawer shows each file's stage. Whisper reports transcription
+percentages; decoding, text processing, and speech runtimes without progress use
+an indeterminate bar. Drag a queued row by its grip to reorder it, or focus the
+grip and use **Alt+ArrowUp/ArrowDown**. Active and finished rows stay pinned.
+Remove queued files, cancel the active import, retry failures, or clear finished
+rows. **Minimize** (or swipe down) moves the drawer into a bottom-right button;
+hover or focus it for status and click to reopen. A minimized queue shows one
+summary notification when it finishes.
+
+Imports use your saved speech and text-processing settings when each file starts.
+The result goes into History when **Save to history** is enabled, without changing
+the source file or clipboard. Each finished row also has a **Copy** action, even
+with history off. Results remain available in the queue until you clear them or
+quit Yap; the queue itself is not restored after quitting. **Keep recordings**
+saves a converted copy for playback and backup.
 
 WAV works without extra software. Other formats need FFmpeg. On Windows x64,
-Yap offers to download it if missing; nothing downloads until you confirm.
+Yap offers to download it once per batch if missing; the first queued file installs
+it after you confirm.
 You can also install it from Settings → Advanced → Audio support (FFmpeg).
 See [Audio support](audio-support.md) for manual setup and download details.
 

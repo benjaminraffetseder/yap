@@ -2,9 +2,11 @@ import { toastManager } from "@/components/ui/toast";
 import {
   backend,
   defaultTextProcessing,
+  importPending,
   isBusy,
   isDesktop,
   message,
+  type ImportJob,
   type Model,
   type Snapshot,
   type Status,
@@ -171,6 +173,8 @@ const empty: Snapshot = {
   },
 };
 type Context = {
+  importQueue: ImportJob[];
+  setImportQueueMinimized: (value: boolean) => void;
   update: UpdateStatus | null;
   checkingUpdates: boolean;
   updateError: string;
@@ -201,6 +205,11 @@ export function DictationProvider({ children }: { children: ReactNode }) {
   const [microphoneTestVisible, setMicrophoneTestVisible] = useState(false);
   const snapshotRequest = useRef(0);
   const statusRevision = useRef(0);
+  const queueRevision = useRef(0);
+  const importQueueMinimized = useRef(false);
+  const queueWasPending = useRef(false);
+  const knownImportIDs = useRef(new Set<string>());
+  const importBatch = useRef(new Map<string, ImportJob>());
   const latestStatus = useRef(empty.status);
   const modelDownload = useRef<{ model: Model; started: boolean } | null>(null);
   const checkUpdates = useCallback(async (manual = true) => {
@@ -226,6 +235,7 @@ export function DictationProvider({ children }: { children: ReactNode }) {
     if (!isDesktop) return;
     const request = ++snapshotRequest.current;
     const revision = statusRevision.current;
+    const importRevision = queueRevision.current;
     let value: Snapshot;
     try {
       value = await backend.snapshot();
@@ -236,12 +246,24 @@ export function DictationProvider({ children }: { children: ReactNode }) {
     }
     if (request !== snapshotRequest.current) return;
     if (revision === statusRevision.current) latestStatus.current = value.status;
+    if (importRevision === queueRevision.current) {
+      const jobs = value.importQueue ?? [];
+      queueWasPending.current = jobs.some(importPending);
+      knownImportIDs.current = new Set(jobs.map((job) => job.id));
+      for (const job of jobs)
+        if (importPending(job) || importBatch.current.has(job.id))
+          importBatch.current.set(job.id, job);
+    }
     // Bridge replies may arrive out of order or after a newer status event.
     setSnapshot((old) =>
       request !== snapshotRequest.current
         ? old
         : {
             ...value,
+            importQueue:
+              importRevision === queueRevision.current
+                ? (value.importQueue ?? [])
+                : old.importQueue,
             status: revision === statusRevision.current ? value.status : old.status,
           },
     );
@@ -319,7 +341,7 @@ export function DictationProvider({ children }: { children: ReactNode }) {
       const download = modelDownload.current;
       // Notify on a completed operation, not on saved results loaded or restored
       // after manually processing text. Status refreshes must not replay a toast.
-      if (status.phase === "done" && previous.phase === "transcribing") {
+      if (!status.importId && status.phase === "done" && previous.phase === "transcribing") {
         const warning = status.completionWarning === true;
         toastManager.add({
           id: "transcription-complete",
@@ -355,6 +377,7 @@ export function DictationProvider({ children }: { children: ReactNode }) {
               : undefined,
         });
       } else if (
+        !status.importId &&
         status.phase === "error" &&
         !download &&
         (previous.phase !== "error" || previous.message !== status.message)
@@ -383,6 +406,41 @@ export function DictationProvider({ children }: { children: ReactNode }) {
           });
       }
     });
+    const offQueue = EventsOn("import:queue", (jobs: ImportJob[]) => {
+      if (!active) return;
+      queueRevision.current++;
+      const pending = jobs.some(importPending);
+      if (!queueWasPending.current && pending) importBatch.current.clear();
+      for (const job of jobs) {
+        if (
+          importBatch.current.has(job.id) ||
+          importPending(job) ||
+          !knownImportIDs.current.has(job.id)
+        )
+          importBatch.current.set(job.id, job);
+      }
+      knownImportIDs.current = new Set(jobs.map((job) => job.id));
+      if (queueWasPending.current && !pending && importQueueMinimized.current) {
+        const results = [...importBatch.current.values()];
+        const done = results.filter((job) => job.state === "done").length;
+        const failed = results.filter((job) => job.state === "failed").length;
+        const cancelled = results.filter((job) => job.state === "cancelled").length;
+        toastManager.add({
+          id: "import-summary",
+          title: [
+            `${done} ${done === 1 ? "import" : "imports"} finished`,
+            failed ? `${failed} failed` : "",
+            cancelled ? `${cancelled} cancelled` : "",
+          ]
+            .filter(Boolean)
+            .join(", "),
+          priority: "low",
+          timeout: 5000,
+        });
+      }
+      queueWasPending.current = pending;
+      setSnapshot((old) => ({ ...old, importQueue: jobs }));
+    });
     const offLevel = EventsOn("dictation:level", (value: number) => {
       if (active) setLevel(value);
     });
@@ -407,6 +465,7 @@ export function DictationProvider({ children }: { children: ReactNode }) {
       active = false;
       snapshotRequest.current++;
       offStatus();
+      offQueue();
       offLevel();
       offHistory();
       offSetup();
@@ -416,6 +475,10 @@ export function DictationProvider({ children }: { children: ReactNode }) {
   return (
     <DictationContext.Provider
       value={{
+        importQueue: snapshot.importQueue ?? [],
+        setImportQueueMinimized: (value) => {
+          importQueueMinimized.current = value;
+        },
         update,
         checkingUpdates,
         updateError,

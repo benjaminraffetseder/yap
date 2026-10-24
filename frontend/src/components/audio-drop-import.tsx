@@ -1,12 +1,12 @@
-import { useMotionPreference } from "@/lib/use-motion-preference";
 import { useDictation } from "@/components/dictation-provider";
-import { backend, isBusy, isDesktop } from "@/lib/backend";
+import { MotionReveal } from "@/components/motion-reveal";
+import { backend, isDesktop } from "@/lib/backend";
+import { fade } from "@/lib/motion";
+import { useMotionPreference } from "@/lib/use-motion-preference";
 import { OnFileDrop, OnFileDropOff } from "@wails/runtime/runtime";
 import { Upload } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { MotionReveal } from "@/components/motion-reveal";
-import { fade } from "@/lib/motion";
+import { useEffect, useRef, useState } from "react";
 
 export function AudioDropImport() {
   const { snapshot, loading, run } = useDictation();
@@ -17,9 +17,7 @@ export function AudioDropImport() {
     ? "Wait for Yap to finish loading"
     : !snapshot.ready
       ? "Choose a speech model before importing audio"
-      : isBusy(snapshot.status.phase)
-        ? "Finish the current operation before importing audio"
-        : "";
+      : "";
   const current = useRef({ unavailable, run });
   current.current = { unavailable, run };
 
@@ -108,7 +106,7 @@ export function AudioDropImport() {
             className="space-y-3 px-6 text-center"
           >
             <Upload className="mx-auto size-10 text-primary" aria-hidden="true" />
-            <p className="text-lg font-medium">{unavailable || "Drop one audio file to import"}</p>
+            <p className="text-lg font-medium">{unavailable || "Drop audio files to import"}</p>
             {!unavailable && (
               <p className="text-sm text-muted-foreground">Up to 25 minutes · 256 MiB</p>
             )}

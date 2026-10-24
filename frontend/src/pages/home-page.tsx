@@ -1,5 +1,5 @@
-import { Switch } from "@/components/ui/switch";
 import { AudioImportButton } from "@/components/audio-import-button";
+import { ProfileSelector } from "@/components/dictation-profiles";
 import { useDictation } from "@/components/dictation-provider";
 import { DictationRow } from "@/components/dictation-row";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -11,10 +11,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { backend, duration, isBusy, isDesktop } from "@/lib/backend";
 import { useMotionPreference } from "@/lib/use-motion-preference";
 import { SetupPage } from "@/pages/setup-page";
-import { ProfileSelector } from "@/components/dictation-profiles";
 import { ArrowRight, AudioLines, Download, Keyboard, Loader2, Mic, Square } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link } from "react-router";
@@ -29,7 +29,7 @@ export function HomePage() {
   const [switchingModel, setSwitchingModel] = useState(false);
   const [switchingProfile, setSwitchingProfile] = useState(false);
   const recording = status.phase === "recording";
-  const downloading = status.phase === "downloading";
+  const downloading = status.phase === "downloading" && !status.importId;
   const downloadPercent = Math.round(Math.min(1, Math.max(0, status.progress)) * 100);
   const working = isBusy(status.phase) && !recording;
   const activeModel = snapshot.models.find(
