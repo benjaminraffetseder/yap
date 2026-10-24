@@ -256,6 +256,74 @@ func TestImportQueueRetriesRepairedFile(t *testing.T) {
 	}
 }
 
+func TestImportQueueRetryLaterJobRechecksAudioSupport(t *testing.T) {
+	a := testApp(t)
+	a.engine = importedSpeech{}
+	t.Setenv("PATH", t.TempDir())
+	paths := []string{filepath.Join(t.TempDir(), "one.mp3"), filepath.Join(t.TempDir(), "two.mp3")}
+	for _, path := range paths {
+		if err := os.WriteFile(path, []byte("compressed fixture"), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	installed, confirmed, resolved := 0, 0, 0
+	err := a.prepareAudioImports(paths, audioImportSupport{
+		supported: true,
+		resolve:   func(context.Context, string, string) (string, error) { resolved++; return "", audio.ErrFFmpegMissing },
+		confirm:   func() (bool, error) { confirmed++; return true, nil },
+		install: func(context.Context, string, func(int64, int64)) (string, error) {
+			installed++
+			return "", errors.New("temporary download failure")
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	a.wg.Wait()
+	// A later dependent job must recover even though the first job owned the failed download.
+	if err := a.RetryImport(a.importQueue[1].ID); err != nil {
+		t.Fatal(err)
+	}
+	a.wg.Wait()
+	if installed != 2 || confirmed != 1 || resolved != 3 || a.importQueue[1].State != "failed" || a.importQueue[1].Error != "temporary download failure" {
+		t.Fatalf("retry skipped dependency preparation: installs=%d confirms=%d resolves=%d jobs=%+v", installed, confirmed, resolved, a.importSnapshotLocked())
+	}
+}
+
+func TestImportQueueRetryUsesNewlyInstalledAudioSupport(t *testing.T) {
+	a := testApp(t)
+	a.engine = importedSpeech{}
+	available := false
+	installed, confirmed, resolved := 0, 0, 0
+	err := a.prepareAudioImport(importedWAV(t), audioImportSupport{
+		supported: true,
+		resolve: func(context.Context, string, string) (string, error) {
+			resolved++
+			if available {
+				return "", nil
+			}
+			return "", audio.ErrFFmpegMissing
+		},
+		confirm: func() (bool, error) { confirmed++; return true, nil },
+		install: func(context.Context, string, func(int64, int64)) (string, error) {
+			installed++
+			return "", errors.New("temporary download failure")
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	a.wg.Wait()
+	available = true
+	if err := a.RetryImport(a.importQueue[0].ID); err != nil {
+		t.Fatal(err)
+	}
+	a.wg.Wait()
+	if resolved != 2 || installed != 1 || confirmed != 1 || a.importQueue[0].State != "done" {
+		t.Fatalf("retry did not use installed support: resolves=%d installs=%d confirms=%d jobs=%+v", resolved, installed, confirmed, a.importSnapshotLocked())
+	}
+}
+
 func TestImportQueueScheduledPumpRechecksBusyAndProgressIsThrottled(t *testing.T) {
 	a := testApp(t)
 	e := queueSpeech{make(chan string, 1), make(chan error)}

@@ -79,7 +79,7 @@ func (a *App) prepareAudioImports(paths []string, support audioImportSupport) er
 	jobs := make([]*importJob, 0, len(paths))
 	needsInstall := false
 	for _, source := range paths {
-		job := &importJob{ImportJob: ImportJob{ID: uuid.NewString(), Name: filepath.Base(source), State: "queued", Message: "Queued", Progress: -1}, source: source}
+		job := &importJob{ImportJob: ImportJob{ID: uuid.NewString(), Name: filepath.Base(source), State: "queued", Message: "Queued", Progress: -1}, source: source, resolve: support.resolve}
 		var validationErr error
 		if strings.TrimSpace(source) == "" {
 			validationErr = errors.New("choose an audio file")
@@ -88,6 +88,8 @@ func (a *App) prepareAudioImports(paths []string, support audioImportSupport) er
 		}
 		if errors.Is(validationErr, audio.ErrFFmpegMissing) && support.supported {
 			needsInstall, validationErr = true, nil
+			// Keep batch approval available to every dependent job's explicit retry.
+			job.installer = support.install
 		}
 		if validationErr != nil {
 			job.State, job.Message, job.Error = "failed", importError(source, validationErr), importError(source, validationErr)
@@ -138,7 +140,7 @@ func (a *App) importAudioWithDecoder(job *importJob) error {
 		a.importInstallAudioSupport, a.importInstaller = false, nil
 		job.installer = install
 	} else {
-		install = job.installer
+		install = nil
 	}
 	a.latestResult = nil
 	a.recordSettings = settings
@@ -183,11 +185,6 @@ func (a *App) importAudioWithDecoder(job *importJob) error {
 				}
 			})
 			stop()
-			if err == nil {
-				a.mu.Lock()
-				job.installer = nil
-				a.mu.Unlock()
-			}
 		}
 		importCtx, stop := context.WithTimeout(ctx, 15*time.Minute)
 		defer stop()

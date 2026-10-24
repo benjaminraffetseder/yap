@@ -303,6 +303,36 @@ test("keyboard and grip dragging reorder only queued rows", async ({ page }) => 
   await expect(page.getByRole("dialog", { name: /Imports/ })).toBeVisible();
 });
 
+test("keyboard reorder keeps focus across pending saves and consecutive moves", async ({
+  page,
+}) => {
+  await page.evaluate(() => {
+    const api = Reflect.get(window, "go").main.App;
+    const reorder = api.ReorderImportQueue;
+    api.ReorderImportQueue = async (ids: string[]) => {
+      await new Promise((resolve) => setTimeout(resolve, 150));
+      return reorder(ids);
+    };
+  });
+  await queue(page, [job("one"), job("two"), job("three")]);
+  const grip = page.getByRole("button", { name: "Reorder three.wav" });
+  await grip.focus();
+  await page.keyboard.press("Alt+ArrowUp");
+  await expect
+    .poll(() => page.evaluate(() => Reflect.get(window, "queueTest").reorderCalls))
+    .toEqual([["one", "three", "two"]]);
+  await expect(grip).toBeFocused();
+  await expect(grip).not.toHaveAttribute("aria-disabled", "true");
+  await page.keyboard.press("Alt+ArrowUp");
+  await expect
+    .poll(() => page.evaluate(() => Reflect.get(window, "queueTest").reorderCalls))
+    .toEqual([
+      ["one", "three", "two"],
+      ["three", "one", "two"],
+    ]);
+  await expect(grip).toBeFocused();
+});
+
 test("failed reorder rolls back and rows expose cancel, retry, copy, and clear", async ({
   page,
 }) => {

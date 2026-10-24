@@ -8792,6 +8792,78 @@ test("auto-save prompt and chain deletion Undo restores the previous draft and a
     .toBe(1);
 });
 
+for (const kind of ["prompt", "chain"] as const) {
+  test(`auto-save ${kind} deletion Undo preserves later edits and automatic selection`, async ({
+    page,
+  }) => {
+    await page.addInitScript((kind) => {
+      const config = window.dictationTest.snapshot.textProcessing;
+      config.enabled = true;
+      config.model = "model";
+      config.autoPromptId = kind === "prompt" ? "cleanup" : "chain";
+      config.chains =
+        kind === "chain"
+          ? [
+              {
+                id: "chain",
+                name: "Summary chain",
+                steps: [{ id: "step", promptId: "summary", input: "original" }],
+              },
+            ]
+          : [];
+    }, kind);
+    await page.goto("/#/prompts");
+    if (kind === "prompt") await promptAction(page, "Delete prompt");
+    else {
+      await page.getByRole("tab", { name: "Chains", exact: true }).click();
+      await page.getByRole("button", { name: "Delete chain", exact: true }).click();
+    }
+    await page
+      .getByRole("dialog")
+      .getByRole("button", {
+        name: kind === "prompt" ? "Delete prompt" : "Delete chain",
+        exact: true,
+      })
+      .click();
+    await expect
+      .poll(() => page.evaluate(() => window.dictationTest.snapshot.textProcessing.autoPromptId))
+      .toBe("");
+    await page.getByRole("tab", { name: "Prompts", exact: true }).click();
+    await page.getByLabel("Instructions", { exact: true }).fill("Keep edits made after deletion.");
+    await page.getByRole("switch", { name: "Run after dictation", exact: true }).check();
+    await expect
+      .poll(() => page.evaluate(() => window.dictationTest.snapshot.textProcessing.autoPromptId))
+      .toBe(kind === "prompt" ? "summary" : "cleanup");
+    await page.keyboard.press("F6");
+    await page
+      .locator('[data-slot="toast"]')
+      .filter({ hasText: kind === "prompt" ? "Prompt deleted" : "Chain deleted" })
+      .getByRole("button", { name: "Undo", exact: true })
+      .click();
+    await expect
+      .poll(() =>
+        page.evaluate((kind) => {
+          const config = window.dictationTest.snapshot.textProcessing;
+          return {
+            restored:
+              kind === "prompt"
+                ? config.prompts.some((prompt) => prompt.id === "cleanup")
+                : config.chains?.some((chain) => chain.id === "chain"),
+            instruction: config.prompts.find(
+              (prompt) => prompt.id === (kind === "prompt" ? "summary" : "cleanup"),
+            )?.instruction,
+            autoPromptId: config.autoPromptId,
+          };
+        }, kind),
+      )
+      .toEqual({
+        restored: true,
+        instruction: "Keep edits made after deletion.",
+        autoPromptId: kind === "prompt" ? "summary" : "cleanup",
+      });
+  });
+}
+
 test("auto-save serializes requests and preserves edits made while a save is pending", async ({
   page,
 }) => {

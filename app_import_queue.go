@@ -1,9 +1,13 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"math"
 	"time"
+
+	"yap/internal/audio"
+	"yap/internal/models"
 )
 
 // ImportJob is the public queue view. Source paths stay on the backend.
@@ -21,6 +25,7 @@ type ImportJob struct {
 type importJob struct {
 	ImportJob
 	source, decoder string
+	resolve         func(context.Context, string, string) (string, error)
 	installer       audioSupportInstaller
 	lastProgress    time.Time
 }
@@ -167,24 +172,65 @@ func (a *App) RemoveImport(id string) error {
 
 func (a *App) RetryImport(id string) error {
 	a.mu.Lock()
-	defer a.mu.Unlock()
 	if err := a.importAvailableLocked(); err != nil {
+		a.mu.Unlock()
 		return err
 	}
-	for _, job := range a.importQueue {
-		if job.ID != id {
-			continue
+	var job *importJob
+	for _, candidate := range a.importQueue {
+		if candidate.ID == id {
+			job = candidate
+			break
 		}
-		if job.State != "failed" && job.State != "cancelled" {
-			return errors.New("only failed or cancelled imports can be retried")
+	}
+	if job == nil {
+		a.mu.Unlock()
+		return errors.New("import not found")
+	}
+	if job.State != "failed" && job.State != "cancelled" {
+		a.mu.Unlock()
+		return errors.New("only failed or cancelled imports can be retried")
+	}
+	resolve, installer, source, dir := job.resolve, job.installer, job.source, a.store.Dir
+	a.mu.Unlock()
+	if resolve == nil {
+		resolve = audio.ImportDecoder
+	}
+	// Decoder discovery can probe a launcher; keep cancellation and snapshots usable.
+	decoder, err := resolve(a.ctx, source, models.FFmpegPath(dir))
+	needsInstall := errors.Is(err, audio.ErrFFmpegMissing) && installer != nil
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if availableErr := a.importAvailableLocked(); availableErr != nil {
+		return availableErr
+	}
+	found := false
+	for _, candidate := range a.importQueue {
+		if candidate == job {
+			found = true
+			break
 		}
-		job.State, job.Message, job.Error, job.Progress = "queued", "Queued", "", -1
-		job.lastProgress = time.Time{}
+	}
+	if !found {
+		return errors.New("import not found")
+	}
+	if job.State != "failed" && job.State != "cancelled" {
+		return errors.New("only failed or cancelled imports can be retried")
+	}
+	if err != nil && !needsInstall {
+		job.State, job.Message, job.Error, job.Progress = "failed", importError(source, err), importError(source, err), -1
 		a.emitImportQueueLocked()
-		a.pumpImportQueueLocked()
 		return nil
 	}
-	return errors.New("import not found")
+	if needsInstall && !a.importInstallAudioSupport {
+		a.importInstallAudioSupport, a.importInstaller = true, installer
+	}
+	job.decoder = decoder
+	job.State, job.Message, job.Error, job.Progress = "queued", "Queued", "", -1
+	job.lastProgress = time.Time{}
+	a.emitImportQueueLocked()
+	a.pumpImportQueueLocked()
+	return nil
 }
 
 func (a *App) ClearFinishedImports() error {

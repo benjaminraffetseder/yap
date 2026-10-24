@@ -38,6 +38,7 @@ export function ImportQueueRow({
         aria-label={`Reorder ${job.name}`}
         aria-description="Use Alt+ArrowUp or Alt+ArrowDown to move this file"
         disabled={!queued || reorderDisabled}
+        focusableWhenDisabled={queued}
         className="shrink-0 touch-none cursor-grab active:cursor-grabbing"
         onPointerDown={(event) => {
           event.stopPropagation();
