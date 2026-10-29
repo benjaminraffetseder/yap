@@ -3,8 +3,11 @@ package main
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"runtime"
 
+	"yap/internal/indicator"
 	"yap/internal/tray"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
@@ -35,10 +38,21 @@ func (a *App) ServiceStartup(ctx context.Context, _ application.ServiceOptions) 
 		a.status.TrayError = "Background controls unavailable: " + err.Error()
 	}
 	a.closeToTray = a.tray != nil
+	root, err := os.UserConfigDir()
+	if err == nil {
+		a.indicator, err = indicator.New(a.desktop, indicator.Actions{
+			Stop:   func() { _ = a.StopRecording() },
+			Cancel: func() { _ = a.Cancel() }, Show: a.show,
+		}, filepath.Join(root, "yap"))
+	}
+	if err != nil {
+		a.status.IndicatorError = "Floating indicator unavailable: " + err.Error()
+	}
 	if runtime.GOOS == "darwin" {
-		// Restore the main window even if the native recording panel is visible.
-		a.desktop.Event.OnApplicationEvent(events.Mac.ApplicationShouldHandleReopen, func(*application.ApplicationEvent) {
-			a.show()
+		// Wails' default reopens every hidden window, including an idle indicator.
+		a.desktop.Event.RegisterApplicationEventHook(events.Mac.ApplicationShouldHandleReopen, func(e *application.ApplicationEvent) {
+			e.Cancel()
+			go a.show()
 		})
 	}
 	// Native integrations must start after the platform event loop is available.

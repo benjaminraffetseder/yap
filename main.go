@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 
+	"yap/internal/indicator"
 	"yap/internal/inference/speech"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
@@ -30,6 +31,7 @@ func main() {
 	app := application.New(application.Options{
 		Name:           "Yap",
 		Mac:            application.MacOptions{ApplicationShouldTerminateAfterLastWindowClosed: true},
+		Windows:        indicator.WindowsOptions(),
 		Services:       []application.Service{application.NewService(service)},
 		Assets:         application.AssetOptions{Handler: application.AssetFileServerFS(assets)},
 		SingleInstance: singleInstanceLock(service),

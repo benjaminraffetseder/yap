@@ -2,4 +2,6 @@
 
 package indicator
 
-func New(Actions, string) (Controller, error) { return nil, nil }
+import "github.com/wailsapp/wails/v3/pkg/application"
+
+func New(*application.App, Actions, string) (Controller, error) { return nil, nil }

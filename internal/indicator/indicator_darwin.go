@@ -4,166 +4,68 @@ package indicator
 
 /*
 #cgo CFLAGS: -x objective-c -fobjc-arc
-#cgo LDFLAGS: -framework AppKit -framework QuartzCore
-#include <stdint.h>
-#include <stdlib.h>
-void *yap_indicator_new(uintptr_t callback);
-void yap_indicator_update(void *panel, const char *label, const char *stop, const char *cancel, int visible, int move, int working, double level, int dark);
-void yap_indicator_close(void *panel);
+#cgo LDFLAGS: -framework AppKit
+#include <stdbool.h>
+bool yap_indicator_configure(void *window);
+bool yap_indicator_focused(void *window);
+void yap_indicator_place(void *window, bool positioned);
+bool yap_indicator_drag(void *window, int action, double x, double y);
 */
 import "C"
 
-import (
-	"errors"
-	"math"
-	"runtime/cgo"
-	"sync"
-	"time"
-	"unsafe"
-)
+import "github.com/wailsapp/wails/v3/pkg/application"
 
-type darwinIndicator struct {
-	mu                sync.Mutex
-	state             State
-	level             float64
-	dark              bool
-	actions           Actions
-	closed, dismissed bool
-	changed, visible  bool
-	expires           time.Time
-	panel             unsafe.Pointer
-	handle            cgo.Handle
-	stop, done        chan struct{}
+func configureOptions(o *application.WebviewWindowOptions) {
+	o.Width, o.Height = 376, 64
+	o.Mac = application.MacWindow{
+		WindowClass:        application.MacWindowClassPanel,
+		PanelPreferences:   application.MacPanelPreferences{FloatingPanel: true, BecomesKeyOnlyIfNeeded: true, NonActivating: true},
+		WindowLevel:        application.MacWindowLevelStatus,
+		CollectionBehavior: application.MacWindowCollectionBehaviorCanJoinAllSpaces | application.MacWindowCollectionBehaviorFullScreenAuxiliary | application.MacWindowCollectionBehaviorIgnoresCycle,
+		CornerRadius:       12,
+	}
 }
 
-// AppKit stores frame geometry in the app's user defaults.
-func New(actions Actions, _ string) (Controller, error) {
-	n := &darwinIndicator{actions: actions, stop: make(chan struct{}), done: make(chan struct{}), dark: true}
-	n.handle = cgo.NewHandle(n)
-	n.panel = C.yap_indicator_new(C.uintptr_t(n.handle))
-	if n.panel == nil {
-		n.handle.Delete()
-		return nil, errors.New("macOS application window is not available")
+type platformWindow struct {
+	window                                  *application.WebviewWindow
+	configured, positioned, dragging, moved bool
+}
+
+func newPlatformWindow(_ *application.App, window *application.WebviewWindow, _ string) *platformWindow {
+	return &platformWindow{window: window}
+}
+func (p *platformWindow) configure() {
+	if p.configured {
+		return
 	}
-	go func() {
-		defer close(n.done)
-		ticker := time.NewTicker(100 * time.Millisecond)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-n.stop:
-				return
-			case <-ticker.C:
-				n.render()
+	p.positioned = bool(C.yap_indicator_configure(p.window.NativeWindow()))
+	p.configured = true
+}
+func (p *platformWindow) focused() bool {
+	return bool(C.yap_indicator_focused(p.window.NativeWindow()))
+}
+func (p *platformWindow) place(_ bool) {
+	if !p.dragging {
+		C.yap_indicator_place(p.window.NativeWindow(), C.bool(p.positioned))
+	}
+}
+func (p *platformWindow) drag(d pointerDrag) {
+	switch d.Action {
+	case "start":
+		p.dragging, p.moved = true, false
+		C.yap_indicator_drag(p.window.NativeWindow(), 0, C.double(d.X), C.double(d.Y))
+	case "move":
+		if p.dragging {
+			if bool(C.yap_indicator_drag(p.window.NativeWindow(), 1, 0, 0)) {
+				p.positioned, p.moved = true, true
 			}
 		}
-	}()
-	return n, nil
-}
-
-func (n *darwinIndicator) Update(s State) {
-	n.mu.Lock()
-	n.state = s
-	n.changed = true // Repeated failed attempts must show a fresh notification.
-	n.mu.Unlock()
-}
-func (n *darwinIndicator) SetLevel(level float64) {
-	if math.IsNaN(level) || math.IsInf(level, 0) {
-		level = 0
-	}
-	n.mu.Lock()
-	n.level = max(0, min(1, level))
-	n.mu.Unlock()
-}
-func (n *darwinIndicator) SetTheme(dark bool) {
-	n.mu.Lock()
-	n.dark = dark
-	n.mu.Unlock()
-}
-func (n *darwinIndicator) Close() {
-	n.mu.Lock()
-	if n.closed {
-		n.mu.Unlock()
-		<-n.done
-		return
-	}
-	n.closed = true
-	close(n.stop)
-	n.mu.Unlock()
-	<-n.done
-	C.yap_indicator_close(n.panel)
-	n.handle.Delete()
-}
-
-func (n *darwinIndicator) render() {
-	n.mu.Lock()
-	if n.closed {
-		n.mu.Unlock()
-		return
-	}
-	s, level, dark := n.state, n.level, n.dark
-	now := time.Now()
-	v := presentation(s, now)
-	move := C.int(0)
-	if n.changed {
-		n.changed = false
-		n.dismissed = false
-		n.expires = time.Time{}
-		if v.dismissAfter > 0 {
-			n.expires = now.Add(v.dismissAfter)
+	case "end":
+		if p.dragging {
+			p.dragging = false
+			if p.moved {
+				C.yap_indicator_drag(p.window.NativeWindow(), 2, 0, 0)
+			}
 		}
-		if s.Phase == "recording" {
-			move = 1
-		}
-	}
-	visible := C.int(0)
-	if v.visible && !n.dismissed && (n.expires.IsZero() || now.Before(n.expires)) {
-		visible = 1
-	}
-	if visible == 0 && !n.visible {
-		n.mu.Unlock()
-		return // No main-queue calls or allocations while the indicator is hidden.
-	}
-	n.visible = visible != 0
-	n.mu.Unlock() // Never hold a Go lock while waiting for AppKit's main queue.
-	label, stop, cancel := C.CString(v.label), C.CString(v.stop), C.CString(v.cancel)
-	defer C.free(unsafe.Pointer(label))
-	defer C.free(unsafe.Pointer(stop))
-	defer C.free(unsafe.Pointer(cancel))
-	working := C.int(0)
-	if s.Phase == "transcribing" {
-		working = 1
-	}
-	darkMode := C.int(0)
-	if dark {
-		darkMode = 1
-	}
-	C.yap_indicator_update(n.panel, label, stop, cancel, visible, move, working, C.double(level), darkMode)
-}
-
-//export yapIndicatorAction
-func yapIndicatorAction(handle C.uintptr_t, action C.int) {
-	n := cgo.Handle(handle).Value().(*darwinIndicator)
-	n.mu.Lock()
-	if n.closed {
-		n.mu.Unlock()
-		return
-	}
-	s := n.state
-	var callback func()
-	if action == 1 {
-		if s.Phase == "recording" {
-			callback = n.actions.Stop
-		} else if presentation(s, time.Now()).stop == "Open Yap" {
-			callback = n.actions.Show
-		}
-	} else if s.Phase == "recording" || s.Phase == "transcribing" {
-		callback = n.actions.Cancel
-	} else {
-		n.dismissed = true
-	}
-	n.mu.Unlock()
-	if callback != nil {
-		go callback()
 	}
 }

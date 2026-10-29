@@ -1,0 +1,110 @@
+:root {
+  color-scheme: dark;
+  background: var(--card);
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+}
+
+* {
+  box-sizing: border-box;
+}
+html,
+body,
+#indicator-root {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+}
+body {
+  min-width: 0;
+  background: var(--card);
+  user-select: none;
+  --wails-draggable: no-drag;
+}
+#indicator {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 100%;
+  padding: 0 8px 0 12px;
+  background: var(--card);
+  color: var(--muted-foreground);
+  font-size: 12px;
+  cursor: move;
+  touch-action: none;
+}
+#label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.meter {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: none;
+  height: 20px;
+  width: 18px;
+}
+.meter i {
+  display: block;
+  width: 3px;
+  height: 16px;
+  background: var(--primary);
+  transform: scaleY(0.25);
+}
+[data-phase="recording"] .meter i {
+  transform: scaleY(calc(0.25 + 0.75 * var(--level)));
+  opacity: calc(0.55 + 0.45 * var(--level));
+}
+[data-phase="transcribing"] .meter i {
+  animation: busy 600ms steps(1, end) infinite;
+}
+[data-phase="transcribing"] .meter i:nth-child(2) {
+  animation-delay: -150ms;
+}
+[data-phase="transcribing"] .meter i:nth-child(3) {
+  animation-delay: -300ms;
+}
+[data-phase="transcribing"] .meter i:nth-child(4) {
+  animation-delay: -450ms;
+}
+@keyframes busy {
+  0%,
+  100% {
+    transform: scaleY(0.3125);
+  }
+  25% {
+    transform: scaleY(0.5);
+  }
+  50% {
+    transform: scaleY(0.6875);
+  }
+  75% {
+    transform: scaleY(0.875);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-phase="recording"] .meter i,
+  [data-phase="transcribing"] .meter i {
+    animation: none;
+    transform: scaleY(0.75);
+  }
+}
+@media (min-height: 60px) {
+  #indicator {
+    font-size: 13px;
+    gap: 10px;
+    padding: 0 12px 0 16px;
+  }
+  #indicator .indicator-action {
+    height: 32px;
+    padding-inline: 12px;
+    font-size: 13px;
+  }
+}

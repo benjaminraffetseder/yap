@@ -9,6 +9,7 @@ const events = Reflect.get(window, "mockEvents") as
       subscribe?: (name: string, callback: (...args: unknown[]) => void) => void;
       onFileDrop?: (callback: (x: number, y: number, paths: string[]) => void) => void;
       ClipboardSetText?: (text: string) => Promise<boolean>;
+      emit?: (name: string, data: unknown) => boolean;
     }
   | undefined;
 
@@ -20,6 +21,7 @@ if (methods) {
 
   setTransport({
     async call(objectID, _method, _windowName, args) {
+      if (objectID === 3) return events?.emit?.(args.name, args.data) ?? false;
       if (objectID === 1) {
         if (!(await events?.ClipboardSetText?.(args.text)))
           throw new Error("Clipboard unavailable");
@@ -43,6 +45,7 @@ if (methods) {
     "setup:changed",
     "profile:changed",
     "shortcut:capture-ended",
+    "indicator:frame",
   ]) {
     events?.subscribe?.(name, (...args) => dispatch(name, args.length > 1 ? args : args[0]));
   }

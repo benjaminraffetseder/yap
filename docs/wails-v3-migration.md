@@ -16,8 +16,9 @@ metadata and development settings live in `build/config.yml`. Native Windows
 resources and macOS plists contain concrete values rather than v2 templates.
 Keep their version fields in sync; the Go tests check them.
 
-The backend is registered as a v3 service. Native integrations start after the
-application event loop starts. The main window stays hidden until startup and
+The backend is registered as a v3 service. Wails windows and tray resources are
+configured during service startup; hotkeys and audio start after the application
+event loop starts. The main window stays hidden until startup and
 the webview runtime are ready. Its closing hook preserves close-to-tray, and
 application shutdown releases the existing native integrations and storage.
 
@@ -28,9 +29,27 @@ before Wails starts its native resources. Menu state updates are coalesced on
 the main thread; queued updates become no-ops after shutdown. Window close
 hides to the tray on both platforms, while application Quit still exits.
 Dock reopen uses Wails' application event to restore the main window even while
-the native recording indicator is visible.
+the recording indicator is visible. Its hook prevents the default Dock handler
+from reopening an idle indicator alongside the main window.
 Linux keeps its existing close-as-exit behavior until native tray availability
 and fallback behavior can be verified on a Linux desktop.
+
+The floating indicator is a separate, always-on-top, frameless Wails webview on
+Windows and macOS. `frontend/indicator.html` mounts a dedicated React component
+that reuses the application's shadcn buttons and theme. It does not mount the
+main React app, duplicate its effects, or receive transcript
+contents. The existing Go presentation rules still own labels, actions, elapsed
+time and notification expiry. A frontend-ready handshake restores current state
+after loading or reloading; stale button revisions cannot affect a newer session.
+
+Small platform helpers preserve non-activation and saved geometry. Windows uses
+`WS_EX_NOACTIVATE` and mouse-activation interception; macOS uses a non-activating
+Wails panel with key-window suppression. Pointer dragging avoids Wails' Windows
+native move loop, which explicitly sets focus. Both platforms clamp saved
+positions to the available work area. Existing Windows `indicator-position.json`
+coordinates and the macOS `YapDictationIndicator` frame preference are retained.
+The former GDI and AppKit control rendering and separate native message loop have
+been removed. Theme changes and reduced-motion meter behavior remain supported.
 
 Bindings are generated into `frontend/bindings` with
 `wails3 generate bindings -ts -i -names`. Interfaces preserve the original JSON

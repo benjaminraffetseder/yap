@@ -1,715 +1,191 @@
 package indicator
 
 import (
-	"fmt"
 	"log"
 	"math"
 	"os"
 	"path/filepath"
-	"runtime"
-	"sync"
-	"sync/atomic"
-	"time"
-	"unsafe"
 
+	"github.com/wailsapp/wails/v3/pkg/application"
+	"github.com/wailsapp/wails/v3/pkg/w32"
 	"golang.org/x/sys/windows"
 )
 
-var user = windows.NewLazySystemDLL("user32.dll")
-var gdi = windows.NewLazySystemDLL("gdi32.dll")
-var registerClass = user.NewProc("RegisterClassExW")
-var unregisterClass = user.NewProc("UnregisterClassW")
-var createWindow = user.NewProc("CreateWindowExW")
-var defWindow = user.NewProc("DefWindowProcW")
-var destroyWindow = user.NewProc("DestroyWindow")
-var getMessage = user.NewProc("GetMessageW")
-var translateMessage = user.NewProc("TranslateMessage")
-var dispatchMessage = user.NewProc("DispatchMessageW")
-var postMessage = user.NewProc("PostMessageW")
-var postQuit = user.NewProc("PostQuitMessage")
-var showWindow = user.NewProc("ShowWindow")
-var setWindowPos = user.NewProc("SetWindowPos")
-var setWindowText = user.NewProc("SetWindowTextW")
-var sendMessage = user.NewProc("SendMessageW")
-var invalidate = user.NewProc("InvalidateRect")
-var setTimer = user.NewProc("SetTimer")
-var killTimer = user.NewProc("KillTimer")
-var monitorFromWindow = user.NewProc("MonitorFromWindow")
-var getMonitorInfo = user.NewProc("GetMonitorInfoW")
-var getForeground = user.NewProc("GetForegroundWindow")
-var getWindowProcessID = user.NewProc("GetWindowThreadProcessId")
-var isWindowVisible = user.NewProc("IsWindowVisible")
-var isIconic = user.NewProc("IsIconic")
-var getDPI = user.NewProc("GetDpiForWindow")
-var beginPaint = user.NewProc("BeginPaint")
-var endPaint = user.NewProc("EndPaint")
-var fillRect = user.NewProc("FillRect")
-var setWindowRgn = user.NewProc("SetWindowRgn")
-var getClientRect = user.NewProc("GetClientRect")
-var getWindowRect = user.NewProc("GetWindowRect")
-var setCapture = user.NewProc("SetCapture")
-var releaseCapture = user.NewProc("ReleaseCapture")
-var setCursor = user.NewProc("SetCursor")
-var callWindowProc = user.NewProc("CallWindowProcW")
-var setWindowLong = windowLongProc("SetWindowLong")
-var createBrush = gdi.NewProc("CreateSolidBrush")
-var deleteObject = gdi.NewProc("DeleteObject")
-var createFont = gdi.NewProc("CreateFontW")
-var setTextColor = gdi.NewProc("SetTextColor")
-var setBackgroundColor = gdi.NewProc("SetBkColor")
-var createRegion = gdi.NewProc("CreateRoundRectRgn")
-var loadCursor = user.NewProc("LoadCursorW")
-var getWindowText = user.NewProc("GetWindowTextW")
-var drawText = user.NewProc("DrawTextW")
-var selectObject = gdi.NewProc("SelectObject")
-var stockObject = gdi.NewProc("GetStockObject")
-var roundRect = gdi.NewProc("RoundRect")
-var backgroundMode = gdi.NewProc("SetBkMode")
-var saveDC = gdi.NewProc("SaveDC")
-var restoreDC = gdi.NewProc("RestoreDC")
-var systemParametersInfo = user.NewProc("SystemParametersInfoW")
+const exNoActivate = 0x08000000
 
-const (
-	wmUpdate     = 0x8001
-	wmClose      = 0x0010
-	wmCommand    = 0x0111
-	stopID       = 101
-	cancelID     = 102
-	exNoActivate = 0x08000000
-	exToolWindow = 0x00000080
-	exTopmost    = 0x00000008
+type point struct{ X, Y int32 }
 
-	panelWidth      = 316
-	panelHeight     = 40
-	backgroundColor = 0x002B2928
-	textColor       = 0x00CFCCC8
-	accentColor     = 0x0097B588
+var (
+	indicatorUser32   = windows.NewLazySystemDLL("user32.dll")
+	isIconic          = indicatorUser32.NewProc("IsIconic")
+	setWindowRegion   = indicatorUser32.NewProc("SetWindowRgn")
+	createRoundRegion = windows.NewLazySystemDLL("gdi32.dll").NewProc("CreateRoundRectRgn")
 )
 
-type rect struct{ Left, Top, Right, Bottom int32 }
-type point struct{ X, Y int32 }
-type message struct {
-	Window         uintptr
-	Message        uint32
-	WParam, LParam uintptr
-	Time           uint32
-	Point          point
-	Private        uint32
-}
-type windowClass struct {
-	Size, Style                        uint32
-	Procedure                          uintptr
-	ClassExtra, WindowExtra            int32
-	Instance, Icon, Cursor, Background uintptr
-	MenuName, ClassName                *uint16
-	SmallIcon                          uintptr
-}
-type monitorInfo struct {
-	Size          uint32
-	Monitor, Work rect
-	Flags         uint32
-}
-type paintStruct struct {
-	DC                 uintptr
-	Erase              int32
-	Paint              rect
-	Restore, IncUpdate int32
-	Reserved           [32]byte
-}
-type drawItem struct {
-	ControlType, ControlID, ItemID, Action, State uint32
-	Window, DC                                    uintptr
-	Bounds                                        rect
-	Data                                          uintptr
+func WindowsOptions() application.WindowsOptions {
+	return application.WindowsOptions{WndProcInterceptor: func(hwnd uintptr, msg uint32, _, _ uintptr) (uintptr, bool) {
+		if msg == w32.WM_MOUSEACTIVATE && uint32(w32.GetWindowLong(hwnd, w32.GWL_EXSTYLE))&exNoActivate != 0 {
+			return 3, true // MA_NOACTIVATE: buttons must leave the insertion target active.
+		}
+		return 0, false
+	}}
 }
 
-type palette struct {
-	background, text, accent, button, pressed uintptr
+func configureOptions(o *application.WebviewWindowOptions) {
+	o.Windows = application.WindowsWindow{ExStyle: exNoActivate, HiddenOnTaskbar: true, DisableFramelessWindowDecorations: true, DisableMenu: true}
 }
 
-func themePalette(dark bool) palette {
-	if dark {
-		return palette{backgroundColor, textColor, accentColor, 0x00353230, 0x0044403D}
-	}
-	return palette{0x00F6F8FA, 0x00504B46, 0x00607C44, 0x00EBEEF0, 0x00DDE2E5}
+type platformWindow struct {
+	app                         *application.App
+	window                      *application.WebviewWindow
+	path                        string
+	position                    point
+	positioned, dragging, moved bool
+	offset                      application.Point
+	cursor                      func() (int, int, bool)
+	clipSize                    application.Size
+	clipDPI                     uint32
 }
 
-type native struct {
-	mu           sync.Mutex
-	state        State
-	changed      bool
-	level        float64
-	dark         bool
-	actions      Actions
-	foreground   func() uintptr
-	positionPath string
-	handle       atomic.Uintptr
-	closed       atomic.Bool
-	done         chan struct{}
-	// The remaining fields are used only by the window's OS thread.
-	label, stop, cancel      uintptr
-	background, accent, font uintptr
-	button, pressed          uintptr
-	colors                   palette
-	dpi                      int
-	visible                  bool
-	placing                  bool
-	looping                  bool
-	dismissed                bool
-	dragging, positioned     bool
-	dragMoved                bool
-	dragOffset               point
-	dragCursor               uintptr
-	expires                  time.Time
-	labelText                string
-	reduceMotion             bool
-}
-
-var classSequence atomic.Uint64
-
-func windowLongProc(name string) *windows.LazyProc {
-	if unsafe.Sizeof(uintptr(0)) == 8 {
-		return user.NewProc(name + "PtrW")
-	}
-	return user.NewProc(name + "W")
-}
-
-func New(actions Actions, dataDir string) (Controller, error) {
-	return newNative(actions, dataDir, func() uintptr { hwnd, _, _ := getForeground.Call(); return hwnd })
-}
-
-func newNative(actions Actions, dataDir string, foreground func() uintptr) (Controller, error) {
-	n := &native{actions: actions, foreground: foreground, done: make(chan struct{}), dpi: 96, dark: true}
+func newPlatformWindow(app *application.App, window *application.WebviewWindow, dataDir string) *platformWindow {
+	p := &platformWindow{app: app, window: window, cursor: w32.GetCursorPos}
 	if dataDir != "" {
-		n.positionPath = filepath.Join(dataDir, "indicator-position.json")
+		p.path = filepath.Join(dataDir, "indicator-position.json")
 	}
-	ready := make(chan error, 1)
-	go n.run(ready)
-	if err := <-ready; err != nil {
-		<-n.done
-		return nil, err
+	var err error
+	p.position, p.positioned, err = loadPosition(p.path)
+	if err != nil {
+		log.Printf("restore indicator position: %v", err)
 	}
-	return n, nil
+	return p
 }
 
-func (n *native) Update(s State) {
-	if n.closed.Load() {
-		return
-	}
-	n.mu.Lock()
-	n.state = s
-	n.changed = true // Repeated failed attempts must show a fresh notification.
-	n.mu.Unlock()
-	if hwnd := n.handle.Load(); hwnd != 0 {
-		postMessage.Call(hwnd, wmUpdate, 0, 0)
-	}
-}
-func (n *native) SetLevel(level float64) {
-	if math.IsNaN(level) || math.IsInf(level, 0) {
-		level = 0
-	}
-	n.mu.Lock()
-	n.level = max(0, min(1, level))
-	n.mu.Unlock()
-}
-func (n *native) SetTheme(dark bool) {
-	if n.closed.Load() {
-		return
-	}
-	n.mu.Lock()
-	n.dark = dark
-	n.mu.Unlock()
-	if hwnd := n.handle.Load(); hwnd != 0 {
-		postMessage.Call(hwnd, wmUpdate, 0, 0)
-	}
-}
-func (n *native) Close() {
-	if n.closed.CompareAndSwap(false, true) {
-		if hwnd := n.handle.Load(); hwnd != 0 {
-			postMessage.Call(hwnd, wmClose, 0, 0)
-		}
-	}
-	<-n.done
-}
-func utf16(text string) *uint16 { p, _ := windows.UTF16PtrFromString(text); return p }
-func signed(v int) uintptr      { return uintptr(int64(v)) }
-func (n *native) px(v int) int  { return v * n.dpi / 96 }
+func (p *platformWindow) configure() { p.roundCorners() }
 
-func systemReducedMotion() bool {
-	// Retain animations if the system query fails.
-	var enabled int32 = 1
-	ok, _, _ := systemParametersInfo.Call(0x1042, 0, uintptr(unsafe.Pointer(&enabled)), 0) // SPI_GETCLIENTAREAANIMATION
-	return ok != 0 && enabled == 0
-}
-
-func (n *native) run(ready chan<- error) {
-	runtime.LockOSThread()
-	defer runtime.UnlockOSThread()
-	defer close(n.done)
-	n.reduceMotion = systemReducedMotion()
-	var module windows.Handle
-	if err := windows.GetModuleHandleEx(windows.GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT, nil, &module); err != nil {
-		ready <- err
-		return
-	}
-	className := utf16(fmt.Sprintf("YapIndicator%d", classSequence.Add(1)))
-	wc := windowClass{Size: uint32(unsafe.Sizeof(windowClass{})), Procedure: windows.NewCallback(n.windowProc), Instance: uintptr(module), ClassName: className}
-	wc.Cursor, _, _ = loadCursor.Call(0, 32512)    // IDC_ARROW
-	n.dragCursor, _, _ = loadCursor.Call(0, 32646) // IDC_SIZEALL
-	if result, _, err := registerClass.Call(uintptr(unsafe.Pointer(&wc))); result == 0 {
-		ready <- fmt.Errorf("register indicator window: %w", err)
-		return
-	}
-	defer unregisterClass.Call(uintptr(unsafe.Pointer(className)), uintptr(module))
-	if !n.applyTheme(n.dark) {
-		ready <- fmt.Errorf("create indicator palette failed")
-		return
-	}
-	defer func() {
-		deleteObject.Call(n.background)
-		deleteObject.Call(n.accent)
-		deleteObject.Call(n.button)
-		deleteObject.Call(n.pressed)
-	}()
-	hwnd, _, err := createWindow.Call(exNoActivate|exToolWindow|exTopmost, uintptr(unsafe.Pointer(className)), uintptr(unsafe.Pointer(utf16("Yap — Dictation status"))), 0x80000000, 0, 0, panelWidth, panelHeight, 0, 0, uintptr(module), 0)
+func (p *platformWindow) roundCorners() {
+	hwnd := uintptr(p.window.NativeWindow())
 	if hwnd == 0 {
-		ready <- fmt.Errorf("create indicator window: %w", err)
 		return
 	}
-	n.handle.Store(hwnd)
-	defer func() {
-		if remaining := n.handle.Load(); remaining != 0 {
-			destroyWindow.Call(remaining)
-		}
-	}()
-	// Without SS_NOTIFY, the static label passes mouse hit testing to its parent.
-	n.label = n.child("STATIC", "", 0x50000000, 0, uintptr(module))
-	n.stop = n.child("BUTTON", "Stop", 0x5000000B, stopID, uintptr(module)) // BS_OWNERDRAW
-	n.cancel = n.child("BUTTON", "Cancel", 0x5000000B, cancelID, uintptr(module))
-	if n.label == 0 || n.stop == 0 || n.cancel == 0 {
-		destroyWindow.Call(hwnd)
-		ready <- fmt.Errorf("create indicator controls failed")
+	bounds := p.window.PhysicalBounds()
+	size := application.Size{Width: bounds.Width, Height: bounds.Height}
+	dpi := uint32(w32.GetDpiForWindow(hwnd))
+	if dpi == 0 {
+		dpi = 96
+	}
+	if size.Width <= 0 || size.Height <= 0 || size == p.clipSize && dpi == p.clipDPI {
 		return
 	}
-	n.preventActivation(n.stop, stopID)
-	n.preventActivation(n.cancel, cancelID)
-	n.layout()
-	if position, exists, err := loadPosition(n.positionPath); err != nil {
-		log.Printf("read indicator position: %v", err)
-	} else if exists {
-		// Restore while hidden; place() chooses the nearest available monitor and
-		// clamps the window before it is shown. Moving can also update its DPI.
-		if ok, _, _ := setWindowPos.Call(hwnd, 0, signed(int(position.X)), signed(int(position.Y)), 0, 0, 0x0015); ok != 0 {
-			n.positioned = true
-		}
-	}
-	if timer, _, err := setTimer.Call(hwnd, 1, 100, 0); timer == 0 {
-		ready <- fmt.Errorf("start indicator timer: %w", err)
-		deleteObject.Call(n.font)
+	// Clip the actual window, including its opaque webview background. A 12 DIP
+	// radius matches the macOS panel without requiring Windows 11 decorations.
+	diameter := (24*int(dpi) + 48) / 96
+	region, _, err := createRoundRegion.Call(0, 0, uintptr(size.Width+1), uintptr(size.Height+1), uintptr(diameter), uintptr(diameter))
+	if region == 0 {
+		log.Printf("round indicator corners: %v", err)
 		return
 	}
-	n.looping = true
-	ready <- nil
-	defer func() {
-		if n.font != 0 {
-			deleteObject.Call(n.font)
-		}
-	}()
-	var msg message
-	for {
-		result, _, _ := getMessage.Call(uintptr(unsafe.Pointer(&msg)), 0, 0, 0)
-		if int32(result) <= 0 {
-			break
-		}
-		translateMessage.Call(uintptr(unsafe.Pointer(&msg)))
-		dispatchMessage.Call(uintptr(unsafe.Pointer(&msg)))
-	}
-	n.looping = false
-}
-
-func (n *native) child(class, text string, style uint32, id, instance uintptr) uintptr {
-	hwnd, _, _ := createWindow.Call(0, uintptr(unsafe.Pointer(utf16(class))), uintptr(unsafe.Pointer(utf16(text))), uintptr(style), 0, 0, 0, 0, n.handle.Load(), id, instance, 0)
-	return hwnd
-}
-
-// Brushes belong to the window's OS thread. Replace the complete palette before
-// repainting the status and native buttons, without changing notification state.
-func (n *native) applyTheme(dark bool) bool {
-	colors := themePalette(dark)
-	if n.colors == colors {
-		return true
-	}
-	var brushes [4]uintptr
-	for i, color := range []uintptr{colors.background, colors.accent, colors.button, colors.pressed} {
-		brushes[i], _, _ = createBrush.Call(color)
-		if brushes[i] == 0 {
-			for _, brush := range brushes {
-				if brush != 0 {
-					deleteObject.Call(brush)
-				}
-			}
-			return false
-		}
-	}
-	for _, brush := range []uintptr{n.background, n.accent, n.button, n.pressed} {
-		if brush != 0 {
-			deleteObject.Call(brush)
-		}
-	}
-	n.background, n.accent, n.button, n.pressed = brushes[0], brushes[1], brushes[2], brushes[3]
-	n.colors = colors
-	for _, control := range []uintptr{n.label, n.stop, n.cancel} {
-		if control != 0 {
-			invalidate.Call(control, 0, 1)
-		}
-	}
-	return true
-}
-
-// Native buttons remain accessible, but mouse clicks must not call SetFocus.
-func (n *native) preventActivation(hwnd, id uintptr) {
-	var previous uintptr
-	callback := windows.NewCallback(func(window uintptr, msg uint32, w, l uintptr) uintptr {
-		switch msg {
-		case 0x0021:
-			return 3 // WM_MOUSEACTIVATE: MA_NOACTIVATE
-		case 0x0201:
-			setCapture.Call(window)
-			sendMessage.Call(window, 0x00F3, 1, 0)
-			return 0 // BM_SETSTATE
-		case 0x0202:
-			releaseCapture.Call()
-			sendMessage.Call(window, 0x00F3, 0, 0)
-			var bounds rect
-			getClientRect.Call(window, uintptr(unsafe.Pointer(&bounds)))
-			x, y := int32(int16(l&0xffff)), int32(int16((l>>16)&0xffff))
-			if x >= 0 && x < bounds.Right && y >= 0 && y < bounds.Bottom {
-				postMessage.Call(n.handle.Load(), wmCommand, id, window)
-			}
-			return 0
-		}
-		result, _, _ := callWindowProc.Call(previous, window, uintptr(msg), w, l)
-		return result
-	})
-	previous, _, _ = setWindowLong.Call(hwnd, signed(-4), callback)
-}
-
-func (n *native) layout() {
-	dpi, _, _ := getDPI.Call(n.handle.Load())
-	if dpi > 0 {
-		n.dpi = int(dpi)
-	}
-	if n.font != 0 {
-		deleteObject.Call(n.font)
-	}
-	n.font, _, _ = createFont.Call(signed(-n.px(13)), 0, 0, 0, 400, 0, 0, 0, 1, 0, 0, 5, 0, uintptr(unsafe.Pointer(utf16("Segoe UI"))))
-	for _, h := range []uintptr{n.label, n.stop, n.cancel} {
-		sendMessage.Call(h, 0x0030, n.font, 1)
-	}
-	for _, p := range []struct {
-		h            uintptr
-		x, y, w, hgt int
-	}{{n.label, 34, 11, 148, 18}, {n.stop, 184, 7, 64, 26}, {n.cancel, 254, 7, 54, 26}} {
-		setWindowPos.Call(p.h, 0, signed(n.px(p.x)), signed(n.px(p.y)), uintptr(n.px(p.w)), uintptr(n.px(p.hgt)), 0x0014)
-	}
-	region, _, _ := createRegion.Call(0, 0, uintptr(n.px(panelWidth)+1), uintptr(n.px(panelHeight)+1), uintptr(n.px(16)), uintptr(n.px(16)))
-	if region != 0 {
-		if ok, _, _ := setWindowRgn.Call(n.handle.Load(), region, 1); ok == 0 {
-			deleteObject.Call(region)
-		}
-	}
-}
-
-func (n *native) place() {
-	foreground, _, _ := getForeground.Call()
-	var current rect
-	if n.positioned {
-		foreground = n.handle.Load()
-		getWindowRect.Call(foreground, uintptr(unsafe.Pointer(&current)))
-	}
-	monitor, _, _ := monitorFromWindow.Call(foreground, 2)
-	info := monitorInfo{Size: uint32(unsafe.Sizeof(monitorInfo{}))}
-	if ok, _, _ := getMonitorInfo.Call(monitor, uintptr(unsafe.Pointer(&info))); ok == 0 {
+	if result, _, err := setWindowRegion.Call(hwnd, region, 1); result == 0 {
+		w32.DeleteObject(region)
+		log.Printf("clip indicator window: %v", err)
 		return
 	}
-	w, h := n.px(panelWidth), n.px(panelHeight)
-	previousDPI := n.dpi
-	x := int(info.Work.Left) + (int(info.Work.Right-info.Work.Left)-w)/2
-	y := int(info.Work.Bottom) - h - n.px(24)
-	if n.positioned {
-		// Retain the user's position, keeping it reachable after display changes.
-		x = max(int(info.Work.Left), min(int(current.Left), int(info.Work.Right)-w))
-		y = max(int(info.Work.Top), min(int(current.Top), int(info.Work.Bottom)-h))
-	}
-	// HWND_TOPMOST and SWP_NOACTIVATE keep the insertion target focused.
-	n.placing = true
-	setWindowPos.Call(n.handle.Load(), ^uintptr(0), signed(x), signed(y), uintptr(w), uintptr(h), 0x0050)
-	n.placing = false
-	n.visible = true
-	// Moving to another monitor can deliver WM_DPICHANGED inside SetWindowPos.
-	// Resize again after it returns so the controls fit the destination's scale.
-	if previousDPI != n.dpi {
-		n.place()
-	}
+	// Windows owns the region after SetWindowRgn succeeds and releases it when
+	// replaced or when the window closes. Only rebuild it after size/DPI changes.
+	p.clipSize, p.clipDPI = size, dpi
 }
 
-// The foreground window can also be a native Yap dialog. The non-activating
-// indicator itself never counts as the foreground application window.
+func (p *platformWindow) focused() bool {
+	return appWindowFocused(w32.GetForegroundWindow(), uintptr(p.window.NativeWindow()))
+}
+
 func appWindowFocused(foreground, panel uintptr) bool {
 	if foreground == 0 || foreground == panel {
 		return false
 	}
-	var pid uint32
-	getWindowProcessID.Call(foreground, uintptr(unsafe.Pointer(&pid)))
-	if pid != uint32(os.Getpid()) {
-		return false
-	}
-	visible, _, _ := isWindowVisible.Call(foreground)
-	minimized, _, _ := isIconic.Call(foreground)
-	return visible != 0 && minimized == 0
+	_, pid := w32.GetWindowThreadProcessId(foreground)
+	minimised, _, _ := isIconic.Call(foreground)
+	return uint32(pid) == uint32(os.Getpid()) && w32.IsWindowVisible(foreground) && minimised == 0
 }
 
-func (n *native) refresh() {
-	n.mu.Lock()
-	s := n.state
-	changed := n.changed
-	dark := n.dark
-	n.changed = false
-	n.mu.Unlock()
-	n.applyTheme(dark)
-	now := time.Now()
-	v := presentation(s, now)
-	if changed {
-		n.dismissed = false
-		n.expires = time.Time{}
-		if v.dismissAfter > 0 {
-			n.expires = now.Add(v.dismissAfter)
-		}
-	}
-	if !v.visible || n.dismissed || !n.expires.IsZero() && !now.Before(n.expires) || appWindowFocused(n.foreground(), n.handle.Load()) {
-		if n.visible {
-			n.endDrag()
-			showWindow.Call(n.handle.Load(), 0)
-			n.visible = false
-		}
+func (p *platformWindow) place(reposition bool) {
+	defer p.roundCorners()
+	if p.dragging {
 		return
 	}
-	if n.labelText != v.label {
-		setWindowText.Call(n.label, uintptr(unsafe.Pointer(utf16(v.label))))
-		n.labelText = v.label
+	bounds := p.window.PhysicalBounds()
+	screen := p.app.Screen.ScreenNearestPhysicalRect(bounds)
+	if p.positioned {
+		screen = p.app.Screen.ScreenNearestPhysicalPoint(application.Point{X: int(p.position.X), Y: int(p.position.Y)})
+	} else if reposition {
+		if r := w32.GetWindowRect(w32.GetForegroundWindow()); r != nil {
+			screen = p.app.Screen.ScreenNearestPhysicalRect(application.Rect{X: int(r.Left), Y: int(r.Top), Width: int(r.Right - r.Left), Height: int(r.Bottom - r.Top)})
+		}
 	}
-	if v.stop != "" {
-		setWindowText.Call(n.stop, uintptr(unsafe.Pointer(utf16(v.stop))))
-		showWindow.Call(n.stop, 4)
+	if screen == nil {
+		return
+	}
+	area := screen.PhysicalWorkArea
+	scale := float64(screen.ScaleFactor)
+	bounds.Width = int(math.Round(316 * scale))
+	bounds.Height = int(math.Round(40 * scale))
+	if p.positioned {
+		bounds.X = int(p.position.X)
+		bounds.Y = int(p.position.Y)
 	} else {
-		showWindow.Call(n.stop, 0)
+		bounds.X = area.X + (area.Width-bounds.Width)/2
+		bounds.Y = area.Y + area.Height - bounds.Height - int(math.Round(24*scale))
 	}
-	setWindowText.Call(n.cancel, uintptr(unsafe.Pointer(utf16(v.cancel))))
-	showWindow.Call(n.cancel, 4)
-	// Reappearing after a focus change retains the state and notification expiry.
-	if !n.visible || changed && s.Phase == "recording" && !n.dragging {
-		n.place()
-	}
-	invalidate.Call(n.handle.Load(), 0, 0)
-}
-
-func (n *native) endDrag() {
-	if n.dragging {
-		n.dragging = false
-		releaseCapture.Call()
-		n.persistPosition()
+	bounds = clampBounds(bounds, area)
+	if p.window.PhysicalBounds() != bounds {
+		p.window.SetPhysicalBounds(bounds)
 	}
 }
 
-func (n *native) persistPosition() {
-	if !n.dragMoved {
-		return
-	}
-	n.dragMoved = false
-	var bounds rect
-	if ok, _, _ := getWindowRect.Call(n.handle.Load(), uintptr(unsafe.Pointer(&bounds))); ok != 0 {
-		if err := savePosition(n.positionPath, point{bounds.Left, bounds.Top}); err != nil {
+func clampBounds(bounds, area application.Rect) application.Rect {
+	bounds.X = max(area.X, min(bounds.X, area.X+max(0, area.Width-bounds.Width)))
+	bounds.Y = max(area.Y, min(bounds.Y, area.Y+max(0, area.Height-bounds.Height)))
+	return bounds
+}
+
+func (p *platformWindow) drag(d pointerDrag) {
+	switch d.Action {
+	case "start":
+		bounds := p.window.PhysicalBounds()
+		p.offset = application.Point{X: int(math.Round(d.X * float64(bounds.Width))), Y: int(math.Round(d.Y * float64(bounds.Height)))}
+		p.dragging, p.moved = true, false
+	case "move":
+		if !p.dragging {
+			return
+		}
+		x, y, ok := p.cursor()
+		if !ok {
+			return
+		}
+		bounds := p.window.PhysicalBounds()
+		next := bounds
+		next.X = x - p.offset.X
+		next.Y = y - p.offset.Y
+		if next != bounds {
+			p.window.SetPhysicalBounds(next)
+			p.roundCorners()
+			p.moved = true
+		}
+	case "end":
+		if !p.dragging {
+			return
+		}
+		p.dragging = false
+		if !p.moved {
+			return
+		}
+		bounds := p.window.PhysicalBounds()
+		p.position = point{X: int32(bounds.X), Y: int32(bounds.Y)}
+		p.positioned = true
+		p.place(false)
+		bounds = p.window.PhysicalBounds()
+		p.position = point{X: int32(bounds.X), Y: int32(bounds.Y)}
+		if err := savePosition(p.path, p.position); err != nil {
 			log.Printf("save indicator position: %v", err)
 		}
 	}
-}
-
-func (n *native) windowProc(hwnd uintptr, msg uint32, w uintptr, l unsafe.Pointer) uintptr {
-	switch msg {
-	case wmUpdate, 0x0113:
-		n.refresh()
-		return 0 // WM_TIMER
-	case 0x0021:
-		return 3 // MA_NOACTIVATE
-	case 0x0020: // WM_SETCURSOR: buttons keep their normal cursor.
-		if (w == hwnd || w == n.label) && uintptr(l)&0xffff == 1 {
-			setCursor.Call(n.dragCursor)
-			return 1
-		}
-	case 0x0201: // WM_LBUTTONDOWN: only the background/status area reaches here.
-		n.dragOffset = point{int32(int16(uintptr(l))), int32(int16(uintptr(l) >> 16))}
-		n.dragging = true
-		n.dragMoved = false
-		setCapture.Call(hwnd)
-		return 0
-	case 0x0200: // WM_MOUSEMOVE: capture continues beyond the window's bounds.
-		if n.dragging {
-			var bounds rect
-			if ok, _, _ := getWindowRect.Call(hwnd, uintptr(unsafe.Pointer(&bounds))); ok != 0 {
-				dx := int32(int16(uintptr(l))) - n.dragOffset.X
-				dy := int32(int16(uintptr(l)>>16)) - n.dragOffset.Y
-				if dx != 0 || dy != 0 {
-					previousDPI := n.dpi
-					n.placing = true
-					// SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE preserves focus.
-					if ok, _, _ := setWindowPos.Call(hwnd, 0, signed(int(bounds.Left+dx)), signed(int(bounds.Top+dy)), 0, 0, 0x0015); ok != 0 {
-						n.positioned, n.dragMoved = true, true
-					}
-					n.placing = false
-					if previousDPI != n.dpi {
-						n.dragOffset.X = n.dragOffset.X * int32(n.dpi) / int32(previousDPI)
-						n.dragOffset.Y = n.dragOffset.Y * int32(n.dpi) / int32(previousDPI)
-						n.place()
-					}
-				}
-			}
-		}
-		return 0
-	case 0x0202, 0x001F: // WM_LBUTTONUP / WM_CANCELMODE
-		n.endDrag()
-		return 0
-	case 0x0215: // WM_CAPTURECHANGED: do not release another window's capture.
-		n.dragging = false
-		n.persistPosition()
-		return 0
-	case 0x0014:
-		return 1 // WM_ERASEBKGND: paint the background once
-	case 0x0138: // WM_CTLCOLORSTATIC
-		setTextColor.Call(w, n.colors.text)
-		setBackgroundColor.Call(w, n.colors.background)
-		return n.background
-	case 0x000F:
-		n.paint(hwnd)
-		return 0
-	case 0x002B: // WM_DRAWITEM: styled native buttons retain accessibility names.
-		n.drawButton((*drawItem)(l))
-		return 1
-	case 0x02E0: // WM_DPICHANGED
-		n.layout()
-		if n.visible && !n.placing {
-			n.place()
-		}
-		return 0
-	case 0x007E, 0x001A: // display/work-area changes
-		if msg == 0x001A { // WM_SETTINGCHANGE includes animation preferences.
-			n.reduceMotion = systemReducedMotion()
-			invalidate.Call(hwnd, 0, 0)
-		}
-		if n.visible {
-			n.place()
-		}
-		return 0
-	case wmCommand:
-		n.mu.Lock()
-		s := n.state
-		n.mu.Unlock()
-		switch w & 0xffff {
-		case stopID:
-			if s.Phase == "recording" && n.actions.Stop != nil {
-				go n.actions.Stop()
-			} else if presentation(s, time.Now()).stop == "Open Yap" && n.actions.Show != nil {
-				go n.actions.Show()
-			}
-		case cancelID:
-			if (s.Phase == "recording" || s.Phase == "transcribing") && n.actions.Cancel != nil {
-				go n.actions.Cancel()
-			} else {
-				n.dismissed = true
-				n.refresh()
-			}
-		}
-		return 0
-	case wmClose:
-		n.endDrag()
-		killTimer.Call(hwnd, 1)
-		destroyWindow.Call(hwnd)
-		return 0
-	case 0x0002:
-		n.handle.Store(0)
-		if n.looping {
-			postQuit.Call(0)
-		}
-		return 0
-	}
-	result, _, _ := defWindow.Call(hwnd, uintptr(msg), w, uintptr(l))
-	return result
-}
-
-func (n *native) drawButton(item *drawItem) {
-	saved, _, _ := saveDC.Call(item.DC)
-	defer restoreDC.Call(item.DC, saved)
-	fillRect.Call(item.DC, uintptr(unsafe.Pointer(&item.Bounds)), n.background)
-	brush := n.button
-	if item.State&1 != 0 {
-		brush = n.pressed
-	} // ODS_SELECTED
-	selectObject.Call(item.DC, brush)
-	pen, _, _ := stockObject.Call(8) // NULL_PEN
-	selectObject.Call(item.DC, pen)
-	roundRect.Call(item.DC, signed(int(item.Bounds.Left)), signed(int(item.Bounds.Top)), signed(int(item.Bounds.Right)), signed(int(item.Bounds.Bottom)), uintptr(n.px(8)), uintptr(n.px(8)))
-	selectObject.Call(item.DC, n.font)
-	setTextColor.Call(item.DC, n.colors.text)
-	backgroundMode.Call(item.DC, 1) // TRANSPARENT
-	var text [32]uint16
-	length, _, _ := getWindowText.Call(item.Window, uintptr(unsafe.Pointer(&text[0])), uintptr(len(text)))
-	drawText.Call(item.DC, uintptr(unsafe.Pointer(&text[0])), length, uintptr(unsafe.Pointer(&item.Bounds)), 0x25) // center, vertical center, single line
-}
-
-func (n *native) paint(hwnd uintptr) {
-	var ps paintStruct
-	dc, _, _ := beginPaint.Call(hwnd, uintptr(unsafe.Pointer(&ps)))
-	if dc == 0 {
-		return
-	}
-	defer endPaint.Call(hwnd, uintptr(unsafe.Pointer(&ps)))
-	bounds := rect{Right: int32(n.px(panelWidth)), Bottom: int32(n.px(panelHeight))}
-	fillRect.Call(dc, uintptr(unsafe.Pointer(&bounds)), n.background)
-	n.mu.Lock()
-	level, s := n.level, n.state
-	n.mu.Unlock()
-	if s.Phase == "recording" || s.Phase == "transcribing" {
-		brush := n.accent
-		if n.reduceMotion && s.Phase == "recording" {
-			if dimmed, _, _ := createBrush.Call(recordingAccent(n.colors.accent, level)); dimmed != 0 {
-				brush = dimmed
-				defer deleteObject.Call(dimmed)
-			}
-		}
-		now := time.Now().UnixMilli()
-		for i := 0; i < 4; i++ {
-			height := meterHeight(s.Phase, level, i, now, n.reduceMotion)
-			bar := rect{Left: int32(n.px(12 + i*4)), Top: int32(n.px(panelHeight/2 - height/2)), Right: int32(n.px(14 + i*4)), Bottom: int32(n.px(panelHeight/2 + height/2))}
-			fillRect.Call(dc, uintptr(unsafe.Pointer(&bar)), brush)
-		}
-	} else {
-		dot := rect{Left: int32(n.px(16)), Top: int32(n.px(17)), Right: int32(n.px(22)), Bottom: int32(n.px(23))}
-		fillRect.Call(dc, uintptr(unsafe.Pointer(&dot)), n.accent)
-	}
-}
-
-func meterHeight(phase string, level float64, index int, now int64, reduceMotion bool) int {
-	if reduceMotion {
-		return 12
-	}
-	if phase == "transcribing" {
-		return 5 + int((now/150+int64(index))%4)*3
-	}
-	return 4 + int(level*12)
-}
-
-func recordingAccent(color uintptr, level float64) uintptr {
-	brightness := 0.55 + 0.45*level
-	return uintptr(float64(color&0xff)*brightness) |
-		uintptr(float64((color>>8)&0xff)*brightness)<<8 |
-		uintptr(float64((color>>16)&0xff)*brightness)<<16
 }

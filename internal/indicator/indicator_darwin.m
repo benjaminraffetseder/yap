@@ -1,211 +1,89 @@
 //go:build darwin && cgo
 
+// Wails owns the NSPanel and WKWebView. These helpers only preserve focus and
+// existing AppKit saved geometry; all controls and drawing live in the frontend.
 #import <AppKit/AppKit.h>
-#import <QuartzCore/QuartzCore.h>
-#include <stdint.h>
+#import <objc/runtime.h>
+#include <stdbool.h>
 
-extern void yapIndicatorAction(uintptr_t handle, int action);
+static NSString *const FrameName = @"YapDictationIndicator";
+static BOOL denyKey(id self, SEL selector) { return NO; }
+static BOOL acceptFirstMouse(id self, SEL selector, NSEvent *event) { return YES; }
+static NSPoint dragOffset;
 
-static NSString *const YapIndicatorFrameName = @"YapDictationIndicator";
-
-static void onIndicatorMain(dispatch_block_t block) {
-    if (NSThread.isMainThread) { block(); }
-    else { dispatch_sync(dispatch_get_main_queue(), block); }
-}
-
-@interface YapStatusPanel : NSPanel
-@property(nonatomic) BOOL positioned;
-@end
-@implementation YapStatusPanel
-- (BOOL)canBecomeKeyWindow { return NO; }
-- (BOOL)canBecomeMainWindow { return NO; }
-@end
-
-@interface YapStatusContent : NSView
-@end
-@implementation YapStatusContent
-- (BOOL)acceptsFirstMouse:(NSEvent *)event { return YES; }
-- (void)mouseDown:(NSEvent *)event {
-    ((YapStatusPanel *)self.window).positioned = YES;
-    [self.window performWindowDragWithEvent:event];
-}
-- (void)resetCursorRects {
-    [self addCursorRect:NSMakeRect(0, 0, 216, NSHeight(self.bounds)) cursor:NSCursor.openHandCursor];
-}
-@end
-
-// Noninteractive status views pass pointer events through to the drag surface.
-// They remain in the accessibility tree; buttons keep their own mouse handling.
-@interface YapStatusLabel : NSTextField
-@end
-@implementation YapStatusLabel
-- (NSView *)hitTest:(NSPoint)point { return nil; }
-@end
-
-@interface YapStatusButton : NSButton
-@end
-@implementation YapStatusButton
-- (BOOL)needsPanelToBecomeKey { return NO; }
-- (BOOL)acceptsFirstResponder { return NO; }
-- (BOOL)acceptsFirstMouse:(NSEvent *)event { return YES; }
-@end
-
-@interface YapStatusMeter : NSView
-@property(nonatomic) double level;
-@property(nonatomic) BOOL working;
-@property(nonatomic) BOOL dark;
-@end
-@implementation YapStatusMeter
-- (NSView *)hitTest:(NSPoint)point { return nil; }
-- (void)drawRect:(NSRect)dirty {
-    BOOL reduceMotion = NSWorkspace.sharedWorkspace.accessibilityDisplayShouldReduceMotion;
-    double brightness = reduceMotion && !self.working ? 0.55 + 0.45 * self.level : 1;
-    double red = self.dark ? 136.0 / 255 : 68.0 / 255;
-    double green = self.dark ? 181.0 / 255 : 124.0 / 255;
-    double blue = self.dark ? 151.0 / 255 : 96.0 / 255;
-    [[NSColor colorWithCalibratedRed:red * brightness green:green * brightness blue:blue * brightness alpha:1] setFill];
-    for (int i = 0; i < 4; i++) {
-        double height = reduceMotion ? 12 : (self.working ? 5 + ((NSInteger)(NSDate.date.timeIntervalSince1970 * 7) + i) % 4 * 3 : 4 + self.level * 12);
-        NSRectFill(NSMakeRect(i * 4, (20-height)/2, 2, height));
+static void configureWebview(NSView *view) {
+    if ([view isKindOfClass:NSClassFromString(@"WKWebView")]) {
+        // WebKit normally rejects the first mouse event in a background window.
+        // This panel stays non-key, so its controls must accept that first click.
+        Class guard = NSClassFromString(@"YapIndicatorWebview");
+        if (!guard) {
+            Class base = object_getClass(view);
+            guard = objc_allocateClassPair(base, "YapIndicatorWebview", 0);
+            class_addMethod(guard, @selector(acceptsFirstMouse:), (IMP)acceptFirstMouse,
+                method_getTypeEncoding(class_getInstanceMethod(base, @selector(acceptsFirstMouse:))));
+            class_addMethod(guard, @selector(needsPanelToBecomeKey), (IMP)denyKey,
+                method_getTypeEncoding(class_getInstanceMethod(base, @selector(needsPanelToBecomeKey))));
+            objc_registerClassPair(guard);
+        }
+        object_setClass(view, guard);
+        return;
     }
-}
-@end
-
-@interface YapStatusController : NSObject <NSWindowDelegate>
-@property(nonatomic) uintptr_t callback;
-@property(nonatomic, strong) YapStatusPanel *panel;
-@property(nonatomic, strong) NSTextField *label;
-@property(nonatomic, strong) YapStatusButton *stop;
-@property(nonatomic, strong) YapStatusButton *cancel;
-@property(nonatomic, strong) YapStatusMeter *meter;
-@end
-
-@implementation YapStatusController
-- (void)windowDidMove:(NSNotification *)notification {
-    if (self.panel.positioned) { [self.panel saveFrameUsingName:YapIndicatorFrameName]; }
-}
-- (void)action:(NSButton *)sender {
-    if (self.callback) { yapIndicatorAction(self.callback, (int)sender.tag); }
-}
-- (YapStatusButton *)button:(NSString *)title x:(double)x tag:(NSInteger)tag {
-    YapStatusButton *button = [[YapStatusButton alloc] initWithFrame:NSMakeRect(x, 16, 72, 32)];
-    button.title = title;
-    button.bezelStyle = NSBezelStyleRounded;
-    button.font = [NSFont systemFontOfSize:13];
-    button.tag = tag;
-    button.target = self;
-    button.action = @selector(action:);
-    [self.panel.contentView addSubview:button];
-    return button;
-}
-@end
-
-void *yap_indicator_new(uintptr_t callback) {
-    __block YapStatusController *controller = nil;
-    onIndicatorMain(^{
-        if (!NSApp) { return; }
-        controller = [YapStatusController new];
-        controller.callback = callback;
-        controller.panel = [[YapStatusPanel alloc] initWithContentRect:NSMakeRect(0, 0, 376, 64)
-            styleMask:NSWindowStyleMaskBorderless | NSWindowStyleMaskNonactivatingPanel
-            backing:NSBackingStoreBuffered defer:NO];
-        controller.panel.title = @"Yap — Dictation status";
-        controller.panel.movable = YES;
-        controller.panel.level = NSStatusWindowLevel;
-        controller.panel.floatingPanel = YES;
-        controller.panel.becomesKeyOnlyIfNeeded = YES;
-        controller.panel.hidesOnDeactivate = NO;
-        controller.panel.collectionBehavior = NSWindowCollectionBehaviorCanJoinAllSpaces | NSWindowCollectionBehaviorFullScreenAuxiliary;
-        controller.panel.releasedWhenClosed = NO;
-        controller.panel.opaque = NO;
-        controller.panel.backgroundColor = NSColor.clearColor;
-        controller.panel.hasShadow = YES;
-        controller.panel.appearance = [NSAppearance appearanceNamed:NSAppearanceNameDarkAqua];
-        controller.panel.positioned = [controller.panel setFrameUsingName:YapIndicatorFrameName force:YES];
-        // Restore only location; the indicator retains its fixed control layout.
-        [controller.panel setContentSize:NSMakeSize(376, 64)];
-        controller.panel.delegate = controller;
-        NSView *content = [[YapStatusContent alloc] initWithFrame:NSMakeRect(0, 0, 376, 64)];
-        controller.panel.contentView = content;
-        content.wantsLayer = YES;
-        content.layer.backgroundColor = [NSColor colorWithCalibratedRed:40.0 / 255 green:41.0 / 255 blue:43.0 / 255 alpha:1].CGColor;
-        content.layer.cornerRadius = 12;
-        controller.label = [YapStatusLabel labelWithString:@""];
-        controller.label.frame = NSMakeRect(40, 22, 168, 20);
-        controller.label.font = [NSFont systemFontOfSize:14];
-        controller.label.textColor = NSColor.secondaryLabelColor;
-        [content addSubview:controller.label];
-        controller.meter = [[YapStatusMeter alloc] initWithFrame:NSMakeRect(16, 22, 16, 20)];
-        controller.meter.dark = YES;
-        [content addSubview:controller.meter];
-        controller.stop = [controller button:@"Stop" x:216 tag:1];
-        controller.cancel = [controller button:@"Cancel" x:296 tag:2];
-    });
-    return (__bridge_retained void *)controller;
+    for (NSView *child in view.subviews) { configureWebview(child); }
 }
 
-void yap_indicator_update(void *pointer, const char *label, const char *stop, const char *cancel, int visible, int move, int working, double level, int dark) {
-    YapStatusController *controller = (__bridge YapStatusController *)pointer;
-    onIndicatorMain(^{
-        NSString *appearance = dark ? NSAppearanceNameDarkAqua : NSAppearanceNameAqua;
-        if (![controller.panel.appearance.name isEqualToString:appearance]) {
-            controller.panel.appearance = [NSAppearance appearanceNamed:appearance];
-            controller.panel.contentView.layer.backgroundColor = (dark
-                ? [NSColor colorWithCalibratedRed:40.0 / 255 green:41.0 / 255 blue:43.0 / 255 alpha:1]
-                : [NSColor colorWithCalibratedRed:250.0 / 255 green:248.0 / 255 blue:246.0 / 255 alpha:1]).CGColor;
-            controller.label.textColor = NSColor.secondaryLabelColor;
-            controller.meter.dark = dark != 0;
-            controller.meter.needsDisplay = YES;
+bool yap_indicator_configure(void *pointer) {
+    NSPanel *panel = (__bridge NSPanel *)pointer;
+    // Wails panels can become key windows. This indicator has no text inputs
+    // and must keep keyboard input in the app receiving the dictation.
+    Class guard = NSClassFromString(@"YapIndicatorWebviewPanel");
+    if (!guard) {
+        Class base = object_getClass(panel);
+        guard = objc_allocateClassPair(base, "YapIndicatorWebviewPanel", 0);
+        class_addMethod(guard, @selector(canBecomeKeyWindow), (IMP)denyKey,
+            method_getTypeEncoding(class_getInstanceMethod(base, @selector(canBecomeKeyWindow))));
+        class_addMethod(guard, @selector(canBecomeMainWindow), (IMP)denyKey,
+            method_getTypeEncoding(class_getInstanceMethod(base, @selector(canBecomeMainWindow))));
+        objc_registerClassPair(guard);
+    }
+    object_setClass(panel, guard);
+    configureWebview(panel.contentView);
+    BOOL restored = [panel setFrameUsingName:FrameName force:YES];
+    [panel setContentSize:NSMakeSize(376, 64)];
+    return restored;
+}
+
+bool yap_indicator_focused(void *pointer) {
+    NSWindow *focused = NSApp.keyWindow;
+    return NSApp.active && focused && focused != (__bridge NSWindow *)pointer && focused.visible && !focused.miniaturized;
+}
+
+void yap_indicator_place(void *pointer, bool positioned) {
+    NSWindow *window = (__bridge NSWindow *)pointer;
+    NSScreen *screen = window.screen ?: NSScreen.mainScreen;
+    if (!positioned) {
+        NSPoint mouse = NSEvent.mouseLocation;
+        for (NSScreen *candidate in NSScreen.screens) {
+            if (NSPointInRect(mouse, candidate.frame)) { screen = candidate; break; }
         }
-        NSWindow *focused = NSApp.keyWindow;
-        BOOL appFocused = NSApp.active && focused && focused != controller.panel && focused.visible && !focused.miniaturized;
-        // This only hides the panel: Go keeps recording state and expiry, and
-        // subsequent refreshes show it again when the app loses focus.
-        if (!visible || appFocused) { [controller.panel orderOut:nil]; return; }
-        controller.label.stringValue = [NSString stringWithUTF8String:label];
-        controller.stop.hidden = stop[0] == '\0';
-        controller.stop.title = [NSString stringWithUTF8String:stop];
-        controller.cancel.title = [NSString stringWithUTF8String:cancel];
-        controller.meter.level = level;
-        controller.meter.working = working;
-        controller.meter.needsDisplay = YES;
-        if (!controller.panel.visible || (move && !controller.panel.positioned)) {
-            NSScreen *screen = controller.panel.screen ?: NSScreen.mainScreen;
-            if (!controller.panel.positioned) {
-                NSPoint mouse = NSEvent.mouseLocation;
-                for (NSScreen *candidate in NSScreen.screens) {
-                    if (NSPointInRect(mouse, candidate.frame)) { screen = candidate; break; }
-                }
-            }
-            NSRect area = screen.visibleFrame;
-            NSPoint origin = NSMakePoint(NSMidX(area)-188, NSMinY(area)+24);
-            if (controller.panel.positioned) {
-                NSRect frame = controller.panel.frame;
-                origin.x = MAX(NSMinX(area), MIN(NSMinX(frame), NSMaxX(area)-NSWidth(frame)));
-                origin.y = MAX(NSMinY(area), MIN(NSMinY(frame), NSMaxY(area)-NSHeight(frame)));
-            }
-            [controller.panel setFrameOrigin:origin];
-            [controller.panel orderFrontRegardless]; // Preserve the insertion target's focus.
-        }
-    });
+    }
+    NSRect area = screen.visibleFrame, frame = window.frame;
+    NSPoint origin = positioned ? frame.origin : NSMakePoint(NSMidX(area)-NSWidth(frame)/2, NSMinY(area)+24);
+    origin.x = MAX(NSMinX(area), MIN(origin.x, NSMaxX(area)-NSWidth(frame)));
+    origin.y = MAX(NSMinY(area), MIN(origin.y, NSMaxY(area)-NSHeight(frame)));
+    if (!NSEqualPoints(origin, frame.origin)) { [window setFrameOrigin:origin]; }
 }
 
-void yap_indicator_close(void *pointer) {
-    onIndicatorMain(^{
-        // Transfer the final ownership on the main thread so AppKit views are
-        // also deallocated there, after the Go renderer has stopped.
-        YapStatusController *controller = (__bridge_transfer YapStatusController *)pointer;
-        controller.callback = 0;
-        controller.stop.target = nil;
-        controller.cancel.target = nil;
-        if (controller.panel.positioned) { [controller.panel saveFrameUsingName:YapIndicatorFrameName]; }
-        controller.panel.delegate = nil;
-        [controller.panel orderOut:nil];
-        [controller.panel close];
-        controller.panel = nil;
-        controller.label = nil;
-        controller.stop = nil;
-        controller.cancel = nil;
-        controller.meter = nil;
-    });
+bool yap_indicator_drag(void *pointer, int action, double x, double y) {
+    NSWindow *window = (__bridge NSWindow *)pointer;
+    NSPoint mouse = NSEvent.mouseLocation;
+    if (action == 0) {
+        dragOffset = NSMakePoint(x*NSWidth(window.frame), (1-y)*NSHeight(window.frame));
+    } else if (action == 1) {
+        NSPoint origin = NSMakePoint(mouse.x-dragOffset.x, mouse.y-dragOffset.y);
+        if (!NSEqualPoints(origin, window.frame.origin)) { [window setFrameOrigin:origin]; return true; }
+    } else {
+        yap_indicator_place(pointer, true);
+        [window saveFrameUsingName:FrameName];
+    }
+    return false;
 }

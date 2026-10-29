@@ -34,7 +34,8 @@ shortcuts through Wails. Use the desktop app to test those.
 | `internal/audio` | Capture, decoding, and WAV import |
 | `internal/platform` | Global shortcuts and text insertion |
 | `internal/tray` | Wails v3 system tray menu and recording-state adapter |
-| `internal/indicator`, `internal/startup` | Floating indicator and existing launch-at-login registrations |
+| `internal/indicator` | Frameless Wails indicator, presentation and platform focus/geometry helpers |
+| `internal/startup` | Existing launch-at-login registrations |
 | `internal/inference` | Whisper CLI and local text-server clients |
 | `internal/models` | Model/runtime downloads and verification |
 | `internal/storage` | SQLite, history, retention, and backups |
@@ -44,6 +45,13 @@ shortcuts through Wails. Use the desktop app to test those.
 Keep platform-specific code in the existing `_windows`, `_darwin`, and `_other`
 files with matching build tags. Bound Go structs use camelCase JSON fields.
 Wails generates `frontend/bindings`; don't edit it by hand.
+
+The main UI and floating indicator are separate Vite entry points. Keep the
+indicator in `frontend/src/components/indicator.tsx`, mounted by
+`frontend/src/indicator.tsx`, independent of the main app's providers and
+background effects. Reuse the shared shadcn components and theme. It receives
+presentation via Wails events and sends versioned actions back to the indicator
+controller.
 
 The local hotkey dependency has a small event-ordering patch. Keep the `replace`
 in `go.mod`; [the patch notes](../third_party/hotkey/README.md) explain why.
@@ -88,7 +96,7 @@ Native and download tests are opt-in. Run them from the repo root on Windows:
 
 | Environment variable | Command | What it exercises |
 | --- | --- | --- |
-| `YAP_INDICATOR_SMOKE=1` | `go test ./internal/indicator -run '^TestNativeIndicator' -v -count=1` | Real floating windows, focus, and dragging |
+| `YAP_INDICATOR_SMOKE=1` | `go test ./internal/indicator -run '^TestNativeIndicator' -v -count=1` | Build the frontend first; real Wails window, controls, focus, dragging and saved geometry on Windows |
 | `YAP_TRAY_SMOKE=1` | `go test ./internal/tray -run '^TestNativeTray$' -v -count=1 -timeout 35s` | Wails native tray lifecycle and menu-state updates |
 | `YAP_INTEGRATION=1` | `go test ./internal/models -run TestRealWhisper -v -count=1` | Downloads Whisper and Tiny, then transcribes a sample |
 | `YAP_FFMPEG_INTEGRATION=1` | `go test ./internal/models -run TestFFmpegDownloadIntegration -v -count=1` | Downloads and verifies the pinned FFmpeg archive |
