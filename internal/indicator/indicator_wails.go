@@ -80,7 +80,9 @@ func New(app *application.App, actions Actions, dataDir string) (Controller, err
 	c.show = func() { window.Show() }
 	c.hide = func() { window.Hide() }
 	c.send = func(f frame) { app.Event.Emit("indicator:frame", f) }
-	c.destroy = func() { application.InvokeSync(func() { platform.drag(pointerDrag{Action: "end"}); window.Close() }) }
+	c.destroy = func() {
+		application.InvokeSync(func() { platform.drag(pointerDrag{Action: "end"}); platform.close(); window.Close() })
+	}
 	window.RegisterHook(events.Common.WindowClosing, func(e *application.WindowEvent) {
 		c.mu.Lock()
 		closed := c.closed
@@ -288,13 +290,16 @@ func (c *wailsIndicator) dispatch(action string, revision uint64) {
 		return
 	}
 	v := presentation(c.state, time.Now())
-	var callback func()
+	sessionID := c.state.SessionID
+	var callback func(string)
 	switch action {
 	case "primary":
 		if v.stop == "Stop" {
 			callback = c.actions.Stop
 		} else if v.stop == "Open Yap" {
-			callback = c.actions.Show
+			if show := c.actions.Show; show != nil {
+				callback = func(string) { show() }
+			}
 		}
 	case "secondary":
 		if v.cancel == "Cancel" {
@@ -305,7 +310,7 @@ func (c *wailsIndicator) dispatch(action string, revision uint64) {
 	}
 	c.mu.Unlock()
 	if callback != nil {
-		go callback()
+		go callback(sessionID)
 	}
 	c.schedule()
 }

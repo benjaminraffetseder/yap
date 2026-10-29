@@ -13,14 +13,14 @@ type fixture struct {
 	queue            []func()
 	frames           []frame
 	visible, focused bool
-	placements       int
+	placements       []bool
 }
 
 func newFixture(t *testing.T) *fixture {
 	f := &fixture{}
 	f.controller = newWailsIndicator(Actions{}, func(fn func()) { f.queue = append(f.queue, fn) })
 	f.controller.focused = func() bool { return f.focused }
-	f.controller.place = func(bool) { f.placements++ }
+	f.controller.place = func(reposition bool) { f.placements = append(f.placements, reposition) }
 	f.controller.show = func() { f.visible = true }
 	f.controller.hide = func() { f.visible = false }
 	f.controller.drag = func(pointerDrag) {}
@@ -84,7 +84,7 @@ func TestWailsIndicatorActionsRevalidateRevisionAndPhase(t *testing.T) {
 	c := f.controller
 	c.ready = true
 	called := make(chan string, 4)
-	c.actions = Actions{Stop: func() { called <- "stop" }, Cancel: func() { called <- "cancel" }, Show: func() { called <- "show" }}
+	c.actions = Actions{Stop: func(string) { called <- "stop" }, Cancel: func(string) { called <- "cancel" }, Show: func() { called <- "show" }}
 	c.Update(State{Phase: "recording"})
 	f.flush()
 	old := c.revision
@@ -133,6 +133,62 @@ func TestWailsIndicatorActionsRevalidateRevisionAndPhase(t *testing.T) {
 	f.flush()
 	if !f.visible {
 		t.Fatal("a repeated error did not clear dismissal")
+	}
+}
+
+func TestWailsIndicatorActionsKeepTheirSession(t *testing.T) {
+	for _, action := range []string{"primary", "secondary"} {
+		t.Run(action, func(t *testing.T) {
+			f := newFixture(t)
+			c := f.controller
+			c.ready = true
+			resume := make(chan struct{})
+			called := make(chan string, 1)
+			callback := func(id string) { <-resume; called <- id }
+			c.actions = Actions{Stop: callback, Cancel: callback}
+			c.Update(State{SessionID: "A", Phase: "recording"})
+			f.flush()
+			c.dispatch(action, c.revision)
+			c.Update(State{SessionID: "B", Phase: "recording"})
+			f.flush()
+			close(resume)
+			select {
+			case id := <-called:
+				if id != "A" {
+					t.Fatalf("accepted action changed session to %q", id)
+				}
+			case <-time.After(time.Second):
+				t.Fatal("action did not finish")
+			}
+		})
+	}
+}
+
+func TestWailsIndicatorRefreshKeepsPlacement(t *testing.T) {
+	f := newFixture(t)
+	c := f.controller
+	c.ready = true
+	c.Update(State{SessionID: "A", Phase: "recording"})
+	f.flush()
+	if len(f.placements) != 1 || !f.placements[0] {
+		t.Fatal("initial window was not positioned")
+	}
+	f.tick()
+	c.SetLevel(.8)
+	f.tick()
+	c.Update(State{SessionID: "A", Phase: "transcribing"})
+	f.flush()
+	for _, reposition := range f.placements[1:] {
+		if reposition {
+			t.Fatal("status refresh repositioned a visible window")
+		}
+	}
+	f.focused = true
+	f.tick()
+	f.focused = false
+	f.tick()
+	if !f.placements[len(f.placements)-1] {
+		t.Fatal("showing the indicator did not request placement")
 	}
 }
 

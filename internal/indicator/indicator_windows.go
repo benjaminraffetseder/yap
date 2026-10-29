@@ -5,6 +5,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"syscall"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"github.com/wailsapp/wails/v3/pkg/w32"
@@ -20,6 +21,10 @@ var (
 	isIconic          = indicatorUser32.NewProc("IsIconic")
 	setWindowRegion   = indicatorUser32.NewProc("SetWindowRgn")
 	createRoundRegion = windows.NewLazySystemDLL("gdi32.dll").NewProc("CreateRoundRectRgn")
+	setWindowsHook    = indicatorUser32.NewProc("SetWindowsHookExW")
+	unhookWindowsHook = indicatorUser32.NewProc("UnhookWindowsHookEx")
+	callNextHook      = indicatorUser32.NewProc("CallNextHookEx")
+	getAncestor       = indicatorUser32.NewProc("GetAncestor")
 )
 
 func WindowsOptions() application.WindowsOptions {
@@ -32,7 +37,8 @@ func WindowsOptions() application.WindowsOptions {
 }
 
 func configureOptions(o *application.WebviewWindowOptions) {
-	o.Windows = application.WindowsWindow{ExStyle: exNoActivate, HiddenOnTaskbar: true, DisableFramelessWindowDecorations: true, DisableMenu: true}
+	// Wails treats ExStyle as a replacement for its defaults, not extra flags.
+	o.Windows = application.WindowsWindow{ExStyle: exNoActivate | w32.WS_EX_TOOLWINDOW | w32.WS_EX_TOPMOST, HiddenOnTaskbar: true, DisableFramelessWindowDecorations: true, DisableMenu: true}
 }
 
 type platformWindow struct {
@@ -45,6 +51,7 @@ type platformWindow struct {
 	cursor                      func() (int, int, bool)
 	clipSize                    application.Size
 	clipDPI                     uint32
+	activationHook              uintptr
 }
 
 func newPlatformWindow(app *application.App, window *application.WebviewWindow, dataDir string) *platformWindow {
@@ -60,7 +67,41 @@ func newPlatformWindow(app *application.App, window *application.WebviewWindow, 
 	return p
 }
 
-func (p *platformWindow) configure() { p.roundCorners() }
+func (p *platformWindow) configure() {
+	if p.activationHook == 0 {
+		hwnd := uintptr(p.window.NativeWindow())
+		// Wails Show uses SW_SHOW, which can activate an existing window even
+		// with WS_EX_NOACTIVATE. Veto activation of this window on its UI thread;
+		// leave the main window and every other application untouched.
+		callback := syscall.NewCallback(func(code int32, target, data uintptr) uintptr {
+			if code == 5 && target == hwnd {
+				return 1
+			} // HCBT_ACTIVATE
+			if code == 9 { // HCBT_SETFOCUS, including the hosted WebView's child HWND.
+				root, _, _ := getAncestor.Call(target, 2) // GA_ROOT
+				if root == hwnd {
+					return 1
+				}
+			}
+			result, _, _ := callNextHook.Call(0, uintptr(code), target, data)
+			return result
+		})
+		hook, _, err := setWindowsHook.Call(5, callback, 0, uintptr(w32.GetCurrentThreadId())) // WH_CBT
+		if hook == 0 {
+			log.Printf("protect indicator activation: %v", err)
+		} else {
+			p.activationHook = hook
+		}
+	}
+	p.roundCorners()
+}
+
+func (p *platformWindow) close() {
+	if p.activationHook != 0 {
+		unhookWindowsHook.Call(p.activationHook)
+		p.activationHook = 0
+	}
+}
 
 func (p *platformWindow) roundCorners() {
 	hwnd := uintptr(p.window.NativeWindow())

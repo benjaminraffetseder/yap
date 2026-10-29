@@ -21,6 +21,8 @@ configured during service startup; hotkeys and audio start after the application
 event loop starts. The main window stays hidden until startup and
 the webview runtime are ready. Its closing hook preserves close-to-tray, and
 application shutdown releases the existing native integrations and storage.
+The `ShouldQuit` gate cancels and drains workers asynchronously before native
+shutdown, keeping the UI loop available for pending clipboard and window calls.
 
 System tray menus use Wails' `SystemTray` and `Menu` APIs on Windows and macOS.
 The former Win32 message loop, notification-icon code, and AppKit delegate
@@ -41,13 +43,18 @@ main React app, duplicate its effects, or receive transcript
 contents. The existing Go presentation rules still own labels, actions, elapsed
 time and notification expiry. A frontend-ready handshake restores current state
 after loading or reloading; stale button revisions cannot affect a newer session.
+Stop and Cancel also carry a backend session ID, revalidated under the app mutex
+when the asynchronous callback runs.
 
 Small platform helpers preserve non-activation and saved geometry. Windows uses
-`WS_EX_NOACTIVATE` and mouse-activation interception; macOS uses a non-activating
+`WS_EX_NOACTIVATE`, explicit topmost/tool-window flags and activation/focus
+guards for the indicator and its hosted webview; macOS uses a non-activating
 Wails panel with key-window suppression. Pointer dragging avoids Wails' Windows
 native move loop, which explicitly sets focus. Both platforms clamp saved
 positions to the available work area. Existing Windows `indicator-position.json`
 coordinates and the macOS `YapDictationIndicator` frame preference are retained.
+Ordinary refreshes keep the macOS panel on its current monitor; initial placement
+can select the monitor under the mouse until the user saves a position by dragging.
 The former GDI and AppKit control rendering and separate native message loop have
 been removed. Theme changes and reduced-motion meter behavior remain supported.
 

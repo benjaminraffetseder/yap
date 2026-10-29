@@ -57,17 +57,17 @@ bool yap_indicator_focused(void *pointer) {
     return NSApp.active && focused && focused != (__bridge NSWindow *)pointer && focused.visible && !focused.miniaturized;
 }
 
-void yap_indicator_place(void *pointer, bool positioned) {
+void yap_indicator_place(void *pointer, bool keepPosition) {
     NSWindow *window = (__bridge NSWindow *)pointer;
     NSScreen *screen = window.screen ?: NSScreen.mainScreen;
-    if (!positioned) {
+    if (!keepPosition) {
         NSPoint mouse = NSEvent.mouseLocation;
         for (NSScreen *candidate in NSScreen.screens) {
             if (NSPointInRect(mouse, candidate.frame)) { screen = candidate; break; }
         }
     }
     NSRect area = screen.visibleFrame, frame = window.frame;
-    NSPoint origin = positioned ? frame.origin : NSMakePoint(NSMidX(area)-NSWidth(frame)/2, NSMinY(area)+24);
+    NSPoint origin = keepPosition ? frame.origin : NSMakePoint(NSMidX(area)-NSWidth(frame)/2, NSMinY(area)+24);
     origin.x = MAX(NSMinX(area), MIN(origin.x, NSMaxX(area)-NSWidth(frame)));
     origin.y = MAX(NSMinY(area), MIN(origin.y, NSMaxY(area)-NSHeight(frame)));
     if (!NSEqualPoints(origin, frame.origin)) { [window setFrameOrigin:origin]; }

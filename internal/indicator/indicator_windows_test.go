@@ -44,10 +44,19 @@ func TestNativeIndicator(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer windows.CoUninitialize()
-	app := application.New(application.Options{Name: "Yap indicator test", Windows: WindowsOptions(), Assets: application.AssetOptions{Handler: application.AssetFileServerFS(os.DirFS(filepath.Join("..", "..", "frontend", "dist")))}})
+	options := WindowsOptions()
+	intercept := options.WndProcInterceptor
+	var activations atomic.Int32
+	options.WndProcInterceptor = func(hwnd uintptr, msg uint32, wp, lp uintptr) (uintptr, bool) {
+		if msg == w32.WM_ACTIVATE && wp&0xffff != 0 && uint32(w32.GetWindowLong(hwnd, w32.GWL_EXSTYLE))&exNoActivate != 0 {
+			activations.Add(1)
+		}
+		return intercept(hwnd, msg, wp, lp)
+	}
+	app := application.New(application.Options{Name: "Yap indicator test", Windows: options, Assets: application.AssetOptions{Handler: application.AssetFileServerFS(os.DirFS(filepath.Join("..", "..", "frontend", "dist")))}})
 	dir := t.TempDir()
 	actions := make(chan string, 4)
-	controller, err := New(app, Actions{Stop: func() { actions <- "stop" }, Cancel: func() { actions <- "cancel" }}, dir)
+	controller, err := New(app, Actions{Stop: func(id string) { actions <- "stop:" + id }, Cancel: func(id string) { actions <- "cancel:" + id }}, dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -63,7 +72,7 @@ func TestNativeIndicator(t *testing.T) {
 	app.Event.OnApplicationEvent(events.Common.ApplicationStarted, func(*application.ApplicationEvent) {
 		go func() {
 			defer app.Quit()
-			result <- exerciseNativeIndicator(app, c, window, p, &foreground, actions)
+			result <- exerciseNativeIndicator(app, c, window, p, &foreground, actions, &activations)
 		}()
 	})
 	if err := app.Run(); err != nil {
@@ -74,7 +83,9 @@ func TestNativeIndicator(t *testing.T) {
 	}
 }
 
-func exerciseNativeIndicator(app *application.App, c *wailsIndicator, window *application.WebviewWindow, p *platformWindow, foreground *atomic.Uintptr, actions <-chan string) error {
+func exerciseNativeIndicator(app *application.App, c *wailsIndicator, window *application.WebviewWindow, p *platformWindow, foreground *atomic.Uintptr, actions <-chan string, activations *atomic.Int32) error {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
 	defer c.Close()
 	wait := func(description string, check func() bool) error {
 		until := time.Now().Add(8 * time.Second)
@@ -89,39 +100,62 @@ func exerciseNativeIndicator(app *application.App, c *wailsIndicator, window *ap
 	if err := wait("frontend readiness handshake", func() bool { c.mu.Lock(); defer c.mu.Unlock(); return c.ready }); err != nil {
 		return err
 	}
+	initialActivations := activations.Load()
 	hwnd := uintptr(window.NativeWindow())
+	wantStyle := uint32(exNoActivate | w32.WS_EX_TOOLWINDOW | w32.WS_EX_TOPMOST)
+	if style := uint32(w32.GetWindowLong(hwnd, w32.GWL_EXSTYLE)); style&wantStyle != wantStyle {
+		return fmt.Errorf("indicator extended style=%#x, missing required bits %#x", style, wantStyle&^style)
+	}
 	visible := func() bool { return w32.IsWindowVisible(hwnd) }
-	before := w32.GetForegroundWindow()
-	c.Update(State{Phase: "recording", StartedAt: time.Now().Add(-65 * time.Second).UnixMilli()})
+	// Flush pending UI work before observing focus, just as the controller does.
+	getForeground := func() uintptr { return application.InvokeSyncWithResult(w32.GetForegroundWindow) }
+	before := getForeground()
+	checkForeground := func(stage string) error {
+		// Windows can briefly report no foreground window during queued GUI work.
+		// Preserve the original target after that work settles; the activation
+		// counter below independently rejects even temporary indicator activation.
+		if err := wait(stage, func() bool { return getForeground() == before }); err != nil {
+			return fmt.Errorf("%w: before=%#x after=%#x indicator=%#x", err, before, getForeground(), hwnd)
+		}
+		return nil
+	}
+	c.Update(State{SessionID: "native-test", Phase: "recording", StartedAt: time.Now().Add(-65 * time.Second).UnixMilli()})
 	if err := wait("recording window", visible); err != nil {
 		return err
 	}
 	if err := checkRoundedWindow(hwnd, window.PhysicalBounds()); err != nil {
 		return err
 	}
-	if before != w32.GetForegroundWindow() {
-		return fmt.Errorf("showing indicator stole foreground focus")
+	if err := checkForeground("foreground after showing indicator"); err != nil {
+		return err
 	}
 	if result := w32.SendMessage(hwnd, w32.WM_MOUSEACTIVATE, 0, 0); result != 3 {
 		return fmt.Errorf("mouse activation result=%d, want MA_NOACTIVATE", result)
 	}
-	window.ExecJS(`document.querySelector('#primary').click()`)
+	// Native visibility can precede React's commit of the first status frame.
+	window.ExecJS(`(function clickWhenReady(){const button=document.querySelector('#primary');if(button&&button.getClientRects().length){button.click();}else{setTimeout(clickWhenReady,10);}})()`)
 	select {
 	case action := <-actions:
-		if action != "stop" {
+		if action != "stop:native-test" {
 			return fmt.Errorf("unexpected action %s", action)
 		}
 	case <-time.After(3 * time.Second):
 		return fmt.Errorf("frontend Stop did not reach Go")
 	}
-	window.ExecJS(`document.querySelector('#secondary').click()`)
+	if err := checkForeground("foreground after Stop"); err != nil {
+		return err
+	}
+	window.ExecJS(`(function clickWhenReady(){const button=document.querySelector('#secondary');if(button&&button.getClientRects().length){button.click();}else{setTimeout(clickWhenReady,10);}})()`)
 	select {
 	case action := <-actions:
-		if action != "cancel" {
+		if action != "cancel:native-test" {
 			return fmt.Errorf("unexpected action %s", action)
 		}
 	case <-time.After(3 * time.Second):
 		return fmt.Errorf("frontend Cancel did not reach Go")
+	}
+	if err := checkForeground("foreground after Cancel"); err != nil {
+		return err
 	}
 	// Exercise physical dragging and the existing JSON format without moving
 	// the actual system cursor. Native bounds and persistence remain real.
@@ -146,8 +180,8 @@ func exerciseNativeIndicator(app *application.App, c *wailsIndicator, window *ap
 	if position, ok, err := loadPosition(p.path); err != nil || !ok || int(position.X) != moved.X || int(position.Y) != moved.Y {
 		return fmt.Errorf("drag persistence failed: %+v, %t, %v", position, ok, err)
 	}
-	if before != w32.GetForegroundWindow() {
-		return fmt.Errorf("indicator controls or dragging stole foreground focus")
+	if err := checkForeground("foreground after dragging indicator"); err != nil {
+		return err
 	}
 	// A real visible/minimised/hidden native Yap window controls suppression.
 	var host uintptr
@@ -181,6 +215,9 @@ func exerciseNativeIndicator(app *application.App, c *wailsIndicator, window *ap
 	c.Update(State{Phase: "transcribing"})
 	if err := wait("hidden Yap retains processing indicator", visible); err != nil {
 		return err
+	}
+	if activations.Load() != initialActivations {
+		return fmt.Errorf("indicator activated during a visibility transition")
 	}
 	return nil
 }

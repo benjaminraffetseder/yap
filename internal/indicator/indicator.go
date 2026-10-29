@@ -15,6 +15,7 @@ type Controller interface {
 }
 
 type State struct {
+	SessionID   string
 	ProfileName string
 	Phase       string
 	Message     string
@@ -23,8 +24,8 @@ type State struct {
 }
 
 type Actions struct {
-	Stop   func()
-	Cancel func()
+	Stop   func(sessionID string)
+	Cancel func(sessionID string)
 	Show   func()
 }
 

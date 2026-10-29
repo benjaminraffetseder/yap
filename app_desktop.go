@@ -41,8 +41,7 @@ func (a *App) ServiceStartup(ctx context.Context, _ application.ServiceOptions) 
 	root, err := os.UserConfigDir()
 	if err == nil {
 		a.indicator, err = indicator.New(a.desktop, indicator.Actions{
-			Stop:   func() { _ = a.StopRecording() },
-			Cancel: func() { _ = a.Cancel() }, Show: a.show,
+			Stop: a.indicatorStop, Cancel: a.indicatorCancel, Show: a.show,
 		}, filepath.Join(root, "yap"))
 	}
 	if err != nil {

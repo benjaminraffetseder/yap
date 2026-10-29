@@ -97,6 +97,7 @@ Native and download tests are opt-in. Run them from the repo root on Windows:
 | Environment variable | Command | What it exercises |
 | --- | --- | --- |
 | `YAP_INDICATOR_SMOKE=1` | `go test ./internal/indicator -run '^TestNativeIndicator' -v -count=1` | Build the frontend first; real Wails window, controls, focus, dragging and saved geometry on Windows |
+| `YAP_SHUTDOWN_SMOKE=1` | `go test . -run '^TestNativeShutdown$' -v -count=1 -timeout 15s` | Wails quits while a worker holds the app mutex and awaits the UI thread, without changing the clipboard |
 | `YAP_TRAY_SMOKE=1` | `go test ./internal/tray -run '^TestNativeTray$' -v -count=1 -timeout 35s` | Wails native tray lifecycle and menu-state updates |
 | `YAP_INTEGRATION=1` | `go test ./internal/models -run TestRealWhisper -v -count=1` | Downloads Whisper and Tiny, then transcribes a sample |
 | `YAP_FFMPEG_INTEGRATION=1` | `go test ./internal/models -run TestFFmpegDownloadIntegration -v -count=1` | Downloads and verifies the pinned FFmpeg archive |

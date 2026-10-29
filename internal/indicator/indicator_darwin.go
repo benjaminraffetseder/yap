@@ -8,7 +8,7 @@ package indicator
 #include <stdbool.h>
 bool yap_indicator_configure(void *window);
 bool yap_indicator_focused(void *window);
-void yap_indicator_place(void *window, bool positioned);
+void yap_indicator_place(void *window, bool keepPosition);
 bool yap_indicator_drag(void *window, int action, double x, double y);
 */
 import "C"
@@ -44,9 +44,12 @@ func (p *platformWindow) configure() {
 func (p *platformWindow) focused() bool {
 	return bool(C.yap_indicator_focused(p.window.NativeWindow()))
 }
-func (p *platformWindow) place(_ bool) {
+func (p *platformWindow) close() {}
+func (p *platformWindow) place(reposition bool) {
 	if !p.dragging {
-		C.yap_indicator_place(p.window.NativeWindow(), C.bool(p.positioned))
+		// Choose the mouse's screen on an initial placement only. Ordinary
+		// refreshes clamp the current frame, even before the user's first drag.
+		C.yap_indicator_place(p.window.NativeWindow(), C.bool(p.positioned || !reposition))
 	}
 }
 func (p *platformWindow) drag(d pointerDrag) {

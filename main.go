@@ -35,6 +35,7 @@ func main() {
 		Services:       []application.Service{application.NewService(service)},
 		Assets:         application.AssetOptions{Handler: application.AssetFileServerFS(assets)},
 		SingleInstance: singleInstanceLock(service),
+		ShouldQuit:     service.shouldQuit,
 		OnShutdown:     func() { service.shutdown(service.ctx) },
 	})
 	service.desktop = app

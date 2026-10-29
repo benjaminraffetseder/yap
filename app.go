@@ -131,6 +131,8 @@ type App struct {
 	closing                          bool
 	historyCleanupTimer              *time.Timer
 	shutdownOnce                     sync.Once
+	shutdownComplete                 atomic.Bool
+	quitOnce                         sync.Once
 	notify                           func(string, ...interface{})
 	copyText                         func(string) error
 	indicator                        indicator.Controller
@@ -306,6 +308,30 @@ func (a *App) quit() {
 	}
 }
 
+// Wails calls ShouldQuit on its UI thread. A worker can hold App.mu while
+// awaiting a clipboard/UI callback, so this gate must not acquire that mutex
+// or wait for shutdown. Retry native Quit only after all cleanup has finished.
+func (a *App) shouldQuit() bool {
+	if a.shutdownComplete.Load() {
+		return true
+	}
+	a.quitOnce.Do(func() {
+		go func() {
+			a.mu.Lock()
+			ctx := a.ctx
+			a.mu.Unlock()
+			a.shutdown(ctx)
+			a.mu.Lock()
+			quit := a.quitApplication
+			a.mu.Unlock()
+			if quit != nil {
+				quit()
+			}
+		}()
+	})
+	return false
+}
+
 func (a *App) beforeClose(ctx context.Context) bool {
 	a.mu.Lock()
 	hide := a.hideWindow
@@ -394,6 +420,7 @@ func (a *App) shutdown(ctx context.Context) {
 		if a.store != nil {
 			a.store.Close()
 		}
+		a.shutdownComplete.Store(true)
 	})
 }
 func (a *App) emit() {
@@ -413,7 +440,7 @@ func (a *App) emit() {
 					profileName = p.Name
 				}
 			}
-			a.indicator.Update(indicator.State{ProfileName: profileName, HistoryMode: historyMode, Phase: a.status.Phase, Message: a.status.Message, StartedAt: a.status.StartedAt})
+			a.indicator.Update(indicator.State{SessionID: a.id, ProfileName: profileName, HistoryMode: historyMode, Phase: a.status.Phase, Message: a.status.Message, StartedAt: a.status.StartedAt})
 			if a.status.Phase != "recording" && a.status.Phase != "transcribing" {
 				a.indicatorActive = false
 			}
@@ -650,6 +677,24 @@ func (a *App) StopRecording() error {
 	a.stop()
 	return nil
 }
+
+func (a *App) indicatorStop(sessionID string) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.closing || sessionID == "" || a.id != sessionID || a.status.Phase != "recording" {
+		return
+	}
+	a.stop()
+}
+
+func (a *App) indicatorCancel(sessionID string) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.closing || sessionID == "" || a.id != sessionID || a.status.Phase != "recording" && a.status.Phase != "transcribing" {
+		return
+	}
+	_ = a.cancelLocked()
+}
 func (a *App) stop() {
 	if a.timer != nil {
 		a.timer.Stop()
@@ -809,6 +854,10 @@ func (a *App) transcribe(ctx context.Context, id, path, target string, duration 
 func (a *App) Cancel() error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	return a.cancelLocked()
+}
+
+func (a *App) cancelLocked() error {
 	if err := a.available(); err != nil {
 		return err
 	}
