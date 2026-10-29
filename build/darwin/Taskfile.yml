@@ -1,0 +1,25 @@
+version: '3'
+
+tasks:
+  build:
+    cmds:
+      - task: :common:build:frontend
+      - go build -tags {{if eq .DEV "true"}}dev{{else}}production{{end}} -trimpath -buildvcs=false -ldflags='{{if ne .DEV "true"}}-s -w {{end}}{{.LDFLAGS}}' -o {{.BIN_DIR}}/{{.APP_NAME}} .
+    env:
+      GOOS: darwin
+      GOARCH: '{{.ARCH | default ARCH}}'
+      CGO_ENABLED: '1'
+      MACOSX_DEPLOYMENT_TARGET: '13.3'
+      CGO_CFLAGS: '-mmacosx-version-min=13.3'
+      CGO_LDFLAGS: '-mmacosx-version-min=13.3'
+  package:
+    cmds:
+      - task: build
+      - wails3 generate icons -input build/appicon.png -macfilename build/darwin/icons.icns
+      - mkdir -p {{.BIN_DIR}}/{{.APP_NAME}}.app/Contents/MacOS {{.BIN_DIR}}/{{.APP_NAME}}.app/Contents/Resources
+      - cp {{.BIN_DIR}}/{{.APP_NAME}} {{.BIN_DIR}}/{{.APP_NAME}}.app/Contents/MacOS/{{.APP_NAME}}
+      - cp build/darwin/{{if eq .DEV "true"}}Info.dev.plist{{else}}Info.plist{{end}} {{.BIN_DIR}}/{{.APP_NAME}}.app/Contents/Info.plist
+      - cp build/darwin/icons.icns {{.BIN_DIR}}/{{.APP_NAME}}.app/Contents/Resources/iconfile.icns
+      - codesign --force --deep --sign - {{.BIN_DIR}}/{{.APP_NAME}}.app
+  run:
+    cmds: ['"{{.BIN_DIR}}/{{.APP_NAME}}"']

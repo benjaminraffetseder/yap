@@ -64,7 +64,7 @@ func presentation(s State) view {
 	return v
 }
 
-// Both native adapters enforce the same disabled actions, including callbacks
+// The Wails adapter enforces disabled actions, including callbacks
 // arriving just after recording state changes while the menu is open.
 func (a Actions) dispatch(id int, s State) {
 	v := presentation(s)

@@ -211,15 +211,15 @@ test.describe("desktop commands and history", () => {
       }
       Object.assign(window, {
         commandTest: state,
-        runtime: {
-          EventsOnMultiple: (name: string, callback: (...args: unknown[]) => void) => {
+        mockEvents: {
+          subscribe: (name: string, callback: (...args: unknown[]) => void) => {
             state.callbacks[name] = callback;
             return () => {
               delete state.callbacks[name];
             };
           },
         },
-        go: {
+        mockBackend: {
           main: {
             App: {
               GetSnapshot: async () => structuredClone(snapshot),

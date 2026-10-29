@@ -1,5 +1,5 @@
+import { SetIndicatorTheme } from "@bindings/yap/app";
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
-import { SetIndicatorTheme } from "@wails/go/main/App";
 
 type Theme = "light" | "dark" | "system";
 type ThemeContextValue = { theme: Theme; setTheme: (theme: Theme) => void };

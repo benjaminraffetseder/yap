@@ -75,8 +75,8 @@ test.beforeEach(async ({ page }) => {
     };
     Object.assign(window, {
       updateTest: state,
-      runtime: { EventsOnMultiple: () => () => {} },
-      go: {
+      mockEvents: { subscribe: () => () => {} },
+      mockBackend: {
         main: {
           App: {
             GetSnapshot: async () => structuredClone(snapshot),

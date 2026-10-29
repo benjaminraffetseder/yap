@@ -79,15 +79,15 @@ test.beforeEach(async ({ page }) => {
           callbacks["dictation:status"](structuredClone(snapshot.status));
         },
       },
-      runtime: {
-        EventsOnMultiple(topic: string, handler: (...args: unknown[]) => void) {
+      mockEvents: {
+        subscribe(topic: string, handler: (...args: unknown[]) => void) {
           callbacks[topic] = handler;
           return () => {
             delete callbacks[topic];
           };
         },
       },
-      go: {
+      mockBackend: {
         main: {
           App: {
             GetSnapshot: async () => structuredClone(snapshot),
@@ -218,11 +218,11 @@ test("FFmpeg settings handle old backends and preserve preferences", async ({ pa
   await page.goto("/#/settings");
   await page.getByRole("checkbox", { name: /^Light cleanup/ }).check();
   await page.evaluate(() => {
-    Reflect.deleteProperty(Reflect.get(window, "go").main.App, "GetAudioSupport");
+    Reflect.deleteProperty(Reflect.get(window, "mockBackend").main.App, "GetAudioSupport");
   });
   await page.getByRole("tab", { name: "Advanced", exact: true }).click();
   const panel = page.getByRole("region", { name: "Audio support (FFmpeg)", exact: true });
-  await expect(panel.getByRole("alert")).toContainText("restart wails dev");
+  await expect(panel.getByRole("alert")).toContainText("restart wails3 dev");
   await expect(panel.getByRole("button", { name: /Download audio support/ })).toBeHidden();
   await page.getByRole("tab", { name: "Dictation", exact: true }).click();
   await expect(page.getByRole("checkbox", { name: /^Light cleanup/ })).toBeChecked();

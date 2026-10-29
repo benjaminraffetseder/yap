@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/wailsapp/wails/v2/pkg/runtime"
 	"yap/internal/audio"
 	"yap/internal/models"
 )
@@ -47,12 +46,19 @@ func (a *App) GetAudioSupport() (AudioSupport, error) {
 }
 
 func (a *App) confirmAudioSupportDownload(next string) (bool, error) {
-	answer, err := runtime.MessageDialog(a.ctx, runtime.MessageDialogOptions{
-		Type: runtime.QuestionDialog, Title: "Download audio support",
-		Message: fmt.Sprintf("Download FFmpeg audio support (%.1f MiB)?\n\nYap will download FFmpeg from GitHub, verify it, and save it in Yap's application data folder. No administrator access or PATH changes are needed. Your audio stays on this device.\n\nThis build is licensed under LGPL v3 or later. Its licence and source information will be saved beside it.\n\n%s You can cancel the download in Yap.", float64(models.FFmpegSize)/(1<<20), next),
-		Buttons: []string{"Yes", "No"}, DefaultButton: "No", CancelButton: "No",
-	})
-	return answer == "Yes", err
+	dialog := a.desktop.Dialog.Question().SetTitle("Download audio support").AttachToWindow(a.window)
+	dialog.SetMessage(fmt.Sprintf("Download FFmpeg audio support (%.1f MiB)?\n\nYap will download FFmpeg from GitHub, verify it, and save it in Yap's application data folder. No administrator access or PATH changes are needed. Your audio stays on this device.\n\nThis build is licensed under LGPL v3 or later. Its licence and source information will be saved beside it.\n\n%s You can cancel the download in Yap.", float64(models.FFmpegSize)/(1<<20), next))
+	answer := make(chan bool, 1)
+	dialog.AddButton("Yes").OnClick(func() { answer <- true })
+	dialog.AddButton("No").SetAsDefault().SetAsCancel().OnClick(func() { answer <- false })
+	dialog.Show()
+	// Attached dialogs may return before their button callback runs.
+	select {
+	case accepted := <-answer:
+		return accepted, nil
+	case <-a.ctx.Done():
+		return false, a.ctx.Err()
+	}
 }
 
 // InstallAudioSupport is independent of speech setup and never starts an import.

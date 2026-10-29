@@ -9,7 +9,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { backend, isDesktop, message } from "@/lib/backend";
-import { EventsOn } from "@wails/runtime/runtime";
+import { Events } from "@wailsio/runtime";
 import { Keyboard } from "lucide-react";
 import { useEffect, useRef, useState, type RefObject } from "react";
 
@@ -109,7 +109,7 @@ function ShortcutCapture({
   useEffect(() => {
     let active = true;
     mounted.current = true;
-    const off = EventsOn("shortcut:capture-ended", (token: string) => {
+    const off = Events.On("shortcut:capture-ended", ({ data: token }: { data: string }) => {
       if (active && token === lease.current && !closing.current)
         finish.current(undefined, "Shortcut capture timed out. Try again.");
     });

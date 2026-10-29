@@ -8,7 +8,6 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	goruntime "runtime"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -28,7 +27,7 @@ import (
 	"yap/internal/vocabulary"
 
 	"github.com/google/uuid"
-	"github.com/wailsapp/wails/v2/pkg/runtime"
+	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
 type Status struct {
@@ -79,6 +78,8 @@ type Snapshot struct {
 	StartInTrayAvailable   bool                       `json:"startInTrayAvailable"`
 }
 type App struct {
+	desktop                          *application.App
+	window                           *application.WebviewWindow
 	importQueue                      []*importJob
 	importActive                     string
 	importInstallAudioSupport        bool
@@ -165,20 +166,7 @@ func (a *App) startup(ctx context.Context) {
 		return
 	}
 	a.ctx = ctx
-	a.development = runtime.Environment(ctx).BuildType != "production"
-	a.notify = func(topic string, data ...interface{}) { runtime.EventsEmit(ctx, topic, data...) }
-	a.copyText = func(text string) error { return runtime.ClipboardSetText(ctx, text) }
-	a.showWindow = func() { runtime.Show(ctx); runtime.WindowUnminimise(ctx); runtime.WindowShow(ctx) }
-	a.hideWindow = func() { runtime.WindowHide(ctx) }
-	a.quitApplication = func() { runtime.Quit(ctx) }
 	var err error
-	a.tray, err = tray.New(tray.Actions{ToggleHistory: a.toggleHistory, Show: a.show, Record: a.trayRecord, Cancel: func() { _ = a.Cancel() }, Quit: a.quit}, trayIcon)
-	if err != nil {
-		a.status.TrayError = "Background controls unavailable: " + err.Error()
-	}
-	// AppKit intercepts only the window close button; Cmd+Q and Dock Quit still
-	// take the normal quit path. Windows closes enter Wails' OnBeforeClose hook.
-	a.closeToTray = goruntime.GOOS == "windows" && a.tray != nil
 	defer a.updateTray()
 	root, err := os.UserConfigDir()
 	if err != nil {
@@ -998,7 +986,7 @@ func (a *App) SelectFile(kind string) (string, error) {
 	} else if kind != "model" {
 		return "", errors.New("unknown file type")
 	}
-	return runtime.OpenFileDialog(a.ctx, runtime.OpenDialogOptions{Title: "Select " + label, Filters: []runtime.FileFilter{{DisplayName: label, Pattern: pattern}}})
+	return a.openFile("Select "+label, label, pattern)
 }
 func (a *App) InstallModel(id string) error {
 	a.mu.Lock()
@@ -1095,7 +1083,7 @@ func processTranscript(text string, settings storage.Settings, entries []vocabul
 	}
 	return vocabulary.Apply(text, entries)
 }
-func (a *App) CopyText(text string) error { return runtime.ClipboardSetText(a.ctx, text) }
+func (a *App) CopyText(text string) error { return a.copyText(text) }
 func (a *App) SaveTranscript(id, text string) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -1147,7 +1135,7 @@ func (a *App) ExportSession(id string) error {
 	if err != nil {
 		return err
 	}
-	path, err := runtime.SaveFileDialog(a.ctx, runtime.SaveDialogOptions{Title: "Export transcript", DefaultFilename: "dictation.txt", Filters: []runtime.FileFilter{{DisplayName: "Text", Pattern: "*.txt"}}})
+	path, err := a.saveFile("Export transcript", "dictation.txt", "Text", "*.txt")
 	if err != nil || path == "" {
 		return err
 	}

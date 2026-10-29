@@ -230,15 +230,15 @@ async function recordingScenario(page: Page) {
     };
     Object.assign(window, {
       motionScenario: { callbacks, snapshot },
-      runtime: {
-        EventsOnMultiple(topic: string, callback: (...args: unknown[]) => void) {
+      mockEvents: {
+        subscribe(topic: string, callback: (...args: unknown[]) => void) {
           callbacks[topic] = callback;
           return () => {
             delete callbacks[topic];
           };
         },
       },
-      go: {
+      mockBackend: {
         main: {
           App: {
             GetSnapshot: async () => structuredClone(snapshot),

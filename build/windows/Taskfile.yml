@@ -1,0 +1,25 @@
+version: '3'
+
+tasks:
+  build:
+    cmds:
+      - task: :common:build:frontend
+      - task: resources
+      - defer: {task: clean:resources}
+      - go build -tags {{if eq .DEV "true"}}dev{{else}}production{{end}} -trimpath -buildvcs=false -ldflags='{{if ne .DEV "true"}}-s -w -H windowsgui {{end}}{{.LDFLAGS}}' -o {{.BIN_DIR}}/{{.APP_NAME}}.exe .
+    env:
+      GOOS: windows
+      GOARCH: '{{.ARCH | default ARCH}}'
+      CGO_ENABLED: '0'
+  resources:
+    dir: build
+    cmds:
+      - wails3 generate syso -arch {{.ARCH | default ARCH}} -icon windows/icon.ico -manifest windows/wails.exe.manifest -info windows/info.json -out ../wails_windows_{{.ARCH | default ARCH}}.syso
+  clean:resources:
+    cmds:
+      - cmd: powershell -NoProfile -Command "Remove-Item -LiteralPath 'wails_windows_{{.ARCH | default ARCH}}.syso' -ErrorAction SilentlyContinue"
+        platforms: [windows]
+      - cmd: rm -f wails_windows_{{.ARCH | default ARCH}}.syso
+        platforms: [darwin, linux]
+  run:
+    cmds: ['"{{.BIN_DIR}}/{{.APP_NAME}}.exe"']

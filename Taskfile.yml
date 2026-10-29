@@ -1,0 +1,31 @@
+version: '3'
+
+vars:
+  APP_NAME: yap
+  BIN_DIR: build/bin
+  GOOS: '{{.GOOS | default OS}}'
+  VITE_PORT: '{{.WAILS_VITE_PORT | default 9245}}'
+
+includes:
+  common: ./build/Taskfile.yml
+  windows: ./build/windows/Taskfile.yml
+  darwin: ./build/darwin/Taskfile.yml
+  linux: ./build/linux/Taskfile.yml
+
+tasks:
+  build:
+    desc: Build the desktop application
+    cmds:
+      - task: '{{.GOOS}}:build'
+  run:
+    desc: Run the desktop application
+    cmds:
+      - task: '{{.GOOS}}:run'
+  package:
+    desc: Package the application on macOS
+    cmds:
+      - task: '{{.GOOS}}:package'
+  dev:
+    desc: Run the development watcher
+    cmds:
+      - wails3 dev -config ./build/config.yml -port {{.VITE_PORT}}

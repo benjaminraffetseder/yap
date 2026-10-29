@@ -122,12 +122,13 @@ func TestTrayQuitCancelsTranscriptionAndRemovesAudio(t *testing.T) {
 }
 
 func TestNativeAppQuitStillExits(t *testing.T) {
-	// AppKit intercepts the close button natively, so its Wails close hook only
-	// receives actual application termination (Cmd+Q, Dock Quit, menu Quit).
+	// Cmd+Q, Dock Quit, and Wails application shutdown bypass the window's
+	// close-to-tray decision and must still release its resources.
 	a := testApp(t)
 	f := &fakeTray{}
 	a.tray = f
-	a.closeToTray = false
+	a.closeToTray = true
+	a.shutdown(a.ctx)
 	if a.beforeClose(a.ctx) || !a.closing || f.closeCount != 1 {
 		t.Fatal("native app quit did not clean up")
 	}

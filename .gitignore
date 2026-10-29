@@ -2,6 +2,9 @@
 node_modules/
 frontend/dist/
 frontend/wailsjs/
+frontend/bindings/
+*.syso
+.task/
 frontend/package.json.md5
 frontend/test-results/
 frontend/playwright-report/
@@ -9,17 +12,24 @@ frontend/.playwright/
 # Keep Wails source assets; ignore generated outputs and local release packaging.
 /build/*
 !/build/README.md
+!/build/config.yml
+!/build/Taskfile.yml
 !/build/appicon.png
 !/build/darwin/
 /build/darwin/*
 !/build/darwin/Info.plist
 !/build/darwin/Info.dev.plist
 !/build/darwin/entitlements.plist
+!/build/darwin/Taskfile.yml
+!/build/linux/
+/build/linux/*
+!/build/linux/Taskfile.yml
 !/build/windows/
 /build/windows/*
 !/build/windows/icon.ico
 !/build/windows/info.json
 !/build/windows/wails.exe.manifest
+!/build/windows/Taskfile.yml
 /scripts/*
 !/scripts/build-macos.sh
 !/scripts/smoke-macos.sh

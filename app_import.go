@@ -14,7 +14,6 @@ import (
 	"yap/internal/vocabulary"
 
 	"github.com/google/uuid"
-	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 func (a *App) importAvailableLocked() error {
@@ -31,7 +30,7 @@ func (a *App) ImportAudio() error {
 	if err != nil {
 		return err
 	}
-	paths, err := runtime.OpenMultipleFilesDialog(a.ctx, runtime.OpenDialogOptions{Title: "Import audio files", Filters: []runtime.FileFilter{{DisplayName: "Audio files", Pattern: audio.ImportFilePattern}}})
+	paths, err := a.desktop.Dialog.OpenFile().SetTitle("Import audio files").AddFilter("Audio files", audio.ImportFilePattern).AttachToWindow(a.window).PromptForMultipleSelection()
 	if err != nil || len(paths) == 0 {
 		return err
 	}

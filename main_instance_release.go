@@ -2,11 +2,11 @@
 
 package main
 
-import "github.com/wailsapp/wails/v2/pkg/options"
+import "github.com/wailsapp/wails/v3/pkg/application"
 
-func singleInstanceLock(app *App) *options.SingleInstanceLock {
-	return &options.SingleInstanceLock{
-		UniqueId:               "com.yap.desktop",
-		OnSecondInstanceLaunch: func(options.SecondInstanceData) { app.show() },
+func singleInstanceLock(app *App) *application.SingleInstanceOptions {
+	return &application.SingleInstanceOptions{
+		UniqueID:               "com.yap.desktop",
+		OnSecondInstanceLaunch: func(application.SecondInstanceData) { app.show() },
 	}
 }

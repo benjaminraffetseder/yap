@@ -2,7 +2,7 @@
 set -euo pipefail
 
 if [[ "$(uname -s)" != Darwin ]]; then
-  printf '%s\n' 'Run this script on macOS. Wails 2 requires the native macOS SDK and CGO.' >&2
+  printf '%s\n' 'Run this script on macOS. Wails 3 requires the native macOS SDK and CGO.' >&2
   exit 1
 fi
 
@@ -107,7 +107,16 @@ for architecture in "${architectures[@]}"; do
 done
 
 # Use the project-pinned CLI without requiring a globally installed Wails.
-go run github.com/wailsapp/wails/v2/cmd/wails@v2.16.0 build -platform "darwin/$target" -o Yap -trimpath
+GOBIN="$work/wails-bin" go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0
+export PATH="$work/wails-bin:$PATH"
+if [[ "$target" == universal ]]; then
+  wails3 build GOOS=darwin ARCH=amd64 BIN_DIR="$work/app-amd64"
+  wails3 build GOOS=darwin ARCH=arm64 BIN_DIR="$work/app-arm64"
+  wails3 package GOOS=darwin
+  xcrun lipo -create "$work/app-amd64/yap" "$work/app-arm64/yap" -output "$project_root/build/bin/yap.app/Contents/MacOS/yap"
+else
+  wails3 package GOOS=darwin ARCH="$target"
+fi
 app="$project_root/build/bin/yap.app"
 runtime_dir="$app/Contents/Resources/whisper"
 ffmpeg_dir="$app/Contents/Resources/ffmpeg"
@@ -145,7 +154,7 @@ License: COPYING.LGPLv2.1 and LICENSE.md. See https://ffmpeg.org/legal.html.
 EOF
 
 # Refuse a package that would depend on the builder's Homebrew installation.
-for executable in "$app/Contents/MacOS/Yap" "$runtime_dir/whisper-cli" "$ffmpeg_dir/ffmpeg"; do
+for executable in "$app/Contents/MacOS/yap" "$runtime_dir/whisper-cli" "$ffmpeg_dir/ffmpeg"; do
   for architecture in "${architectures[@]}"; do xcrun lipo -verify_arch "$architecture" "$executable"; done
   dependencies="$(otool -arch all -L "$executable")"
   if printf '%s\n' "$dependencies" | awk '/^[ \t]+/ {print $1}' | grep -Ev '^(/System/Library/|/usr/lib/)' >/dev/null; then

@@ -1,20 +1,20 @@
 # Development
 
-Yap has a Go backend and a React 19/TypeScript frontend, connected by Wails v2.
+Yap has a Go backend and a React 19/TypeScript frontend, connected by Wails v3.
 The UI uses Tailwind v4 and shadcn/ui with Base UI components.
 
 ## Running locally
 
 See the [README](../README.md#build-from-source) for tool versions. From the repo
-root, run `wails dev` and leave the terminal open. It rebuilds Go changes and
+root, run `wails3 dev` and leave the terminal open. It rebuilds Go changes and
 serves the frontend with Vite. Ctrl+C stops the watcher; closing the app window
 only hides it to the tray.
 
-Run one dev session per checkout. If port 5173 is occupied, stop the previous
-Vite process before starting another. Restart `wails dev` if the frontend reports
+Run one dev session per checkout. If port 9245 is occupied, stop the previous
+Vite process before starting another. Restart `wails3 dev` if the frontend reports
 that its backend bindings are out of date.
 
-For frontend work in a browser, first run `wails build` to generate bindings:
+For frontend work in a browser, first run `wails3 build` to generate bindings:
 
 ```powershell
 cd frontend
@@ -33,7 +33,8 @@ shortcuts through Wails. Use the desktop app to test those.
 | `app*.go` | Recording state and methods exposed to the frontend |
 | `internal/audio` | Capture, decoding, and WAV import |
 | `internal/platform` | Global shortcuts and text insertion |
-| `internal/indicator`, `internal/tray`, `internal/startup` | Native desktop controls |
+| `internal/tray` | Wails v3 system tray menu and recording-state adapter |
+| `internal/indicator`, `internal/startup` | Floating indicator and existing launch-at-login registrations |
 | `internal/inference` | Whisper CLI and local text-server clients |
 | `internal/models` | Model/runtime downloads and verification |
 | `internal/storage` | SQLite, history, retention, and backups |
@@ -42,10 +43,12 @@ shortcuts through Wails. Use the desktop app to test those.
 
 Keep platform-specific code in the existing `_windows`, `_darwin`, and `_other`
 files with matching build tags. Bound Go structs use camelCase JSON fields.
-Wails generates `frontend/wailsjs`; don't edit it by hand.
+Wails generates `frontend/bindings`; don't edit it by hand.
 
 The local hotkey dependency has a small event-ordering patch. Keep the `replace`
 in `go.mod`; [the patch notes](../third_party/hotkey/README.md) explain why.
+Wails' global shortcuts provide press callbacks; hold-to-talk also needs key-up
+events, so the hotkey module remains necessary. The tray itself uses Wails v3.
 
 To add a UI component, run `npm run ui:add -- <component>` from `frontend`.
 Use the existing Base UI components and theme rather than introducing another
@@ -55,12 +58,12 @@ component library.
 
 The tracked files in `build/` are inputs to Wails: the icons, Windows manifest
 and version metadata, and macOS plists and entitlements. Keep them in the repo;
-`wails build` uses them directly. The Mac plists include the microphone permission
+`wails3 build` uses them directly. The Mac plists include the microphone permission
 description and minimum OS version.
 
 Generated output under `build/bin`, Wails-generated installer files, and local
 release tooling are ignored. `scripts/` contains only local release helpers and
-isn't needed for `wails dev` or `wails build`. No installer or signing tools are
+isn't needed for `wails3 dev` or `wails3 build`. No installer or signing tools are
 needed to build the app.
 
 The landing site is maintained separately. It isn't needed to build or run Yap.
@@ -77,15 +80,16 @@ npx playwright install chromium
 npm run test:ui
 ```
 
-The browser tests mock the desktop bridge and use a separate Vite cache, so they
-can run alongside `wails dev`.
+The browser tests use the real Wails v3 runtime with an in-memory test transport
+(`tests/wails-mock.ts`) and a separate Vite cache, so they
+can run alongside `wails3 dev`.
 
 Native and download tests are opt-in. Run them from the repo root on Windows:
 
 | Environment variable | Command | What it exercises |
 | --- | --- | --- |
 | `YAP_INDICATOR_SMOKE=1` | `go test ./internal/indicator -run '^TestNativeIndicator' -v -count=1` | Real floating windows, focus, and dragging |
-| `YAP_TRAY_SMOKE=1` | `go test ./internal/tray -run TestNativeTray -v -count=1` | Real tray controls |
+| `YAP_TRAY_SMOKE=1` | `go test ./internal/tray -run '^TestNativeTray$' -v -count=1 -timeout 35s` | Wails native tray lifecycle and menu-state updates |
 | `YAP_INTEGRATION=1` | `go test ./internal/models -run TestRealWhisper -v -count=1` | Downloads Whisper and Tiny, then transcribes a sample |
 | `YAP_FFMPEG_INTEGRATION=1` | `go test ./internal/models -run TestFFmpegDownloadIntegration -v -count=1` | Downloads and verifies the pinned FFmpeg archive |
 

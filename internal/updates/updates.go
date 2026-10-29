@@ -275,7 +275,7 @@ func (c *Checker) validate(release manifest) error {
 	return nil
 }
 
-// Stable releases use the same three numeric components as wails.json and NSIS.
+// Stable releases use the same three numeric components as build/config.yml and NSIS.
 func newer(latest, current string) (bool, error) {
 	parse := func(s string) ([3]uint64, error) {
 		var result [3]uint64

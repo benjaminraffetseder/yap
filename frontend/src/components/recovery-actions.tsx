@@ -1,3 +1,5 @@
+import { isDesktop } from "@/lib/desktop";
+import { Clipboard } from "@wailsio/runtime";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { version } from "../../package.json";
 
@@ -61,12 +63,9 @@ export function RecoveryActions({
     setCopyError(false);
     setCopied(false);
     try {
-      const runtime = (
-        window as unknown as { runtime?: { ClipboardSetText?: (text: string) => Promise<boolean> } }
-      ).runtime;
-      if (typeof runtime?.ClipboardSetText === "function") {
-        if (!(await runtime.ClipboardSetText(report))) throw new Error("Clipboard unavailable");
-      } else if (!("go" in window) && navigator.clipboard) {
+      if (isDesktop) {
+        await Clipboard.SetText(report);
+      } else if (navigator.clipboard) {
         await navigator.clipboard.writeText(report);
       } else throw new Error("Clipboard unavailable");
       if (request.current === id) setCopied(true);

@@ -5,7 +5,7 @@ package main
 import (
 	"testing"
 
-	"github.com/wailsapp/wails/v2/pkg/options"
+	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
 func TestReleaseRetainsSingleInstanceReopen(t *testing.T) {
@@ -13,10 +13,10 @@ func TestReleaseRetainsSingleInstanceReopen(t *testing.T) {
 	shown := 0
 	app.showWindow = func() { shown++ }
 	lock := singleInstanceLock(app)
-	if lock == nil || lock.UniqueId != "com.yap.desktop" || lock.OnSecondInstanceLaunch == nil {
+	if lock == nil || lock.UniqueID != "com.yap.desktop" || lock.OnSecondInstanceLaunch == nil {
 		t.Fatal("packaged builds must retain the shared application lock")
 	}
-	lock.OnSecondInstanceLaunch(options.SecondInstanceData{})
+	lock.OnSecondInstanceLaunch(application.SecondInstanceData{})
 	if shown != 1 || !app.windowRequested {
 		t.Fatal("second launch must reopen the running packaged application")
 	}

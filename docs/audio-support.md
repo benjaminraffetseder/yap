@@ -36,7 +36,7 @@ The source SHA-256 is
 The build enables local-file audio decoding and PCM output for Yap. FLAC and
 AAC encoding are included for the packaging smoke test. It is not a general
 FFmpeg installation for network inputs or arbitrary output formats. A plain
-`wails build` does not run this packaging step.
+`wails3 build` does not run this packaging step.
 
 ## The Windows download
 

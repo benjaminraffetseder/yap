@@ -9,6 +9,7 @@ export default tseslint.config(
   {
     ignores: [
       "dist/**",
+      "bindings/**",
       "wailsjs/**",
       "node_modules/**",
       ".playwright/**",

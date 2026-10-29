@@ -12,7 +12,7 @@ import {
   type Status,
   type UpdateStatus,
 } from "@/lib/backend";
-import { EventsOn } from "@wails/runtime/runtime";
+import { Events } from "@wailsio/runtime";
 import {
   createContext,
   useCallback,
@@ -332,7 +332,7 @@ export function DictationProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!isDesktop) return;
     let active = true;
-    const offStatus = EventsOn("dictation:status", (status: Status) => {
+    const offStatus = Events.On("dictation:status", ({ data: status }: { data: Status }) => {
       if (!active) return;
       const previous = latestStatus.current;
       latestStatus.current = status;
@@ -406,7 +406,7 @@ export function DictationProvider({ children }: { children: ReactNode }) {
           });
       }
     });
-    const offQueue = EventsOn("import:queue", (jobs: ImportJob[]) => {
+    const offQueue = Events.On("import:queue", ({ data: jobs }: { data: ImportJob[] }) => {
       if (!active) return;
       queueRevision.current++;
       const pending = jobs.some(importPending);
@@ -441,23 +441,26 @@ export function DictationProvider({ children }: { children: ReactNode }) {
       queueWasPending.current = pending;
       setSnapshot((old) => ({ ...old, importQueue: jobs }));
     });
-    const offLevel = EventsOn("dictation:level", (value: number) => {
+    const offLevel = Events.On("dictation:level", ({ data: value }: { data: number }) => {
       if (active) setLevel(value);
     });
-    const offHistory = EventsOn("dictation:history", () => {
+    const offHistory = Events.On("dictation:history", () => {
       void refresh().catch((cause) => {
         if (active) setError(message(cause));
       });
     });
-    const offSetup = EventsOn("setup:changed", () => {
+    const offSetup = Events.On("setup:changed", () => {
       void refresh().catch((cause) => {
         if (active) setError(message(cause));
       });
     });
-    const offProfile = EventsOn("profile:changed", (name: string, error: string) => {
-      if (!active) return;
-      toastManager.add({ type: error ? "error" : "success", title: error || `Profile: ${name}` });
-    });
+    const offProfile = Events.On(
+      "profile:changed",
+      ({ data: [name, error] }: { data: [string, string] }) => {
+        if (!active) return;
+        toastManager.add({ type: error ? "error" : "success", title: error || `Profile: ${name}` });
+      },
+    );
     void refresh().catch((cause) => {
       if (active) setError(message(cause));
     });

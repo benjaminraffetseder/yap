@@ -97,21 +97,21 @@ test.beforeEach(async ({ page }) => {
     };
     Object.assign(window, {
       queueTest: state,
-      runtime: {
-        EventsOnMultiple(topic: string, handler: (...args: unknown[]) => void) {
+      mockEvents: {
+        subscribe(topic: string, handler: (...args: unknown[]) => void) {
           callbacks[topic] = handler;
           return () => {
             delete callbacks[topic];
           };
         },
-        OnFileDrop(handler: typeof drop) {
+        onFileDrop(handler: typeof drop) {
           drop = handler;
         },
-        OnFileDropOff() {
+        offFileDrop() {
           drop = undefined;
         },
       },
-      go: {
+      mockBackend: {
         main: {
           App: {
             GetSnapshot: async () => structuredClone(snapshot),
@@ -307,7 +307,7 @@ test("keyboard reorder keeps focus across pending saves and consecutive moves", 
   page,
 }) => {
   await page.evaluate(() => {
-    const api = Reflect.get(window, "go").main.App;
+    const api = Reflect.get(window, "mockBackend").main.App;
     const reorder = api.ReorderImportQueue;
     api.ReorderImportQueue = async (ids: string[]) => {
       await new Promise((resolve) => setTimeout(resolve, 150));

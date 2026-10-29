@@ -5,9 +5,9 @@ import (
 	"errors"
 	"time"
 
-	"github.com/google/uuid"
-	"github.com/wailsapp/wails/v2/pkg/runtime"
 	"yap/internal/storage"
+
+	"github.com/google/uuid"
 )
 
 func (a *App) backupAvailableLocked() error {
@@ -73,7 +73,7 @@ func (a *App) ExportBackup(includeAudio bool) (*storage.BackupSummary, error) {
 	if err != nil {
 		return nil, err
 	}
-	path, err := runtime.SaveFileDialog(a.ctx, runtime.SaveDialogOptions{Title: "Export Yap backup", DefaultFilename: "yap-" + time.Now().Format("2006-01-02") + ".yap-backup.zip", Filters: []runtime.FileFilter{{DisplayName: "Yap backup", Pattern: "*.zip"}}})
+	path, err := a.saveFile("Export Yap backup", "yap-"+time.Now().Format("2006-01-02")+".yap-backup.zip", "Yap backup", "*.zip")
 	if err != nil || path == "" {
 		return nil, err
 	}
@@ -111,7 +111,7 @@ func (a *App) PreviewBackup() (*storage.BackupPreview, error) {
 	if err != nil {
 		return nil, err
 	}
-	path, err := runtime.OpenFileDialog(a.ctx, runtime.OpenDialogOptions{Title: "Select Yap backup", Filters: []runtime.FileFilter{{DisplayName: "Yap backup", Pattern: "*.zip"}}})
+	path, err := a.openFile("Select Yap backup", "Yap backup", "*.zip")
 	if err != nil || path == "" {
 		return nil, err
 	}

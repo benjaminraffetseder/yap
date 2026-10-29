@@ -1,0 +1,73 @@
+package main
+
+import (
+	"context"
+	"errors"
+	"runtime"
+
+	"yap/internal/tray"
+
+	"github.com/wailsapp/wails/v3/pkg/application"
+	"github.com/wailsapp/wails/v3/pkg/events"
+)
+
+func (a *App) ServiceStartup(ctx context.Context, _ application.ServiceOptions) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.closing {
+		return nil
+	}
+	a.ctx = ctx
+	a.development = a.desktop.Env.Info().Debug
+	a.notify = func(topic string, data ...interface{}) { a.desktop.Event.Emit(topic, data...) }
+	a.copyText = a.clipboardSetText
+	a.showWindow = func() { a.window.Show(); a.window.UnMinimise(); a.window.Focus() }
+	a.hideWindow = func() { a.window.Hide() }
+	a.quitApplication = a.desktop.Quit
+	// Configure Wails-owned resources before Run starts them; creating a tray
+	// after ApplicationStarted can race its native startup and menu setup.
+	var err error
+	a.tray, err = tray.New(a.desktop, tray.Actions{
+		ToggleHistory: a.toggleHistory, Show: a.show, Record: a.trayRecord,
+		Cancel: func() { _ = a.Cancel() }, Quit: a.quit,
+	}, trayIcon)
+	if err != nil {
+		a.status.TrayError = "Background controls unavailable: " + err.Error()
+	}
+	a.closeToTray = a.tray != nil
+	if runtime.GOOS == "darwin" {
+		// Restore the main window even if the native recording panel is visible.
+		a.desktop.Event.OnApplicationEvent(events.Mac.ApplicationShouldHandleReopen, func(*application.ApplicationEvent) {
+			a.show()
+		})
+	}
+	// Native integrations must start after the platform event loop is available.
+	a.desktop.Event.OnApplicationEvent(events.Common.ApplicationStarted, func(*application.ApplicationEvent) {
+		go a.startup(ctx)
+	})
+	return nil
+}
+
+func (a *App) ServiceShutdown() error {
+	a.shutdown(a.ctx)
+	return nil
+}
+
+func (a *App) clipboardSetText(text string) error {
+	if !a.desktop.Clipboard.SetText(text) {
+		return errors.New("could not copy text to the clipboard")
+	}
+	return nil
+}
+
+func (a *App) openFile(title, label, pattern string) (string, error) {
+	return a.desktop.Dialog.OpenFile().SetTitle(title).AddFilter(label, pattern).
+		AttachToWindow(a.window).PromptForSingleSelection()
+}
+
+func (a *App) saveFile(title, filename, label, pattern string) (string, error) {
+	return a.desktop.Dialog.SaveFileWithOptions(&application.SaveFileDialogOptions{
+		Title: title, Filename: filename, CanCreateDirectories: true, Window: a.window,
+		Filters: []application.FileFilter{{DisplayName: label, Pattern: pattern}},
+	}).PromptForSingleSelection()
+}

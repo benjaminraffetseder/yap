@@ -1,4 +1,5 @@
 dist
+bindings
 wailsjs
 node_modules
 .playwright

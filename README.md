@@ -81,22 +81,22 @@ that runs locally: Yap can't stop that server from forwarding requests elsewhere
 
 ## Build from source
 
-For Windows, you'll need Go **1.26+**, Node **22.12+**, Wails CLI **2.16.0**,
+For Windows, you'll need Go **1.26+**, Node **22.12+**, Wails CLI **3.0.0**,
 and WebView2. A C compiler isn't needed for the Windows build.
 
 ```powershell
 git clone https://github.com/benjaminraffetseder/yap.git
 cd yap
-go install github.com/wailsapp/wails/v2/cmd/wails@v2.16.0
-wails build
+go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0
+wails3 build
 ```
 
 The result is `build/bin/yap.exe`. Wails installs frontend dependencies, generates
 the JavaScript bindings, and builds the frontend. No installer scripts, private
 files, or manual asset copying are needed. Make sure Go's binary directory is on
-PATH so the `wails` command is available.
+PATH so the `wails3` command is available.
 
-For development, run `wails dev` from the same directory and leave the terminal
+For development, run `wails3 dev` from the same directory and leave the terminal
 open. The repository includes the native manifests, permission descriptions,
 version metadata, and icons used by Wails. Generated files, installers, signing
 helpers, and the separate website aren't part of the source build.
@@ -104,7 +104,8 @@ helpers, and the separate website aren't part of the source build.
 ### Other platforms
 
 See the [macOS notes](docs/macos.md) for native Wails build instructions.
-Native compilation and desktop testing are still pending.
+Use `wails3 package` to create the macOS app bundle. Native compilation and
+desktop testing are still pending.
 Parakeet runtimes are available for Intel and Apple Silicon Macs. Moonshine's
 current native runtime requires Apple Silicon and macOS 15 or newer.
 

@@ -7,7 +7,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/wailsapp/wails/v2/pkg/runtime"
 	"yap/internal/fileutil"
 	"yap/internal/storage"
 )
@@ -127,7 +126,7 @@ func (a *App) ExportSessions(ids []string) error {
 	if err != nil {
 		return err
 	}
-	path, err := runtime.SaveFileDialog(a.ctx, runtime.SaveDialogOptions{Title: "Export selected dictations", DefaultFilename: "yap-history.txt", Filters: []runtime.FileFilter{{DisplayName: "Text", Pattern: "*.txt"}}})
+	path, err := a.saveFile("Export selected dictations", "yap-history.txt", "Text", "*.txt")
 	if err != nil || path == "" {
 		return err
 	}

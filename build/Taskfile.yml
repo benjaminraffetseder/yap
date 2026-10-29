@@ -1,0 +1,24 @@
+version: '3'
+
+tasks:
+  install:frontend:
+    dir: frontend
+    sources: [package.json, package-lock.json]
+    generates: [node_modules/.package-lock.json]
+    cmds: [npm ci]
+  generate:bindings:
+    cmds:
+      - wails3 generate bindings -ts -i -names
+  build:frontend:
+    status: ['{{if eq .SKIP_FRONTEND "true"}}true{{else}}false{{end}}']
+    cmds:
+      - task: install:frontend
+      - task: generate:bindings
+      - task: bundle:frontend
+  bundle:frontend:
+    dir: frontend
+    cmds: [npm run build]
+  dev:frontend:
+    dir: frontend
+    cmds:
+      - npm run dev -- --port {{.VITE_PORT}} --strictPort

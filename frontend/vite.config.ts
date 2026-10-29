@@ -1,13 +1,32 @@
-import { fileURLToPath, URL } from "node:url";
-import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
+import react from "@vitejs/plugin-react";
+import { fileURLToPath, URL } from "node:url";
 import { defineConfig } from "vite";
 
 export default defineConfig(({ mode }) => ({
   base: "./",
-  // The UI test server must not rewrite dependencies used by wails dev.
+  // Keep UI tests and the desktop development server in separate caches.
   cacheDir: mode === "ui-test" ? "node_modules/.vite-ui-test" : "node_modules/.vite",
-  plugins: [react(), tailwindcss()],
+  plugins: [
+    react(),
+    tailwindcss(),
+    ...(mode === "ui-test"
+      ? [
+          {
+            name: "yap-test-transport",
+            transformIndexHtml() {
+              return [
+                {
+                  tag: "script",
+                  attrs: { type: "module", src: "/tests/wails-mock.ts" },
+                  injectTo: "head" as const,
+                },
+              ];
+            },
+          },
+        ]
+      : []),
+  ],
   // Match Tailwind 4's supported engines and the macOS 13.3 WebKit minimum.
   build: {
     target: ["safari16.4", "chrome111", "firefox128"],
@@ -16,7 +35,7 @@ export default defineConfig(({ mode }) => ({
   resolve: {
     alias: {
       "@": fileURLToPath(new URL("./src", import.meta.url)),
-      "@wails": fileURLToPath(new URL("./wailsjs", import.meta.url)),
+      "@bindings": fileURLToPath(new URL("./bindings", import.meta.url)),
     },
   },
   server: { host: "127.0.0.1", strictPort: true },

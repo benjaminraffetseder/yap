@@ -3,13 +3,13 @@ package main
 import (
 	"context"
 	_ "embed"
-	"encoding/json"
 	"errors"
 	"path/filepath"
 	goruntime "runtime"
 
-	"github.com/wailsapp/wails/v2/pkg/runtime"
 	"yap/internal/updates"
+
+	"gopkg.in/yaml.v3"
 )
 
 // A separate public release repository can be selected with -ldflags "-X main.updateRepository=owner/repo".
@@ -17,19 +17,19 @@ var updateRepository = "benjaminraffetseder/yap"
 
 // Use the same version for update checks and native executable metadata.
 //
-//go:embed wails.json
+//go:embed build/config.yml
 var appBuildConfig []byte
 
 func appVersion() string {
 	var config struct {
 		Info struct {
-			ProductVersion string `json:"productVersion"`
-		} `json:"info"`
+			Version string `yaml:"version"`
+		} `yaml:"info"`
 	}
-	if err := json.Unmarshal(appBuildConfig, &config); err != nil {
+	if err := yaml.Unmarshal(appBuildConfig, &config); err != nil {
 		panic(err)
 	}
-	return config.Info.ProductVersion
+	return config.Info.Version
 }
 
 func (a *App) updateCheckerLocked() (*updates.Checker, error) {
@@ -96,10 +96,10 @@ func (a *App) CheckForUpdates(manual bool) (updates.Status, error) {
 }
 
 func (a *App) OpenUpdateDownload() error {
-	return a.openUpdateDownload(func(ctx context.Context, url string) { runtime.BrowserOpenURL(ctx, url) })
+	return a.openUpdateDownload(func(_ context.Context, url string) error { return a.desktop.Browser.OpenURL(url) })
 }
 
-func (a *App) openUpdateDownload(open func(context.Context, string)) error {
+func (a *App) openUpdateDownload(open func(context.Context, string) error) error {
 	s, err := a.GetUpdateStatus()
 	if err != nil {
 		return err
@@ -114,6 +114,5 @@ func (a *App) openUpdateDownload(open func(context.Context, string)) error {
 		return errors.New("app is shutting down")
 	}
 	// Only the validated installer URL can reach the operating system browser.
-	open(ctx, s.DownloadURL)
-	return nil
+	return open(ctx, s.DownloadURL)
 }

@@ -101,8 +101,9 @@ test("motion press feedback resets on pointer exit, responds to reduced motion, 
   await expect(button).toHaveCSS("opacity", "1");
   await page.keyboard.up("Space");
   await expect.poll(() => page.evaluate(() => window.dictationTest.audioImports)).toBe(1);
-  await expect(button).toBeDisabled();
-  await expect(button).toHaveCSS("opacity", "0.5");
+  // Imports can queue while transcription is running.
+  await expect(button).toBeEnabled();
+  await expect(button).toHaveCSS("opacity", "1");
 });
 
 for (const reduced of [false, true]) {
@@ -335,7 +336,7 @@ for (const theme of ["dark", "light"] as const) {
     await expect(selector).toContainText("Whisper Tiny");
     await page.screenshot({ path: testInfo.outputPath("dictation-ready-desktop.png") });
     await page.evaluate(() => {
-      Reflect.get(window, "go").main.App.StopRecording = async () => {
+      Reflect.get(window, "mockBackend").main.App.StopRecording = async () => {
         window.dictationTest.status("transcribing");
       };
     });
@@ -411,7 +412,7 @@ test("home speech model selector shows the active model and saves installed sele
     structuredClone(window.dictationTest.snapshot.settings),
   );
   await page.evaluate(() => {
-    const app = Reflect.get(window, "go").main.App;
+    const app = Reflect.get(window, "mockBackend").main.App;
     const save = app.SaveSettings;
     app.SaveSettings = async (settings: Settings) => {
       await new Promise<void>((resolve) => Reflect.set(window, "finishModelSwitch", resolve));
@@ -492,7 +493,7 @@ test("home speech model selector retains custom and failed selections and blocks
 
 async function simulateModelDownload(page: Page) {
   await page.evaluate(() => {
-    Reflect.get(window, "go").main.App.InstallModel = async (id: string) => {
+    Reflect.get(window, "mockBackend").main.App.InstallModel = async (id: string) => {
       const state = window.dictationTest;
       if (state.failSave) throw new Error("Download could not start");
       state.installedModelIDs.push(id);
@@ -610,7 +611,7 @@ async function shortcutPermissionScenario(page: Page, setup = false) {
     state.snapshot.microphoneTested = true;
     const permission = { granted: false, attempts: 0 };
     Reflect.set(window, "shortcutPermissionTest", permission);
-    Reflect.set(Reflect.get(window, "go").main.App, "RetryShortcut", async () => {
+    Reflect.set(Reflect.get(window, "mockBackend").main.App, "RetryShortcut", async () => {
       permission.attempts++;
       if (permission.granted) state.snapshot.status.shortcutError = "";
       state.callbacks["dictation:status"](structuredClone(state.snapshot.status));
@@ -1225,7 +1226,7 @@ test("model testing stays inside the card and cancellation remains available", a
     window.dictationTest.snapshot.textProcessing.enabled = true;
     window.dictationTest.snapshot.textProcessing.model = "saved-model";
     Reflect.set(
-      Reflect.get(window, "go").main.App,
+      Reflect.get(window, "mockBackend").main.App,
       "TestTextModel",
       async () => new Promise<string>((resolve) => Reflect.set(window, "finishModelTest", resolve)),
     );
@@ -1559,12 +1560,12 @@ test("leaving prompts cancels refinement and old backends show recovery guidance
   await page.goto("/#/prompts?section=models");
   await page.getByLabel("Model identifier", { exact: true }).fill("local");
   await page.evaluate(() => {
-    Reflect.deleteProperty(Reflect.get(window, "go").main.App, "RefinePrompt");
+    Reflect.deleteProperty(Reflect.get(window, "mockBackend").main.App, "RefinePrompt");
   });
   await page.getByRole("tab", { name: "Prompts", exact: true }).click();
   await page.getByRole("button", { name: "Refine prompt", exact: true }).click();
   await expect(page.getByRole("alert")).toContainText(
-    "Prompt refinement needs the current backend",
+    "Yap's interface and backend are different versions",
   );
 });
 
@@ -1588,7 +1589,7 @@ test("disconnected saved microphone allows unrelated settings saves", async ({ p
 test("setup ignores an older microphone enumeration reply", async ({ page }) => {
   await page.addInitScript(() => {
     window.dictationTest.snapshot.settings.setupComplete = false;
-    const app = Reflect.get(window, "go").main.App;
+    const app = Reflect.get(window, "mockBackend").main.App;
     const pending: ((devices: { id: string; name: string }[]) => void)[] = [];
     Reflect.set(window, "micReplies", pending);
     app.GetMicrophones = () => new Promise((resolve) => pending.push(resolve));
@@ -2401,15 +2402,15 @@ test.beforeEach(async ({ page }) => {
           selected.autoPromptId !== state.snapshot.textProcessing.autoPromptId);
     }
     Object.assign(window, {
-      runtime: {
-        OnFileDrop(
+      mockEvents: {
+        onFileDrop(
           handler: (x: number, y: number, paths: string[]) => void,
           useDropTarget: boolean,
         ) {
           if (useDropTarget) throw new Error("Expected window-wide audio drops");
           state.callbacks["wails:file-drop"] = handler as (...args: unknown[]) => void;
         },
-        OnFileDropOff() {
+        offFileDrop() {
           delete state.callbacks["wails:file-drop"];
         },
         ClipboardSetText: async (text: string) => {
@@ -2417,14 +2418,14 @@ test.beforeEach(async ({ page }) => {
           state.clipboard = text;
           return true;
         },
-        EventsOnMultiple(topic: string, handler: (...args: unknown[]) => void) {
+        subscribe(topic: string, handler: (...args: unknown[]) => void) {
           state.callbacks[topic] = handler;
           return () => {
             delete state.callbacks[topic];
           };
         },
       },
-      go: {
+      mockBackend: {
         main: {
           App: {
             SetIndicatorTheme: async (dark: boolean) => {
@@ -3627,7 +3628,7 @@ test("microphone errors use a dismissible toast without adding a page banner", a
     localStorage.setItem("desktop-theme", "dark");
     const state = window.dictationTest;
     state.snapshot.settings.setupComplete = false;
-    Reflect.get(window, "go").main.App.StopMicrophoneTest = async () => {
+    Reflect.get(window, "mockBackend").main.App.StopMicrophoneTest = async () => {
       const error =
         "no microphone signal detected; check microphone access and choose another input";
       state.snapshot.microphoneTested = false;
@@ -4150,7 +4151,7 @@ test("direct dictation pages load older entries outside the snapshot, retry erro
       language: "en",
       audioPath: "",
     }));
-    Reflect.set(Reflect.get(window, "go").main.App, "GetSnapshot", async () => ({
+    Reflect.set(Reflect.get(window, "mockBackend").main.App, "GetSnapshot", async () => ({
       ...structuredClone(state.snapshot),
       history: structuredClone(state.snapshot.history.slice(0, 500)),
     }));
@@ -4243,10 +4244,10 @@ test("dictation pages ignore a late reply from another entry", async ({ page }) 
 
 test("dictation pages show restart guidance for an outdated backend", async ({ page }) => {
   await page.addInitScript(() => {
-    Reflect.deleteProperty(Reflect.get(window, "go").main.App, "GetSession");
+    Reflect.deleteProperty(Reflect.get(window, "mockBackend").main.App, "GetSession");
   });
   await page.goto("/#/history/one");
-  await expect(page.getByRole("alert").filter({ hasText: "restart wails dev" })).toBeVisible();
+  await expect(page.getByRole("alert").filter({ hasText: "restart wails3 dev" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Dictation", exact: true })).toBeVisible();
   await expect(page.getByRole("link", { name: "Back to History", exact: true })).toBeVisible();
 });
@@ -4563,7 +4564,7 @@ test("an outdated outputs backend keeps the transcription visible and provides r
         audioPath: "",
       },
     ];
-    Reflect.deleteProperty(Reflect.get(window, "go").main.App, "GetSessionOutputs");
+    Reflect.deleteProperty(Reflect.get(window, "mockBackend").main.App, "GetSessionOutputs");
   });
   await page.goto("/#/history/one");
   await expect(page.getByRole("region", { name: "Result", exact: true })).toContainText(
@@ -4571,9 +4572,9 @@ test("an outdated outputs backend keeps the transcription visible and provides r
   );
   await expect(page.getByRole("button", { name: "Copy result", exact: true })).toBeEnabled();
   await page.getByRole("tab", { name: "Outputs", exact: true }).click();
-  await expect(page.getByRole("alert").filter({ hasText: "restart wails dev" })).toBeVisible();
+  await expect(page.getByRole("alert").filter({ hasText: "restart wails3 dev" })).toBeVisible();
   await page.evaluate(() => {
-    Reflect.set(Reflect.get(window, "go").main.App, "GetSessionOutputs", async () => []);
+    Reflect.set(Reflect.get(window, "mockBackend").main.App, "GetSessionOutputs", async () => []);
   });
   await page.getByRole("button", { name: "Retry outputs", exact: true }).click();
   await expect(page.getByText("No generated outputs yet.", { exact: true })).toBeVisible();
@@ -6730,10 +6731,10 @@ test("older backends show discovery restart guidance without hiding Prompts", as
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await page.addInitScript(() => {
-    Reflect.deleteProperty(Reflect.get(window, "go").main.App, "ListTextModels");
+    Reflect.deleteProperty(Reflect.get(window, "mockBackend").main.App, "ListTextModels");
   });
   await page.goto("/#/prompts?section=models");
-  await expect(page.getByRole("alert").filter({ hasText: "restart wails dev" })).toBeVisible();
+  await expect(page.getByRole("alert").filter({ hasText: "restart wails3 dev" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Prompts", exact: true })).toBeVisible();
   await page.getByLabel("Model identifier").fill("manual-model");
   expect(errors).toEqual([]);
@@ -7110,7 +7111,7 @@ test("an outdated backup backend provides restart guidance without hiding Settin
   page,
 }) => {
   await page.addInitScript(() => {
-    Reflect.deleteProperty(Reflect.get(window, "go").main.App, "PreviewBackup");
+    Reflect.deleteProperty(Reflect.get(window, "mockBackend").main.App, "PreviewBackup");
   });
   await page.goto("/#/settings?section=history");
   const panel = page.getByRole("region", {
@@ -7118,7 +7119,7 @@ test("an outdated backup backend provides restart guidance without hiding Settin
     exact: true,
   });
   await panel.getByRole("button", { name: "Restore backup", exact: true }).click();
-  await expect(panel.getByRole("alert")).toContainText("restart wails dev");
+  await expect(panel.getByRole("alert")).toContainText("restart wails3 dev");
   await expect(page.getByRole("tablist", { name: "Settings sections", exact: true })).toBeVisible();
 });
 
@@ -7337,10 +7338,10 @@ test("audio drag and drop reports an outdated backend", async ({ page }) => {
   await page.goto("/#/history");
   await expect(page.getByRole("button", { name: "Import audio", exact: true })).toBeEnabled();
   await page.evaluate(() => {
-    Reflect.deleteProperty(Reflect.get(window, "go").main.App, "ImportDroppedAudio");
+    Reflect.deleteProperty(Reflect.get(window, "mockBackend").main.App, "ImportDroppedAudio");
   });
   await dropAudioFiles(page, ["C:\\meeting.wav"]);
-  await expect(page.getByRole("alert")).toContainText("Audio import needs the current backend");
+  await expect(page.getByRole("alert").filter({ hasText: "different versions" })).toBeVisible();
 });
 
 test("audio import is cancellable across navigation and results open from History", async ({
@@ -7428,10 +7429,10 @@ test("audio import handles file-picker cancellation, unavailable models, invalid
   await button.click();
   await expect(page.getByRole("alert")).toContainText("Choose an uncompressed mono or stereo WAV");
   await page.evaluate(() => {
-    Reflect.deleteProperty(Reflect.get(window, "go").main.App, "ImportAudio");
+    Reflect.deleteProperty(Reflect.get(window, "mockBackend").main.App, "ImportAudio");
   });
   await button.click();
-  await expect(page.getByRole("alert")).toContainText("Audio import needs the current backend");
+  await expect(page.getByRole("alert").filter({ hasText: "different versions" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "History", exact: true })).toBeVisible();
 });
 
@@ -8375,7 +8376,7 @@ test("adding an app to another profile moves its badge and the picker names its 
       { applicationId: "windows:outlook.exe", applicationName: "Outlook", profileId: "email" },
       { applicationId: "windows:slack.exe", applicationName: "Slack", profileId: "casual" },
     ];
-    Reflect.get(window, "go").main.App.GetProfileApplications = async () => [
+    Reflect.get(window, "mockBackend").main.App.GetProfileApplications = async () => [
       { id: "windows:outlook.exe", name: "Outlook" },
       { id: "windows:slack.exe", name: "Slack" },
       { id: "windows:code.exe", name: "Visual Studio Code" },
@@ -8668,7 +8669,7 @@ test("auto-save vocabulary keeps submitted aliases without a loop and skips empt
 }) => {
   await page.goto("/#/vocabulary");
   await page.evaluate(() => {
-    const app = Reflect.get(window, "go").main.App;
+    const app = Reflect.get(window, "mockBackend").main.App;
     const original = app.SaveVocabulary;
     Reflect.set(window, "autoSaveCalls", []);
     app.SaveVocabulary = (entries: VocabularyEntry[]) => {
@@ -8869,7 +8870,7 @@ test("auto-save serializes requests and preserves edits made while a save is pen
 }) => {
   await page.goto("/#/prompts");
   await page.evaluate(() => {
-    const app = Reflect.get(window, "go").main.App;
+    const app = Reflect.get(window, "mockBackend").main.App;
     const original = app.SaveTextProcessing;
     Reflect.set(window, "autoSaveCalls", []);
     app.SaveTextProcessing = (config: TextProcessing) =>
@@ -8992,7 +8993,7 @@ test("auto-save revision history restores prompt content and blocks chains with 
         steps: [{ id: "other-step", promptId: "summary", input: "original" }],
       },
     ];
-    const app = Reflect.get(window, "go").main.App;
+    const app = Reflect.get(window, "mockBackend").main.App;
     app.GetRevisions = async (kind: string) => [
       {
         id: 1,
@@ -9031,7 +9032,7 @@ test("auto-save revision history restores prompt content and blocks chains with 
   await expect(chainHistory.getByRole("button", { name: "Restore version" })).toBeDisabled();
   await chainHistory.getByRole("button", { name: "Close", exact: true }).first().click();
   await page.evaluate(() => {
-    const app = Reflect.get(window, "go").main.App;
+    const app = Reflect.get(window, "mockBackend").main.App;
     app.GetRevisions = async () => [
       {
         id: 1,
@@ -9078,7 +9079,7 @@ test("auto-save history restores the vocabulary list and transcript, marks curre
         audioPath: "",
       },
     ];
-    const app = Reflect.get(window, "go").main.App;
+    const app = Reflect.get(window, "mockBackend").main.App;
     Reflect.set(window, "failRevisionLoad", true);
     app.GetRevisions = async (kind: string) => {
       if (Reflect.get(window, "failRevisionLoad")) throw new Error("History load failed");

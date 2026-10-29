@@ -7,7 +7,7 @@ executable; you don't need an installer or signing tools to run it.
 
 - Go 1.26 or newer.
 - Node 22.12 or newer, with npm.
-- Wails CLI 2.16.0.
+- Wails CLI 3.0.0.
 - Microsoft Edge WebView2 Runtime.
 
 A C compiler isn't required. SQLite uses a pure-Go driver, and speech recognition
@@ -18,14 +18,14 @@ runs through a separate Whisper executable downloaded during model setup.
 From a clone of this repository:
 
 ```powershell
-go install github.com/wailsapp/wails/v2/cmd/wails@v2.16.0
-wails doctor
-wails build
+go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0
+wails3 doctor
+wails3 build
 .\build\bin\yap.exe
 ```
 
 Make sure Go's binary directory (usually `%USERPROFILE%\go\bin`) is on PATH.
-`wails doctor` can help identify missing tools or WebView2. The build installs
+`wails3 doctor` can help identify missing tools or WebView2. The build installs
 frontend dependencies and generates bindings and frontend assets automatically.
 The icons, manifest, and version metadata are already in the repository.
 
@@ -34,12 +34,12 @@ Those downloads need internet; dictation after setup works offline.
 
 ## Development
 
-Run `wails dev` from the repository root and leave the terminal open. Changes to
+Run `wails3 dev` from the repository root and leave the terminal open. Changes to
 the frontend reload through Vite; Go changes rebuild the app. Use Ctrl+C to stop
 the watcher.
 
 Closing the app window hides it to the tray. Choose **Quit Yap** before replacing
-a running executable, or use `wails build -o yap-dev.exe` to build another file.
+a running executable, or use `wails3 build APP_NAME=yap-dev` to build another file.
 Avoid running multiple copies that try to register the same global shortcut.
 
 ## Local data and distribution
@@ -55,13 +55,15 @@ maintained separately and aren't required for this build.
 
 Windows x64 builds check the latest public stable release in
 `benjaminraffetseder/yap` using GitHub's Releases API. This is enabled in ordinary
-`wails build` output; no website feed, `release.json`, account, or token is needed.
+`wails3 build` output; no website feed, `release.json`, account, or token is needed.
 Development builds skip automatic network checks, while manual checks still work.
 macOS and Linux do not offer Windows installers.
 
 For each release:
 
-1. Bump `info.productVersion` in `wails.json`, for example to `0.2.0`.
+1. Bump `info.version` in `build/config.yml` and the version fields in
+   `build/windows/info.json`, `build/windows/wails.exe.manifest`, and both
+   `build/darwin/Info*.plist` files, for example to `0.2.0`.
 2. Build the Windows installer with your release packaging and signing setup.
 3. Create a draft GitHub release tagged `v0.2.0` and add release notes.
 4. Upload `yap-0.2.0-windows-amd64-setup.exe` and its checksum before publishing.
@@ -84,7 +86,7 @@ checksum to the draft GitHub release.
 If releases move to a separate public GitHub repository, select it at build time:
 
 ```powershell
-wails build -ldflags "-X main.updateRepository=owner/yap-releases"
+wails3 build LDFLAGS="-X main.updateRepository=owner/yap-releases"
 ```
 
 The local installer helper accepts the corresponding

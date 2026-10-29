@@ -1,0 +1,13 @@
+version: '3'
+
+tasks:
+  build:
+    cmds:
+      - task: :common:build:frontend
+      - go build -tags {{if eq .DEV "true"}}dev{{else}}production{{end}}{{if .EXTRA_TAGS}},{{.EXTRA_TAGS}}{{end}} -trimpath -buildvcs=false -ldflags='{{.LDFLAGS}}' -o {{.BIN_DIR}}/{{.APP_NAME}} .
+    env:
+      GOOS: linux
+      GOARCH: '{{.ARCH | default ARCH}}'
+      CGO_ENABLED: '1'
+  run:
+    cmds: ['"{{.BIN_DIR}}/{{.APP_NAME}}"']

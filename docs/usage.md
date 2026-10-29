@@ -341,7 +341,7 @@ Backups wait until pending settings edits finish saving.
   focus back to another app to paste. On a Mac, check Accessibility permission.
 - **The interface fails to load:** try the recovery screen's retry or reload
   action. Quit and reopen Yap if it reports a backend version mismatch. During
-  development, restart `wails dev`. Unsaved drafts may be lost on reload.
+  development, restart `wails3 dev`. Unsaved drafts may be lost on reload.
 
 Error reports stay in memory until you choose to copy them. Check what you're
 sharing before posting a report, and leave out private transcripts or recordings.

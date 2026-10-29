@@ -3,7 +3,7 @@ import { MotionReveal } from "@/components/motion-reveal";
 import { backend, isDesktop } from "@/lib/backend";
 import { fade } from "@/lib/motion";
 import { useMotionPreference } from "@/lib/use-motion-preference";
-import { OnFileDrop, OnFileDropOff } from "@wails/runtime/runtime";
+import { Events } from "@wailsio/runtime";
 import { Upload } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
@@ -22,7 +22,7 @@ export function AudioDropImport() {
   current.current = { unavailable, run };
 
   useEffect(() => {
-    if (!isDesktop || typeof Reflect.get(window, "runtime")?.OnFileDrop !== "function") return;
+    if (!isDesktop) return;
     let depth = 0;
     let awaitingPaths = false;
     const reset = () => {
@@ -55,7 +55,7 @@ export function AudioDropImport() {
       reset();
       awaitingPaths = true;
     };
-    OnFileDrop((_x, _y, paths) => {
+    const offDrop = Events.On("audio:files-dropped", ({ data: paths }: { data: string[] }) => {
       // Wails broadcasts native drops to every dev frontend, including browser previews.
       // Only the window that received the DOM drop may import its resolved paths.
       if (!awaitingPaths) return;
@@ -71,14 +71,14 @@ export function AudioDropImport() {
         .finally(() => {
           pending.current = false;
         });
-    }, false);
+    });
     window.addEventListener("dragenter", enter);
     window.addEventListener("dragover", over);
     window.addEventListener("dragleave", leave);
     window.addEventListener("drop", drop);
     window.addEventListener("blur", reset);
     return () => {
-      OnFileDropOff();
+      offDrop();
       window.removeEventListener("dragenter", enter);
       window.removeEventListener("dragover", over);
       window.removeEventListener("dragleave", leave);

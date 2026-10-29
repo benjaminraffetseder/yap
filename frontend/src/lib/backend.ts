@@ -65,8 +65,8 @@ import {
   StopMicrophoneTest,
   StopRecording,
   TestTextModel,
-} from "@wails/go/main/App";
-import { storage, text } from "@wails/go/models";
+} from "@bindings/yap/app";
+import type { Config } from "@bindings/yap/internal/inference/text/models";
 export type DictationProfile = {
   id: string;
   name: string;
@@ -122,9 +122,9 @@ export const defaultTextProcessing: TextProcessing = {
     },
   ],
 };
-export const isDesktop = typeof window !== "undefined" && "go" in window;
+export { isDesktop } from "@/lib/desktop";
 export const backendVersionMismatchMessage =
-  "Yap's interface and backend are different versions. Quit and reopen Yap. In development, restart wails dev.";
+  "Yap's interface and backend are different versions. Quit and reopen Yap. In development, restart wails3 dev.";
 export type Settings = {
   microphoneId: string;
   whisperPath: string;
@@ -211,7 +211,7 @@ export type GeneratedOutput = {
     total: number;
     input: string;
     sourceOutputId: string;
-  };
+  } | null;
 };
 export type HistoryPageResult = {
   entries: Session[];
@@ -269,7 +269,7 @@ export type Snapshot = {
   recordingSaveHistory?: boolean;
   latestResult?: {
     session: Session;
-    output?: GeneratedOutput;
+    output?: GeneratedOutput | null;
     outputs?: GeneratedOutput[];
     text: string;
   } | null;
@@ -305,7 +305,7 @@ export type BackupSummary = {
 export type BackupPreferences = Pick<
   Settings,
   "language" | "interaction" | "autoCopy" | "autoPaste" | "saveAudio" | "cleanText"
-> & { saveHistory?: boolean };
+> & { saveHistory?: boolean | null };
 export type BackupPreview = {
   id: string;
   filename: string;
@@ -313,126 +313,71 @@ export type BackupPreview = {
   preferences: BackupPreferences;
   summary: BackupSummary;
 };
-function requireBackupAPI(name: string) {
-  const api = (window as unknown as { go?: { main?: { App?: Record<string, unknown> } } }).go?.main
-    ?.App;
-  if (typeof api?.[name] !== "function")
-    throw new Error(
-      "Backups need the current backend. Quit and reopen Yap; in development, restart wails dev.",
-    );
-}
-function requireOutputAPI(name: string) {
-  const api = (window as unknown as { go?: { main?: { App?: Record<string, unknown> } } }).go?.main
-    ?.App;
-  if (typeof api?.[name] !== "function")
-    throw new Error(
-      "Saved outputs need the current backend. Quit and reopen Yap; in development, restart wails dev.",
-    );
-}
-function requireProfileAPI(name: string) {
-  const api = (window as unknown as { go?: { main?: { App?: Record<string, unknown> } } }).go?.main
-    ?.App;
-  if (typeof api?.[name] !== "function")
-    throw new Error(
-      "Dictation profiles need the current backend. Quit and reopen Yap; in development, restart wails dev.",
-    );
-}
 
-function requireImportQueueAPI(name: string) {
-  const api = (window as unknown as { go?: { main?: { App?: Record<string, unknown> } } }).go?.main
-    ?.App;
-  if (typeof api?.[name] !== "function") throw new Error(backendVersionMismatchMessage);
+function normalizeTextProcessing(config: Config): TextProcessing {
+  return {
+    ...config,
+    prompts: config.prompts ?? [],
+    chains: (config.chains ?? []).map((chain) => ({ ...chain, steps: chain.steps ?? [] })),
+  };
 }
 
 export const backend = {
-  revisions: (kind: RevisionKind, itemId: string): Promise<Revision[]> =>
-    GetRevisions(kind, itemId),
+  revisions: async (kind: RevisionKind, itemId: string): Promise<Revision[]> =>
+    (await GetRevisions(kind, itemId)) ?? [],
   profileApplications: async (): Promise<ProfileApplication[]> => {
-    requireProfileAPI("GetProfileApplications");
-    return GetProfileApplications();
+    return (await GetProfileApplications()) ?? [];
   },
   saveProfileAutomation: async (rules: AppProfileRule[], shortcut: string): Promise<void> => {
-    requireProfileAPI("SaveProfileAutomation");
-    return SaveProfileAutomation(
-      rules.map((rule) => storage.AppProfileRule.createFrom(rule)),
-      shortcut,
-    );
+    return SaveProfileAutomation(rules, shortcut);
   },
   saveProfile: async (profile: DictationProfile): Promise<DictationProfile> => {
-    requireProfileAPI("SaveDictationProfile");
-    return SaveDictationProfile(storage.DictationProfile.createFrom(profile));
+    return SaveDictationProfile(profile);
   },
   applyProfile: async (id: string): Promise<void> => {
-    requireProfileAPI("ApplyDictationProfile");
     return ApplyDictationProfile(id);
   },
   deleteProfile: async (id: string): Promise<void> => {
-    requireProfileAPI("DeleteDictationProfile");
     return DeleteDictationProfile(id);
   },
   checkUpdates: async (manual: boolean): Promise<UpdateStatus> => {
-    const api = (window as unknown as { go?: { main?: { App?: Record<string, unknown> } } }).go
-      ?.main?.App;
-    if (typeof api?.CheckForUpdates !== "function") throw new Error(backendVersionMismatchMessage);
     return CheckForUpdates(manual);
   },
   downloadUpdate: OpenUpdateDownload,
   reorderImports: async (ids: string[]): Promise<void> => {
-    requireImportQueueAPI("ReorderImportQueue");
     return ReorderImportQueue(ids);
   },
   removeImport: async (id: string): Promise<void> => {
-    requireImportQueueAPI("RemoveImport");
     return RemoveImport(id);
   },
   retryImport: async (id: string): Promise<void> => {
-    requireImportQueueAPI("RetryImport");
     return RetryImport(id);
   },
   clearFinishedImports: async (): Promise<void> => {
-    requireImportQueueAPI("ClearFinishedImports");
     return ClearFinishedImports();
   },
   importDroppedAudio: async (paths: string[]): Promise<void> => {
-    const api = (window as unknown as { go?: { main?: { App?: Record<string, unknown> } } }).go
-      ?.main?.App;
-    if (typeof api?.ImportDroppedAudio !== "function")
-      throw new Error(
-        "Audio import needs the current backend. Quit and reopen Yap; in development, restart wails dev.",
-      );
     return ImportDroppedAudio(paths);
   },
   audioSupport: async (): Promise<AudioSupport> => {
-    requireAudioSupportAPI("GetAudioSupport");
     return GetAudioSupport();
   },
   installAudioSupport: async (): Promise<void> => {
-    requireAudioSupportAPI("InstallAudioSupport");
     return InstallAudioSupport();
   },
   importAudio: async (): Promise<void> => {
-    const api = (window as unknown as { go?: { main?: { App?: Record<string, unknown> } } }).go
-      ?.main?.App;
-    if (typeof api?.ImportAudio !== "function")
-      throw new Error(
-        "Audio import needs the current backend. Quit and reopen Yap; in development, restart wails dev.",
-      );
     return ImportAudio();
   },
   exportBackup: async (audio: boolean): Promise<BackupSummary | null> => {
-    requireBackupAPI("ExportBackup");
     return ExportBackup(audio);
   },
   previewBackup: async (): Promise<BackupPreview | null> => {
-    requireBackupAPI("PreviewBackup");
     return PreviewBackup();
   },
   restoreBackup: async (id: string, preferences: boolean): Promise<BackupSummary> => {
-    requireBackupAPI("RestoreBackup");
     return RestoreBackup(id, preferences);
   },
   discardBackup: async (id: string): Promise<void> => {
-    requireBackupAPI("DiscardBackupPreview");
     return DiscardBackupPreview(id);
   },
   snapshot: async (): Promise<Snapshot> => {
@@ -442,12 +387,28 @@ export const backend = {
     if (!value.textProcessing || !Array.isArray(value.textProcessing.prompts)) {
       throw new Error(backendVersionMismatchMessage);
     }
-    return value;
+    return {
+      ...value,
+      textProcessing: normalizeTextProcessing(value.textProcessing),
+      importQueue: value.importQueue ?? [],
+      appProfileRules: value.appProfileRules ?? [],
+      dictationProfiles: value.dictationProfiles ?? [],
+      history: value.history ?? [],
+      models: value.models ?? [],
+      vocabulary: (value.vocabulary ?? []).map((entry) => ({
+        ...entry,
+        aliases: entry.aliases ?? [],
+      })),
+      latestResult: value.latestResult && {
+        ...value.latestResult,
+        outputs: value.latestResult.outputs ?? [],
+      },
+    };
   },
   start: StartRecording,
   stop: StopRecording,
   cancel: Cancel,
-  microphones: async (): Promise<Microphone[]> => GetMicrophones(),
+  microphones: async (): Promise<Microphone[]> => (await GetMicrophones()) ?? [],
   settings: SaveSettings,
   setSaveHistory: SetSaveHistory,
   saveLatestResult: SaveLatestResult,
@@ -459,7 +420,7 @@ export const backend = {
   stopMicTest: StopMicrophoneTest,
   completeSetup: CompleteSetup,
   restartSetup: RestartSetup,
-  diagnosticChecks: async (): Promise<DiagnosticCheck[]> => GetDiagnosticChecks(),
+  diagnosticChecks: async (): Promise<DiagnosticCheck[]> => (await GetDiagnosticChecks()) ?? [],
   testDictation: StartDiagnosticTest,
   stopDictationTest: StopDiagnosticTest,
   copy: CopyText,
@@ -468,39 +429,31 @@ export const backend = {
   export: ExportSession,
   saveTranscript: SaveTranscript,
   addVocabularyTerm: AddVocabularyTerm,
-  history: async (query: string, page: number): Promise<HistoryPageResult> =>
-    GetHistory(query, page),
+  history: async (query: string, page: number): Promise<HistoryPageResult> => {
+    const result = await GetHistory(query, page);
+    return { ...result, entries: result.entries ?? [] };
+  },
   recentlyDeleted: async (query: string, page: number): Promise<HistoryPageResult> => {
-    requireHistoryRecoveryAPI("GetRecentlyDeleted");
-    return GetRecentlyDeleted(query, page);
+    const result = await GetRecentlyDeleted(query, page);
+    return { ...result, entries: result.entries ?? [] };
   },
   restoreSessions: async (ids: string[]): Promise<void> => {
-    requireHistoryRecoveryAPI("RestoreSessions");
     return RestoreSessions(ids);
   },
   permanentlyDeleteSessions: async (ids: string[]): Promise<void> => {
-    requireHistoryRecoveryAPI("PermanentlyDeleteSessions");
     return PermanentlyDeleteSessions(ids);
   },
   session: async (id: string): Promise<Session | null> => {
-    const api = (window as unknown as { go?: { main?: { App?: Record<string, unknown> } } }).go
-      ?.main?.App;
-    if (typeof api?.GetSession !== "function")
-      throw new Error(
-        "Dictation pages need the current backend. Quit and reopen Yap; in development, restart wails dev.",
-      );
     return GetSession(id);
   },
   generatedOutputs: async (id: string): Promise<GeneratedOutput[]> => {
-    requireOutputAPI("GetSessionOutputs");
-    return GetSessionOutputs(id);
+    return (await GetSessionOutputs(id)) ?? [];
   },
   generateOutput: async (
     requestID: string,
     sessionID: string,
     promptID: string,
   ): Promise<string> => {
-    requireOutputAPI("GenerateSessionOutput");
     return GenerateSessionOutput(requestID, sessionID, promptID);
   },
   regenerateOutput: async (
@@ -508,16 +461,12 @@ export const backend = {
     sessionID: string,
     outputID: string,
   ): Promise<string> => {
-    requireOutputAPI("RegenerateSessionOutput");
     return RegenerateSessionOutput(requestID, sessionID, outputID);
   },
   deleteOutput: async (sessionID: string, outputID: string): Promise<void> => {
-    requireOutputAPI("DeleteSessionOutput");
     return DeleteSessionOutput(sessionID, outputID);
   },
   removeSessions: async (ids: string[]): Promise<void> => {
-    // Older backends delete permanently and cannot honor the Undo action.
-    requireHistoryRecoveryAPI("RestoreSessions");
     return DeleteSessions(ids);
   },
   exportSessions: ExportSessions,
@@ -525,13 +474,10 @@ export const backend = {
   beginShortcutCapture: BeginShortcutCapture,
   endShortcutCapture: EndShortcutCapture,
   retryShortcut: async (): Promise<void> => {
-    const api = (window as unknown as { go?: { main?: { App?: Record<string, unknown> } } }).go
-      ?.main?.App;
-    if (typeof api?.RetryShortcut !== "function") throw new Error(backendVersionMismatchMessage);
     return RetryShortcut();
   },
   textProcessing: async (config: TextProcessing): Promise<TextProcessing> =>
-    SaveTextProcessing(text.Config.createFrom(config)),
+    normalizeTextProcessing(await SaveTextProcessing({ ...config, chains: config.chains ?? [] })),
   processText: ProcessText,
   cancelTextProcessing: CancelTextProcessing,
   testTextModel: TestTextModel,
@@ -541,41 +487,12 @@ export const backend = {
     model: string,
     instruction: string,
   ): Promise<string> => {
-    const api = (window as unknown as { go?: { main?: { App?: Record<string, unknown> } } }).go
-      ?.main?.App;
-    if (typeof api?.RefinePrompt !== "function")
-      throw new Error(
-        "Prompt refinement needs the current backend. Quit and reopen Yap; in development, restart wails dev.",
-      );
     return RefinePrompt(id, endpoint, model, instruction);
   },
   listTextModels: async (id: string, endpoint: string): Promise<string[]> => {
-    const api = (window as unknown as { go?: { main?: { App?: Record<string, unknown> } } }).go
-      ?.main?.App;
-    if (typeof api?.ListTextModels !== "function") {
-      throw new Error(
-        "Model discovery needs the current backend. Quit and reopen Yap; in development, restart wails dev.",
-      );
-    }
-    return ListTextModels(id, endpoint);
+    return (await ListTextModels(id, endpoint)) ?? [];
   },
 };
-function requireHistoryRecoveryAPI(name: string) {
-  const api = (window as unknown as { go?: { main?: { App?: Record<string, unknown> } } }).go?.main
-    ?.App;
-  if (typeof api?.[name] !== "function")
-    throw new Error(
-      "History recovery needs the current backend. Quit and reopen Yap; in development, restart wails dev.",
-    );
-}
-function requireAudioSupportAPI(name: string) {
-  const api = (window as unknown as { go?: { main?: { App?: Record<string, unknown> } } }).go?.main
-    ?.App;
-  if (typeof api?.[name] !== "function")
-    throw new Error(
-      "Audio support settings need the current backend. Quit and reopen Yap; in development, restart wails dev.",
-    );
-}
 export function isBusy(phase: string) {
   return [
     "backup",
@@ -589,6 +506,9 @@ export function isBusy(phase: string) {
   ].includes(phase);
 }
 export function message(cause: unknown) {
+  if (cause instanceof Error && cause.name === "ReferenceError") {
+    return backendVersionMismatchMessage;
+  }
   return cause instanceof Error ? cause.message : String(cause);
 }
 export function duration(ms: number) {
