@@ -52,7 +52,7 @@ export function DiagnosticsPanel({ disabled = false }: { disabled?: boolean }) {
   }
   return (
     <section className="settings-section space-y-5" aria-labelledby="diagnostics-title">
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 id="diagnostics-title" className="font-semibold">
           Dictation diagnostics
         </h2>
@@ -69,7 +69,7 @@ export function DiagnosticsPanel({ disabled = false }: { disabled?: boolean }) {
         </Button>
       </div>
       {checks.length > 0 && (
-        <dl className="grid gap-4 sm:grid-cols-3">
+        <dl className="grid gap-4 @lg/settings:grid-cols-3">
           {checks.map((check) => (
             <div key={check.id} className="min-w-0">
               <dt className="text-xs font-medium text-muted-foreground">{check.name}</dt>

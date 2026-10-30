@@ -447,6 +447,416 @@ test.describe("Home preview", () => {
   });
 });
 
+async function settingsClarityScenario(
+  page: Page,
+  section = "dictation",
+  theme = "dark",
+  collapsed = true,
+) {
+  await page.addInitScript(
+    ({ theme, collapsed }) => {
+      localStorage.setItem("desktop-theme", theme);
+      localStorage.setItem("yap-sidebar-collapsed", String(collapsed));
+      const state = window.dictationTest;
+      state.snapshot.settings.shortcut = "Ctrl+F12";
+      state.snapshot.settings.interaction = "toggle";
+      state.snapshot.models = [
+        {
+          id: "small",
+          name: "Whisper Small",
+          description: "Speech model",
+          installed: true,
+          path: "/model",
+          size: 100,
+          diskBytes: 100,
+          removable: true,
+        },
+      ];
+      state.snapshot.dictationProfiles = [
+        {
+          id: "default",
+          name: "Default",
+          modelPath: "/model",
+          language: "auto",
+          cleanText: false,
+          autoPromptId: "",
+        },
+        {
+          id: "work",
+          name: "Work notes",
+          modelPath: "/model",
+          language: "en",
+          cleanText: true,
+          autoPromptId: "",
+        },
+      ];
+      state.snapshot.defaultProfileId = "default";
+      state.snapshot.activeProfileId = "default";
+      state.snapshot.appProfileRules = [
+        { applicationId: "windows:slack.exe", applicationName: "Slack", profileId: "work" },
+      ];
+      Reflect.get(window, "mockBackend").main.App.GetAudioSupport = async () => ({
+        installed: false,
+        managed: false,
+        path: "",
+        canDownload: true,
+        size: 76972461,
+        message: "FFmpeg is not installed",
+      });
+    },
+    { theme, collapsed },
+  );
+  await page.goto(`/#/settings?section=${section}`);
+}
+
+test("settings clarity separates profiles and puts recording controls first", async ({ page }) => {
+  await settingsClarityScenario(page);
+  await expect(page.getByRole("heading", { name: "Settings", exact: true })).toBeVisible();
+  await expect(page.getByRole("tabpanel").locator("h2")).toHaveText([
+    "Recording",
+    "Shortcuts",
+    "Text & delivery",
+  ]);
+  await expect(page.getByRole("button", { name: "New profile", exact: true })).toHaveCount(0);
+  await page.getByRole("link", { name: "Manage dictation profiles", exact: true }).click();
+  await expect(page).toHaveURL(/section=profiles/);
+  await expect(page.getByRole("tab", { name: "Profiles", exact: true })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+  await expect(page.getByRole("button", { name: "New profile", exact: true })).toBeVisible();
+  await expect(page.getByRole("combobox", { name: "Microphone", exact: true })).toHaveCount(0);
+  await page.getByRole("link", { name: "Dictate", exact: true }).click();
+  await page.getByRole("link", { name: "Manage dictation profiles", exact: true }).click();
+  await expect(page).toHaveURL(/section=profiles/);
+  await expect(page.getByRole("button", { name: "Edit Default", exact: true })).toBeVisible();
+});
+
+test("settings clarity preserves section URLs, unrelated parameters and replace navigation", async ({
+  page,
+}) => {
+  await settingsClarityScenario(page);
+  for (const [section, label] of [
+    ["dictation", "Dictation"],
+    ["profiles", "Profiles"],
+    ["general", "General"],
+    ["history", "History & data"],
+    ["advanced", "Advanced"],
+    ["unknown", "Dictation"],
+  ]) {
+    await page.goto(`/#/settings?section=${section}&from=review`);
+    await expect(page.getByRole("tab", { name: label, exact: true })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    const before = await page.evaluate(() => history.length);
+    await page.getByRole("tab", { name: "Profiles", exact: true }).click();
+    await expect(page).toHaveURL(/section=profiles&from=review/);
+    expect(await page.evaluate(() => history.length)).toBe(before);
+  }
+  await page.goto("/#/settings?from=review");
+  await expect(page.getByRole("tab", { name: "Dictation", exact: true })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+});
+
+test("settings clarity keeps pending and failed drafts protected across profile navigation", async ({
+  page,
+}) => {
+  await settingsClarityScenario(page);
+  await page.evaluate(() => {
+    const app = Reflect.get(window, "mockBackend").main.App;
+    const save = app.SaveSettings;
+    app.SaveSettings = async (settings: Settings) => {
+      await new Promise<void>((resolve) => Reflect.set(window, "releaseSettingsSave", resolve));
+      return save(settings);
+    };
+    window.dictationTest.failSave = true;
+  });
+  await page.getByLabel("Global shortcut", { exact: true }).fill("Ctrl+Alt+J");
+  await page.getByRole("tab", { name: "Profiles", exact: true }).click();
+  await expect(page.getByRole("button", { name: "New profile", exact: true })).toBeDisabled();
+  await expect
+    .poll(() => page.evaluate(() => typeof Reflect.get(window, "releaseSettingsSave")))
+    .toBe("function");
+  await expect(page.getByRole("button", { name: "Edit Default", exact: true })).toBeDisabled();
+  await page.evaluate(() => Reflect.get(window, "releaseSettingsSave")());
+  await expect(page.getByRole("button", { name: "Retry", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "New profile", exact: true })).toBeDisabled();
+  await page.getByRole("tab", { name: "Dictation", exact: true }).click();
+  await expect(page.getByLabel("Global shortcut", { exact: true })).toHaveValue("Ctrl+Alt+J");
+  await page.getByRole("button", { name: "Discard changes", exact: true }).click();
+  await expect(page.getByLabel("Global shortcut", { exact: true })).toHaveValue("Ctrl+F12");
+  await page.getByRole("tab", { name: "Profiles", exact: true }).click();
+  await expect(page.getByRole("button", { name: "New profile", exact: true })).toBeEnabled();
+  await page.evaluate(() => window.dictationTest.status("recording"));
+  await expect(page.getByRole("button", { name: "Edit Default", exact: true })).toBeDisabled();
+});
+
+async function focusedSettingFits(control: ReturnType<Page["locator"]>) {
+  await control.focus();
+  await expect(control).toBeFocused();
+  const geometry = await control.evaluate((element) => {
+    const rect = element.getBoundingClientRect();
+    const hit = document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2);
+    return {
+      x: rect.x,
+      right: rect.right,
+      y: rect.y,
+      bottom: rect.bottom,
+      width: innerWidth,
+      height: innerHeight,
+      uncovered: !!hit && (hit === element || element.contains(hit)),
+    };
+  });
+  expect(geometry.x).toBeGreaterThanOrEqual(0);
+  expect(geometry.right).toBeLessThanOrEqual(geometry.width + 1);
+  expect(geometry.y).toBeGreaterThanOrEqual(0);
+  expect(geometry.bottom).toBeLessThanOrEqual(geometry.height + 1);
+  expect(geometry.uncovered).toBe(true);
+}
+
+for (const theme of ["light", "dark"]) {
+  for (const collapsed of [false, true]) {
+    for (const font of [100, 200]) {
+      test(`settings clarity layout ${theme} ${collapsed ? "collapsed" : "expanded"} ${font}% text`, async ({
+        page,
+      }, testInfo) => {
+        await page.emulateMedia({ reducedMotion: font === 200 ? "reduce" : "no-preference" });
+        await settingsClarityScenario(page, "dictation", theme, collapsed);
+        await page.evaluate((font) => {
+          document.documentElement.style.fontSize = `${font}%`;
+        }, font);
+        await expect(page.locator("#app-sidebar")).toHaveCSS(
+          "width",
+          `${((collapsed ? 72 : 220) * font) / 100}px`,
+        );
+        const tabs = page.getByRole("tablist", { name: "Settings sections" });
+        for (const width of [1280, 760]) {
+          await page.setViewportSize({ width, height: width === 760 ? 560 : 900 });
+          for (const name of ["Dictation", "Profiles", "General", "History & data", "Advanced"]) {
+            const tab = tabs.getByRole("tab", { name, exact: true });
+            await focusedSettingFits(tab);
+            await tab.press("Enter");
+            await expect(tab).toHaveAttribute("aria-selected", "true");
+            const overflow = await page.evaluate(() =>
+              Array.from(document.querySelectorAll("main *"))
+                .filter((element) => {
+                  const rect = element.getBoundingClientRect();
+                  return rect.width > 0 && rect.right > innerWidth + 1;
+                })
+                .map((element) => ({
+                  tag: element.tagName,
+                  role: element.getAttribute("role"),
+                  text: element.textContent?.slice(0, 60),
+                  right: element.getBoundingClientRect().right,
+                }))
+                .slice(-12),
+            );
+            await expect
+              .poll(() => page.evaluate(() => document.documentElement.scrollWidth), {
+                message: JSON.stringify({ name, overflow }),
+              })
+              .toBe(width);
+            const controls =
+              name === "Dictation"
+                ? [
+                    page.getByRole("combobox", { name: "Microphone", exact: true }),
+                    page.getByRole("combobox", { name: "Spoken language", exact: true }),
+                    page.getByLabel("Global shortcut", { exact: true }),
+                    page.getByRole("button", { name: "Record shortcut", exact: true }),
+                    page.getByLabel("Cycle profiles shortcut", { exact: true }),
+                    page.getByRole("button", { name: "Record profile shortcut", exact: true }),
+                  ]
+                : name === "Profiles"
+                  ? [
+                      page.getByRole("button", { name: "New profile", exact: true }),
+                      page.getByRole("button", { name: "Edit Default", exact: true }),
+                      page.getByRole("button", { name: "Use Work notes", exact: true }),
+                      page.getByRole("combobox", { name: "Add app to Default", exact: true }),
+                    ]
+                  : name === "General"
+                    ? [
+                        page.getByRole("button", { name: "Light", exact: true }),
+                        page.getByRole("checkbox", { name: "Launch at login", exact: true }),
+                      ]
+                    : name === "History & data"
+                      ? [page.getByRole("combobox", { name: "History retention", exact: true })]
+                      : [
+                          page.getByRole("button", {
+                            name: "Browse Whisper executable",
+                            exact: true,
+                          }),
+                          page.getByRole("button", { name: "Run setup", exact: true }),
+                        ];
+            for (const control of controls) await focusedSettingFits(control);
+            await page.getByRole("heading", { name: "Settings", exact: true }).click();
+            await page.screenshot({
+              path: testInfo.outputPath(
+                `${name.toLowerCase().replaceAll(/[^a-z]+/g, "-")}-${width}.png`,
+              ),
+              fullPage: true,
+              animations: "disabled",
+            });
+          }
+        }
+      });
+    }
+  }
+}
+
+test("settings clarity retry and discard stay reachable at narrow enlarged text", async ({
+  page,
+}, testInfo) => {
+  await page.setViewportSize({ width: 760, height: 560 });
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await settingsClarityScenario(page, "dictation", "light", false);
+  await page.evaluate(() => {
+    document.documentElement.style.fontSize = "200%";
+    window.dictationTest.failSave = true;
+  });
+  const shortcut = page.getByLabel("Global shortcut", { exact: true });
+  await shortcut.fill("Ctrl+Alt+J");
+  await shortcut.press("Tab");
+  const retry = page.getByRole("button", { name: "Retry", exact: true });
+  await expect(retry).toBeVisible();
+  await focusedSettingFits(retry);
+  await page.screenshot({ path: testInfo.outputPath("save-recovery-760-200.png"), fullPage: true });
+  await page.evaluate(() => {
+    window.dictationTest.failSave = false;
+  });
+  await retry.press("Enter");
+  await expect
+    .poll(() => page.evaluate(() => window.dictationTest.snapshot.settings.shortcut))
+    .toBe("Ctrl+Alt+J");
+  await page.evaluate(() => {
+    window.dictationTest.failSave = true;
+  });
+  await shortcut.fill("Ctrl+Alt+L");
+  await shortcut.press("Tab");
+  const discard = page.getByRole("button", { name: "Discard changes", exact: true });
+  await expect(discard).toBeVisible();
+  await focusedSettingFits(discard);
+  await discard.press("Space");
+  await expect(shortcut).toHaveValue("Ctrl+Alt+J");
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth)).toBe(760);
+});
+
+test("settings clarity interaction preview", async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await settingsClarityScenario(page);
+  await expect(page.getByRole("heading", { name: "Settings", exact: true })).toBeVisible();
+  await page.waitForTimeout(200);
+  await page.screenshot({
+    path: testInfo.outputPath("dictation-dark.png"),
+    fullPage: true,
+    animations: "disabled",
+  });
+  await page.waitForTimeout(700);
+  await page.getByRole("checkbox", { name: /^Light cleanup/ }).check();
+  await expect
+    .poll(() => page.evaluate(() => window.dictationTest.snapshot.settings.cleanText))
+    .toBe(true);
+  await page.getByRole("tab", { name: "Profiles", exact: true }).click();
+  await page.waitForTimeout(200);
+  await page.screenshot({
+    path: testInfo.outputPath("profiles-dark.png"),
+    fullPage: true,
+    animations: "disabled",
+  });
+  await page.waitForTimeout(900);
+  await page.getByRole("button", { name: "Edit Work notes", exact: true }).click();
+  await expect(page.getByRole("dialog")).toBeVisible();
+  await page.waitForTimeout(700);
+  await page.getByRole("dialog").getByRole("button", { name: "Done", exact: true }).click();
+  await page.getByRole("tab", { name: "Dictation", exact: true }).click();
+  await expect(page.getByRole("checkbox", { name: /^Light cleanup/ })).toBeChecked();
+  await page.waitForTimeout(600);
+  await page.getByRole("tab", { name: "General", exact: true }).click();
+  await page.getByRole("button", { name: "Light", exact: true }).click();
+  await expect(page.locator("html")).not.toHaveClass(/dark/);
+  await page.getByRole("tab", { name: "Dictation", exact: true }).click();
+  await page.waitForTimeout(200);
+  await page.waitForTimeout(200);
+  await page.screenshot({
+    path: testInfo.outputPath("dictation-light.png"),
+    fullPage: true,
+    animations: "disabled",
+  });
+  await page.waitForTimeout(700);
+  await page.getByRole("tab", { name: "Profiles", exact: true }).click();
+  await page.waitForTimeout(200);
+  await page.screenshot({
+    path: testInfo.outputPath("profiles-light.png"),
+    fullPage: true,
+    animations: "disabled",
+  });
+  await page.waitForTimeout(700);
+});
+
+for (const theme of ["dark", "light"]) {
+  for (const collapsed of [true, false]) {
+    for (const font of [100, 200]) {
+      test(`prompts page tabs ${theme} ${collapsed ? "collapsed" : "expanded"} ${font}% text`, async ({
+        page,
+      }, testInfo) => {
+        await page.setViewportSize({ width: 760, height: 560 });
+        await page.emulateMedia({ reducedMotion: font === 200 ? "reduce" : "no-preference" });
+        await page.addInitScript(
+          ({ theme, collapsed }) => {
+            localStorage.setItem("desktop-theme", theme);
+            localStorage.setItem("yap-sidebar-collapsed", String(collapsed));
+            const config = window.dictationTest.snapshot.textProcessing;
+            config.enabled = true;
+            config.model = "local-model";
+            config.prompts[0].instruction =
+              "Correct punctuation and capitalization while preserving the original meaning, names and language. Return only the cleaned text.";
+          },
+          { theme, collapsed },
+        );
+        await page.goto("/#/prompts?section=prompts&from=review");
+        await page.evaluate((font) => {
+          document.documentElement.style.fontSize = `${font}%`;
+        }, font);
+        await expect(page.locator("#app-sidebar")).toHaveCSS(
+          "width",
+          `${((collapsed ? 72 : 220) * font) / 100}px`,
+        );
+        const tabs = page.getByRole("tablist", { name: "Prompts sections" });
+        const length = await page.evaluate(() => history.length);
+        for (const [name, section] of [
+          ["Prompts", "prompts"],
+          ["Chains", "chains"],
+          ["Text model", "models"],
+        ]) {
+          const tab = tabs.getByRole("tab", { name, exact: true });
+          await focusedSettingFits(tab);
+          await tab.press("Enter");
+          await expect(tab).toHaveAttribute("aria-selected", "true");
+          await expect(page).toHaveURL(new RegExp(`section=${section}&from=review`));
+          expect(await page.evaluate(() => history.length)).toBe(length);
+        }
+        await tabs.getByRole("tab", { name: "Prompts", exact: true }).click();
+        await page.getByRole("heading", { name: "Prompts & chains", exact: true }).click();
+        await page.waitForTimeout(200);
+        await page.screenshot({
+          path: testInfo.outputPath("prompts-tabs.png"),
+          fullPage: true,
+          animations: "disabled",
+        });
+        if (font === 100 && collapsed) {
+          await page.setViewportSize({ width: 1280, height: 900 });
+          await page.screenshot({
+            path: testInfo.outputPath("prompts-desktop.png"),
+            animations: "disabled",
+          });
+        }
+      });
+    }
+  }
+}
+
 async function homeModelScenario(page: Page, custom = false) {
   await page.addInitScript((custom) => {
     const state = window.dictationTest;
@@ -1174,6 +1584,12 @@ test("settings sections keep navigation above full-width content and preserve ed
     animations: "disabled",
   });
   await page.getByRole("tab", { name: "Dictation", exact: true }).focus();
+  await page.keyboard.press("ArrowRight");
+  await page.keyboard.press("Enter");
+  await expect(page.getByRole("tab", { name: "Profiles", exact: true })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
   await page.keyboard.press("ArrowRight");
   await page.keyboard.press("Enter");
   await expect(page.getByRole("tab", { name: "General", exact: true })).toHaveAttribute(
@@ -8267,7 +8683,7 @@ for (const theme of ["light", "dark"] as const) {
     await page.evaluate(() => {
       window.dictationTest.failSave = true;
     });
-    await page.getByText("Light cleanup", { exact: true }).click();
+    await page.getByRole("tabpanel").getByText("Light cleanup", { exact: true }).click();
     await expect(cleanup).toBeChecked();
     await expect(marker).toBeVisible();
     await expect(page.getByText("Changes not saved", { exact: true })).toBeVisible();
@@ -8311,7 +8727,9 @@ for (const theme of ["light", "dark"] as const) {
       path: testInfo.outputPath(`cleanup-setting-indicator-${theme}.png`),
       animations: "disabled",
     });
+    await page.getByRole("tab", { name: "Profiles", exact: true }).click();
     await page.getByRole("button", { name: "Use Default", exact: true }).click();
+    await page.getByRole("tab", { name: "Dictation", exact: true }).click();
     await expect(marker).toHaveCount(0);
     await expect(cleanup).not.toBeChecked();
   });
@@ -8366,7 +8784,9 @@ test("setting indicators mark only differing profile fields and use readable lan
     });
     state.history();
   });
+  await page.getByRole("tab", { name: "Profiles", exact: true }).click();
   await page.getByRole("button", { name: "Use Email", exact: true }).click();
+  await page.getByRole("tab", { name: "Dictation", exact: true }).click();
   await expect(page.getByRole("checkbox", { name: /^Light cleanup/ })).toBeChecked();
   await expect(page.getByRole("img", { name: /changed from/ })).toHaveCount(0);
   await page.getByRole("checkbox", { name: /^Light cleanup/ }).uncheck();
@@ -8425,6 +8845,7 @@ test("automatic prompt indicator explains the selected prompt and follows save d
     .poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
     .toBe(true);
   await page.getByRole("link", { name: "Settings", exact: true }).click();
+  await page.getByRole("tab", { name: "Profiles", exact: true }).click();
   await page.getByRole("button", { name: "Use Default", exact: true }).click();
   await page.getByRole("link", { name: "Prompts", exact: true }).click();
   await expect(marker).toHaveCount(0);
@@ -8757,6 +9178,7 @@ test("temporary prompt chains expose completed results after an interrupted run"
 test("profile cards add, keep, and remove automatic apps as badges", async ({ page }, testInfo) => {
   await homeModelScenario(page);
   await page.getByRole("link", { name: "Settings", exact: true }).click();
+  await page.getByRole("tab", { name: "Profiles", exact: true }).click();
   const apps = page.getByRole("group", { name: "Apps for Default", exact: true });
   await apps.getByRole("combobox", { name: "Add app to Default", exact: true }).click();
   await page.getByRole("option", { name: "Outlook", exact: true }).click();
@@ -8768,6 +9190,7 @@ test("profile cards add, keep, and remove automatic apps as badges", async ({ pa
   await expect(apps.getByText("Outlook", { exact: true })).toBeVisible();
   await page.getByRole("link", { name: "Dictate", exact: true }).click();
   await page.getByRole("link", { name: "Settings", exact: true }).click();
+  await page.getByRole("tab", { name: "Profiles", exact: true }).click();
   await expect(apps.getByText("Outlook", { exact: true })).toBeVisible();
   await page.setViewportSize({ width: 760, height: 760 });
   await apps.scrollIntoViewIfNeeded();
@@ -8808,6 +9231,7 @@ test("adding an app to another profile moves its badge and the picker names its 
   });
   await homeModelScenario(page);
   await page.getByRole("link", { name: "Settings", exact: true }).click();
+  await page.getByRole("tab", { name: "Profiles", exact: true }).click();
   const email = page.getByRole("group", { name: "Apps for Email", exact: true });
   const technical = page.getByRole("group", { name: "Apps for Technical", exact: true });
   await expect(email.getByText("Outlook", { exact: true })).toBeVisible();

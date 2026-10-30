@@ -3,6 +3,7 @@ import { useDictation } from "@/components/dictation-provider";
 import { ProfileSettingIndicator } from "@/components/profile-setting-indicator";
 import { PromptChainsEditor } from "@/components/prompt-chains-editor";
 import { RevisionHistory } from "@/components/revision-history";
+import { SectionTabs } from "@/components/section-tabs";
 import { SettingRow, SettingsSection, ToggleSetting } from "@/components/settings-section";
 import { Button } from "@/components/ui/button";
 import {
@@ -23,7 +24,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tabs, TabsContent } from "@/components/ui/tabs";
 import { toastManager } from "@/components/ui/toast";
 import {
   backend,
@@ -240,7 +241,7 @@ export function PromptsPage() {
     delay: 1000,
   });
   return (
-    <div className="@container space-y-5">
+    <div className="@container/prompts space-y-5">
       <Tabs
         value={section}
         onValueChange={(value) => {
@@ -249,12 +250,12 @@ export function PromptsPage() {
         className="gap-4"
       >
         <header
-          aria-label="Prompts"
-          className="sticky top-0 z-20 space-y-3 bg-background pt-1 pb-2"
+          aria-label="Prompts & chains"
+          className="space-y-3 bg-background pt-1 pb-2 @min-[42rem]/prompts:sticky @min-[42rem]/prompts:top-0 @min-[42rem]/prompts:z-20"
         >
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div className="min-w-0">
-              <h1 className="text-2xl font-semibold tracking-tight">Prompts</h1>
+              <h1 className="text-2xl font-semibold tracking-tight">Prompts &amp; chains</h1>
             </div>
             <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
               <AutoSaveStatus
@@ -272,18 +273,7 @@ export function PromptsPage() {
               />
             </div>
           </div>
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <TabsList
-              aria-label="Prompts sections"
-              className="max-w-full group-data-[orientation=horizontal]/tabs:h-10"
-            >
-              {sections.map((item) => (
-                <TabsTrigger key={item.value} value={item.value} className="px-2.5">
-                  {item.label}
-                </TabsTrigger>
-              ))}
-            </TabsList>
-          </div>
+          <SectionTabs label="Prompts sections" sections={sections} />
         </header>
         {saveError && autoSave.failed && (
           <p role="alert" className="text-xs text-destructive">

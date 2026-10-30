@@ -137,7 +137,7 @@ export function ProfileSelector({
         />
       )}
       <Link
-        to="/settings?section=dictation"
+        to="/settings?section=profiles"
         aria-label="Manage dictation profiles"
         title="Manage dictation profiles"
         className="rounded-md p-2 text-muted-foreground outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring"
@@ -199,13 +199,12 @@ export function ProfilesPanel({ disabled }: { disabled: boolean }) {
         <div className="space-y-4 py-4">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <p className="max-w-lg text-xs leading-5 text-muted-foreground">
-              Save a speech model, language, cleanup, and optional prompt together. Add apps to a
-              profile to use it automatically when you start dictation with the shortcut in those
-              apps, including all browser tabs.
+              Save a speech model, language, cleanup and after-dictation choices together. Assign
+              apps below to use a profile with shortcut dictation.
             </p>
             <Button
               size="sm"
-              variant="outline"
+              variant="default"
               disabled={
                 disabled ||
                 pending ||
@@ -236,96 +235,125 @@ export function ProfilesPanel({ disabled }: { disabled: boolean }) {
           {profiles.map((profile) => (
             <div
               key={profile.id}
-              className="flex flex-wrap items-center gap-3 rounded-lg border p-3"
+              data-slot="profile-card"
+              className="min-w-0 space-y-4 rounded-xl border bg-card p-5 [overflow-wrap:anywhere] @max-[24rem]/settings:p-3"
             >
-              <div className="min-w-0 flex-1 basis-40">
-                <p className="break-words text-sm font-medium">
-                  <Tooltip
-                    disabled={snapshot.activeProfileId !== profile.id || !snapshot.profileModified}
-                  >
-                    <TooltipTrigger
-                      render={
-                        <span
-                          tabIndex={
-                            snapshot.activeProfileId === profile.id && snapshot.profileModified
-                              ? 0
-                              : undefined
-                          }
-                          className="inline-flex max-w-full items-center gap-1.5 outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                        />
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="break-words text-sm font-medium">
+                    <Tooltip
+                      disabled={
+                        snapshot.activeProfileId !== profile.id || !snapshot.profileModified
                       }
                     >
-                      <span className="break-words">{profile.name}</span>
-                      {snapshot.activeProfileId === profile.id && snapshot.profileModified && (
-                        <ModifiedMarker />
-                      )}
-                    </TooltipTrigger>
-                    <TooltipContent>Modified</TooltipContent>
-                  </Tooltip>
-                  {snapshot.activeProfileId === profile.id && (
-                    <span className="ml-2 text-xs text-primary">Active</span>
-                  )}
-                </p>
-                <p className="mt-1 break-words text-xs text-muted-foreground">
-                  {snapshot.models.find((model) => model.path === profile.modelPath)?.name ??
-                    profile.modelPath.split(/[\\/]/).pop()}{" "}
-                  ·{" "}
-                  {languages.find((language) => language.value === profile.language)?.label ??
-                    profile.language}{" "}
-                  · {profile.cleanText ? "Light cleanup" : "No cleanup"}
-                  {profile.autoPromptId
-                    ? ` · ${processingOptions(snapshot.textProcessing).find((p) => p.value === profile.autoPromptId)?.label ?? "Prompt or chain unavailable"}`
-                    : ""}
-                </p>
-              </div>
-              <div className="flex shrink-0 items-center gap-1">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  aria-label={`Use ${profile.name}`}
-                  disabled={
-                    disabled ||
-                    pending ||
-                    (snapshot.activeProfileId === profile.id && !snapshot.profileModified)
-                  }
-                  onClick={() => void apply(profile.id)}
+                      <TooltipTrigger
+                        render={
+                          <span
+                            tabIndex={
+                              snapshot.activeProfileId === profile.id && snapshot.profileModified
+                                ? 0
+                                : undefined
+                            }
+                            className="inline-flex max-w-full items-center gap-1.5 outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          />
+                        }
+                      >
+                        <span className="break-words">{profile.name}</span>
+                        {snapshot.activeProfileId === profile.id && snapshot.profileModified && (
+                          <ModifiedMarker />
+                        )}
+                      </TooltipTrigger>
+                      <TooltipContent>Modified</TooltipContent>
+                    </Tooltip>
+                    {snapshot.activeProfileId === profile.id && (
+                      <span className="ml-2 text-xs text-primary">Active</span>
+                    )}
+                  </p>
+                </div>
+                <div
+                  data-slot="profile-actions"
+                  className="flex min-w-0 max-w-full shrink-0 flex-wrap items-center gap-1"
                 >
-                  Use
-                </Button>
-                <Button
-                  size="icon-sm"
-                  variant="ghost"
-                  aria-label={`Edit ${profile.name}`}
-                  disabled={disabled || pending}
-                  onClick={() => setEditing(profile)}
-                >
-                  <Pencil aria-hidden="true" />
-                </Button>
-                {profile.id !== snapshot.defaultProfileId && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    aria-label={`Use ${profile.name}`}
+                    disabled={
+                      disabled ||
+                      pending ||
+                      (snapshot.activeProfileId === profile.id && !snapshot.profileModified)
+                    }
+                    onClick={() => void apply(profile.id)}
+                  >
+                    Use
+                  </Button>
                   <Button
                     size="icon-sm"
                     variant="ghost"
-                    aria-label={`Delete ${profile.name}`}
+                    aria-label={`Edit ${profile.name}`}
                     disabled={disabled || pending}
-                    onClick={() => {
-                      setError("");
-                      setDeleting(profile);
-                    }}
+                    onClick={() => setEditing(profile)}
                   >
-                    <Trash2 aria-hidden="true" />
+                    <Pencil aria-hidden="true" />
                   </Button>
-                )}
+                  {profile.id !== snapshot.defaultProfileId && (
+                    <Button
+                      size="icon-sm"
+                      variant="ghost"
+                      aria-label={`Delete ${profile.name}`}
+                      disabled={disabled || pending}
+                      onClick={() => {
+                        setError("");
+                        setDeleting(profile);
+                      }}
+                    >
+                      <Trash2 aria-hidden="true" />
+                    </Button>
+                  )}
+                </div>
               </div>
-              <ProfileApps
-                profile={profile}
-                profiles={profiles}
-                rules={rules}
-                apps={apps}
-                loading={loadingApps}
-                disabled={disabled || pending || !isDesktop}
-                onOpen={() => void loadApps()}
-                onChange={(next) => void saveRules(next)}
-              />
+              <dl className="grid min-w-0 grid-cols-1 gap-x-6 gap-y-4 text-sm @min-[26rem]/settings:grid-cols-2">
+                <div className="min-w-0">
+                  <dt className="text-xs text-muted-foreground">Speech model</dt>
+                  <dd className="mt-1">
+                    {snapshot.models.find((model) => model.path === profile.modelPath)?.name ??
+                      profile.modelPath.split(/[\\/]/).pop()}
+                  </dd>
+                </div>
+                <div className="min-w-0">
+                  <dt className="text-xs text-muted-foreground">Spoken language</dt>
+                  <dd className="mt-1">
+                    {languages.find((language) => language.value === profile.language)?.label ??
+                      profile.language}
+                  </dd>
+                </div>
+                <div className="min-w-0">
+                  <dt className="text-xs text-muted-foreground">Light cleanup</dt>
+                  <dd className="mt-1">{profile.cleanText ? "On" : "Off"}</dd>
+                </div>
+                <div className="min-w-0">
+                  <dt className="text-xs text-muted-foreground">After dictation</dt>
+                  <dd className="mt-1">
+                    {profile.autoPromptId
+                      ? (processingOptions(snapshot.textProcessing).find(
+                          (p) => p.value === profile.autoPromptId,
+                        )?.label ?? "Prompt or chain unavailable")
+                      : "No automatic processing"}
+                  </dd>
+                </div>
+              </dl>
+              <div className="border-t pt-4">
+                <ProfileApps
+                  profile={profile}
+                  profiles={profiles}
+                  rules={rules}
+                  apps={apps}
+                  loading={loadingApps}
+                  disabled={disabled || pending || !isDesktop}
+                  onOpen={() => void loadApps()}
+                  onChange={(next) => void saveRules(next)}
+                />
+              </div>
             </div>
           ))}
           {error && !deleting && (

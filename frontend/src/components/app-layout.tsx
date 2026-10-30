@@ -28,7 +28,7 @@ const navigation = [
   { to: "/history", label: "History", icon: History },
   { to: "/models", label: "Models", icon: HardDriveDownload },
   { to: "/vocabulary", label: "Vocabulary", icon: BookOpen },
-  { to: "/prompts", label: "Prompts", icon: Sparkles },
+  { to: "/prompts", label: "Prompts & chains", icon: Sparkles },
   { to: "/settings", label: "Settings", icon: Settings2 },
 ];
 const sidebarKey = "yap-sidebar-collapsed";

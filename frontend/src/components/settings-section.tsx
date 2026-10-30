@@ -5,23 +5,39 @@ import { useId, type ReactNode } from "react";
 export function SettingsSection({
   title,
   action,
+  icon,
   children,
 }: {
   title: string;
   action?: ReactNode;
+  icon?: ReactNode;
   children: ReactNode;
 }) {
   return (
-    <section className="rounded-xl border bg-card">
+    <section data-slot="settings-section" className="rounded-xl border bg-card">
       {action ? (
-        <header className="flex flex-wrap items-center justify-between gap-3 border-b px-5 py-4">
-          <h2 className="text-sm font-semibold">{title}</h2>
+        <header
+          data-slot="settings-section-heading"
+          className="flex flex-wrap items-center justify-between gap-3 border-b px-5 py-4"
+        >
+          <h2 className="flex items-center gap-2 text-sm font-semibold">
+            {icon}
+            {title}
+          </h2>
           {action}
         </header>
       ) : (
-        <h2 className="border-b px-5 py-4 text-sm font-semibold">{title}</h2>
+        <h2
+          data-slot="settings-section-heading"
+          className="flex items-center gap-2 border-b px-5 py-4 text-sm font-semibold"
+        >
+          {icon}
+          {title}
+        </h2>
       )}
-      <div className="divide-y px-5">{children}</div>
+      <div data-slot="settings-section-content" className="divide-y px-5">
+        {children}
+      </div>
     </section>
   );
 }
@@ -40,7 +56,10 @@ export function SettingRow({
   children: ReactNode;
 }) {
   return (
-    <div className="grid items-start gap-3 py-4 @xl:grid-cols-[minmax(0,1fr)_minmax(0,22rem)] @xl:gap-6">
+    <div
+      data-slot="setting-row"
+      className="grid items-start gap-3 py-4 @xl:grid-cols-[minmax(0,1fr)_minmax(0,22rem)] @xl:gap-6"
+    >
       <div className="min-w-0 pt-1.5">
         <div className="flex items-center gap-1.5">
           {htmlFor ? (

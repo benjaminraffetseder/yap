@@ -27,7 +27,7 @@ window has focus. Stop and Cancel are available there and in the tray menu.
 
 ### Dictation profiles
 
-Under **Settings → Dictation → Dictation profiles**, choose **New profile** to
+Under **Settings → Profiles**, choose **New profile** to
 start from your saved settings. Name it, then choose its speech model, spoken
 language, light cleanup, and optional **After dictation** prompt. Changes save
 automatically once a name and model are present; choose **Done** to close the editor.
@@ -81,7 +81,7 @@ resolve any save errors before quitting or reloading.
 
 ### Automatic profiles and profile cycling
 
-On each card under **Settings → Dictation → Dictation profiles**, choose **Add app**
+On each card under **Settings → Profiles**, choose **Add app**
 and pick an open application. Assigned apps appear as badges on the card and save
 immediately; select a badge's remove button to unassign it. Each app belongs to one
 profile, and picking an app that another profile uses moves it. Open the target app

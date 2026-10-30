@@ -437,14 +437,13 @@ export function HomePage() {
             </Link>
           </div>
           {history.length ? (
-            <div className="overflow-hidden rounded-xl">
+            <div className="overflow-hidden rounded-xl border bg-card/60">
               {history.slice(0, 3).map((entry) => (
                 <DictationRow
                   entry={entry}
                   to={`/history/${encodeURIComponent(entry.id)}`}
                   key={entry.id}
                   showDate
-                  inset={false}
                 />
               ))}
             </div>

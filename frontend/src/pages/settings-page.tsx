@@ -3,6 +3,7 @@ import { AutoSaveStatus } from "@/components/auto-save-status";
 import { BackupPanel } from "@/components/backup-panel";
 import { DiagnosticsPanel } from "@/components/diagnostics-panel";
 import { ProfilesPanel } from "@/components/dictation-profiles";
+import { SectionTabs } from "@/components/section-tabs";
 import { useDictation } from "@/components/dictation-provider";
 import { ProfileSettingIndicator } from "@/components/profile-setting-indicator";
 import { SettingRow, SettingsSection, ToggleSetting } from "@/components/settings-section";
@@ -26,18 +27,30 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tabs, TabsContent } from "@/components/ui/tabs";
 import { toastManager } from "@/components/ui/toast";
 import { UpdatePanel } from "@/components/update-panel";
 import { backend, isBusy, isDesktop, message, type Microphone } from "@/lib/backend";
 import { languages } from "@/lib/languages";
 import { useAutoSave } from "@/lib/use-auto-save";
 import { useSavedDraft } from "@/lib/use-saved-draft";
-import { FolderOpen, Monitor, Moon, RefreshCw, Sun } from "lucide-react";
+import { cn } from "@/lib/utils";
+import {
+  ArrowRight,
+  FolderOpen,
+  Keyboard,
+  Mic,
+  Monitor,
+  Moon,
+  RefreshCw,
+  Sun,
+  Type,
+} from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
 const sections = [
   { value: "dictation", label: "Dictation" },
+  { value: "profiles", label: "Profiles" },
   { value: "general", label: "General" },
   { value: "history", label: "History & data" },
   { value: "advanced", label: "Advanced" },
@@ -222,7 +235,17 @@ export function SettingsPage() {
     target instanceof HTMLInputElement && !["checkbox", "radio", "hidden"].includes(target.type);
   return (
     <div
-      className="@container space-y-5"
+      className={cn(
+        "@container/settings space-y-6 [&_fieldset]:min-w-0",
+        "[&_[data-slot=settings-section]]:min-w-0 [&_[data-slot=settings-section]]:p-5",
+        "[&_[data-slot=settings-section-heading]]:border-b-0 [&_[data-slot=settings-section-heading]]:p-0 [&_[data-slot=settings-section-heading]]:pb-1.5",
+        "[&_[data-slot=settings-section-content]]:px-0 [&_[data-slot=setting-row]]:items-center",
+        "[&_[data-slot=select-trigger]]:h-auto [&_[data-slot=select-trigger]]:min-h-9 [&_[data-slot=select-trigger]]:min-w-0 [&_[data-slot=select-trigger]]:max-w-full [&_[data-slot=select-trigger]]:whitespace-normal",
+        "[&_[data-slot=select-value]]:flex [&_[data-slot=select-value]]:whitespace-normal [&_[data-slot=select-value]]:[overflow-wrap:anywhere] [&_[data-slot=select-value]]:[-webkit-line-clamp:unset]",
+        "[&_[data-slot=settings-profiles]>[data-slot=settings-section]]:border-0 [&_[data-slot=settings-profiles]>[data-slot=settings-section]]:bg-transparent [&_[data-slot=settings-profiles]>[data-slot=settings-section]]:p-0",
+        "@max-[24rem]/settings:[&_[data-slot=settings-section]]:p-3 @max-[24rem]/settings:[&_[data-slot=settings-section]]:[overflow-wrap:anywhere]",
+        "@max-[24rem]/settings:[&_[data-slot=button]]:h-auto @max-[24rem]/settings:[&_[data-slot=button]]:min-h-9 @max-[24rem]/settings:[&_[data-slot=button]]:max-w-full @max-[24rem]/settings:[&_[data-slot=button]]:whitespace-normal @max-[24rem]/settings:[&_[data-slot=button]]:[overflow-wrap:anywhere]",
+      )}
       onFocusCapture={(event) => {
         if (textInput(event.target) && event.currentTarget.contains(event.target))
           setEditingText(true);
@@ -239,6 +262,23 @@ export function SettingsPage() {
           event.target.blur();
       }}
     >
+      <header
+        aria-label="Settings"
+        className="flex min-w-0 flex-wrap items-center justify-between gap-4"
+      >
+        <div className="min-w-0">
+          <h1 className="text-[1.75rem] font-semibold tracking-tight">Settings</h1>
+          <p className="mt-1 text-sm leading-6 text-muted-foreground">
+            Configure dictation, appearance and local data.
+          </p>
+        </div>
+        <AutoSaveStatus
+          status={autoSave.status}
+          retry={autoSave.retry}
+          discard={discard}
+          disabled={controlsDisabled}
+        />
+      </header>
       <Tabs
         value={section}
         onValueChange={(value) => {
@@ -254,84 +294,22 @@ export function SettingsPage() {
         }}
         className="gap-5"
       >
-        <header
-          aria-label="Settings"
-          className="sticky top-0 z-20 flex min-h-16 flex-wrap items-center gap-3 bg-background py-2"
-        >
-          <TabsList
-            aria-label="Settings sections"
-            className="max-w-full group-data-[orientation=horizontal]/tabs:h-10"
-          >
-            {sections.map((item) => (
-              <TabsTrigger key={item.value} value={item.value} className="px-2.5">
-                {item.label}
-              </TabsTrigger>
-            ))}
-          </TabsList>
-          <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
-            <AutoSaveStatus
-              status={autoSave.status}
-              retry={autoSave.retry}
-              discard={discard}
-              disabled={controlsDisabled}
-            />
-          </div>
-        </header>
+        <SectionTabs
+          label="Settings sections"
+          sections={sections}
+          className="@min-[42rem]/settings:sticky @min-[42rem]/settings:top-0 @min-[42rem]/settings:z-20"
+        />
         <TabsContent value="dictation" keepMounted className="space-y-5">
-          <ProfilesPanel disabled={controlsDisabled || saving || dirty} />
           <fieldset disabled={controlsDisabled} className="space-y-5 disabled:opacity-60">
-            <SettingsSection title="Shortcuts">
+            <SettingsSection
+              title="Recording"
+              icon={<Mic aria-hidden="true" className="size-4 text-muted-foreground" />}
+            >
               <SettingRow
-                title="Global shortcut"
-                htmlFor="shortcut"
-                description="Starts dictation from any app. Use Ctrl, Alt, or Shift with Space, a letter, or F1–F12."
+                title="Microphone"
+                htmlFor="microphone"
+                description="Choose the input for your next dictation."
               >
-                <ShortcutInput
-                  id="shortcut"
-                  value={settings.shortcut}
-                  disabled={controlsDisabled}
-                  onChange={(shortcut) => setSettings((old) => ({ ...old, shortcut }))}
-                />
-                <ShortcutStatus disabled={controlsDisabled} />
-              </SettingRow>
-              <SettingRow title="Recording mode" htmlFor="interaction">
-                <Select
-                  items={recordingModes}
-                  value={settings.interaction}
-                  disabled={controlsDisabled}
-                  onValueChange={(value) => {
-                    if (value !== null) setSettings((old) => ({ ...old, interaction: value }));
-                  }}
-                >
-                  <SelectTrigger id="interaction" className="h-9 w-full min-w-0 bg-background">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent alignItemWithTrigger={false} align="start">
-                    {recordingModes.map((option) => (
-                      <SelectItem key={option.value} value={option.value}>
-                        {option.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </SettingRow>
-              <SettingRow
-                title="Cycle profiles shortcut"
-                htmlFor="profile-cycle-shortcut"
-                description="Optional. Switches to the next available profile, overriding the app's profile for your next dictation there. Leave empty to disable."
-              >
-                <ShortcutInput
-                  id="profile-cycle-shortcut"
-                  recordLabel="Record profile shortcut"
-                  value={profileShortcut}
-                  disabled={controlsDisabled}
-                  onChange={setProfileShortcut}
-                />
-                <ShortcutStatus profile disabled={controlsDisabled} />
-              </SettingRow>
-            </SettingsSection>
-            <SettingsSection title="Recording">
-              <SettingRow title="Microphone" htmlFor="microphone">
                 <div className="flex gap-2">
                   <Select
                     items={microphoneOptions}
@@ -387,6 +365,7 @@ export function SettingsPage() {
               <SettingRow
                 title="Spoken language"
                 htmlFor="language"
+                description="Choose a language, or let the speech model detect it."
                 indicator={<ProfileSettingIndicator field="language" value={settings.language} />}
               >
                 <Select
@@ -410,7 +389,67 @@ export function SettingsPage() {
                 </Select>
               </SettingRow>
             </SettingsSection>
-            <SettingsSection title="Text & delivery">
+            <SettingsSection
+              title="Shortcuts"
+              icon={<Keyboard aria-hidden="true" className="size-4 text-muted-foreground" />}
+            >
+              <SettingRow
+                title="Global shortcut"
+                htmlFor="shortcut"
+                description="Starts dictation from any app. Use Ctrl, Alt, or Shift with Space, a letter, or F1–F12."
+              >
+                <ShortcutInput
+                  id="shortcut"
+                  value={settings.shortcut}
+                  disabled={controlsDisabled}
+                  onChange={(shortcut) => setSettings((old) => ({ ...old, shortcut }))}
+                />
+                <ShortcutStatus disabled={controlsDisabled} />
+              </SettingRow>
+              <SettingRow
+                title="Recording mode"
+                htmlFor="interaction"
+                description="How the global shortcut starts and stops dictation."
+              >
+                <Select
+                  items={recordingModes}
+                  value={settings.interaction}
+                  disabled={controlsDisabled}
+                  onValueChange={(value) => {
+                    if (value !== null) setSettings((old) => ({ ...old, interaction: value }));
+                  }}
+                >
+                  <SelectTrigger id="interaction" className="h-9 w-full min-w-0 bg-background">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent alignItemWithTrigger={false} align="start">
+                    {recordingModes.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </SettingRow>
+              <SettingRow
+                title="Cycle profiles shortcut"
+                htmlFor="profile-cycle-shortcut"
+                description="Optional. Switches to the next available profile, overriding the app's profile for your next dictation there. Leave empty to disable."
+              >
+                <ShortcutInput
+                  id="profile-cycle-shortcut"
+                  recordLabel="Record profile shortcut"
+                  value={profileShortcut}
+                  disabled={controlsDisabled}
+                  onChange={setProfileShortcut}
+                />
+                <ShortcutStatus profile disabled={controlsDisabled} />
+              </SettingRow>
+            </SettingsSection>
+            <SettingsSection
+              title="Text & delivery"
+              icon={<Type aria-hidden="true" className="size-4 text-muted-foreground" />}
+            >
               <ToggleSetting
                 title="Light cleanup"
                 indicator={<ProfileSettingIndicator field="cleanText" value={settings.cleanText} />}
@@ -446,6 +485,24 @@ export function SettingsPage() {
               </div>
             </SettingsSection>
           </fieldset>
+          <div className="flex flex-wrap items-center justify-between gap-3 pt-1 text-xs leading-5 text-muted-foreground">
+            <span>Save different choices for different tasks or apps.</span>
+            <Link
+              to="/settings?section=profiles"
+              className="inline-flex items-center gap-2 font-medium text-primary"
+            >
+              Manage dictation profiles{" "}
+              <ArrowRight aria-hidden="true" className="size-3.5 shrink-0" />
+            </Link>
+          </div>
+        </TabsContent>
+        <TabsContent
+          value="profiles"
+          keepMounted
+          data-slot="settings-profiles"
+          className="space-y-5"
+        >
+          <ProfilesPanel disabled={controlsDisabled || saving || dirty} />
         </TabsContent>
         <TabsContent value="general" keepMounted className="space-y-5">
           <UpdatePanel />

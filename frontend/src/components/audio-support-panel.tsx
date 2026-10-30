@@ -58,7 +58,7 @@ export function AudioSupportPanel({
   }
   return (
     <section aria-labelledby="audio-support-title" className="rounded-xl border bg-card">
-      <div className="flex items-center justify-between gap-3 border-b px-5 py-4">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b px-5 py-4">
         <h2 id="audio-support-title" className="text-sm font-semibold">
           Audio support (FFmpeg)
         </h2>
