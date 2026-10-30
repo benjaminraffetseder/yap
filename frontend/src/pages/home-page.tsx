@@ -15,7 +15,7 @@ import { Switch } from "@/components/ui/switch";
 import { backend, duration, isBusy, isDesktop } from "@/lib/backend";
 import { useMotionPreference } from "@/lib/use-motion-preference";
 import { SetupPage } from "@/pages/setup-page";
-import { ArrowRight, AudioLines, Download, Keyboard, Loader2, Mic, Square } from "lucide-react";
+import { ArrowRight, Download, Keyboard, Loader2, Mic, Square } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link } from "react-router";
 export function HomePage() {
@@ -53,6 +53,11 @@ export function HomePage() {
     });
   }
   useEffect(() => {
+    if (!loading && (!isDesktop || settings.setupComplete)) {
+      window.scrollTo({ top: 0, left: 0, behavior: "instant" });
+    }
+  }, [loading, settings.setupComplete]);
+  useEffect(() => {
     if (!recording) return;
     const timer = setInterval(() => setNow(Date.now()), 200);
     return () => clearInterval(timer);
@@ -88,33 +93,24 @@ export function HomePage() {
   }
   if (isDesktop && !loading && !settings.setupComplete) return <SetupPage />;
   return (
-    <div className="space-y-8">
+    <div className="@container/home">
       <section
         aria-label="Dictation recorder"
-        className={`overflow-hidden rounded-2xl border bg-card transition-colors ${recording ? "border-primary/40" : ""}`}
+        className="min-w-0 rounded-b-3xl bg-surface-variant px-6 pt-6 pb-5 @min-[54rem]/home:px-10 @min-[54rem]/home:pt-8 @min-[54rem]/home:pb-6"
       >
-        <header className="flex flex-wrap items-center justify-between gap-3 px-6 pt-5 sm:px-8">
-          <span className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
-            <AudioLines className="size-4 text-primary" aria-hidden="true" />
-            Voice to text
-          </span>
-          <div className="flex flex-wrap items-center gap-3">
-            <ProfileSelector
-              disabled={switchingModel || pending}
-              onPendingChange={setSwitchingProfile}
-            />
-            <AudioImportButton showDownloadProgress={false} />
-          </div>
+        <header className="flex flex-wrap items-center justify-between gap-x-5 gap-y-3">
+          <ProfileSelector
+            disabled={switchingModel || pending}
+            onPendingChange={setSwitchingProfile}
+          />
+          <AudioImportButton showDownloadProgress={false} quiet />
         </header>
-        <div className="flex flex-col items-center justify-center gap-7 px-6 py-10 text-center sm:flex-row sm:gap-10 sm:px-8 sm:py-12 sm:text-left">
-          <div className="relative flex size-40 shrink-0 items-center justify-center">
+        <div className="flex min-h-72 flex-col items-center justify-center gap-7 py-12 text-center @min-[34rem]/home:flex-row @min-[34rem]/home:gap-10 @min-[34rem]/home:text-left @min-[54rem]/home:min-h-80">
+          <div className="relative flex size-[128px] shrink-0 items-center justify-center">
             <span
               aria-hidden="true"
-              className="absolute inset-0 rounded-full border border-primary/10 bg-primary/5"
-            />
-            <span
-              aria-hidden="true"
-              className="absolute inset-3 rounded-full border border-primary/15 transition-[transform,opacity] duration-150 motion-reduce:transition-[opacity]"
+              data-slot="recording-level-halo"
+              className="absolute inset-0 rounded-full bg-primary/5 transition-[transform,opacity] duration-150 motion-reduce:transition-[opacity]"
               style={{
                 transform: recording && !reduced ? `scale(${1 + level * 0.15})` : undefined,
                 opacity: recording && reduced ? 0.35 + level * 0.65 : undefined,
@@ -124,7 +120,7 @@ export function HomePage() {
               <CircularProgress
                 aria-label="Download progress"
                 value={downloadPercent}
-                className="absolute size-32"
+                className="absolute size-[128px]"
               />
             )}
             <button
@@ -139,7 +135,7 @@ export function HomePage() {
               }
               onClick={() => void record()}
               aria-label={recording ? "Stop recording" : "Start recording"}
-              className={`relative flex size-24 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg shadow-primary/15 focus-visible:outline-4 focus-visible:outline-offset-4 focus-visible:outline-ring disabled:cursor-default ${downloading ? "disabled:opacity-100" : "disabled:opacity-50"}`}
+              className={`relative flex size-[104px] items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg shadow-primary/10 focus-visible:outline-4 focus-visible:outline-offset-4 focus-visible:outline-ring disabled:cursor-default ${downloading ? "disabled:opacity-100" : "disabled:opacity-50"}`}
             >
               {downloading ? (
                 <span className="font-mono text-xl font-medium tabular-nums">
@@ -154,8 +150,8 @@ export function HomePage() {
               )}
             </button>
           </div>
-          <div className="w-full min-w-0 space-y-3 sm:max-w-80">
-            <h2 className="text-2xl font-semibold tracking-tight sm:text-3xl">
+          <div className="w-full min-w-0 max-w-80 space-y-3 [overflow-wrap:anywhere]">
+            <h2 className="text-2xl font-semibold tracking-tight @min-[34rem]/home:text-3xl">
               {loading
                 ? "Connecting…"
                 : recording
@@ -176,23 +172,45 @@ export function HomePage() {
                     : working
                       ? "You can start another dictation when this finishes."
                       : ready
-                        ? "Click the microphone to start, or use your shortcut."
+                        ? "Click the microphone to record in Yap."
                         : "Choose a model to turn your voice into text."}
             </p>
+            {ready && !working && !loading && !recording && (
+              <div className="space-y-3 text-xs leading-5 text-muted-foreground">
+                <p>Use your shortcut to dictate into another app.</p>
+                <p className="flex flex-wrap items-center justify-center gap-1.5 @min-[34rem]/home:justify-start">
+                  <Keyboard className="mr-1 size-4 shrink-0" aria-hidden="true" />
+                  {settings.interaction === "hold" && <span>Hold</span>}
+                  {settings.shortcut.split("+").map((key, index) => (
+                    <span key={key} className="inline-flex items-center gap-1.5">
+                      {index > 0 && <span aria-hidden="true">+</span>}
+                      <kbd className="rounded border bg-background/30 px-1.5 py-0.5 font-mono text-[11px] text-foreground">
+                        {key}
+                      </kbd>
+                    </span>
+                  ))}
+                  <span>
+                    {settings.interaction === "hold"
+                      ? "to record · release to transcribe"
+                      : "to start and stop"}
+                  </span>
+                </p>
+              </div>
+            )}
             {recording && (
-              <div className="flex items-center justify-center gap-4 pt-2 sm:justify-start">
+              <div className="flex flex-wrap items-center justify-center gap-4 pt-2 @min-[34rem]/home:justify-start">
                 <span className="font-mono text-sm tabular-nums text-primary">
                   {duration(Math.max(0, now - status.startedAt))}
                 </span>
                 <div
                   data-slot="recording-level-meter"
                   aria-hidden="true"
-                  className="flex h-8 items-center gap-1 text-primary"
+                  className="flex h-8 max-w-full items-center gap-1 text-primary"
                 >
                   {Array.from({ length: 17 }, (_, index) => (
                     <span
                       key={index}
-                      className="h-8 w-1 rounded-full bg-current transition-[transform,opacity] duration-150 motion-reduce:transition-[opacity]"
+                      className="h-8 w-1 min-w-0 rounded-full bg-current transition-[transform,opacity] duration-150 motion-reduce:transition-[opacity]"
                       style={{
                         transform: reduced
                           ? "scaleY(0.375)"
@@ -218,7 +236,7 @@ export function HomePage() {
           </div>
         </div>
         {(ready || snapshot.models.length > 0) && (
-          <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-4 border-t bg-background/30 px-6 py-4 sm:px-8">
+          <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3 border-t pt-5">
             <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2">
               <span className="text-xs text-muted-foreground">Speech model</span>
               <Select
@@ -234,8 +252,14 @@ export function HomePage() {
                 }
                 onValueChange={(value) => void selectModel(value)}
               >
-                <SelectTrigger aria-label="Speech model" className="w-48 max-w-full bg-background">
-                  <SelectValue placeholder="Select a model" />
+                <SelectTrigger
+                  aria-label="Speech model"
+                  className="w-48 max-w-full border-transparent bg-transparent shadow-none data-[size=default]:h-auto data-[size=default]:min-h-8 dark:bg-transparent *:data-[slot=select-value]:line-clamp-none"
+                >
+                  <SelectValue
+                    placeholder="Select a model"
+                    className="min-w-0 whitespace-normal break-words"
+                  />
                 </SelectTrigger>
                 <SelectContent alignItemWithTrigger={false}>
                   {modelOptions.map((model) => (
@@ -266,6 +290,7 @@ export function HomePage() {
                 <Switch
                   id="recorder-save-history"
                   size="sm"
+                  className="data-[size=sm]:h-3.5 data-[size=sm]:w-6"
                   checked={settings.saveHistory}
                   disabled={!isDesktop || loading || historyPending || status.phase === "backup"}
                   aria-describedby="recorder-history-hint"
@@ -290,163 +315,146 @@ export function HomePage() {
                   {snapshot.recordingSaveHistory ? "Saving to history" : "Not saving to history"}
                 </span>
               )}
-              {ready && !working && !loading && (
-                <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
-                  <Keyboard className="mr-1 size-4" aria-hidden="true" />
-                  <span className="mr-1">{settings.interaction === "hold" ? "Hold" : "Press"}</span>
-                  <span className="flex flex-wrap items-center gap-1.5">
-                    {settings.shortcut.split("+").map((key, index) => (
-                      <span key={key} className="flex items-center gap-1.5">
-                        {index > 0 && (
-                          <span aria-hidden="true" className="text-muted-foreground/60">
-                            +
-                          </span>
-                        )}
-                        <kbd className="rounded-md border bg-background px-1.5 py-1 font-mono text-[11px] text-foreground shadow-xs">
-                          {key}
-                        </kbd>
-                      </span>
-                    ))}
-                  </span>
-                </div>
-              )}
             </div>
           </div>
         )}
       </section>
-      {status.shortcutError && (
-        <p
-          role="alert"
-          className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-4 text-sm"
-        >
-          Global shortcut unavailable: {status.shortcutError}{" "}
-          <Link to="/settings" className="underline">
-            Change shortcut
-          </Link>
-        </p>
-      )}
-      {status.indicatorError && (
-        <p
-          role="alert"
-          className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-4 text-sm"
-        >
-          {status.indicatorError}
-        </p>
-      )}
-      {status.trayError && (
-        <p
-          role="alert"
-          className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-4 text-sm"
-        >
-          {status.trayError}
-        </p>
-      )}
-      {snapshot.latestResult && !isBusy(status.phase) && (
-        <section
-          aria-label="Temporary latest result"
-          className="space-y-4 rounded-xl border bg-card p-6"
-        >
-          <div>
-            <h2 className="text-sm font-semibold">Latest result</h2>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Not saved · available until your next dictation or app exit
-            </p>
-          </div>
-          <p className="max-h-80 overflow-auto whitespace-pre-wrap break-words text-sm">
-            {snapshot.latestResult.text}
-          </p>
-          {snapshot.latestResult.outputs?.some((output) => output.chain?.runId) && (
-            <details className="space-y-3 text-sm">
-              <summary className="cursor-pointer text-muted-foreground">
-                Completed chain steps
-              </summary>
-              {snapshot.latestResult.outputs!.map((output) => (
-                <div key={output.id} className="space-y-2 rounded-lg border p-3">
-                  <p className="font-medium">
-                    Step {output.chain?.step}: {output.prompt.name}
-                  </p>
-                  <p className="max-h-60 overflow-auto whitespace-pre-wrap break-words">
-                    {output.text}
-                  </p>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => void run(() => backend.copy(output.text))}
-                  >
-                    Copy step result
-                  </Button>
-                </div>
-              ))}
-            </details>
-          )}
-          <div className="flex flex-wrap gap-2">
-            <Button
-              variant="outline"
-              disabled={resultPending}
-              onClick={() => void run(() => backend.copy(snapshot.latestResult!.text))}
-            >
-              Copy
-            </Button>
-            <Button
-              disabled={resultPending}
-              onClick={async () => {
-                const id = snapshot.latestResult!.session.id;
-                setResultPending(true);
-                try {
-                  await run(() => backend.saveLatestResult(id));
-                } finally {
-                  setResultPending(false);
-                }
-              }}
-            >
-              Save to history
-            </Button>
-            <Button
-              variant="ghost"
-              disabled={resultPending}
-              onClick={async () => {
-                const id = snapshot.latestResult!.session.id;
-                setResultPending(true);
-                try {
-                  await run(() => backend.dismissLatestResult(id));
-                } finally {
-                  setResultPending(false);
-                }
-              }}
-            >
-              Dismiss
-            </Button>
-          </div>
-        </section>
-      )}
-      <section>
-        <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-sm font-semibold">Recent dictations</h2>
-          <Link
-            to="/history"
-            className="flex items-center gap-1 text-xs text-muted-foreground hover:text-primary"
+      <div className="mx-auto max-w-5xl space-y-8 px-6 py-8 @min-[54rem]/home:px-10">
+        {status.shortcutError && (
+          <p
+            role="alert"
+            className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-4 text-sm"
           >
-            View all
-            <ArrowRight className="size-3" />
-          </Link>
-        </div>
-        {history.length ? (
-          <div className="overflow-hidden rounded-xl border bg-card/60">
-            {history.slice(0, 3).map((entry) => (
-              <DictationRow
-                entry={entry}
-                to={`/history/${encodeURIComponent(entry.id)}`}
-                key={entry.id}
-                showDate
-              />
-            ))}
-          </div>
-        ) : (
-          <div className="rounded-xl border border-dashed px-6 py-7 text-center text-sm text-muted-foreground">
-            No dictations yet.
-          </div>
+            Global shortcut unavailable: {status.shortcutError}{" "}
+            <Link to="/settings" className="underline">
+              Change shortcut
+            </Link>
+          </p>
         )}
-      </section>
+        {status.indicatorError && (
+          <p
+            role="alert"
+            className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-4 text-sm"
+          >
+            {status.indicatorError}
+          </p>
+        )}
+        {status.trayError && (
+          <p
+            role="alert"
+            className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-4 text-sm"
+          >
+            {status.trayError}
+          </p>
+        )}
+        {snapshot.latestResult && !isBusy(status.phase) && (
+          <section
+            aria-label="Temporary latest result"
+            className="space-y-4 rounded-xl border bg-card p-6"
+          >
+            <div>
+              <h2 className="text-sm font-semibold">Latest result</h2>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Not saved · available until your next dictation or app exit
+              </p>
+            </div>
+            <p className="max-h-80 overflow-auto whitespace-pre-wrap break-words text-sm">
+              {snapshot.latestResult.text}
+            </p>
+            {snapshot.latestResult.outputs?.some((output) => output.chain?.runId) && (
+              <details className="space-y-3 text-sm">
+                <summary className="cursor-pointer text-muted-foreground">
+                  Completed chain steps
+                </summary>
+                {snapshot.latestResult.outputs!.map((output) => (
+                  <div key={output.id} className="space-y-2 rounded-lg border p-3">
+                    <p className="font-medium">
+                      Step {output.chain?.step}: {output.prompt.name}
+                    </p>
+                    <p className="max-h-60 overflow-auto whitespace-pre-wrap break-words">
+                      {output.text}
+                    </p>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => void run(() => backend.copy(output.text))}
+                    >
+                      Copy step result
+                    </Button>
+                  </div>
+                ))}
+              </details>
+            )}
+            <div className="flex flex-wrap gap-2">
+              <Button
+                variant="outline"
+                disabled={resultPending}
+                onClick={() => void run(() => backend.copy(snapshot.latestResult!.text))}
+              >
+                Copy
+              </Button>
+              <Button
+                disabled={resultPending}
+                onClick={async () => {
+                  const id = snapshot.latestResult!.session.id;
+                  setResultPending(true);
+                  try {
+                    await run(() => backend.saveLatestResult(id));
+                  } finally {
+                    setResultPending(false);
+                  }
+                }}
+              >
+                Save to history
+              </Button>
+              <Button
+                variant="ghost"
+                disabled={resultPending}
+                onClick={async () => {
+                  const id = snapshot.latestResult!.session.id;
+                  setResultPending(true);
+                  try {
+                    await run(() => backend.dismissLatestResult(id));
+                  } finally {
+                    setResultPending(false);
+                  }
+                }}
+              >
+                Dismiss
+              </Button>
+            </div>
+          </section>
+        )}
+        <section>
+          <div className="mb-4 flex items-center justify-between">
+            <h2 className="text-sm font-semibold">Recent dictations</h2>
+            <Link
+              to="/history"
+              className="flex items-center gap-1 text-xs text-muted-foreground hover:text-primary"
+            >
+              View all
+              <ArrowRight className="size-3" />
+            </Link>
+          </div>
+          {history.length ? (
+            <div className="overflow-hidden rounded-xl">
+              {history.slice(0, 3).map((entry) => (
+                <DictationRow
+                  entry={entry}
+                  to={`/history/${encodeURIComponent(entry.id)}`}
+                  key={entry.id}
+                  showDate
+                  inset={false}
+                />
+              ))}
+            </div>
+          ) : (
+            <div className="rounded-xl border border-dashed px-6 py-7 text-center text-sm text-muted-foreground">
+              No dictations yet.
+            </div>
+          )}
+        </section>
+      </div>
     </div>
   );
 }

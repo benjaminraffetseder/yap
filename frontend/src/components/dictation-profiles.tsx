@@ -1,4 +1,5 @@
 import { AutoSaveStatus } from "@/components/auto-save-status";
+import { HomeProfileActions } from "@/components/home-profile-actions";
 import { useDictation } from "@/components/dictation-provider";
 import { ProcessingSelectItems } from "@/components/processing-select-items";
 import { ProfileApps } from "@/components/profile-apps";
@@ -53,6 +54,8 @@ export function ProfileSelector({
 }) {
   const { snapshot, loading, refresh, run } = useDictation();
   const [pending, setPending] = useState(false);
+  const [actionPending, setActionPending] = useState(false);
+  const selectorRef = useRef<HTMLButtonElement>(null);
   const applying = useRef(false);
   const profiles = snapshot.dictationProfiles ?? [];
   const options = profiles.map((p) => ({ value: `profile:${p.id}`, label: p.name }));
@@ -63,8 +66,10 @@ export function ProfileSelector({
   const selectedID = recordingProfile || snapshot.activeProfileId;
   const selected = selectedID ? `profile:${selectedID}` : null;
   const modified = !!snapshot.profileModified && selectedID === snapshot.activeProfileId;
+  const activeProfile = profiles.find((p) => p.id === snapshot.activeProfileId);
   async function apply(id: string) {
-    if (applying.current || disabled || loading || isBusy(snapshot.status.phase)) return;
+    if (applying.current || actionPending || disabled || loading || isBusy(snapshot.status.phase))
+      return;
     applying.current = true;
     setPending(true);
     onPendingChange?.(true);
@@ -80,8 +85,8 @@ export function ProfileSelector({
     }
   }
   return (
-    <div className="flex min-w-0 items-center gap-2">
-      <span className="text-xs text-muted-foreground">Profile</span>
+    <div className="flex min-w-0 max-w-full flex-wrap items-center gap-2">
+      <span className="text-xs text-muted-foreground @max-[38rem]/home:sr-only">Profile</span>
       <Select
         items={options}
         value={selected}
@@ -90,6 +95,7 @@ export function ProfileSelector({
           !isDesktop ||
           loading ||
           pending ||
+          actionPending ||
           isBusy(snapshot.status.phase) ||
           !profiles.length
         }
@@ -97,20 +103,13 @@ export function ProfileSelector({
           if (id) void apply(id);
         }}
       >
-        <Tooltip disabled={!modified}>
-          <TooltipTrigger
-            render={
-              <SelectTrigger
-                aria-label="Dictation profile"
-                className="w-40 max-w-full bg-background"
-              />
-            }
-          >
-            <SelectValue placeholder="Choose a profile" className="min-w-0 truncate" />
-            {modified && <ModifiedMarker />}
-          </TooltipTrigger>
-          <TooltipContent>Modified</TooltipContent>
-        </Tooltip>
+        <SelectTrigger
+          ref={selectorRef}
+          aria-label="Dictation profile"
+          className="w-40 max-w-full bg-transparent"
+        >
+          <SelectValue placeholder="Choose a profile" className="min-w-0 truncate" />
+        </SelectTrigger>
         <SelectContent alignItemWithTrigger={false}>
           {options.map((option) => (
             <SelectItem
@@ -125,6 +124,18 @@ export function ProfileSelector({
           ))}
         </SelectContent>
       </Select>
+      {activeProfile && (
+        <HomeProfileActions
+          profile={activeProfile}
+          disabled={disabled || pending}
+          selectorRef={selectorRef}
+          showModified={selectedID === snapshot.activeProfileId}
+          onPendingChange={(value) => {
+            setActionPending(value);
+            onPendingChange?.(value);
+          }}
+        />
+      )}
       <Link
         to="/settings?section=dictation"
         aria-label="Manage dictation profiles"

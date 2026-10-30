@@ -15,6 +15,438 @@ import type {
   VocabularyEntry,
 } from "../src/lib/backend";
 
+async function homeSurfaceScenario(page: Page, modified = false) {
+  await page.addInitScript((modified) => {
+    localStorage.setItem("desktop-theme", "dark");
+    localStorage.setItem("yap-sidebar-collapsed", "true");
+    const state = window.dictationTest;
+    state.snapshot.settings.interaction = "toggle";
+    state.snapshot.settings.shortcut = "Ctrl+F12";
+    state.snapshot.models = [
+      {
+        id: "small",
+        name: "Whisper Small",
+        description: "Speech model",
+        size: 100,
+        installed: true,
+        path: "/model",
+        diskBytes: 100,
+        removable: true,
+      },
+    ];
+    state.snapshot.dictationProfiles = [
+      {
+        id: "default",
+        name: "Default",
+        modelPath: "/model",
+        language: "auto",
+        cleanText: false,
+        autoPromptId: "",
+      },
+    ];
+    state.snapshot.defaultProfileId = "default";
+    state.snapshot.activeProfileId = "default";
+    if (modified) state.snapshot.settings.language = "de";
+    state.snapshot.history = [
+      {
+        id: "preview",
+        createdAt: "2026-10-30T10:42:00",
+        durationMs: 18000,
+        rawTranscript: "Remember to send the updated notes after our meeting.",
+        finalTranscript: "Remember to send the updated notes after our meeting.",
+        speechModel: "small",
+        language: "en",
+        audioPath: "",
+      },
+    ];
+  }, modified);
+  await page.goto("/");
+  await expect(page.getByRole("heading", { name: "Ready to record" })).toBeVisible();
+}
+
+test("home surface reaches the content edges and keeps other pages inset", async ({ page }) => {
+  await homeSurfaceScenario(page);
+  const recorder = page.getByRole("region", { name: "Dictation recorder" });
+  const main = page.getByRole("main");
+  const content = await main.boundingBox();
+  const surface = await recorder.boundingBox();
+  expect(surface!.x).toBe(content!.x);
+  expect(surface!.y).toBe(content!.y);
+  expect(surface!.width).toBe(content!.width);
+  await expect(recorder).toHaveCSS("border-top-left-radius", "0px");
+  await expect(recorder).toHaveCSS("border-top-width", "0px");
+  await expect(page.getByText("Click the microphone to record in Yap.")).toBeVisible();
+  await page.getByRole("link", { name: "Settings", exact: true }).click();
+  const heading = page.getByRole("heading", { name: "Shortcuts", exact: true });
+  expect((await heading.boundingBox())!.x).toBeGreaterThan((await main.boundingBox())!.x);
+  await page.goto("/");
+  await expect(recorder).toBeVisible();
+  await page.evaluate(() => {
+    window.dictationTest.snapshot.settings.setupComplete = false;
+    window.dictationTest.history();
+  });
+  await expect(page.getByRole("heading", { name: "Choose your speech model" })).toBeVisible();
+  await expect(recorder).toHaveCount(0);
+});
+
+test("home surface profile actions stay compact and open explicit review dialogs", async ({
+  page,
+}) => {
+  await homeSurfaceScenario(page, true);
+  const modified = page.getByRole("button", { name: "Modified", exact: true });
+  await expect(modified).toBeVisible();
+  await expect(page.getByRole("button", { name: "Update profile", exact: true })).toHaveCount(0);
+  await modified.click();
+  await page.getByRole("menuitem", { name: "Save as new…", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Save as new profile" });
+  await expect(page.getByRole("menu")).toHaveCount(0);
+  await dialog.getByLabel("Profile name").fill("Work notes");
+  await page.waitForTimeout(500);
+  expect(await page.evaluate(() => window.dictationTest.snapshot.dictationProfiles!.length)).toBe(
+    1,
+  );
+  await page.keyboard.press("Escape");
+  await expect(dialog).toHaveCount(0);
+  await expect(modified).toBeFocused();
+  await modified.click();
+  await page.getByRole("menuitem", { name: "Update profile…", exact: true }).click();
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Update profile", exact: true })
+    .click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(modified).toHaveCount(0);
+  expect(
+    await page.evaluate(() => window.dictationTest.snapshot.dictationProfiles![0].language),
+  ).toBe("de");
+  await expect(
+    page.getByRole("combobox", { name: "Dictation profile", exact: true }),
+  ).toBeFocused();
+});
+
+test("home surface restores only the four profile choices and keeps a keyboard focus target", async ({
+  page,
+}) => {
+  await homeSurfaceScenario(page, true);
+  const before = await page.evaluate(() => structuredClone(window.dictationTest.snapshot.settings));
+  await page.getByRole("button", { name: "Modified", exact: true }).press("ArrowDown");
+  await page.getByRole("menuitem", { name: "Restore saved choices" }).press("Enter");
+  await expect(page.getByRole("button", { name: "Modified", exact: true })).toHaveCount(0);
+  await expect(
+    page.getByRole("combobox", { name: "Dictation profile", exact: true }),
+  ).toBeFocused();
+  const after = await page.evaluate(() => window.dictationTest.snapshot.settings);
+  expect(after).toEqual({ ...before, language: "auto" });
+  expect(await page.evaluate(() => window.dictationTest.snapshot.dictationProfiles!.length)).toBe(
+    1,
+  );
+});
+
+test("home surface Save as new keeps IME input and failed writes, then creates once without activating", async ({
+  page,
+}) => {
+  await homeSurfaceScenario(page, true);
+  await page.evaluate(() => {
+    const state = window.dictationTest;
+    state.snapshot.settings.modelPath = "/other-model";
+    state.snapshot.settings.cleanText = true;
+    state.snapshot.textProcessing.enabled = true;
+    state.snapshot.textProcessing.autoPromptId = "summary";
+    state.history();
+  });
+  await page.getByRole("button", { name: "Modified", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Save as new…", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Save as new profile" });
+  const input = dialog.getByLabel("Profile name");
+  const save = dialog.getByRole("button", { name: "Save as new", exact: true });
+  await input.fill("default");
+  await expect(save).toBeDisabled();
+  await input.fill("仕事のメモ");
+  const prevented = await input.evaluate((input) => {
+    input.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true }));
+    const event = new KeyboardEvent("keydown", {
+      key: "Enter",
+      isComposing: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    input.dispatchEvent(event);
+    return event.defaultPrevented;
+  });
+  expect(prevented).toBe(false);
+  expect(await page.evaluate(() => window.dictationTest.snapshot.dictationProfiles!.length)).toBe(
+    1,
+  );
+  await input.evaluate((input) =>
+    input.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true })),
+  );
+  await page.evaluate(() => {
+    window.dictationTest.failSave = true;
+  });
+  await input.press("Enter");
+  await expect(dialog.getByRole("alert")).toContainText("Could not save profile");
+  await expect(input).toHaveValue("仕事のメモ");
+  await page.evaluate(() => {
+    window.dictationTest.failSave = false;
+  });
+  await save.click();
+  await expect(dialog).toHaveCount(0);
+  const state = await page.evaluate(() => ({
+    profiles: window.dictationTest.snapshot.dictationProfiles,
+    active: window.dictationTest.snapshot.activeProfileId,
+    language: window.dictationTest.snapshot.settings.language,
+  }));
+  expect(state.profiles).toHaveLength(2);
+  expect(state.profiles!.find((p) => p.name === "仕事のメモ")).toMatchObject({
+    language: "de",
+    cleanText: true,
+    modelPath: "/other-model",
+    autoPromptId: "summary",
+  });
+  expect(state.active).toBe("default");
+  expect(state.language).toBe("de");
+  await expect(page.getByRole("button", { name: "Modified", exact: true })).toBeFocused();
+});
+
+test("home surface blocks stale review and fresh busy state before any profile write", async ({
+  page,
+}) => {
+  await homeSurfaceScenario(page, true);
+  for (const change of ["busy", "choices"] as const) {
+    await page.getByRole("button", { name: "Modified", exact: true }).click();
+    await page.getByRole("menuitem", { name: "Update profile…", exact: true }).click();
+    await page.evaluate((change) => {
+      // Deliberately omit an event: only the fresh backend read can catch this.
+      if (change === "busy") window.dictationTest.snapshot.status.phase = "recording";
+      else window.dictationTest.snapshot.settings.language = "fr";
+    }, change);
+    const dialog = page.getByRole("dialog");
+    await dialog.getByRole("button", { name: "Update profile", exact: true }).click();
+    await expect(dialog.getByRole("alert").first()).toContainText(
+      change === "busy" ? "Finish the current operation" : "changed",
+    );
+    expect(
+      await page.evaluate(() => window.dictationTest.snapshot.dictationProfiles![0].language),
+    ).toBe("auto");
+    await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+    await page.evaluate(() => window.dictationTest.status("idle"));
+  }
+});
+
+test("home surface successful save with failed refresh retries the refresh without duplicating", async ({
+  page,
+}) => {
+  await homeSurfaceScenario(page, true);
+  await page.getByRole("button", { name: "Modified", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Save as new…", exact: true }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByLabel("Profile name").fill("Work notes");
+  await page.evaluate(() => {
+    const app = Reflect.get(window, "mockBackend").main.App;
+    const save = app.SaveDictationProfile;
+    Reflect.set(window, "profileWrites", 0);
+    app.SaveDictationProfile = async (profile: DictationProfile) => {
+      Reflect.set(window, "profileWrites", Reflect.get(window, "profileWrites") + 1);
+      const saved = await save(profile);
+      window.dictationTest.failSnapshot = true;
+      return saved;
+    };
+  });
+  await dialog.getByRole("button", { name: "Save as new", exact: true }).click();
+  await expect(dialog.getByRole("alert")).toContainText("Changes saved");
+  await expect(dialog.getByLabel("Profile name")).toBeDisabled();
+  await expect(dialog.getByRole("button", { name: "Save as new", exact: true })).toHaveCount(0);
+  await page.evaluate(() => {
+    window.dictationTest.failSnapshot = false;
+  });
+  await dialog.getByRole("button", { name: "Refresh", exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  expect(await page.evaluate(() => Reflect.get(window, "profileWrites"))).toBe(1);
+  expect(await page.evaluate(() => window.dictationTest.snapshot.dictationProfiles!.length)).toBe(
+    2,
+  );
+});
+
+test("home surface profile save blocks recording, selectors and repeated keyboard submissions while pending", async ({
+  page,
+}) => {
+  await homeSurfaceScenario(page, true);
+  await page.getByRole("button", { name: "Modified", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Save as new…", exact: true }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByLabel("Profile name").fill("Work notes");
+  await page.evaluate(() => {
+    const app = Reflect.get(window, "mockBackend").main.App;
+    const save = app.SaveDictationProfile;
+    Reflect.set(window, "profileWrites", 0);
+    app.SaveDictationProfile = async (profile: DictationProfile) => {
+      Reflect.set(window, "profileWrites", Reflect.get(window, "profileWrites") + 1);
+      await new Promise<void>((resolve) => Reflect.set(window, "releaseProfileSave", resolve));
+      return save(profile);
+    };
+  });
+  await dialog.getByLabel("Profile name").press("Enter");
+  await expect(
+    page.getByRole("button", { name: "Start recording", includeHidden: true }),
+  ).toBeDisabled();
+  await expect(
+    page.getByRole("combobox", { name: "Dictation profile", includeHidden: true }),
+  ).toBeDisabled();
+  await expect(
+    page.getByRole("combobox", { name: "Speech model", includeHidden: true }),
+  ).toBeDisabled();
+  await page.keyboard.press("Escape");
+  await page.keyboard.press("Enter");
+  await expect(dialog).toBeVisible();
+  expect(await page.evaluate(() => Reflect.get(window, "profileWrites"))).toBe(1);
+  await page.evaluate(() => Reflect.get(window, "releaseProfileSave")());
+  await expect(dialog).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Start recording" })).toBeEnabled();
+});
+
+for (const theme of ["light", "dark"] as const) {
+  for (const collapsed of [false, true]) {
+    for (const font of [100, 200]) {
+      test(`home surface layout ${theme} ${collapsed ? "collapsed" : "expanded"} ${font}% text`, async ({
+        page,
+      }, testInfo) => {
+        await page.emulateMedia({ reducedMotion: font === 200 ? "reduce" : "no-preference" });
+        await homeSurfaceScenario(page, true);
+        if (!collapsed) await page.getByRole("button", { name: "Expand sidebar" }).click();
+        await page.evaluate(
+          ({ theme, font }) => {
+            document.documentElement.classList.toggle("dark", theme === "dark");
+            document.documentElement.style.fontSize = `${font}%`;
+          },
+          { theme, font },
+        );
+        await expect(page.locator("#app-sidebar")).toHaveCSS(
+          "width",
+          `${((collapsed ? 72 : 220) * font) / 100}px`,
+        );
+        for (const width of [1280, 760]) {
+          await page.setViewportSize({ width, height: width === 760 ? 560 : 800 });
+          await expect
+            .poll(() => page.evaluate(() => document.documentElement.scrollWidth))
+            .toBe(width);
+          const recorder = page.getByRole("region", { name: "Dictation recorder" });
+          const bounds = await recorder.boundingBox();
+          const content = await page.getByRole("main").boundingBox();
+          expect(bounds!.x).toBeCloseTo(content!.x, 0);
+          expect(bounds!.width).toBeCloseTo(content!.width, 0);
+          const track = await recorder.getByRole("switch").boundingBox();
+          const thumb = await recorder.locator('[data-slot="switch-thumb"]').boundingBox();
+          expect(thumb!.width).toBeLessThanOrEqual(track!.width);
+          expect(thumb!.height).toBeLessThanOrEqual(track!.height);
+          for (const control of [
+            recorder.getByRole("combobox", { name: "Dictation profile" }),
+            recorder.getByRole("button", { name: "Modified", exact: true }),
+            recorder.getByRole("button", { name: "Import audio", exact: true }),
+            recorder.getByRole("button", { name: "Start recording" }),
+            recorder.getByRole("combobox", { name: "Speech model" }),
+            recorder.getByRole("switch"),
+          ]) {
+            await control.focus();
+            await expect(control).toBeFocused();
+            const box = await control.boundingBox();
+            expect(box!.x).toBeGreaterThanOrEqual(bounds!.x);
+            expect(box!.x + box!.width).toBeLessThanOrEqual(bounds!.x + bounds!.width + 1);
+            await expect(control).toBeInViewport();
+          }
+          await page.evaluate(() => scrollTo(0, 0));
+          await page.screenshot({
+            path: testInfo.outputPath(`home-${width}.png`),
+            fullPage: true,
+            animations: "disabled",
+          });
+          await recorder.getByRole("button", { name: "Modified", exact: true }).click();
+          const menu = page.getByRole("menu");
+          await expect(menu).toBeInViewport();
+          await expect
+            .poll(() => page.evaluate(() => document.documentElement.scrollWidth))
+            .toBe(width);
+          await page.getByRole("menuitem", { name: "Save as new…", exact: true }).click();
+          const dialog = page.getByRole("dialog");
+          await dialog.getByLabel("Profile name").fill("仕事のメモ — Notes for tomorrow");
+          await expect
+            .poll(() => dialog.evaluate((el) => el.scrollWidth <= el.clientWidth))
+            .toBe(true);
+          await dialog.getByRole("button", { name: "Cancel", exact: true }).focus();
+          await expect(
+            dialog.getByRole("button", { name: "Cancel", exact: true }),
+          ).toBeInViewport();
+          await page.keyboard.press("Space");
+          await expect(dialog).toHaveCount(0);
+          await expect(
+            recorder.getByRole("button", { name: "Modified", exact: true }),
+          ).toBeFocused();
+        }
+      });
+    }
+  }
+}
+
+test.describe("Home preview", () => {
+  test("home surface interaction preview", async ({ page }, testInfo) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await homeSurfaceScenario(page);
+    await page.screenshot({ path: testInfo.outputPath("ready-dark.png") });
+    await page.waitForTimeout(700);
+    await page.evaluate(() => {
+      window.dictationTest.snapshot.settings.language = "de";
+      window.dictationTest.history();
+    });
+    await page.getByRole("button", { name: "Modified", exact: true }).click();
+    await expect(page.getByRole("menu")).toHaveCSS("opacity", "1");
+    await page.screenshot({ path: testInfo.outputPath("profile-menu-dark.png") });
+    await page.waitForTimeout(1000);
+    await page.getByRole("menuitem", { name: "Save as new…", exact: true }).click();
+    await page.getByLabel("Profile name").fill("Work notes");
+    await page.waitForTimeout(900);
+    await page.getByRole("button", { name: "Cancel", exact: true }).click();
+    await page.getByRole("button", { name: "Modified", exact: true }).click();
+    await page.getByRole("menuitem", { name: "Restore saved choices" }).click();
+    await expect(page.getByRole("button", { name: "Modified", exact: true })).toHaveCount(0);
+    await page.evaluate(() => {
+      const state = window.dictationTest;
+      state.snapshot.recordingSaveHistory = state.snapshot.settings.saveHistory;
+    });
+    await page.getByRole("button", { name: "Start recording" }).click();
+    await page.evaluate(() => window.dictationTest.callbacks["dictation:level"](0.65));
+    await expect(page.getByRole("heading", { name: "Recording", exact: true })).toBeVisible();
+    await page.waitForTimeout(200);
+    await page.screenshot({
+      path: testInfo.outputPath("recording-dark.png"),
+      animations: "disabled",
+    });
+    await page.waitForTimeout(1100);
+    await page.evaluate(() => {
+      const state = window.dictationTest;
+      Reflect.get(window, "mockBackend").main.App.StopRecording = async () => {
+        state.snapshot.latestResult = {
+          session: { ...state.snapshot.history[0], id: "temporary-preview" },
+          text: "Let’s give the Home screen more breathing room and keep the everyday controls easy to reach.",
+        };
+        state.status("idle");
+        state.history();
+      };
+    });
+    await page.getByRole("button", { name: "Stop recording" }).click();
+    await expect(page.getByRole("region", { name: "Temporary latest result" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Copy", exact: true })).toBeEnabled();
+    await expect(page.getByRole("button", { name: "Start recording" })).toBeEnabled();
+    await page.screenshot({ path: testInfo.outputPath("result-dark.png"), animations: "disabled" });
+    await page.waitForTimeout(1000);
+    await page.evaluate(() => document.documentElement.classList.remove("dark"));
+    await page.waitForTimeout(200);
+    await page.screenshot({
+      path: testInfo.outputPath("result-light.png"),
+      animations: "disabled",
+    });
+    await page.waitForTimeout(700);
+  });
+});
+
 async function homeModelScenario(page: Page, custom = false) {
   await page.addInitScript((custom) => {
     const state = window.dictationTest;
@@ -7737,7 +8169,7 @@ test("Default is selected from saved settings and unrelated preferences do not m
 });
 
 for (const theme of ["light", "dark"] as const) {
-  test(`modified profile icon and tooltip preserve the name and restore Default in ${theme}`, async ({
+  test(`modified profile menu preserves the name and restores Default in ${theme}`, async ({
     page,
   }, testInfo) => {
     await homeModelScenario(page);
@@ -7751,21 +8183,13 @@ for (const theme of ["light", "dark"] as const) {
     const selector = page.getByRole("combobox", { name: "Dictation profile", exact: true });
     await expect(selector).toContainText("Default");
     await expect(selector).not.toContainText("(modified)");
-    const marker = selector.getByRole("img", { name: "Modified profile" });
+    const marker = page.getByRole("button", { name: "Modified", exact: true });
     await expect(marker).toBeInViewport();
-    await marker.hover();
-    await expect(page.locator('[data-slot="tooltip-content"]')).toHaveText("Modified");
-    await page.mouse.move(1, 1);
-    await selector.hover();
-    await expect(page.locator('[data-slot="tooltip-content"]')).toHaveText("Modified");
-    await page.mouse.move(1, 1);
-    await page.getByRole("button", { name: "Start recording", exact: true }).focus();
-    await expect(page.locator('[data-slot="tooltip-content"]')).toHaveCount(0);
-    await selector.focus();
-    await page.keyboard.press("Shift+Tab");
-    await page.keyboard.press("Tab");
-    await expect(selector).toBeFocused();
-    await expect(page.locator('[data-slot="tooltip-content"]')).toHaveText("Modified");
+    await marker.focus();
+    await page.keyboard.press("Enter");
+    await expect(page.getByRole("menuitem", { name: "Restore saved choices" })).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(marker).toBeFocused();
     await expect
       .poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
       .toBe(true);
@@ -7813,7 +8237,7 @@ test("a named profile retains its name and modified marker across navigation and
     window.dictationTest.history();
   });
   await expect(selector).toContainText("Email");
-  await expect(selector.getByRole("img", { name: "Modified profile" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Modified", exact: true })).toBeVisible();
   await page.getByRole("link", { name: "Manage dictation profiles" }).click();
   await page.mouse.move(1, 1);
   await settle(page);
@@ -7822,7 +8246,7 @@ test("a named profile retains its name and modified marker across navigation and
   await page.getByRole("button", { name: "Use Email", exact: true }).click();
   await page.getByRole("link", { name: "Dictate", exact: true }).click();
   await expect(selector).toContainText("Email");
-  await expect(selector.getByRole("img", { name: "Modified profile" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Modified", exact: true })).toHaveCount(0);
 });
 
 for (const theme of ["light", "dark"] as const) {

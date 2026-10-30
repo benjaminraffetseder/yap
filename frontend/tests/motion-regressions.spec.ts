@@ -289,7 +289,7 @@ test("recording level feedback avoids layout and follows live reduced-motion cha
     .not.toEqual(quiet.map((bar) => bar.transform));
   expect((await geometry()).map((bar) => bar.height)).toEqual(quiet.map((bar) => bar.height));
   await page.emulateMedia({ reducedMotion: "reduce" });
-  const ring = recorder.locator('span[aria-hidden="true"]').nth(1);
+  const ring = recorder.locator('[data-slot="recording-level-halo"]');
   await expect(ring).toHaveCSS("transform", "none");
   await level(0);
   const reducedQuiet = await geometry();

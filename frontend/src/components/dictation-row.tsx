@@ -16,6 +16,7 @@ type DictationRowProps = {
   entry: Session;
   disabled?: boolean;
   showDate?: boolean;
+  inset?: boolean;
   selection?: {
     label: string;
     checked: boolean;
@@ -38,6 +39,7 @@ export function DictationRow({
   deleted,
   disabled = false,
   showDate = false,
+  inset = true,
   selection,
 }: DictationRowProps) {
   const text = entry.finalTranscript ?? entry.rawTranscript;
@@ -97,7 +99,7 @@ export function DictationRow({
           onClick={(event) => {
             if (disabled) event.preventDefault();
           }}
-          className={`flex min-w-0 flex-1 items-center gap-3 py-4 pr-4 text-left outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:pr-5 ${selection ? "" : "pl-5"}`}
+          className={`flex min-w-0 flex-1 items-center gap-3 py-4 text-left outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring ${inset ? `pr-4 sm:pr-5 ${selection ? "" : "pl-5"}` : ""}`}
         >
           {content}
           <ChevronRight

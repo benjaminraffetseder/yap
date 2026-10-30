@@ -7,8 +7,10 @@ import { useState } from "react";
 
 export function AudioImportButton({
   showDownloadProgress = true,
+  quiet = false,
 }: {
   showDownloadProgress?: boolean;
+  quiet?: boolean;
 }) {
   const { snapshot, loading, run } = useDictation();
   const [pending, setPending] = useState(false);
@@ -24,7 +26,8 @@ export function AudioImportButton({
     <div className="flex flex-wrap items-center gap-3">
       <Button
         pressFeedback
-        variant="outline"
+        variant={quiet ? "ghost" : "outline"}
+        className={quiet ? "max-w-full whitespace-normal text-muted-foreground" : undefined}
         title="WAV, MP3, M4A, AAC, FLAC, OGG, Opus, AIFF, WMA · up to 25 minutes · 256 MiB"
         disabled={!isDesktop || loading || !snapshot.ready || pending}
         onClick={() => void importAudio()}

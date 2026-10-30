@@ -46,16 +46,20 @@ failed switches leave the previous settings in place.
 Automatic prompts use the shared local text model configured in Prompts. A profile
 with **No automatic processing** clears the automatic prompt while keeping that
 model available for manual use. Changing a profile's speech model, language,
-cleanup, or automatic prompt in Settings keeps its name selected and adds a small
-modified icon. Hover or focus the profile name or icon to see **Modified**.
+cleanup, or automatic prompt keeps its name selected. On Home, **Modified** opens
+a menu: **Restore saved choices** reapplies the saved profile; **Update profile…**
+reviews replacing its four saved choices; **Save as new…** saves the current choices
+under a unique name after explicit submission. Saving a new profile does not
+activate it or copy app assignments. Cancel or Escape before submission writes
+nothing. Settings keeps its existing modified icon and profile editor.
 The speech-model, language, light-cleanup, and **Run after dictation** controls also
 show an icon beside their labels when their displayed values differ from the
 selected profile. Hover or focus it to see **Changed from [profile name]**, the
 profile value, and the current value. Edits that aren't saved yet are identified in
 the tooltip. Matching the profile value removes the icon.
 Microphone, shortcut, and history changes do not mark it modified. Saved profiles
-are kept intact; edit and save the profile to keep your new choices, or select it
-again (or choose **Use** in Settings) to restore its saved choices.
+are kept intact until you update them. You can also select a profile again (or
+choose **Use** in Settings) to restore its saved choices.
 Deleting a selected profile keeps your current settings, selects Default, and
 marks it modified when those settings differ. Profiles persist locally across app restarts
 and are not included in portable backups because they reference this computer's
@@ -203,11 +207,11 @@ Yap doesn't install the server or load a GGUF file itself.
 In **Prompts → Text model**, select a server and model, enable LLM processing, wait
 until the changes are saved, and choose **Test model**. The presets use these base URLs:
 
-| Server | URL |
-| --- | --- |
-| Ollama | `http://127.0.0.1:11434/v1` |
-| LM Studio | `http://127.0.0.1:1234/v1` |
-| llama-server | `http://127.0.0.1:8080/v1` |
+| Server       | URL                         |
+| ------------ | --------------------------- |
+| Ollama       | `http://127.0.0.1:11434/v1` |
+| LM Studio    | `http://127.0.0.1:1234/v1`  |
+| llama-server | `http://127.0.0.1:8080/v1`  |
 
 Use a loopback URL ending in `/v1`, without `/api` or `/models`. Remote endpoints
 and API keys aren't supported. A listed model may still need loading in your

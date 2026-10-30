@@ -21,7 +21,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import { useEffect, useState, type CSSProperties } from "react";
-import { Link, NavLink, Outlet } from "react-router";
+import { Link, NavLink, Outlet, useLocation } from "react-router";
 
 const navigation = [
   { to: "/", label: "Dictate", icon: Mic },
@@ -42,13 +42,21 @@ function readCollapsed() {
 }
 
 export function AppLayout() {
-  const { error, clearError, loading, run, refresh, update } = useDictation();
+  const { snapshot, error, clearError, loading, run, refresh, update } = useDictation();
+  const location = useLocation();
   const [dismissedUpdate, setDismissedUpdate] = useState("");
   const [collapsed, setCollapsed] = useState(readCollapsed);
   const sidebarWidth = collapsed ? "4.5rem" : "13.75rem";
   const [commandOpen, setCommandOpen] = useState(false);
   const toggleLabel = collapsed ? "Expand sidebar" : "Collapse sidebar";
   const connectionFailure = !!error && (loading || error === backendVersionMismatchMessage);
+  const homeSurface =
+    location.pathname === "/" &&
+    (!isDesktop || snapshot.settings.setupComplete) &&
+    !loading &&
+    !connectionFailure;
+  const showUpdate = update?.available && dismissedUpdate !== update.latestVersion;
+  const showNotices = !isDesktop || connectionFailure || loading || showUpdate;
   useEffect(() => {
     if (!error || connectionFailure) return;
     toastManager.add({
@@ -130,70 +138,74 @@ export function AppLayout() {
           </nav>
         </aside>
         <main id="main-content" className="min-w-0 flex-1">
-          <div className="mx-auto max-w-5xl px-6 py-8 lg:px-10">
-            {!isDesktop && (
-              <div className="mb-6 rounded-lg border bg-muted/50 px-4 py-3 text-sm text-muted-foreground">
-                Browser preview. Native features require the desktop app.
-              </div>
-            )}
-            {connectionFailure && (
-              <section
-                aria-label="Connection recovery"
-                className="mb-6 space-y-4 rounded-lg border border-destructive/30 bg-card p-4"
-              >
-                <div className="space-y-2">
-                  <h2 className="text-sm font-semibold">Couldn’t connect to Yap</h2>
-                  <p role="alert" className="text-sm text-destructive">
-                    {error}
-                  </p>
-                </div>
-                <RecoveryActions
-                  source="Backend connection"
-                  details={error}
-                  retryLabel="Retry loading"
-                  onRetry={() => void run(refresh, false)}
-                />
-              </section>
-            )}
-            {isDesktop && loading && !connectionFailure && (
-              <div
-                role="status"
-                className="mt-6 flex items-center gap-3 text-sm text-muted-foreground"
-              >
-                <span>Loading app…</span>
-                <Button variant="outline" size="sm" onClick={() => void run(refresh, false)}>
-                  Retry loading
-                </Button>
-              </div>
-            )}
-            {update?.available && dismissedUpdate !== update.latestVersion && (
-              <section
-                aria-label="App update available"
-                className="mb-6 space-y-3 rounded-lg border bg-card p-4"
-              >
-                <p className="text-sm font-medium">Yap {update.latestVersion} is available.</p>
-                <p className="text-sm text-muted-foreground">
-                  Download the installer, quit Yap from the tray, and run setup to update.
-                </p>
-                <div className="flex flex-wrap items-center gap-3">
-                  <Button size="sm" onClick={() => void run(backend.downloadUpdate, false)}>
-                    Download update
-                  </Button>
-                  <Link
-                    to="/settings?section=general"
-                    className="text-sm text-primary underline underline-offset-4"
+          <div className={homeSurface ? undefined : "mx-auto max-w-5xl px-6 py-8 lg:px-10"}>
+            {showNotices && (
+              <div className={homeSurface ? "mx-auto max-w-5xl px-6 pt-6 lg:px-10" : undefined}>
+                {!isDesktop && (
+                  <div className="mb-6 rounded-lg border bg-muted/50 px-4 py-3 text-sm text-muted-foreground">
+                    Browser preview. Native features require the desktop app.
+                  </div>
+                )}
+                {connectionFailure && (
+                  <section
+                    aria-label="Connection recovery"
+                    className="mb-6 space-y-4 rounded-lg border border-destructive/30 bg-card p-4"
                   >
-                    Update details
-                  </Link>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => setDismissedUpdate(update.latestVersion)}
+                    <div className="space-y-2">
+                      <h2 className="text-sm font-semibold">Couldn’t connect to Yap</h2>
+                      <p role="alert" className="text-sm text-destructive">
+                        {error}
+                      </p>
+                    </div>
+                    <RecoveryActions
+                      source="Backend connection"
+                      details={error}
+                      retryLabel="Retry loading"
+                      onRetry={() => void run(refresh, false)}
+                    />
+                  </section>
+                )}
+                {isDesktop && loading && !connectionFailure && (
+                  <div
+                    role="status"
+                    className="mt-6 flex items-center gap-3 text-sm text-muted-foreground"
                   >
-                    Later
-                  </Button>
-                </div>
-              </section>
+                    <span>Loading app…</span>
+                    <Button variant="outline" size="sm" onClick={() => void run(refresh, false)}>
+                      Retry loading
+                    </Button>
+                  </div>
+                )}
+                {showUpdate && update && (
+                  <section
+                    aria-label="App update available"
+                    className="mb-6 space-y-3 rounded-lg border bg-card p-4"
+                  >
+                    <p className="text-sm font-medium">Yap {update.latestVersion} is available.</p>
+                    <p className="text-sm text-muted-foreground">
+                      Download the installer, quit Yap from the tray, and run setup to update.
+                    </p>
+                    <div className="flex flex-wrap items-center gap-3">
+                      <Button size="sm" onClick={() => void run(backend.downloadUpdate, false)}>
+                        Download update
+                      </Button>
+                      <Link
+                        to="/settings?section=general"
+                        className="text-sm text-primary underline underline-offset-4"
+                      >
+                        Update details
+                      </Link>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => setDismissedUpdate(update.latestVersion)}
+                      >
+                        Later
+                      </Button>
+                    </div>
+                  </section>
+                )}
+              </div>
             )}
             <Outlet />
           </div>
