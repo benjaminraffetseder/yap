@@ -61,21 +61,20 @@ func presentation(s State, now time.Time) view {
 		}
 		return view{visible: true, label: label, cancel: "Cancel"}
 	case "done":
-		label := "Ready to paste"
+		message := strings.ToLower(s.Message)
+		if strings.Contains(message, "failed") || strings.Contains(message, "cancelled") {
+			return view{visible: true, label: "Open Yap to recover text", stop: "Open Yap", cancel: "Dismiss", dismissAfter: 6 * time.Second}
+		}
+		label := "Dictation finished"
 		switch s.Message {
 		case "Copied to clipboard":
 			label = "Copied to clipboard"
-		case "Pasted into your application":
-			label = "Pasted"
-		default:
-			if s.HistoryMode == "Not saving" && (strings.Contains(strings.ToLower(s.Message), "failed") || strings.Contains(strings.ToLower(s.Message), "cancelled")) {
-				return view{visible: true, label: "Open Yap to recover text", stop: "Open Yap", cancel: "Dismiss", dismissAfter: 6 * time.Second}
-			}
-			if s.Message == "Not saved to History" {
-				label = "Not saved to history"
-			} else if strings.Contains(s.Message, "clipboard failed") || strings.Contains(s.Message, "History") {
-				label = "Saved to history"
-			}
+		case "Paste requested; copied to clipboard":
+			label = "Paste requested"
+		case "Saved to History":
+			label = "Saved to history"
+		case "Not saved to History":
+			label = "Not saved to history"
 		}
 		return view{visible: true, label: label, cancel: "Dismiss", dismissAfter: 2500 * time.Millisecond}
 	case "error":

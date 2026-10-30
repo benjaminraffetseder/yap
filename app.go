@@ -92,6 +92,11 @@ type App struct {
 	activeApplication                func() string
 	profileLibrary                   storage.ProfileLibrary
 	latestResult                     *TemporaryResult
+	homeResult                       *HomeResult
+	homeResultHidden                 bool
+	homeResultOperation              bool
+	homeResultReadMu                 sync.Mutex
+	homeHistory                      []storage.Session
 	updateChecker                    *updates.Checker
 	updateCancel                     context.CancelFunc
 	pendingBackup                    *storage.BackupArchive
@@ -367,6 +372,7 @@ func (a *App) shutdown(ctx context.Context) {
 			a.historyCleanupTimer.Stop()
 		}
 		a.latestResult = nil
+		a.clearHomeResultLocked()
 		a.status.Transcript = ""
 		if a.updateCancel != nil {
 			a.updateCancel()
@@ -470,7 +476,7 @@ func (a *App) available() error {
 	return nil
 }
 func (a *App) busy() bool {
-	return a.importActive != "" || a.status.Phase == "backup" || a.shortcutCaptureID != "" || a.status.Phase == "text-processing" || a.status.Phase == "recording" || a.status.Phase == "transcribing" || a.status.Phase == "downloading" || a.status.Phase == "mic-test" || a.status.Phase == "diagnostic-recording" || a.status.Phase == "diagnostic-transcribing"
+	return a.homeResultOperation || a.importActive != "" || a.status.Phase == "backup" || a.shortcutCaptureID != "" || a.status.Phase == "text-processing" || a.status.Phase == "recording" || a.status.Phase == "transcribing" || a.status.Phase == "downloading" || a.status.Phase == "mic-test" || a.status.Phase == "diagnostic-recording" || a.status.Phase == "diagnostic-transcribing"
 }
 func (a *App) registerShortcut() {
 	// Retired registrations can still have queued callbacks waiting on a.mu.
@@ -550,12 +556,17 @@ func (a *App) GetSnapshot() (Snapshot, error) {
 	// Backups own the single database connection. Serve the pre-operation
 	// history so refreshing the UI cannot hold a.mu and prevent cancellation.
 	history := a.backupHistory
-	if a.status.Phase != "backup" {
+	if a.homeResultOperation {
+		history = a.homeHistory
+	} else if a.status.Phase != "backup" {
 		var err error
 		history, err = a.store.History()
 		if err != nil {
 			return Snapshot{}, err
 		}
+	}
+	if !a.homeResultOperation && a.status.Phase != "backup" {
+		a.homeHistory = history
 	}
 	ready := speech.Validate(speech.Options{Executable: a.settings.WhisperPath, Model: a.settings.ModelPath}) == nil
 	entries, err := vocabulary.Normalize(a.vocabulary)
@@ -643,6 +654,7 @@ func (a *App) start(external bool) error {
 		return errors.Join(err, a.discardAudioLocked(a.path))
 	}
 	a.latestResult = nil
+	a.clearHomeResultLocked()
 	a.recordSettings = settings
 	a.recordTextConfig, _ = textmodel.Normalize(textConfig)
 	a.status.ProfileID = profileID
@@ -725,7 +737,9 @@ func (a *App) stop() {
 }
 func (a *App) transcribe(ctx context.Context, id, path, target string, duration int64, settings storage.Settings, entries []vocabulary.Entry, textConfig textmodel.Config, copyToClipboard bool, onProgress func(float64)) (sessionID, transcript string, resultErr error) {
 	persisted := false
+	started := time.Now()
 	text, err := a.engine.Transcribe(ctx, path, speech.Options{Executable: settings.WhisperPath, Model: settings.ModelPath, Language: settings.Language, Prompt: vocabulary.Prompt(entries), Progress: onProgress})
+	transcriptionMS := float64(time.Since(started)) / float64(time.Millisecond)
 	a.mu.Lock()
 	a.status.CompletionWarning = false
 	defer a.mu.Unlock()
@@ -754,14 +768,24 @@ func (a *App) transcribe(ctx context.Context, id, path, target string, duration 
 		audioPath = path
 	}
 	session := storage.NewSession(id, duration, text, filepath.Base(settings.ModelPath), settings.Language, audioPath)
+	session.Stats = &storage.SpeechStats{TranscriptionMS: transcriptionMS, Engine: speech.Kind(settings.ModelPath)}
 	text = processTranscript(text, settings, entries)
 	session.FinalTranscript = text
+	a.homeResult = &HomeResult{Session: session, Text: text, Imported: a.status.ImportID != "", Outcomes: HomeOutcomes{Transcription: "complete", History: "temporary", Processing: "skipped", Clipboard: "skipped", Paste: "skipped"}}
 	if settings.SaveHistory {
 		if err = a.store.Add(session); err != nil {
-			a.fail(fmt.Errorf("could not save transcript: %w", err))
-			return "", "", err
+			// Audio cleanup still runs; retain only text and provenance in memory.
+			session.AudioPath = ""
+			a.latestResult = &TemporaryResult{Session: session, Text: text}
+			a.homeResult.Session, a.homeResult.Outcomes.History = session, "failed"
+			a.status.Phase, a.status.Message, a.status.Transcript, a.status.StartedAt = "done", "Transcript ready; History save failed. Save or copy it from Home.", text, 0
+			a.status.CompletionWarning = true
+			a.emit()
+			a.event("dictation:history")
+			return "", text, err
 		}
 		persisted = true
+		a.homeResult.Saved, a.homeResult.Outcomes.History = true, "saved"
 		a.pruneHistoryLocked()
 	} else {
 		a.latestResult = &TemporaryResult{Session: session, Text: text}
@@ -771,6 +795,7 @@ func (a *App) transcribe(ctx context.Context, id, path, target string, duration 
 	}
 	transcript = text
 	if textConfig.Enabled && textConfig.AutoPromptID != "" {
+		a.homeResult.Outcomes.Processing = "pending"
 		recipe, promptErr := textConfig.Recipe(textConfig.AutoPromptID)
 		a.status.Message = "Processing text…"
 		a.importProcessingLocked()
@@ -783,7 +808,13 @@ func (a *App) transcribe(ctx context.Context, id, path, target string, duration 
 		if promptErr == nil {
 			processed, promptErr = a.runTextRecipe(ctx, textConfig, recipe, session, func(output storage.GeneratedOutput) error {
 				if settings.SaveHistory {
-					return a.store.AddGeneratedOutput(output)
+					if err := a.store.AddGeneratedOutput(output); err != nil {
+						return err
+					}
+				}
+				a.homeResult.Outputs = append(a.homeResult.Outputs, output)
+				if settings.SaveHistory {
+					return nil
 				}
 				a.latestResult.Outputs = append(a.latestResult.Outputs, output)
 				a.latestResult.Output = &output
@@ -796,6 +827,7 @@ func (a *App) transcribe(ctx context.Context, id, path, target string, duration 
 		}
 		if ctx.Err() != nil {
 			a.status.CompletionWarning = true
+			a.homeResult.Outcomes.Processing = "cancelled"
 			a.status.Phase, a.status.Message = "done", "Text processing cancelled; transcript available"
 			if settings.SaveHistory {
 				a.status.Message = "Text processing cancelled; transcript saved to History"
@@ -812,15 +844,20 @@ func (a *App) transcribe(ctx context.Context, id, path, target string, duration 
 		}
 		if promptErr != nil {
 			a.status.CompletionWarning = true
-			a.status.Phase, a.status.Message = "done", "Text processing failed: "+promptErr.Error()
+			a.homeResult.Outcomes.Processing = "failed"
+			a.status.Phase, a.status.Message = "done", "Text processing failed; transcript available in Home"
 			if settings.SaveHistory {
-				a.status.Message = "Saved to History; text processing failed: " + promptErr.Error()
+				a.status.Message = "Saved to History; text processing failed. Transcript available in Home."
 			}
 			a.status.Transcript, a.status.StartedAt = text, 0
 			a.emit()
 			return
 		}
 		text = processed
+		a.homeResult.Text, a.homeResult.Outcomes.Processing = processed, "complete"
+		if len(a.homeResult.Outputs) > 0 {
+			a.homeResult.OutputID = a.homeResult.Outputs[len(a.homeResult.Outputs)-1].ID
+		}
 	}
 	a.status.Transcript = text
 	a.status.StartedAt = 0
@@ -832,17 +869,23 @@ func (a *App) transcribe(ctx context.Context, id, path, target string, duration 
 	if copyToClipboard {
 		a.status.Message = "Copied to clipboard"
 		if err = a.copyText(text); err != nil {
+			a.homeResult.Outcomes.Clipboard = "failed"
 			a.status.CompletionWarning = true
-			a.status.Message = "Clipboard failed; transcript available: " + err.Error()
+			a.status.Message = "Clipboard failed; transcript available in Home"
 			if settings.SaveHistory {
-				a.status.Message = "Saved to history; clipboard failed: " + err.Error()
+				a.status.Message = "Saved to History; clipboard failed. Transcript available in Home."
 			}
-		} else if target != "" {
-			if err = platform.Paste(target); err != nil {
-				a.status.CompletionWarning = true
-				a.status.Message = err.Error()
-			} else {
-				a.status.Message = "Pasted into your application"
+		} else {
+			a.homeResult.Outcomes.Clipboard = "complete"
+			if target != "" {
+				if err = platform.Paste(target); err != nil {
+					a.homeResult.Outcomes.Paste = "failed"
+					a.status.CompletionWarning = true
+					a.status.Message = "Automatic paste failed; copied to clipboard. Paste manually."
+				} else {
+					a.homeResult.Outcomes.Paste = "requested"
+					a.status.Message = "Paste requested; copied to clipboard"
+				}
 			}
 		}
 	}

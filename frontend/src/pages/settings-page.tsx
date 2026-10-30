@@ -3,9 +3,9 @@ import { AutoSaveStatus } from "@/components/auto-save-status";
 import { BackupPanel } from "@/components/backup-panel";
 import { DiagnosticsPanel } from "@/components/diagnostics-panel";
 import { ProfilesPanel } from "@/components/dictation-profiles";
-import { SectionTabs } from "@/components/section-tabs";
 import { useDictation } from "@/components/dictation-provider";
 import { ProfileSettingIndicator } from "@/components/profile-setting-indicator";
+import { SectionTabs } from "@/components/section-tabs";
 import { SettingRow, SettingsSection, ToggleSetting } from "@/components/settings-section";
 import { ShortcutInput } from "@/components/shortcut-input";
 import { ShortcutStatus } from "@/components/shortcut-status";
@@ -625,6 +625,15 @@ export function SettingsPage() {
           )}
         </TabsContent>
         <TabsContent value="advanced" keepMounted className="space-y-5">
+          <SettingsSection title="Performance details">
+            <ToggleSetting
+              title="Stats for Nerds"
+              description="Show transcription timing, model details, token usage, and speed in results and History. Available stats stay on this device with your results."
+              checked={settings.statsForNerds ?? false}
+              disabled={controlsDisabled}
+              onCheckedChange={(value) => setSettings((old) => ({ ...old, statsForNerds: value }))}
+            />
+          </SettingsSection>
           <fieldset disabled={controlsDisabled} className="disabled:opacity-60">
             <SettingsSection title="Local speech files">
               <div className="flex flex-wrap items-center justify-between gap-3 py-4">

@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"reflect"
 	"testing"
 
 	textmodel "yap/internal/inference/text"
@@ -59,7 +60,7 @@ func TestGeneratedOutputsCaptureRecipesAndRegenerateWithoutReplacingText(t *test
 		t.Fatal("regeneration used a different recipe", call)
 	}
 	outputs, _ = a.GetSessionOutputs(entry.ID)
-	if len(outputs) != 2 || outputs[1] != first || outputs[0].ID == first.ID || outputs[0].Model != "new-model" {
+	if len(outputs) != 2 || !reflect.DeepEqual(outputs[1], first) || outputs[0].ID == first.ID || outputs[0].Model != "new-model" {
 		t.Fatal("regeneration replaced its predecessor", outputs)
 	}
 	got, _ := a.store.Session(entry.ID)

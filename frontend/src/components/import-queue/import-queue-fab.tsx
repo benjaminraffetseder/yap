@@ -19,6 +19,7 @@ export function ImportQueueFab({ jobs, onOpen }: { jobs: ImportJob[]; onOpen: ()
       : "Imports finished";
   return (
     <motion.div
+      data-slot="import-queue-fab"
       initial={{ opacity: 0, transform: reduced ? "none" : "scale(0.95)" }}
       animate={{ opacity: 1, transform: "scale(1)" }}
       transition={motionTransition("output", reduced)}

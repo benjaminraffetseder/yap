@@ -6,24 +6,41 @@ The default shortcut is **Ctrl+Alt+Space**. Hold it while speaking and release
 Space to transcribe. Settings also has a toggle mode: press once to start and
 again to stop. Recordings are limited to ten minutes.
 
-Shortcut recordings paste into the original app if it still has focus. If focus
-has moved or paste is blocked, the text stays in History and on the clipboard.
+Shortcut recordings request paste into the original app if it still has focus.
+If focus has moved or paste is blocked, retrieve the result in Yap and paste it
+manually. Yap reports a sent paste request without confirming insertion by the app.
 Recording from Yap's microphone button or tray menu copies without pasting.
 
 Under **Settings → Dictation → Text & delivery**, **Copy automatically to
 clipboard** is enabled by default. Turn it off to keep completed
 dictation in History without changing the clipboard. Automatic paste also pauses
-while copying is off. You can still copy text manually from History.
+while copying is off. You can still copy text manually from Home or History.
 
 If transcription succeeds but copying, pasting, or automatic text processing fails,
 Yap shows **Transcript ready — action needed**. The warning stays available instead
-of disappearing on a timer, with a **Copy transcript** action. Failed copying can be retried from the same
-notification. Cancelled automatic processing also leaves the speech transcript
-available to copy. Copying from this notification never pastes into another app.
+of disappearing on a timer and directs you to the latest result on Home.
+Copying there checks that the result is still current and never pastes into another
+app. Cancelled automatic processing leaves the speech transcript available.
+
+Home shows the latest saved or temporary result with **Copy** and **Edit result**.
+The editor applies changes only when you submit; Cancel keeps the existing result.
+Saved edits update History, preserving original recognition and generated outputs.
+Temporary edits stay in memory until you choose **Save to History**. A failed initial
+History save also keeps recognized text available for explicit saving or copying.
+Temporary results expire when a new recording or import starts, on dismissal, or
+when Yap exits; a rejected start leaves the previous result available.
+**Dismiss** quietly hides either kind of Home result; saved entries stay in History.
 
 The floating indicator appears while you're recording in another app. Drag its
 status area to move it; Yap remembers the position. It hides while Yap's main
 window has focus. Stop and Cancel are available there and in the tray menu.
+
+### Choosing a speech model
+
+Models shows your current model and the full catalog. **Help me choose** opens
+optional language and task guidance; these choices do not change your settings.
+**Show model** takes you to the suggested model's existing download or use action.
+Ratings are qualitative guides, and changing models remains an explicit choice.
 
 ### Dictation profiles
 
@@ -143,6 +160,13 @@ removes a selection. Permanent deletion cannot be undone. Transcripts, edits,
 retained audio, and generated outputs stay together during that window. After
 30 days, Yap permanently removes them during cleanup, including on its next
 launch if it was closed. Recently Deleted is excluded from portable backups.
+
+When an entry has retained audio, **Play recording** opens the recording player.
+Use its play/pause button, seek bar, playback speed, mute and volume controls.
+The seek and volume sliders also support arrow keys, Home and End. The player
+stays at the bottom while you scroll. Close it with **Close audio player** to
+stop playback; **Play recording** opens it again. Leaving the dictation also
+stops playback.
 
 Transcriptions, generated outputs, and processing previews display Markdown,
 including headings, emphasis, lists, tables, and code blocks. Edit the Markdown
@@ -303,6 +327,26 @@ Restoring preserves the version you restored from, so you can undo a restore.
 The original transcription remains available separately. Transcript versions stay
 with dictations in Recently Deleted and are removed on permanent deletion.
 Version history stays on this computer and is excluded from portable backups.
+
+## Stats for Nerds
+
+Enable **Settings → Advanced → Stats for Nerds** to show a stats icon button
+on the latest Home result, in a dictation's History header, and beside each
+generated output's Copy button. Select it to open performance details in a dialog.
+The setting is off by default.
+
+New dictations retain transcription time, speech engine, model, audio length,
+and the language setting. Transcription speed compares audio length with elapsed
+transcription time, including model loading and excluding audio preparation.
+Generated outputs retain LLM request time, retries, and any token counts returned
+by the local server. Response rate is output tokens divided by the final request's
+elapsed time; server-reported generation speed is shown separately when available.
+Token counts describe the final response, while LLM time includes retries.
+
+These details are collected locally with new results, even while their display
+is off, and follow those results into History and exported backups. Temporary
+results keep stats only in memory until explicitly saved. Older results and
+servers that omit metrics show those values as unavailable.
 
 ## Storage and backups
 

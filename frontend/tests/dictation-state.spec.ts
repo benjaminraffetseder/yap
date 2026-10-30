@@ -6,6 +6,7 @@ import type {
   DiagnosticCheck,
   DictationProfile,
   GeneratedOutput,
+  HomeResult,
   Session,
   Settings,
   Snapshot,
@@ -679,7 +680,7 @@ for (const theme of ["light", "dark"]) {
                   : name === "General"
                     ? [
                         page.getByRole("button", { name: "Light", exact: true }),
-                        page.getByRole("checkbox", { name: "Launch at login", exact: true }),
+                        page.getByRole("switch", { name: "Launch at login", exact: true }),
                       ]
                     : name === "History & data"
                       ? [page.getByRole("combobox", { name: "History retention", exact: true })]
@@ -754,7 +755,7 @@ test("settings clarity interaction preview", async ({ page }, testInfo) => {
     animations: "disabled",
   });
   await page.waitForTimeout(700);
-  await page.getByRole("checkbox", { name: /^Light cleanup/ }).check();
+  await page.getByRole("switch", { name: /^Light cleanup/ }).check();
   await expect
     .poll(() => page.evaluate(() => window.dictationTest.snapshot.settings.cleanText))
     .toBe(true);
@@ -771,7 +772,7 @@ test("settings clarity interaction preview", async ({ page }, testInfo) => {
   await page.waitForTimeout(700);
   await page.getByRole("dialog").getByRole("button", { name: "Done", exact: true }).click();
   await page.getByRole("tab", { name: "Dictation", exact: true }).click();
-  await expect(page.getByRole("checkbox", { name: /^Light cleanup/ })).toBeChecked();
+  await expect(page.getByRole("switch", { name: /^Light cleanup/ })).toBeChecked();
   await page.waitForTimeout(600);
   await page.getByRole("tab", { name: "General", exact: true }).click();
   await page.getByRole("button", { name: "Light", exact: true }).click();
@@ -1050,9 +1051,7 @@ for (const reduced of [false, true]) {
   });
 }
 
-test("transcription completion uses one toast across navigation without a result panel", async ({
-  page,
-}, testInfo) => {
+test("transcription completion uses one toast across navigation", async ({ page }, testInfo) => {
   await homeModelScenario(page);
   await page.evaluate(() => window.dictationTest.status("transcribing"));
   await page.getByRole("link", { name: "Settings", exact: true }).click();
@@ -1107,13 +1106,9 @@ test("transcription completion uses one toast across navigation without a result
     .locator('[data-slot="toast"]')
     .filter({ hasText: "Transcript ready — action needed" });
   await expect(warning).toBeVisible();
-  await expect(warning).toContainText("clipboard failed: unavailable");
+  await expect(warning).toContainText("Review the latest result on Home");
   await expect(warning.locator(".lucide-circle-alert")).toBeVisible();
-  await page.keyboard.press("F6");
-  await warning.getByRole("button", { name: "Copy transcript" }).click();
-  await expect(
-    page.locator('[data-slot="toast"]').filter({ hasText: "Copied to clipboard" }),
-  ).toBeVisible();
+  await expect(warning.getByRole("button", { name: "Copy transcript" })).toHaveCount(0);
 });
 
 test("transcription failures use an error toast and cancellations do not report completion", async ({
@@ -1546,13 +1541,13 @@ test("settings sections keep navigation above full-width content and preserve ed
     animations: "disabled",
   });
   await page.getByRole("tab", { name: "General", exact: true }).click();
-  await page.getByRole("checkbox", { name: "Launch at login", exact: true }).check();
+  await page.getByRole("switch", { name: "Launch at login", exact: true }).check();
   await page.screenshot({
     path: testInfo.outputPath("settings-general.png"),
     animations: "disabled",
   });
   await page.getByRole("tab", { name: "History & data", exact: true }).click();
-  await page.getByRole("checkbox", { name: /^Keep recordings/ }).check();
+  await page.getByRole("switch", { name: /^Keep recordings/ }).check();
   await expect
     .poll(() =>
       page.evaluate(() => ({
@@ -1793,7 +1788,7 @@ test("prompt automatic switch respects model and busy guards and preserves a fai
     .locator("#auto-prompt-help")
     .getByRole("button", { name: "Text model", exact: true })
     .click();
-  await page.getByRole("checkbox", { name: "Enable LLM processing", exact: true }).check();
+  await page.getByRole("switch", { name: "Enable LLM processing", exact: true }).check();
   await page.getByLabel("Model identifier", { exact: true }).fill("saved-model");
   await page.getByRole("tab", { name: "Prompts", exact: true }).click();
   await automatic.check();
@@ -1830,7 +1825,7 @@ test("prompt automatic switch respects model and busy guards and preserves a fai
     .poll(() => page.evaluate(() => window.dictationTest.snapshot.textProcessing.autoPromptId))
     .toBe("cleanup");
   await page.getByRole("tab", { name: "Text model", exact: true }).click();
-  await page.getByRole("checkbox", { name: "Enable LLM processing", exact: true }).uncheck();
+  await page.getByRole("switch", { name: "Enable LLM processing", exact: true }).uncheck();
   await page.getByRole("tab", { name: "Prompts", exact: true }).click();
   await expect(automatic).not.toBeChecked();
   await expect(automatic).toBeDisabled();
@@ -2425,7 +2420,7 @@ test("disconnected saved microphone allows unrelated settings saves", async ({ p
   await expect(
     page.getByText("Reconnect the selected microphone or choose another input.", { exact: true }),
   ).toBeVisible();
-  await page.getByRole("checkbox", { name: "Light cleanup" }).check();
+  await page.getByRole("switch", { name: "Light cleanup" }).check();
   await expect
     .poll(() => page.evaluate(() => window.dictationTest.snapshot.settings.cleanText))
     .toBe(true);
@@ -3065,6 +3060,7 @@ test.beforeEach(async ({ page }) => {
           cleanText: false,
           setupComplete: true,
           historyRetentionDays: 0,
+          statsForNerds: false,
         },
         status: {
           phase: "idle",
@@ -3141,6 +3137,7 @@ test.beforeEach(async ({ page }) => {
         },
       ],
       status(phase: string) {
+        if (phase === "recording") state.snapshot.latestResult = null;
         state.snapshot.status = {
           ...state.snapshot.status,
           phase,
@@ -3214,6 +3211,42 @@ test.beforeEach(async ({ page }) => {
           },
         };
       });
+    }
+    let homeResultHidden = false;
+    function getHomeResult(): HomeResult | null {
+      if (
+        ["recording", "transcribing", "text-processing", "backup"].includes(
+          state.snapshot.status.phase,
+        )
+      )
+        throw new Error("Finish the current operation before using the result");
+      const temporary = state.snapshot.latestResult;
+      if (temporary) homeResultHidden = false;
+      if (homeResultHidden) return null;
+      const session = temporary?.session ?? state.snapshot.history[0];
+      if (!session) return null;
+      const result: HomeResult = {
+        session: structuredClone(session),
+        text: temporary?.text ?? session.finalTranscript,
+        outputs: structuredClone(
+          temporary
+            ? (temporary.outputs ?? (temporary.output ? [temporary.output] : []))
+            : state.outputs.filter((output) => output.sessionId === session.id),
+        ),
+        outputId: "",
+        saved: !temporary,
+        imported: false,
+        revision: "",
+        outcomes: {
+          transcription: "complete",
+          history: temporary ? "temporary" : "saved",
+          processing: "unknown",
+          clipboard: "unknown",
+          paste: "unknown",
+        },
+      };
+      result.revision = JSON.stringify(result);
+      return result;
     }
     window.dictationTest = state;
     function profileSnapshot() {
@@ -3353,6 +3386,44 @@ test.beforeEach(async ({ page }) => {
                   state.pendingSnapshots.push(() => resolve(copy));
                 });
               return Promise.resolve(copy);
+            },
+            GetHomeResult: async () => getHomeResult(),
+            HomeResultAction: async (
+              id: string,
+              revision: string,
+              action: string,
+              text: string,
+            ) => {
+              const result = getHomeResult();
+              if (!result || result.session.id !== id || result.revision !== revision)
+                throw new Error("This result changed or is no longer available");
+              if (action === "copy" || action.startsWith("copy:")) {
+                const value =
+                  action === "copy"
+                    ? result.text
+                    : result.outputs.find((output) => output.id === action.slice(5))?.text;
+                if (value === undefined) throw new Error("This output is no longer available");
+                if (state.failClipboard) throw new Error("Clipboard unavailable");
+                state.clipboard = value;
+                state.snapshot.status.transcript = value;
+              } else if (action === "save") {
+                if (result.saved || state.failSave) throw new Error("Could not save this result");
+                state.snapshot.history.unshift(structuredClone(result.session));
+                state.outputs.push(...structuredClone(result.outputs));
+                state.snapshot.latestResult = null;
+              } else if (action === "dismiss") {
+                state.snapshot.latestResult = null;
+                homeResultHidden = true;
+              } else if (action === "edit") {
+                if (!text.trim() || state.failSave) throw new Error("Could not apply this edit");
+                const session =
+                  state.snapshot.latestResult?.session ??
+                  state.snapshot.history.find((entry) => entry.id === id);
+                if (!session) throw new Error("This result is no longer available");
+                session.finalTranscript = text;
+                if (state.snapshot.latestResult) state.snapshot.latestResult.text = text;
+              } else throw new Error("Unknown result action");
+              state.history();
             },
             GetHistory: async (query: string, page: number) => {
               if (state.failHistory) throw new Error("History load failed");
@@ -3818,11 +3889,11 @@ test("startup options save automatically and survive refreshes and failed saves"
   page,
 }) => {
   await page.goto("/#/settings?section=general");
-  const login = page.getByRole("checkbox", {
+  const login = page.getByRole("switch", {
     name: "Launch at login",
     exact: true,
   });
-  const background = page.getByRole("checkbox", {
+  const background = page.getByRole("switch", {
     name: /Start in tray \/ menu bar/,
   });
   await expect(login).toBeEnabled();
@@ -3873,7 +3944,7 @@ test("unsupported startup controls are disabled and registration errors are visi
   page,
 }) => {
   await page.goto("/#/settings?section=general");
-  const login = page.getByRole("checkbox", {
+  const login = page.getByRole("switch", {
     name: "Launch at login",
     exact: true,
   });
@@ -3886,7 +3957,7 @@ test("unsupported startup controls are disabled and registration errors are visi
     window.dictationTest.history();
   });
   await expect(login).toBeDisabled();
-  await expect(page.getByRole("checkbox", { name: /Start in tray \/ menu bar/ })).toBeDisabled();
+  await expect(page.getByRole("switch", { name: /Start in tray \/ menu bar/ })).toBeDisabled();
   await expect(
     page.getByRole("alert").filter({ hasText: "Launch at login unavailable: access denied" }),
   ).toBeVisible();
@@ -4178,8 +4249,8 @@ test("automatic clipboard copying defaults on and persists with manual copying a
     ];
   });
   await page.goto("/#/settings");
-  const copy = page.getByRole("checkbox", { name: /Copy automatically to clipboard/ });
-  const paste = page.getByRole("checkbox", { name: /Paste automatically/ });
+  const copy = page.getByRole("switch", { name: /Copy automatically to clipboard/ });
+  const paste = page.getByRole("switch", { name: /Paste automatically/ });
   await expect(copy).toBeChecked();
   await expect(paste).toBeEnabled();
   await page.evaluate(() => {
@@ -4220,7 +4291,7 @@ test("automatic clipboard copying defaults on and persists with manual copying a
 
 test("light cleanup defaults off and saves automatically", async ({ page }) => {
   await page.goto("/#/settings");
-  const cleanup = page.getByRole("checkbox", { name: /Light cleanup/ });
+  const cleanup = page.getByRole("switch", { name: /Light cleanup/ });
   await expect(cleanup).not.toBeChecked();
   await cleanup.check();
   await page.evaluate(() => window.dictationTest.history());
@@ -6603,7 +6674,7 @@ test("shortcut capture waits for key release, then saves alongside other setting
   page,
 }) => {
   await page.goto("/#/settings?section=history");
-  await page.getByRole("checkbox", { name: /Keep recordings/ }).check();
+  await page.getByRole("switch", { name: /Keep recordings/ }).check();
   await page.getByRole("tab", { name: "Dictation", exact: true }).click();
   const dialog = await recordShortcut(page);
   const area = dialog.getByRole("group", { name: "Shortcut capture" });
@@ -6624,7 +6695,7 @@ test("shortcut capture waits for key release, then saves alongside other setting
   await page.evaluate(() => window.dictationTest.history());
   await settle(page);
   await page.getByRole("tab", { name: "History & data", exact: true }).click();
-  await expect(page.getByRole("checkbox", { name: /Keep recordings/ })).toBeChecked();
+  await expect(page.getByRole("switch", { name: /Keep recordings/ })).toBeChecked();
   await expect.poll(() => page.evaluate(() => window.dictationTest.captureToken)).toBe("");
   await expect.poll(() => page.evaluate(() => window.dictationTest.captureEnded)).toBe(1);
   await expect
@@ -6851,7 +6922,7 @@ test("prompt drafts survive refresh and failed save; model testing uses saved co
 }, testInfo) => {
   await page.setViewportSize({ width: 760, height: 680 });
   await page.goto("/#/prompts?section=models");
-  await page.getByRole("checkbox", { name: "Enable LLM processing" }).check();
+  await page.getByRole("switch", { name: "Enable LLM processing" }).check();
   await page.getByLabel("Model identifier").fill("my-local-model");
   await page.getByLabel("Local server URL").fill("http://127.0.0.1:1234/v1");
   await page.getByRole("tab", { name: "Prompts", exact: true }).click();
@@ -6934,7 +7005,7 @@ test("prompt drafts survive refresh and failed save; model testing uses saved co
   await expect(automatic).not.toBeChecked();
   await expect(page.getByText("Automatic processing is off.", { exact: true })).toBeVisible();
   await page.getByRole("tab", { name: "Text model", exact: true }).click();
-  await page.getByRole("checkbox", { name: "Enable LLM processing" }).uncheck();
+  await page.getByRole("switch", { name: "Enable LLM processing" }).uncheck();
   await saveDraft(page);
   await expect
     .poll(() => page.evaluate(() => window.dictationTest.snapshot.textProcessing.enabled))
@@ -7244,7 +7315,7 @@ for (const route of ["vocabulary", "settings"]) {
     const control =
       route === "vocabulary"
         ? page.getByRole("button", { name: "Add term", exact: true })
-        : page.getByRole("checkbox", { name: /^Keep recordings/ });
+        : page.getByRole("switch", { name: /^Keep recordings/ });
     await expect(control).toBeDisabled();
     await expect
       .poll(() => page.evaluate(() => window.dictationTest.pendingSnapshots.length))
@@ -7291,7 +7362,7 @@ for (const route of ["vocabulary", "settings"]) {
     const control =
       route === "vocabulary"
         ? page.getByRole("button", { name: "Add term", exact: true })
-        : page.getByRole("checkbox", { name: /^Keep recordings/ });
+        : page.getByRole("switch", { name: /^Keep recordings/ });
     await expect(page.getByText("Snapshot unavailable", { exact: true })).toBeVisible();
     await expect(control).toBeDisabled();
     await page.evaluate(() => {
@@ -7350,12 +7421,12 @@ test("an outdated backend keeps the interface visible and recovers after restart
   await expect(page.getByRole("alert").filter({ hasText: "different versions" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Prompts", exact: true })).toBeVisible();
   await expect(page.getByRole("navigation", { name: "Main navigation" })).toBeVisible();
-  await expect(page.getByRole("checkbox", { name: "Enable LLM processing" })).toBeDisabled();
+  await expect(page.getByRole("switch", { name: "Enable LLM processing" })).toBeDisabled();
   await page.evaluate(() => {
     window.dictationTest.legacySnapshot = false;
   });
   await page.getByRole("button", { name: "Retry loading", exact: true }).click();
-  await expect(page.getByRole("checkbox", { name: "Enable LLM processing" })).toBeEnabled();
+  await expect(page.getByRole("switch", { name: "Enable LLM processing" })).toBeEnabled();
   await expect(page.getByRole("alert")).toHaveCount(0);
   await page.evaluate(() => {
     window.dictationTest.legacySnapshot = true;
@@ -7387,7 +7458,7 @@ test("local models can be selected without changing saved preferences until Save
   await expect
     .poll(() => page.evaluate(() => window.dictationTest.snapshot.textProcessing.model))
     .toBe("");
-  await page.getByRole("checkbox", { name: "Enable LLM processing" }).check();
+  await page.getByRole("switch", { name: "Enable LLM processing" }).check();
   await expect(page.getByRole("button", { name: "Test model", exact: true })).toBeDisabled();
   await page.getByRole("button", { name: "Refresh models", exact: true }).click();
   await page.getByRole("tab", { name: "Prompts", exact: true }).click();
@@ -7646,7 +7717,7 @@ test("render crashes show copyable recovery and retry preserves saved data", asy
       .getByRole("combobox", { name: "Spoken language", exact: true })
       .locator('[data-slot="select-value"]'),
   ).toHaveText("German");
-  await expect(page.getByRole("checkbox", { name: /^Light cleanup/ })).toBeChecked();
+  await expect(page.getByRole("switch", { name: /^Light cleanup/ })).toBeChecked();
   await expect
     .poll(() => page.evaluate(() => window.dictationTest.snapshot.history[0].rawTranscript))
     .toBe("PRIVATE_HISTORY_CONTENT");
@@ -7699,7 +7770,7 @@ test("persistent crashes stay recoverable and window reload keeps persisted pref
       .locator('[data-slot="select-value"]'),
   ).toHaveText("German");
   await page.getByRole("tab", { name: "History & data", exact: true }).click();
-  await expect(page.getByRole("checkbox", { name: /^Keep recordings/ })).toBeChecked();
+  await expect(page.getByRole("switch", { name: /^Keep recordings/ })).toBeChecked();
 });
 
 test("provider failures recover outside app context and clipboard failure supports manual copying", async ({
@@ -7742,7 +7813,7 @@ test("startup recovery provides diagnostics and retry without overwriting saved 
   });
   await page.goto("/#/prompts?section=models");
   await expect(page.getByRole("region", { name: "Connection recovery" })).toBeVisible();
-  await expect(page.getByRole("checkbox", { name: "Enable LLM processing" })).toBeDisabled();
+  await expect(page.getByRole("switch", { name: "Enable LLM processing" })).toBeDisabled();
   await page.getByText("Technical details", { exact: true }).click();
   await page.getByRole("button", { name: "Copy diagnostics", exact: true }).click();
   await expect
@@ -7756,7 +7827,7 @@ test("startup recovery provides diagnostics and retry without overwriting saved 
   });
   await page.getByRole("button", { name: "Retry loading", exact: true }).click();
   await expect(page.getByRole("region", { name: "Connection recovery" })).toHaveCount(0);
-  await expect(page.getByRole("checkbox", { name: "Enable LLM processing" })).toBeChecked();
+  await expect(page.getByRole("switch", { name: "Enable LLM processing" })).toBeChecked();
   await expect(page.getByLabel("Model identifier")).toHaveValue("saved-model");
   await expect
     .poll(() => page.evaluate(() => window.dictationTest.snapshot.settings.language))
@@ -7885,7 +7956,7 @@ test("backup errors, busy state, unsaved settings and native cancellation preser
   await page.evaluate(() => {
     window.dictationTest.failSave = true;
   });
-  await page.getByRole("checkbox", { name: /^Keep recordings/ }).check();
+  await page.getByRole("switch", { name: /^Keep recordings/ }).check();
   await expect(page.getByText("Changes not saved", { exact: true })).toBeVisible();
   await expect(panel.getByRole("button", { name: "Restore backup", exact: true })).toBeDisabled();
   await expect(
@@ -8312,11 +8383,9 @@ test("history preference is shared between Home and Settings", async ({ page }) 
   await expect(page.getByRole("switch", { name: "Save to history" })).not.toBeChecked();
   await page.getByRole("link", { name: "Settings", exact: true }).click();
   await page.getByRole("tab", { name: "History & data" }).click();
-  await expect(
-    page.getByRole("checkbox", { name: "Save dictations to history" }),
-  ).not.toBeChecked();
-  await expect(page.getByRole("checkbox", { name: "Keep recordings" })).toBeDisabled();
-  await page.getByRole("checkbox", { name: "Save dictations to history" }).click();
+  await expect(page.getByRole("switch", { name: "Save dictations to history" })).not.toBeChecked();
+  await expect(page.getByRole("switch", { name: "Keep recordings" })).toBeDisabled();
+  await page.getByRole("switch", { name: "Save dictations to history" }).click();
   await page.getByRole("link", { name: "Dictate", exact: true }).click();
   await expect(page.getByRole("switch", { name: "Save to history" })).toBeChecked();
 });
@@ -8343,7 +8412,7 @@ test("temporary latest result supports copy, explicit save, and dismiss", async 
   });
   await page.goto("/");
   const panel = page.getByRole("region", { name: "Temporary latest result" });
-  await expect(panel).toContainText("Not saved");
+  await expect(panel).toContainText("Temporary");
   await page.screenshot({
     path: testInfo.outputPath("temporary-latest-result.png"),
     fullPage: true,
@@ -8352,7 +8421,7 @@ test("temporary latest result supports copy, explicit save, and dismiss", async 
   expect(await page.evaluate(() => window.dictationTest.snapshot.status.transcript)).toBe(
     "Temporary text",
   );
-  await panel.getByRole("button", { name: "Save to history", exact: true }).click();
+  await panel.getByRole("button", { name: "Save to History", exact: true }).click();
   await expect(panel).not.toBeVisible();
   expect(await page.evaluate(() => window.dictationTest.snapshot.history.length)).toBe(1);
   expect(await page.evaluate(() => window.dictationTest.snapshot.settings.saveHistory)).toBe(false);
@@ -8396,13 +8465,26 @@ test("page drafts flush on navigation and remain saved when returning", async ({
   await expect(page.getByLabel("Global shortcut", { exact: true })).toHaveValue("Ctrl+Alt+P");
 });
 
-test("delivery warnings persist and recover the captured result after clipboard retry", async ({
+test("delivery warnings persist and recover through the current Home result after clipboard retry", async ({
   page,
 }) => {
   await homeModelScenario(page);
   await page.evaluate(() => {
     const state = window.dictationTest;
     state.status("transcribing");
+    state.snapshot.latestResult = {
+      text: "Recovered original text.",
+      session: {
+        id: "recovery",
+        createdAt: new Date().toISOString(),
+        durationMs: 1000,
+        rawTranscript: "Recovered original text.",
+        finalTranscript: "Recovered original text.",
+        speechModel: "base",
+        language: "en",
+        audioPath: "",
+      },
+    };
     Object.assign(state.snapshot.status, {
       phase: "done",
       completionWarning: true,
@@ -8416,9 +8498,10 @@ test("delivery warnings persist and recover the captured result after clipboard 
     .locator('[data-slot="toast"]')
     .filter({ hasText: "Transcript ready — action needed" });
   await expect(warning).toBeVisible();
-  await page.keyboard.press("F6");
-  await warning.getByRole("button", { name: "Copy transcript" }).click();
-  await expect(warning).toContainText("Couldn’t copy");
+  await expect(warning.getByRole("button", { name: "Copy transcript" })).toHaveCount(0);
+  const panel = page.getByRole("region", { name: "Temporary latest result", exact: true });
+  await panel.getByRole("button", { name: "Copy", exact: true }).click();
+  await expect(panel.getByRole("alert")).toContainText("Couldn’t complete this action");
   await page.getByRole("link", { name: "Settings", exact: true }).click();
   await page.waitForTimeout(5200);
   await expect(warning).toBeVisible();
@@ -8426,14 +8509,12 @@ test("delivery warnings persist and recover the captured result after clipboard 
     window.dictationTest.failClipboard = false;
     window.dictationTest.snapshot.status.transcript = "A later result";
   });
-  await page.keyboard.press("F6");
-  await warning.getByRole("button", { name: "Copy transcript" }).click();
+  await page.getByRole("link", { name: "Dictate", exact: true }).click();
+  await panel.getByRole("button", { name: "Copy", exact: true }).click();
   await expect
     .poll(() => page.evaluate(() => window.dictationTest.clipboard))
     .toBe("Recovered original text.");
-  await expect(
-    page.locator('[data-slot="toast"]').filter({ hasText: "Copied to clipboard" }),
-  ).toBeVisible();
+  await expect(panel.getByRole("status")).toContainText("Copied to clipboard");
 });
 
 test("dictation profiles create edit switch and delete", async ({ page }, testInfo) => {
@@ -8673,7 +8754,7 @@ for (const theme of ["light", "dark"] as const) {
     await page.evaluate((theme) => localStorage.setItem("desktop-theme", theme), theme);
     await page.reload();
     await page.getByRole("link", { name: "Settings", exact: true }).click();
-    const cleanup = page.getByRole("checkbox", { name: /^Light cleanup/ });
+    const cleanup = page.getByRole("switch", { name: /^Light cleanup/ });
     const marker = page.getByRole("img", {
       name: "Light cleanup changed from Default",
       exact: true,
@@ -8787,9 +8868,9 @@ test("setting indicators mark only differing profile fields and use readable lan
   await page.getByRole("tab", { name: "Profiles", exact: true }).click();
   await page.getByRole("button", { name: "Use Email", exact: true }).click();
   await page.getByRole("tab", { name: "Dictation", exact: true }).click();
-  await expect(page.getByRole("checkbox", { name: /^Light cleanup/ })).toBeChecked();
+  await expect(page.getByRole("switch", { name: /^Light cleanup/ })).toBeChecked();
   await expect(page.getByRole("img", { name: /changed from/ })).toHaveCount(0);
-  await page.getByRole("checkbox", { name: /^Light cleanup/ }).uncheck();
+  await page.getByRole("switch", { name: /^Light cleanup/ }).uncheck();
   await expect(page.getByRole("img", { name: "Light cleanup changed from Email" })).toBeVisible();
 });
 
@@ -9165,10 +9246,10 @@ test("temporary prompt chains expose completed results after an interrupted run"
   });
   await page.goto("/#/");
   const temporary = page.getByRole("region", { name: "Temporary latest result", exact: true });
-  await temporary.getByText("Completed chain steps", { exact: true }).click();
+  await temporary.getByText("Original generated outputs (1)", { exact: true }).click();
   await expect(temporary).toContainText("Step 1: Cleanup");
   await expect(temporary).toContainText("Cleaned result.");
-  await temporary.getByRole("button", { name: "Copy step result", exact: true }).click();
+  await temporary.getByRole("button", { name: "Copy output", exact: true }).click();
   await expect
     .poll(() => page.evaluate(() => window.dictationTest.clipboard))
     .toBe("Cleaned result.");

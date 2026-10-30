@@ -1,5 +1,6 @@
 import { useDictation } from "@/components/dictation-provider";
 import { ModelCard } from "@/components/model-card";
+import { ModelGuidance } from "@/components/model-guidance";
 import { PageHeading } from "@/components/page-heading";
 import {
   Accordion,
@@ -23,13 +24,14 @@ import {
   ArrowUpRight,
   AudioLines,
   Check,
+  ChevronDown,
   FolderOpen,
   HardDrive,
   ShieldCheck,
   Wrench,
 } from "lucide-react";
-import { useId, useState } from "react";
 import { LayoutGroup } from "motion/react";
+import { useEffect, useId, useState } from "react";
 import { Link } from "react-router";
 
 const modelFamilies = [
@@ -46,11 +48,14 @@ function modelFamily(model: Model) {
 
 export function ModelsPage({ embedded = false }: { embedded?: boolean }) {
   const layoutId = useId();
+  const guidanceId = useId();
   const { snapshot, run, refresh, loading, installModel, downloadingModelId } = useDictation();
   const [removing, setRemoving] = useState<Model | null>(null);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
   const [openFamilies, setOpenFamilies] = useState<string[] | null>(null);
+  const [guidanceTarget, setGuidanceTarget] = useState<Model | null>(null);
+  const [guidanceOpen, setGuidanceOpen] = useState(false);
   const { status, settings, models } = snapshot;
   const downloading = status.phase === "downloading";
   const busy = isBusy(status.phase) || loading || downloadingModelId !== null;
@@ -70,6 +75,14 @@ export function ModelsPage({ embedded = false }: { embedded?: boolean }) {
     .filter((family) => family.models.length > 0);
   const defaultFamilies = [currentModel ? modelFamily(currentModel) : (groups[0]?.id ?? "whisper")];
   if (downloading && downloadingModel) defaultFamilies.push(modelFamily(downloadingModel));
+  useEffect(() => {
+    if (!guidanceTarget) return;
+    const frame = requestAnimationFrame(() => {
+      document.getElementById(`model-${guidanceTarget.id}-heading`)?.focus();
+      setGuidanceTarget(null);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [guidanceTarget]);
   async function remove() {
     if (!removing || pending) return;
     setPending(true);
@@ -161,17 +174,44 @@ export function ModelsPage({ embedded = false }: { embedded?: boolean }) {
       )}
       <section aria-labelledby="model-library-heading" className="space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <h2 id="model-library-heading" className="text-sm font-semibold">
-            Choose your model
-          </h2>
+          <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
+            <h2 id="model-library-heading" className="text-sm font-semibold">
+              Choose your model
+            </h2>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-auto min-h-8 gap-1.5 px-2 text-xs font-normal whitespace-normal text-muted-foreground"
+              aria-expanded={guidanceOpen}
+              aria-controls={guidanceId}
+              onClick={() => setGuidanceOpen((open) => !open)}
+            >
+              Help me choose
+              <ChevronDown
+                className={cn("size-3.5", guidanceOpen && "rotate-180")}
+                aria-hidden="true"
+              />
+            </Button>
+          </div>
           <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
             <ShieldCheck className="size-3.5" aria-hidden="true" />
             Dictation runs on your device
           </span>
         </div>
-        <p className="text-xs text-muted-foreground">
-          Speed and accuracy are relative guides. Results depend on your device and audio.
-        </p>
+        <div id={guidanceId} hidden={!guidanceOpen}>
+          <ModelGuidance
+            models={models}
+            language={settings.language}
+            selectedModelPath={settings.modelPath}
+            onShow={(model) => {
+              setOpenFamilies([
+                ...new Set([...(openFamilies ?? defaultFamilies), modelFamily(model)]),
+              ]);
+              setGuidanceOpen(false);
+              setGuidanceTarget(model);
+            }}
+          />
+        </div>
         <LayoutGroup id={layoutId}>
           <Accordion
             multiple

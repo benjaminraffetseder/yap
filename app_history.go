@@ -136,7 +136,7 @@ func (a *App) ExportSessions(ids []string) error {
 // Retention failures must be visible without turning a saved dictation into a
 // transcription error. The persisted policy is retried on the next cleanup.
 func (a *App) pruneHistoryLocked() {
-	if a.store == nil || a.closing {
+	if a.store == nil || a.closing || a.homeResultOperation || a.status.Phase == "backup" {
 		return
 	}
 	count, err := a.store.PruneHistory(a.settings.HistoryRetentionDays, time.Now())

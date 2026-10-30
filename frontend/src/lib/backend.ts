@@ -23,6 +23,7 @@ import {
   GetAudioSupport,
   GetDiagnosticChecks,
   GetHistory,
+  GetHomeResult,
   GetMicrophones,
   GetProfileApplications,
   GetRecentlyDeleted,
@@ -30,6 +31,7 @@ import {
   GetSession,
   GetSessionOutputs,
   GetSnapshot,
+  HomeResultAction,
   ImportAudio,
   ImportDroppedAudio,
   InstallAudioSupport,
@@ -141,6 +143,7 @@ export type Settings = {
   cleanText: boolean;
   setupComplete: boolean;
   historyRetentionDays: number;
+  statsForNerds?: boolean;
 };
 export type VocabularyEntry = {
   id: string;
@@ -192,6 +195,20 @@ export type Session = {
   language: string;
   audioPath: string;
   deletedAt?: string;
+  stats?: { transcriptionMs: number; engine: string } | null;
+};
+export type TextStats = {
+  durationMs: number;
+  responseMs: number;
+  attempts: number;
+  model: string;
+  finishReason?: string;
+  inputTokens?: number | null;
+  outputTokens?: number | null;
+  totalTokens?: number | null;
+  cachedInputTokens?: number | null;
+  reasoningTokens?: number | null;
+  generationTokensPerSecond?: number | null;
 };
 export type GeneratedOutput = {
   id: string;
@@ -202,6 +219,7 @@ export type GeneratedOutput = {
   endpoint: string;
   input: string;
   text: string;
+  stats?: TextStats | null;
   chain?: {
     runId: string;
     chainId: string;
@@ -212,6 +230,16 @@ export type GeneratedOutput = {
     input: string;
     sourceOutputId: string;
   } | null;
+};
+export type HomeResult = {
+  session: Session;
+  outputs: GeneratedOutput[];
+  text: string;
+  outputId: string;
+  revision: string;
+  saved: boolean;
+  imported: boolean;
+  outcomes: Record<"transcription" | "history" | "processing" | "clipboard" | "paste", string>;
 };
 export type HistoryPageResult = {
   entries: Session[];
@@ -323,6 +351,11 @@ function normalizeTextProcessing(config: Config): TextProcessing {
 }
 
 export const backend = {
+  homeResult: async (): Promise<HomeResult | null> => {
+    const result = await GetHomeResult();
+    return result && { ...result, outputs: result.outputs ?? [] };
+  },
+  homeResultAction: HomeResultAction,
   revisions: async (kind: RevisionKind, itemId: string): Promise<Revision[]> =>
     (await GetRevisions(kind, itemId)) ?? [],
   profileApplications: async (): Promise<ProfileApplication[]> => {
@@ -409,7 +442,8 @@ export const backend = {
   stop: StopRecording,
   cancel: Cancel,
   microphones: async (): Promise<Microphone[]> => (await GetMicrophones()) ?? [],
-  settings: SaveSettings,
+  settings: (settings: Settings) =>
+    SaveSettings({ ...settings, statsForNerds: settings.statsForNerds ?? false }),
   setSaveHistory: SetSaveHistory,
   saveLatestResult: SaveLatestResult,
   dismissLatestResult: DismissLatestResult,

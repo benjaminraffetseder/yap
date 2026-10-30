@@ -142,6 +142,7 @@ func (a *App) importAudioWithDecoder(job *importJob) error {
 		install = nil
 	}
 	a.latestResult = nil
+	a.clearHomeResultLocked()
 	a.recordSettings = settings
 	a.status.ProfileID = a.profileLibrary.ActiveID
 	a.cancel, a.id, a.path, a.target = cancel, id, path, ""

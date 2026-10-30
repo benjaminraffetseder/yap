@@ -170,13 +170,13 @@ func backupSnapshotBounded(ctx context.Context, tx *sql.Tx, limit int64) (backup
 		used += size
 		return nil
 	}
-	rows, err := tx.QueryContext(ctx, `SELECT r.id,r.created_at,r.duration_ms,r.transcript,r.model,r.language,r.audio_path,COALESCE(o.transcript,r.transcript) FROM recordings r LEFT JOIN recording_outputs o ON r.id=o.id WHERE NOT EXISTS (SELECT 1 FROM deleted_recordings d WHERE d.id=r.id) ORDER BY r.created_at COLLATE yap_datetime DESC,r.id DESC`)
+	rows, err := tx.QueryContext(ctx, `SELECT r.id,r.created_at,r.duration_ms,r.transcript,r.model,r.language,r.audio_path,COALESCE(o.transcript,r.transcript),`+speechStatsColumn+` FROM recordings r LEFT JOIN recording_outputs o ON r.id=o.id WHERE NOT EXISTS (SELECT 1 FROM deleted_recordings d WHERE d.id=r.id) ORDER BY r.created_at COLLATE yap_datetime DESC,r.id DESC`)
 	if err != nil {
 		return m, err
 	}
 	for rows.Next() {
 		var v Session
-		if err = rows.Scan(&v.ID, &v.CreatedAt, &v.DurationMS, &v.RawTranscript, &v.SpeechModel, &v.Language, &v.AudioPath, &v.FinalTranscript); err != nil {
+		if err = scanSession(rows, &v, false); err != nil {
 			break
 		}
 		budgetValue := v
@@ -408,6 +408,9 @@ func validateBackupManifest(m *backupManifest) error {
 	}
 	ids := map[string]bool{}
 	for _, v := range m.Sessions {
+		if !v.Stats.Valid() {
+			return errors.New("invalid speech inference stats in backup")
+		}
 		if !validBackupID(v.ID) || ids[v.ID] || v.DurationMS < 0 || !validBackupString(v.CreatedAt, 100) || !validBackupString(v.RawTranscript, 100000) || !validBackupString(v.FinalTranscript, 100000) || !validBackupString(v.SpeechModel, 1000) || !validBackupString(v.Language, 100) || (v.AudioPath != "" && v.AudioPath != archiveAudioName(v.ID)) {
 			return errors.New("invalid dictation in backup")
 		}
@@ -416,6 +419,9 @@ func validateBackupManifest(m *backupManifest) error {
 	}
 	outputs := map[string]bool{}
 	for _, v := range m.Outputs {
+		if !v.Stats.Valid() {
+			return errors.New("invalid text inference stats in backup")
+		}
 		if !validBackupID(v.ID) || outputs[v.ID] || !ids[v.SessionID] {
 			return errors.New("invalid generated output reference in backup")
 		}
@@ -726,6 +732,9 @@ func (s *Store) RestoreBackup(ctx context.Context, b *BackupArchive, preferences
 			v.AudioPath = filepath.Join(s.Dir, "recordings", name)
 		}
 		if _, err = tx.Exec("INSERT INTO recordings VALUES(?,?,?,?,?,?,?)", v.ID, v.CreatedAt, v.DurationMS, v.RawTranscript, v.SpeechModel, v.Language, v.AudioPath); err != nil {
+			return RestoredBackup{}, err
+		}
+		if err := insertInferenceStats(tx, "speech", v.ID, v.Stats); err != nil {
 			return RestoredBackup{}, err
 		}
 		if v.FinalTranscript != v.RawTranscript {

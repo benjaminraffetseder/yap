@@ -1,5 +1,7 @@
+import { AudioPlayer } from "@/components/audio-player";
 import { useDictation } from "@/components/dictation-provider";
 import { GeneratedOutputs } from "@/components/generated-outputs";
+import { InferenceStats } from "@/components/inference-stats";
 import { MarkdownContent } from "@/components/markdown-content";
 import { TextPanel } from "@/components/text-panel";
 import { TranscriptDiff } from "@/components/transcript-diff";
@@ -20,7 +22,7 @@ import {
   Sparkles,
   Trash2,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router";
 
 export function HistoryEntryPage() {
@@ -46,6 +48,18 @@ function EntryDetail({ id }: { id: string }) {
   const [deleteError, setDeleteError] = useState("");
   const [audio, setAudio] = useState("");
   const [loadingAudio, setLoadingAudio] = useState(false);
+  const playTrigger = useRef<HTMLButtonElement>(null);
+  const playerDock = useRef<HTMLDivElement>(null);
+  const [playerHeight, setPlayerHeight] = useState(0);
+  useLayoutEffect(() => {
+    if (!audio || !playerDock.current) return;
+    const dock = playerDock.current;
+    const measure = () => setPlayerHeight(Math.ceil(dock.getBoundingClientRect().height));
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(dock, { box: "border-box" });
+    return () => observer.disconnect();
+  }, [audio]);
   useEffect(() => {
     title.current?.focus();
   }, []);
@@ -85,6 +99,14 @@ function EntryDetail({ id }: { id: string }) {
     }, false);
     setLoadingAudio(false);
   }
+  function closeAudio() {
+    setAudio("");
+    requestAnimationFrame(() => {
+      const trigger = playTrigger.current;
+      if (trigger && !trigger.disabled) trigger.focus({ preventScroll: true });
+      else title.current?.focus({ preventScroll: true });
+    });
+  }
   async function remove() {
     if (deletingNow) return;
     setDeletingNow(true);
@@ -100,7 +122,7 @@ function EntryDetail({ id }: { id: string }) {
     }
   }
   return (
-    <div className="space-y-3">
+    <div className="space-y-3" style={audio ? { paddingBottom: playerHeight } : undefined}>
       <header className="space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-x-5 gap-y-3">
           <div className="flex min-w-0 flex-[1_1_16rem] items-start gap-3">
@@ -135,6 +157,7 @@ function EntryDetail({ id }: { id: string }) {
                   </span>
                   {entry.audioPath && !audio && (
                     <Button
+                      ref={playTrigger}
                       size="xs"
                       variant="ghost"
                       className="text-muted-foreground"
@@ -155,6 +178,7 @@ function EntryDetail({ id }: { id: string }) {
           </div>
           {entry && (
             <div className="ml-auto flex shrink-0 items-center gap-1">
+              <InferenceStats session={entry} />
               <Button
                 size="sm"
                 variant="outline"
@@ -193,7 +217,6 @@ function EntryDetail({ id }: { id: string }) {
             </div>
           )}
         </div>
-        {audio && <audio controls autoPlay src={audio} className="h-10 w-full" />}
       </header>
       {deleteError && (
         <p role="alert" className="text-sm text-destructive">
@@ -335,6 +358,23 @@ function EntryDetail({ id }: { id: string }) {
             void run(refresh, false);
           }}
         />
+      )}
+      {audio && (
+        <div
+          ref={playerDock}
+          data-slot="recording-player-dock"
+          className="pointer-events-none fixed right-0 bottom-0 left-[var(--sidebar-width,0px)] z-30 pb-[max(1rem,env(safe-area-inset-bottom))] group-has-[[data-slot=import-queue-fab]]/layout:pb-24"
+        >
+          <div className="mx-auto max-w-5xl px-3 sm:px-10 lg:px-20">
+            <AudioPlayer
+              src={audio}
+              durationMs={entry?.durationMs}
+              autoPlay
+              onClose={closeAudio}
+              className="pointer-events-auto bg-card shadow-lg"
+            />
+          </div>
+        </div>
       )}
     </div>
   );

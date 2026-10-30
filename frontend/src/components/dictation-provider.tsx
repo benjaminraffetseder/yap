@@ -40,6 +40,7 @@ const empty: Snapshot = {
     cleanText: false,
     setupComplete: false,
     historyRetentionDays: 0,
+    statsForNerds: false,
   },
   status: {
     phase: "idle",
@@ -334,6 +335,8 @@ export function DictationProvider({ children }: { children: ReactNode }) {
     let active = true;
     const offStatus = Events.On("dictation:status", ({ data: status }: { data: Status }) => {
       if (!active) return;
+      if (status.phase === "recording" || status.importId)
+        toastManager.close("transcription-complete");
       const previous = latestStatus.current;
       latestStatus.current = status;
       statusRevision.current++;
@@ -347,34 +350,11 @@ export function DictationProvider({ children }: { children: ReactNode }) {
           id: "transcription-complete",
           type: warning ? "warning" : "success",
           title: warning ? "Transcript ready — action needed" : "Transcription finished",
-          description: status.message,
+          description: warning
+            ? "Review the latest result on Home. You can edit, save or copy it there."
+            : status.message,
           timeout: warning ? 0 : 5000,
           priority: warning ? "high" : "low",
-          actionProps:
-            warning && status.transcript
-              ? {
-                  children: "Copy transcript",
-                  onClick: () => {
-                    void backend
-                      .copy(status.transcript)
-                      .then(() => {
-                        toastManager.update("transcription-complete", {
-                          type: "success",
-                          title: "Copied to clipboard",
-                          description: undefined,
-                          actionProps: undefined,
-                          timeout: 5000,
-                          priority: "low",
-                        });
-                      })
-                      .catch((cause) => {
-                        toastManager.update("transcription-complete", {
-                          description: `Couldn’t copy: ${message(cause)}. Try again.`,
-                        });
-                      });
-                  },
-                }
-              : undefined,
         });
       } else if (
         !status.importId &&

@@ -1,5 +1,5 @@
-import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { useId, type ReactNode } from "react";
 
 export function SettingsSection({
@@ -111,7 +111,7 @@ export function ToggleSetting({
           </label>
         )}
       </div>
-      <Checkbox
+      <Switch
         id={id}
         className="mt-0.5 shrink-0"
         checked={checked}

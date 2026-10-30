@@ -2,6 +2,7 @@ import { AudioImportButton } from "@/components/audio-import-button";
 import { ProfileSelector } from "@/components/dictation-profiles";
 import { useDictation } from "@/components/dictation-provider";
 import { DictationRow } from "@/components/dictation-row";
+import { HomeResultPanel } from "@/components/home-result-panel";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { CircularProgress } from "@/components/ui/progress";
 import {
@@ -16,15 +17,15 @@ import { backend, duration, isBusy, isDesktop } from "@/lib/backend";
 import { useMotionPreference } from "@/lib/use-motion-preference";
 import { SetupPage } from "@/pages/setup-page";
 import { ArrowRight, Download, Keyboard, Loader2, Mic, Square } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router";
 export function HomePage() {
+  const resultFallback = useRef<HTMLHeadingElement>(null);
   const reduced = useMotionPreference();
   const { snapshot, loading, level, run, installModel } = useDictation();
   const { status, settings, history, ready } = snapshot;
   const [now, setNow] = useState(Date.now());
   const [historyPending, setHistoryPending] = useState(false);
-  const [resultPending, setResultPending] = useState(false);
   const [pending, setPending] = useState(false);
   const [switchingModel, setSwitchingModel] = useState(false);
   const [switchingProfile, setSwitchingProfile] = useState(false);
@@ -347,87 +348,12 @@ export function HomePage() {
             {status.trayError}
           </p>
         )}
-        {snapshot.latestResult && !isBusy(status.phase) && (
-          <section
-            aria-label="Temporary latest result"
-            className="space-y-4 rounded-xl border bg-card p-6"
-          >
-            <div>
-              <h2 className="text-sm font-semibold">Latest result</h2>
-              <p className="mt-1 text-xs text-muted-foreground">
-                Not saved · available until your next dictation or app exit
-              </p>
-            </div>
-            <p className="max-h-80 overflow-auto whitespace-pre-wrap break-words text-sm">
-              {snapshot.latestResult.text}
-            </p>
-            {snapshot.latestResult.outputs?.some((output) => output.chain?.runId) && (
-              <details className="space-y-3 text-sm">
-                <summary className="cursor-pointer text-muted-foreground">
-                  Completed chain steps
-                </summary>
-                {snapshot.latestResult.outputs!.map((output) => (
-                  <div key={output.id} className="space-y-2 rounded-lg border p-3">
-                    <p className="font-medium">
-                      Step {output.chain?.step}: {output.prompt.name}
-                    </p>
-                    <p className="max-h-60 overflow-auto whitespace-pre-wrap break-words">
-                      {output.text}
-                    </p>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => void run(() => backend.copy(output.text))}
-                    >
-                      Copy step result
-                    </Button>
-                  </div>
-                ))}
-              </details>
-            )}
-            <div className="flex flex-wrap gap-2">
-              <Button
-                variant="outline"
-                disabled={resultPending}
-                onClick={() => void run(() => backend.copy(snapshot.latestResult!.text))}
-              >
-                Copy
-              </Button>
-              <Button
-                disabled={resultPending}
-                onClick={async () => {
-                  const id = snapshot.latestResult!.session.id;
-                  setResultPending(true);
-                  try {
-                    await run(() => backend.saveLatestResult(id));
-                  } finally {
-                    setResultPending(false);
-                  }
-                }}
-              >
-                Save to history
-              </Button>
-              <Button
-                variant="ghost"
-                disabled={resultPending}
-                onClick={async () => {
-                  const id = snapshot.latestResult!.session.id;
-                  setResultPending(true);
-                  try {
-                    await run(() => backend.dismissLatestResult(id));
-                  } finally {
-                    setResultPending(false);
-                  }
-                }}
-              >
-                Dismiss
-              </Button>
-            </div>
-          </section>
-        )}
+        <HomeResultPanel fallbackFocus={resultFallback} />
         <section>
           <div className="mb-4 flex items-center justify-between">
-            <h2 className="text-sm font-semibold">Recent dictations</h2>
+            <h2 ref={resultFallback} tabIndex={-1} className="text-sm font-semibold outline-none">
+              Recent dictations
+            </h2>
             <Link
               to="/history"
               className="flex items-center gap-1 text-xs text-muted-foreground hover:text-primary"

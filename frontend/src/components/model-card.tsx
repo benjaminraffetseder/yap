@@ -1,15 +1,15 @@
-import { useMotionPreference } from "@/lib/use-motion-preference";
+import { MotionReveal } from "@/components/motion-reveal";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import type { Model } from "@/lib/backend";
 import { modelProfiles, type ModelRating } from "@/lib/model-profiles";
+import { motionTransition } from "@/lib/motion";
+import { useMotionPreference } from "@/lib/use-motion-preference";
 import { cn } from "@/lib/utils";
 import { Check, Download, HardDrive, Languages, Loader2, Trash2, X } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import { MotionReveal } from "@/components/motion-reveal";
-import { motionTransition } from "@/lib/motion";
 
 function RatingBar({ name, rating }: { name: "Accuracy" | "Speed"; rating: ModelRating }) {
   return (
@@ -80,9 +80,13 @@ export function ModelCard({
         selected || isDownloading ? "border-primary/40" : "hover:border-muted-foreground/30",
       )}
     >
-      <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_9rem] sm:gap-8">
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_9rem] lg:gap-8">
         <div className="min-w-0">
-          <h3 id={`model-${model.id}-heading`} className="text-base font-semibold tracking-tight">
+          <h3
+            id={`model-${model.id}-heading`}
+            tabIndex={-1}
+            className="rounded-sm text-base font-semibold tracking-tight break-words outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
             {model.name}
           </h3>
           <p className="mt-1.5 max-w-xl text-xs leading-5 text-muted-foreground">
@@ -90,21 +94,35 @@ export function ModelCard({
           </p>
         </div>
         {profile && (
-          <div className="grid grid-cols-2 gap-4 sm:grid-cols-1 sm:gap-3">
+          <div className="grid grid-cols-2 gap-4 lg:grid-cols-1 lg:gap-3">
             <RatingBar name="Accuracy" rating={profile.accuracy} />
             <RatingBar name="Speed" rating={profile.speed} />
           </div>
         )}
       </div>
-      <div className="mt-4 flex flex-col gap-4 border-t pt-4 sm:flex-row sm:items-center sm:justify-between">
+      <div className="mt-4 flex flex-col gap-4 border-t pt-4 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-muted-foreground">
           {profile &&
             (profile.languages.length > 1 ? (
-              <Tooltip>
+              <Tooltip
+                onOpenChange={(open, details) => {
+                  // Scrolling to keyboard focus can put another badge under the pointer.
+                  // Keep that hover from replacing the focused model's language details.
+                  const focused = document.activeElement;
+                  if (
+                    open &&
+                    details.reason === "trigger-hover" &&
+                    focused?.matches("[data-model-language]:focus-visible") &&
+                    focused.getAttribute("data-model-language") !== model.id
+                  )
+                    details.cancel();
+                }}
+              >
                 <TooltipTrigger
                   render={<Badge variant="outline" render={<button type="button" />} />}
                   className="h-6 cursor-help gap-1.5 border-border/80 text-muted-foreground hover:bg-muted"
                   aria-label={`Supported languages for ${model.name}`}
+                  data-model-language={model.id}
                   aria-describedby={`model-${model.id}-languages`}
                 >
                   <Languages aria-hidden="true" />
@@ -146,12 +164,12 @@ export function ModelCard({
             <MotionReveal
               key={selected ? "active" : model.installed ? "installed" : "download"}
               preset="model"
-              className="flex shrink-0 items-center gap-2"
+              className="flex min-w-0 flex-wrap items-center gap-2 lg:shrink-0"
             >
               <Button
                 pressFeedback={!selected}
                 className={cn(
-                  "h-9 flex-1 rounded-lg sm:flex-none",
+                  "h-auto min-h-9 flex-1 rounded-lg whitespace-normal lg:flex-none",
                   selected &&
                     "border-primary/20 bg-primary/10 text-primary disabled:opacity-100 dark:bg-primary/10",
                 )}
@@ -194,6 +212,15 @@ export function ModelCard({
           )}
         </AnimatePresence>
       </div>
+      {!selected && !isDownloading && (
+        <p className="mt-3 text-xs leading-5 text-muted-foreground">
+          {model.installed
+            ? "Use model switches your next dictation to this downloaded model."
+            : repair
+              ? "Repair & use checks the files, downloads what is needed, then switches to this model."
+              : "Download & use installs this model and its runtime, then switches when ready."}
+        </p>
+      )}
       <AnimatePresence initial={false} mode="popLayout">
         {download ? (
           <MotionReveal

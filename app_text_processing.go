@@ -233,12 +233,13 @@ func (a *App) processTextRequest(requestID string, request textRequest) (string,
 	defer a.wg.Done()
 	defer cancel()
 	var output string
+	var stats *textmodel.Stats
 	if request.refinement != nil {
 		output, err = a.textEngine.Refine(ctx, config, input)
 	} else if recipe != nil {
 		output, err = a.runTextRecipe(ctx, config, *recipe, session, a.store.AddGeneratedOutput)
 	} else {
-		output, err = a.textEngine.Process(ctx, config, prompt, input)
+		output, stats, err = a.processWithStats(ctx, config, prompt, input)
 	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -261,7 +262,9 @@ func (a *App) processTextRequest(requestID string, request textRequest) (string,
 		return "", context.Canceled
 	}
 	if err == nil && target != nil && recipe == nil {
-		err = a.store.AddGeneratedOutput(storage.NewGeneratedOutput(target.sessionID, input, output, config, prompt))
+		generated := storage.NewGeneratedOutput(target.sessionID, input, output, config, prompt)
+		generated.Stats = stats
+		err = a.store.AddGeneratedOutput(generated)
 		if err == nil {
 			a.event("dictation:history")
 		}

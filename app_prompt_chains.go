@@ -43,7 +43,8 @@ func (a *App) runTextRecipe(ctx context.Context, config textmodel.Config, recipe
 		a.status.Message = fmt.Sprintf("Step %d of %d · %s", i+1, len(recipe.Steps), prompt.Name)
 		a.emit()
 		a.mu.Unlock()
-		result, err = a.textEngine.Process(ctx, config, prompt, input)
+		var stats *textmodel.Stats
+		result, stats, err = a.processWithStats(ctx, config, prompt, input)
 		if err == nil {
 			err = textmodel.ValidateText(result)
 		}
@@ -54,6 +55,7 @@ func (a *App) runTextRecipe(ctx context.Context, config textmodel.Config, recipe
 		}
 		if err == nil {
 			output := storage.NewGeneratedOutput(session.ID, input, result, config, prompt)
+			output.Stats = stats
 			if recipe.ID != "" {
 				output.Chain = storage.OutputChain{RunID: runID, ChainID: recipe.ID, Name: recipe.Name, StepID: step.ID, Step: i + 1, Total: len(recipe.Steps), Input: step.Input, SourceOutputID: sourceID}
 			}

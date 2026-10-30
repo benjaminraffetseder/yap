@@ -1,4 +1,5 @@
 import { useDictation } from "@/components/dictation-provider";
+import { InferenceStats } from "@/components/inference-stats";
 import { MarkdownContent } from "@/components/markdown-content";
 import { MotionReveal } from "@/components/motion-reveal";
 import { ProcessingSelectItems } from "@/components/processing-select-items";
@@ -233,15 +234,18 @@ export function GeneratedOutputs({
                   kind="result"
                   description={`${output.model} · ${new Date(output.createdAt).toLocaleString()}`}
                   action={
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      disabled={disabled}
-                      onClick={() => void run(() => backend.copy(output.text), false)}
-                    >
-                      <Copy className="size-3.5" />
-                      Copy output
-                    </Button>
+                    <div className="flex items-center gap-1">
+                      <InferenceStats output={output} />
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={disabled}
+                        onClick={() => void run(() => backend.copy(output.text), false)}
+                      >
+                        <Copy className="size-3.5" />
+                        Copy output
+                      </Button>
+                    </div>
                   }
                 >
                   {output.chain?.runId && (

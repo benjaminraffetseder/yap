@@ -31,6 +31,7 @@ type Settings struct {
 	CleanText            bool   `json:"cleanText"`
 	SetupComplete        bool   `json:"setupComplete"`
 	HistoryRetentionDays int    `json:"historyRetentionDays"`
+	StatsForNerds        bool   `json:"statsForNerds"`
 }
 
 func Defaults() Settings {
@@ -38,15 +39,16 @@ func Defaults() Settings {
 }
 
 type Session struct {
-	ID              string `json:"id"`
-	CreatedAt       string `json:"createdAt"`
-	DurationMS      int64  `json:"durationMs"`
-	RawTranscript   string `json:"rawTranscript"`
-	FinalTranscript string `json:"finalTranscript"`
-	SpeechModel     string `json:"speechModel"`
-	Language        string `json:"language"`
-	AudioPath       string `json:"audioPath"`
-	DeletedAt       string `json:"deletedAt,omitempty"`
+	ID              string       `json:"id"`
+	CreatedAt       string       `json:"createdAt"`
+	DurationMS      int64        `json:"durationMs"`
+	RawTranscript   string       `json:"rawTranscript"`
+	FinalTranscript string       `json:"finalTranscript"`
+	SpeechModel     string       `json:"speechModel"`
+	Language        string       `json:"language"`
+	AudioPath       string       `json:"audioPath"`
+	DeletedAt       string       `json:"deletedAt,omitempty"`
+	Stats           *SpeechStats `json:"stats,omitempty"`
 }
 
 type Store struct {
@@ -100,6 +102,13 @@ func Open(dir string) (*Store, error) {
 	CREATE TABLE IF NOT EXISTS generated_output_chains (output_id TEXT PRIMARY KEY, value TEXT NOT NULL);
 	CREATE TRIGGER IF NOT EXISTS delete_generated_output_chain AFTER DELETE ON generated_outputs
 	BEGIN DELETE FROM generated_output_chains WHERE output_id=OLD.id; END;`)
+	if err != nil {
+		db.Close()
+		return nil, err
+	}
+	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS inference_stats (kind TEXT NOT NULL, id TEXT NOT NULL, value TEXT NOT NULL, PRIMARY KEY(kind,id));
+	CREATE TRIGGER IF NOT EXISTS delete_speech_stats AFTER DELETE ON recordings BEGIN DELETE FROM inference_stats WHERE kind='speech' AND id=OLD.id; END;
+	CREATE TRIGGER IF NOT EXISTS delete_text_stats AFTER DELETE ON generated_outputs BEGIN DELETE FROM inference_stats WHERE kind='text' AND id=OLD.id; END;`)
 	if err != nil {
 		db.Close()
 		return nil, err
@@ -160,6 +169,9 @@ func (s *Store) AddWithOutputs(v Session, outputs []GeneratedOutput) error {
 			return err
 		}
 	}
+	if err := insertInferenceStats(tx, "speech", v.ID, v.Stats); err != nil {
+		return err
+	}
 	for _, o := range outputs {
 		if o.SessionID != v.ID {
 			return errors.New("output belongs to another dictation")
@@ -171,7 +183,7 @@ func (s *Store) AddWithOutputs(v Session, outputs []GeneratedOutput) error {
 	return tx.Commit()
 }
 func (s *Store) History() ([]Session, error) {
-	rows, err := s.db.Query("SELECT r.id,r.created_at,r.duration_ms,r.transcript,r.model,r.language,r.audio_path,COALESCE(o.transcript,r.transcript) FROM recordings r LEFT JOIN recording_outputs o ON r.id=o.id WHERE NOT EXISTS (SELECT 1 FROM deleted_recordings d WHERE d.id=r.id) ORDER BY r.created_at COLLATE yap_datetime DESC,r.id DESC LIMIT 500")
+	rows, err := s.db.Query("SELECT r.id,r.created_at,r.duration_ms,r.transcript,r.model,r.language,r.audio_path,COALESCE(o.transcript,r.transcript)," + speechStatsColumn + " FROM recordings r LEFT JOIN recording_outputs o ON r.id=o.id WHERE NOT EXISTS (SELECT 1 FROM deleted_recordings d WHERE d.id=r.id) ORDER BY r.created_at COLLATE yap_datetime DESC,r.id DESC LIMIT 500")
 	if err != nil {
 		return nil, err
 	}
@@ -179,7 +191,7 @@ func (s *Store) History() ([]Session, error) {
 	out := []Session{}
 	for rows.Next() {
 		var v Session
-		if err = rows.Scan(&v.ID, &v.CreatedAt, &v.DurationMS, &v.RawTranscript, &v.SpeechModel, &v.Language, &v.AudioPath, &v.FinalTranscript); err != nil {
+		if err = scanSession(rows, &v, false); err != nil {
 			return nil, err
 		}
 		out = append(out, v)
@@ -196,7 +208,7 @@ func (s *Store) Session(id string) (Session, error) {
 
 func (s *Store) sessionIncludingDeleted(id string) (Session, error) {
 	var v Session
-	err := s.db.QueryRow("SELECT r.id,r.created_at,r.duration_ms,r.transcript,r.model,r.language,r.audio_path,COALESCE(o.transcript,r.transcript),COALESCE(d.deleted_at,'') FROM recordings r LEFT JOIN recording_outputs o ON r.id=o.id LEFT JOIN deleted_recordings d ON d.id=r.id WHERE r.id=?", id).Scan(&v.ID, &v.CreatedAt, &v.DurationMS, &v.RawTranscript, &v.SpeechModel, &v.Language, &v.AudioPath, &v.FinalTranscript, &v.DeletedAt)
+	err := scanSession(s.db.QueryRow("SELECT r.id,r.created_at,r.duration_ms,r.transcript,r.model,r.language,r.audio_path,COALESCE(o.transcript,r.transcript),COALESCE(d.deleted_at,''),"+speechStatsColumn+" FROM recordings r LEFT JOIN recording_outputs o ON r.id=o.id LEFT JOIN deleted_recordings d ON d.id=r.id WHERE r.id=?", id), &v, true)
 	return v, err
 }
 

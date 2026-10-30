@@ -216,7 +216,7 @@ test("FFmpeg settings show status, confirmation cancellation, progress, and inst
 
 test("FFmpeg settings handle old backends and preserve preferences", async ({ page }) => {
   await page.goto("/#/settings");
-  await page.getByRole("checkbox", { name: /^Light cleanup/ }).check();
+  await page.getByRole("switch", { name: /^Light cleanup/ }).check();
   await page.evaluate(() => {
     Reflect.deleteProperty(Reflect.get(window, "mockBackend").main.App, "GetAudioSupport");
   });
@@ -225,5 +225,5 @@ test("FFmpeg settings handle old backends and preserve preferences", async ({ pa
   await expect(panel.getByRole("alert")).toContainText("restart wails3 dev");
   await expect(panel.getByRole("button", { name: /Download audio support/ })).toBeHidden();
   await page.getByRole("tab", { name: "Dictation", exact: true }).click();
-  await expect(page.getByRole("checkbox", { name: /^Light cleanup/ })).toBeChecked();
+  await expect(page.getByRole("switch", { name: /^Light cleanup/ })).toBeChecked();
 });

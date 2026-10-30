@@ -33,6 +33,7 @@ type GeneratedOutput struct {
 	Input     string           `json:"input"`
 	Text      string           `json:"text"`
 	Chain     OutputChain      `json:"chain"`
+	Stats     *textmodel.Stats `json:"stats,omitempty"`
 }
 
 func NewGeneratedOutput(sessionID, input, output string, config textmodel.Config, prompt textmodel.Prompt) GeneratedOutput {
@@ -89,6 +90,9 @@ func insertGeneratedOutput(tx *sql.Tx, v GeneratedOutput) error {
 	if err := validateOutputChain(v.Chain); err != nil {
 		return err
 	}
+	if !v.Stats.Valid() {
+		return errors.New("invalid text inference stats")
+	}
 	// Parent existence and insertion are one statement: deletion during inference
 	// cannot create an orphan, and duplicate output IDs never overwrite a version.
 	result, err := tx.Exec(`INSERT INTO generated_outputs
@@ -101,8 +105,14 @@ func insertGeneratedOutput(tx *sql.Tx, v GeneratedOutput) error {
 	if err == nil && count == 0 {
 		return errors.New("this dictation no longer exists; the output was not saved")
 	}
-	if err != nil || v.Chain.RunID == "" {
+	if err != nil {
 		return err
+	}
+	if err := insertInferenceStats(tx, "text", v.ID, v.Stats); err != nil {
+		return err
+	}
+	if v.Chain.RunID == "" {
+		return nil
 	}
 	data, err := json.Marshal(v.Chain)
 	if err != nil {
@@ -112,11 +122,14 @@ func insertGeneratedOutput(tx *sql.Tx, v GeneratedOutput) error {
 	return err
 }
 
-const generatedOutputColumns = "id,recording_id,created_at,prompt_id,prompt_name,instruction,model,endpoint,input,output,COALESCE((SELECT value FROM generated_output_chains WHERE output_id=generated_outputs.id),'{}')"
+const generatedOutputColumns = "id,recording_id,created_at,prompt_id,prompt_name,instruction,model,endpoint,input,output,COALESCE((SELECT value FROM generated_output_chains WHERE output_id=generated_outputs.id),'{}')," + textStatsColumn
 
 func scanGeneratedOutput(row interface{ Scan(...any) error }, v *GeneratedOutput) error {
-	var chain string
-	if err := row.Scan(&v.ID, &v.SessionID, &v.CreatedAt, &v.Prompt.ID, &v.Prompt.Name, &v.Prompt.Instruction, &v.Model, &v.Endpoint, &v.Input, &v.Text, &chain); err != nil {
+	var chain, stats string
+	if err := row.Scan(&v.ID, &v.SessionID, &v.CreatedAt, &v.Prompt.ID, &v.Prompt.Name, &v.Prompt.Instruction, &v.Model, &v.Endpoint, &v.Input, &v.Text, &chain, &stats); err != nil {
+		return err
+	}
+	if err := json.Unmarshal([]byte(stats), &v.Stats); err != nil {
 		return err
 	}
 	return json.Unmarshal([]byte(chain), &v.Chain)

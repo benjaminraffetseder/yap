@@ -29,6 +29,9 @@ func (a *App) historyAvailableLocked() error {
 	if a.status.Phase == "backup" {
 		return errors.New("finish or cancel the backup before accessing History")
 	}
+	if a.homeResultOperation {
+		return errors.New("finish the result action before accessing History")
+	}
 	return nil
 }
 
