@@ -40,6 +40,7 @@ func (a *App) importSnapshotLocked() []ImportJob {
 
 func (a *App) emitImportQueueLocked() {
 	if !a.closing {
+		a.updateTray()
 		a.event("import:queue", a.importSnapshotLocked())
 	}
 }

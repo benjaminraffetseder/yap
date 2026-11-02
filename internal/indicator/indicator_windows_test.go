@@ -205,12 +205,21 @@ func exerciseNativeIndicator(app *application.App, c *wailsIndicator, window *ap
 	if err := wait("restored Yap hides indicator", func() bool { return !visible() }); err != nil {
 		return err
 	}
-	c.Update(State{Phase: "done", Message: "Copied to clipboard"})
-	time.Sleep(2700 * time.Millisecond)
+	completion := State{Phase: "done", Message: "Copied to clipboard"}
+	c.Update(completion)
+	time.Sleep(presentation(completion, time.Now()).dismissAfter + 200*time.Millisecond)
 	application.InvokeSync(func() { w32.ShowWindow(host, 0) })
 	time.Sleep(200 * time.Millisecond)
 	if visible() {
 		return fmt.Errorf("hiding Yap replayed an expired completion")
+	}
+	c.Update(State{Phase: "done", Warning: true})
+	if err := wait("recovery stays available in the background", visible); err != nil {
+		return err
+	}
+	c.dispatch("secondary", c.revision)
+	if err := wait("explicit dismissal hides recovery", func() bool { return !visible() }); err != nil {
+		return err
 	}
 	c.Update(State{Phase: "transcribing"})
 	if err := wait("hidden Yap retains processing indicator", visible); err != nil {

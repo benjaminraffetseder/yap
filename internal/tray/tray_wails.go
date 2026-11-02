@@ -21,11 +21,12 @@ type wailsTray struct {
 	closed  bool
 	actions Actions
 
-	menu                            *application.Menu
-	status, record, cancel, history *application.MenuItem
-	enqueue                         func(func())
-	refresh                         func(State)
-	destroy                         func()
+	menu                                    *application.Menu
+	status, record, cancel, history         *application.MenuItem
+	result, openHistory, settings, shortcut *application.MenuItem
+	enqueue                                 func(func())
+	refresh                                 func(State)
+	destroy                                 func()
 }
 
 // New configures a Wails tray before App.Run starts its native resources.
@@ -67,6 +68,14 @@ func newWailsTray(actions Actions, enqueue func(func())) *wailsTray {
 		OnClick(func(*application.Context) { t.dispatch(recordAction) })
 	t.cancel = t.menu.Add("Cancel").SetEnabled(false).
 		OnClick(func(*application.Context) { t.dispatch(cancelAction) })
+	t.menu.AddSeparator()
+	t.result = t.menu.Add("Latest result").SetEnabled(false).
+		OnClick(func(*application.Context) { t.dispatch(resultAction) })
+	t.openHistory = t.menu.Add("History").OnClick(func(*application.Context) { t.dispatch(openHistoryAction) })
+	t.settings = t.menu.Add("Settings").OnClick(func(*application.Context) { t.dispatch(settingsAction) })
+	t.shortcut = t.menu.Add("Fix shortcuts…").SetHidden(true).
+		OnClick(func(*application.Context) { t.dispatch(shortcutAction) })
+	t.menu.AddSeparator()
 	t.history = t.menu.AddCheckbox("Save to history", false).
 		OnClick(func(*application.Context) { t.dispatch(historyAction) })
 	t.menu.AddSeparator()
@@ -103,7 +112,11 @@ func (t *wailsTray) render() {
 	t.status.SetLabel(v.status)
 	t.record.SetLabel(v.record).SetEnabled(v.recordEnabled)
 	t.cancel.SetEnabled(v.cancelEnabled)
-	t.history.SetChecked(s.SaveHistory).SetEnabled(s.Phase != "closing" && s.Phase != "backup")
+	t.history.SetChecked(s.SaveHistory).SetEnabled(s.Phase != "closing" && s.Phase != "backup" && !s.HistoryLocked)
+	t.result.SetEnabled(s.ResultAvailable && !s.Busy && s.Phase != "closing")
+	t.openHistory.SetEnabled(s.Phase != "closing")
+	t.settings.SetEnabled(s.Phase != "closing")
+	t.shortcut.SetHidden(!s.ShortcutUnavailable).SetEnabled(s.Phase != "closing")
 	if t.refresh != nil {
 		t.refresh(s)
 	}

@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"yap/internal/indicator"
 	"yap/internal/tray"
 )
 
@@ -142,5 +143,97 @@ func TestLateStartupCannotRecreateBackgroundControls(t *testing.T) {
 	a.startup(a.ctx)
 	if !a.closing || a.tray != nil || a.indicator != nil {
 		t.Fatal("late startup recreated native controls")
+	}
+}
+
+func TestDesktopNavigationOnlyFocusesOnExplicitAllowedActions(t *testing.T) {
+	a := testApp(t)
+	shown := 0
+	var routes []string
+	a.showWindow = func() {
+		a.mu.Lock()
+		defer a.mu.Unlock()
+		shown++
+	}
+	a.notify = func(topic string, data ...interface{}) {
+		if topic == "desktop:navigate" {
+			a.mu.Lock()
+			defer a.mu.Unlock()
+			routes = append(routes, data[0].(string))
+		}
+	}
+	a.openDesktopPage("/history")
+	a.openDesktopPage("/settings?section=dictation&focus=shortcut")
+	a.status.ProfileShortcutError = "Synthetic profile shortcut conflict"
+	a.openShortcutSettings()
+	a.openDesktopPage("https://example.com")
+	if shown != 3 || len(routes) != 3 || routes[0] != "/history" || routes[2] != "/settings?section=dictation&focus=profile-cycle-shortcut" {
+		t.Fatal("desktop destination was lost or untrusted navigation was accepted")
+	}
+	a.closing = true
+	a.openDesktopPage("/")
+	if shown != 3 {
+		t.Fatal("desktop action reopened Yap during shutdown")
+	}
+}
+
+func TestTrayResultStateUsesCacheAndSurvivesCompletion(t *testing.T) {
+	a := testApp(t)
+	f := &fakeTray{}
+	a.tray = f
+	a.copyText = func(string) error { return nil }
+	a.status.ShortcutError = "Synthetic conflict"
+	a.showWindow = func() { t.Error("background completion stole focus") }
+	recordTemporary(t, a)
+	f.mu.Lock()
+	state := f.states[len(f.states)-1]
+	f.mu.Unlock()
+	if state.Phase != "done" || !state.ResultAvailable || !state.ShortcutUnavailable || state.Completion != "Copied to clipboard" {
+		t.Fatalf("tray lost completion/recovery state: %+v", state)
+	}
+	a.importActive = "synthetic-import"
+	a.emitImportQueueLocked()
+	f.mu.Lock()
+	busy := f.states[len(f.states)-1].Busy
+	f.mu.Unlock()
+	if !busy {
+		t.Fatal("tray allowed result actions while the import worker was active")
+	}
+	a.importActive = ""
+	a.emitImportQueueLocked()
+	f.mu.Lock()
+	busy = f.states[len(f.states)-1].Busy
+	f.mu.Unlock()
+	if busy {
+		t.Fatal("tray stayed busy after the import worker released ownership")
+	}
+	r := homeResult(t, a)
+	if err := a.HomeResultAction(r.Session.ID, r.Revision, "dismiss", ""); err != nil {
+		t.Fatal(err)
+	}
+	f.mu.Lock()
+	state = f.states[len(f.states)-1]
+	f.mu.Unlock()
+	if state.ResultAvailable {
+		t.Fatal("dismissed Home result remained available in the tray")
+	}
+}
+
+func TestExplicitHomeRecoveryClearsTheBackgroundIndicator(t *testing.T) {
+	a := testApp(t)
+	f := &fakeIndicator{}
+	a.indicator = f
+	a.copyText = func(string) error { return nil }
+	recordTemporary(t, a)
+	r := homeResult(t, a)
+	f.Update(indicator.State{Phase: "done", Warning: true})
+	if err := a.HomeResultAction(r.Session.ID, r.Revision, "copy", ""); err != nil {
+		t.Fatal(err)
+	}
+	f.mu.Lock()
+	state := f.states[len(f.states)-1]
+	f.mu.Unlock()
+	if state.Phase != "idle" {
+		t.Fatal("explicit recovery left an old background warning visible")
 	}
 }

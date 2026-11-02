@@ -21,6 +21,7 @@ type State struct {
 	Message     string
 	StartedAt   int64
 	HistoryMode string
+	Warning     bool
 }
 
 type Actions struct {
@@ -62,8 +63,8 @@ func presentation(s State, now time.Time) view {
 		return view{visible: true, label: label, cancel: "Cancel"}
 	case "done":
 		message := strings.ToLower(s.Message)
-		if strings.Contains(message, "failed") || strings.Contains(message, "cancelled") {
-			return view{visible: true, label: "Open Yap to recover text", stop: "Open Yap", cancel: "Dismiss", dismissAfter: 6 * time.Second}
+		if s.Warning || strings.Contains(message, "failed") || strings.Contains(message, "cancelled") {
+			return view{visible: true, label: "Open Yap to recover text", stop: "Open Yap", cancel: "Dismiss"}
 		}
 		label := "Dictation finished"
 		switch s.Message {
@@ -76,7 +77,7 @@ func presentation(s State, now time.Time) view {
 		case "Not saved to History":
 			label = "Not saved to history"
 		}
-		return view{visible: true, label: label, cancel: "Dismiss", dismissAfter: 2500 * time.Millisecond}
+		return view{visible: true, label: label, stop: "Open Yap", cancel: "Dismiss", dismissAfter: 4 * time.Second}
 	case "error":
 		return view{visible: true, label: "Dictation failed", stop: "Open Yap", cancel: "Dismiss", dismissAfter: 6 * time.Second}
 	case "idle":

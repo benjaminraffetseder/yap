@@ -68,3 +68,9 @@ func TestHistoryToggleDispatch(t *testing.T) {
 	case <-time.After(30 * time.Millisecond):
 	}
 }
+
+func TestCompletedDictationDoesNotLookReady(t *testing.T) {
+	if v := presentation(State{Phase: "done", Ready: true}); v.status != "Dictation finished" {
+		t.Fatalf("completed dictation lost its outcome: %+v", v)
+	}
+}

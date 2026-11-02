@@ -10,6 +10,52 @@ const recording = {
   dark: true,
 };
 
+test("desktop integration: completion indicator offers recovery with concise text", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 376, height: 64 });
+  await page.goto("/indicator.html");
+  for (const [index, dark] of [false, true].entries()) {
+    await sendFrame(page, {
+      revision: 30 + index * 2,
+      phase: "done",
+      label: "Paste requested",
+      primary: "Open Yap",
+      secondary: "Dismiss",
+      dark,
+    });
+    await expect(page.getByRole("button", { name: "Open Yap", exact: true })).toBeVisible();
+    await page.screenshot({
+      path: test.info().outputPath(`desktop-indicator-success-${dark ? "dark" : "light"}.png`),
+      animations: "disabled",
+    });
+    await sendFrame(page, {
+      revision: 31 + index * 2,
+      phase: "done",
+      label: "Open Yap to recover text",
+      primary: "Open Yap",
+      secondary: "Dismiss",
+      dark,
+    });
+    await expect(page.locator("#label")).toHaveText("Open Yap to recover text");
+    await expect(page.getByRole("button", { name: "Dismiss", exact: true })).toBeVisible();
+    await page.screenshot({
+      path: test.info().outputPath(`desktop-indicator-warning-${dark ? "dark" : "light"}.png`),
+      animations: "disabled",
+    });
+  }
+  await page.getByRole("button", { name: "Open Yap", exact: true }).click();
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        Reflect.get(window, "indicatorEvents").filter(
+          (event: { name: string }) => event.name === "indicator:action",
+        ),
+      ),
+    )
+    .toEqual([{ name: "indicator:action", data: { action: "primary", revision: 33 } }]);
+});
+
 async function sendFrame(page: Page, changes: Partial<typeof recording>) {
   await page.evaluate((frame) => Reflect.get(window, "sendIndicatorFrame")(frame), {
     ...recording,

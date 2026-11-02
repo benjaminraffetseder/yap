@@ -9,6 +9,7 @@ import { toastManager } from "@/components/ui/toast";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { backend, backendVersionMismatchMessage, isDesktop } from "@/lib/backend";
 import { cn } from "@/lib/utils";
+import { Events } from "@wailsio/runtime";
 import {
   AudioLines,
   BookOpen,
@@ -21,7 +22,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import { useEffect, useState, type CSSProperties } from "react";
-import { Link, NavLink, Outlet, useLocation } from "react-router";
+import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router";
 
 const navigation = [
   { to: "/", label: "Dictate", icon: Mic },
@@ -44,6 +45,7 @@ function readCollapsed() {
 export function AppLayout() {
   const { snapshot, error, clearError, loading, run, refresh, update } = useDictation();
   const location = useLocation();
+  const navigate = useNavigate();
   const [dismissedUpdate, setDismissedUpdate] = useState("");
   const [collapsed, setCollapsed] = useState(readCollapsed);
   const sidebarWidth = collapsed ? "4.5rem" : "13.75rem";
@@ -57,6 +59,29 @@ export function AppLayout() {
     !connectionFailure;
   const showUpdate = update?.available && dismissedUpdate !== update.latestVersion;
   const showNotices = !isDesktop || connectionFailure || loading || showUpdate;
+  useEffect(() => {
+    const showResult = () => navigate("/");
+    window.addEventListener("yap:show-result", showResult);
+    const off = isDesktop
+      ? Events.On("desktop:navigate", ({ data }: { data: unknown }) => {
+          if (
+            typeof data === "string" &&
+            [
+              "/",
+              "/history",
+              "/settings",
+              "/settings?section=dictation&focus=shortcut",
+              "/settings?section=dictation&focus=profile-cycle-shortcut",
+            ].includes(data)
+          )
+            navigate(data);
+        })
+      : () => {};
+    return () => {
+      off();
+      window.removeEventListener("yap:show-result", showResult);
+    };
+  }, [navigate]);
   useEffect(() => {
     if (!error || connectionFailure) return;
     toastManager.add({

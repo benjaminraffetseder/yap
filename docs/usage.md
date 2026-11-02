@@ -34,6 +34,15 @@ when Yap exits; a rejected start leaves the previous result available.
 The floating indicator appears while you're recording in another app. Drag its
 status area to move it; Yap remembers the position. It hides while Yap's main
 window has focus. Stop and Cancel are available there and in the tray menu.
+Completed dictations offer **Open Yap** to return to the latest result. Save,
+copy, paste, and processing warnings stay available in the indicator until you
+dismiss them, recover through Home, or start another dictation or import.
+
+The tray menu also opens the **Latest result**, **History**, and **Settings**.
+It keeps the last dictation's outcome visible after the indicator disappears.
+If a shortcut is unavailable, **Fix shortcuts…** opens the affected shortcut field.
+Home also offers **Retry shortcut** and **Change shortcut**; retrying leaves your
+saved combination intact. On macOS, grant Accessibility access before retrying.
 
 ### Choosing a speech model
 

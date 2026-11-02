@@ -260,6 +260,29 @@ func TestWailsIndicatorExpiredAndIdleActions(t *testing.T) {
 	}
 }
 
+func TestWailsIndicatorRecoveryStaysAvailableUntilDismissed(t *testing.T) {
+	f := newFixture(t)
+	c := f.controller
+	c.ready = true
+	c.Update(State{Phase: "done", Message: "Automatic paste failed; copied to clipboard. Paste manually."})
+	f.flush()
+	if !f.visible || !c.expires.IsZero() {
+		t.Fatal("recoverable result would expire before it is reviewed")
+	}
+	f.focused = true
+	f.tick()
+	f.focused = false
+	f.tick()
+	if !f.visible {
+		t.Fatal("returning to another app lost the recovery action")
+	}
+	c.dispatch("secondary", c.revision)
+	f.flush()
+	if f.visible {
+		t.Fatal("explicitly dismissed recovery stayed visible")
+	}
+}
+
 func TestWailsIndicatorDragIgnoresLateMessages(t *testing.T) {
 	f := newFixture(t)
 	c := f.controller

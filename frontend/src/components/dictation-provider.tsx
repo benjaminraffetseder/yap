@@ -355,6 +355,13 @@ export function DictationProvider({ children }: { children: ReactNode }) {
             : status.message,
           timeout: warning ? 0 : 5000,
           priority: warning ? "high" : "low",
+          actionProps: {
+            children: "View result",
+            onClick: () => {
+              toastManager.close("transcription-complete");
+              window.dispatchEvent(new Event("yap:show-result"));
+            },
+          },
         });
       } else if (
         !status.importId &&

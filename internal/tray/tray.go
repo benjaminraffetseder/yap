@@ -8,9 +8,15 @@ type Controller interface {
 }
 
 type State struct {
-	Phase       string
-	Ready       bool
-	SaveHistory bool
+	Phase               string
+	Completion          string
+	Warning             bool
+	Ready               bool
+	Busy                bool
+	SaveHistory         bool
+	HistoryLocked       bool
+	ResultAvailable     bool
+	ShortcutUnavailable bool
 }
 
 type Actions struct {
@@ -19,6 +25,10 @@ type Actions struct {
 	Record        func()
 	Cancel        func()
 	Quit          func()
+	Result        func()
+	History       func()
+	Settings      func()
+	FixShortcut   func()
 }
 
 const (
@@ -27,6 +37,10 @@ const (
 	cancelAction
 	quitAction
 	historyAction
+	resultAction
+	openHistoryAction
+	settingsAction
+	shortcutAction
 )
 
 type view struct {
@@ -58,8 +72,23 @@ func presentation(s State) view {
 		v.status, v.recordEnabled, v.cancelEnabled = "Testing dictation…", false, true
 	case "error":
 		v.status = "Dictation failed"
+	case "done":
+		v.status = "Dictation finished"
+		if s.Warning {
+			v.status = "Transcript ready — action needed"
+		} else {
+			switch s.Completion {
+			case "Copied to clipboard", "Saved to History", "Not saved to History":
+				v.status = s.Completion
+			case "Paste requested; copied to clipboard":
+				v.status = "Paste requested"
+			}
+		}
 	case "closing":
 		v.status, v.recordEnabled = "Quitting…", false
+	}
+	if s.Busy && s.Phase != "recording" {
+		v.recordEnabled = false
 	}
 	return v
 }
@@ -81,8 +110,24 @@ func (a Actions) dispatch(id int, s State) {
 			callback = a.Cancel
 		}
 	case historyAction:
-		if s.Phase != "closing" && s.Phase != "backup" {
+		if s.Phase != "closing" && s.Phase != "backup" && !s.HistoryLocked {
 			callback = a.ToggleHistory
+		}
+	case resultAction:
+		if s.ResultAvailable && !s.Busy && s.Phase != "closing" {
+			callback = a.Result
+		}
+	case openHistoryAction:
+		if s.Phase != "closing" {
+			callback = a.History
+		}
+	case settingsAction:
+		if s.Phase != "closing" {
+			callback = a.Settings
+		}
+	case shortcutAction:
+		if s.ShortcutUnavailable && s.Phase != "closing" {
+			callback = a.FixShortcut
 		}
 	case quitAction:
 		callback = a.Quit

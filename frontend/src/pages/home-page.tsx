@@ -3,6 +3,7 @@ import { ProfileSelector } from "@/components/dictation-profiles";
 import { useDictation } from "@/components/dictation-provider";
 import { DictationRow } from "@/components/dictation-row";
 import { HomeResultPanel } from "@/components/home-result-panel";
+import { ShortcutStatus } from "@/components/shortcut-status";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { CircularProgress } from "@/components/ui/progress";
 import {
@@ -321,17 +322,8 @@ export function HomePage() {
         )}
       </section>
       <div className="mx-auto max-w-5xl space-y-8 px-6 py-8 @min-[54rem]/home:px-10">
-        {status.shortcutError && (
-          <p
-            role="alert"
-            className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-4 text-sm"
-          >
-            Global shortcut unavailable: {status.shortcutError}{" "}
-            <Link to="/settings" className="underline">
-              Change shortcut
-            </Link>
-          </p>
-        )}
+        <ShortcutStatus variant="banner" />
+        {!status.shortcutError && <ShortcutStatus variant="banner" profile />}
         {status.indicatorError && (
           <p
             role="alert"

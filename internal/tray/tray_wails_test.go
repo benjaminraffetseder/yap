@@ -80,3 +80,38 @@ func TestWailsTrayRevalidatesActionsAfterMenuOpens(t *testing.T) {
 		t.Fatal("Stop recording command did not run")
 	}
 }
+
+func TestWailsTrayDesktopActionsFollowCurrentState(t *testing.T) {
+	called := make(chan string, 4)
+	c := newWailsTray(Actions{
+		Result:      func() { called <- "result" },
+		FixShortcut: func() { called <- "shortcut" },
+	}, func(func()) {})
+	t.Cleanup(c.menu.Destroy)
+	c.Update(State{Phase: "done", Ready: true, Completion: "Paste requested; copied to clipboard", ResultAvailable: true, ShortcutUnavailable: true})
+	c.render()
+	if c.status.Label() != "Paste requested" || !c.result.Enabled() || c.shortcut.Hidden() {
+		t.Fatal("completed result or shortcut recovery missing from native menu")
+	}
+	c.dispatch(resultAction)
+	if got := <-called; got != "result" {
+		t.Fatal(got)
+	}
+	c.Update(State{Phase: "done", Ready: true, Busy: true, HistoryLocked: true, ResultAvailable: true})
+	c.render()
+	if c.result.Enabled() || c.record.Enabled() || c.history.Enabled() || !c.shortcut.Hidden() {
+		t.Fatal("native menu ignored a result reservation or recovered shortcut")
+	}
+	c.dispatch(resultAction)
+	c.dispatch(shortcutAction)
+	select {
+	case <-called:
+		t.Fatal("stale native action bypassed the latest state")
+	case <-time.After(30 * time.Millisecond):
+	}
+	c.Update(State{Phase: "done", Warning: true})
+	c.render()
+	if c.status.Label() != "Transcript ready — action needed" {
+		t.Fatal("warning looked like successful delivery")
+	}
+}

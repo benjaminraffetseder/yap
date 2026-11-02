@@ -36,12 +36,15 @@ func TestNativeTray(t *testing.T) {
 	app.Event.OnApplicationEvent(events.Common.ApplicationStarted, func(*application.ApplicationEvent) {
 		defer app.Quit()
 		native := controller.(*wailsTray)
-		for _, state := range []State{{Phase: "idle", Ready: true}, {Phase: "recording", SaveHistory: true}, {Phase: "transcribing"}, {Phase: "closing"}} {
+		for _, state := range []State{{Phase: "idle", Ready: true}, {Phase: "recording", SaveHistory: true}, {Phase: "transcribing"}, {Phase: "done", Ready: true, ResultAvailable: true, Completion: "Paste requested; copied to clipboard"}, {Phase: "done", Warning: true, ResultAvailable: true, ShortcutUnavailable: true}, {Phase: "done", Busy: true, HistoryLocked: true}, {Phase: "closing"}} {
 			controller.Update(state)
 			application.InvokeSync(func() {
 				view := presentation(state)
 				if native.record.Label() != view.record || native.record.Enabled() != view.recordEnabled || native.cancel.Enabled() != view.cancelEnabled || native.history.Checked() != state.SaveHistory {
 					t.Errorf("native menu lost state: %+v", state)
+				}
+				if native.status.Label() != view.status || native.result.Enabled() != (state.ResultAvailable && !state.Busy && state.Phase != "closing") || native.shortcut.Hidden() == state.ShortcutUnavailable {
+					t.Errorf("native desktop/recovery actions lost state: %+v", state)
 				}
 			})
 		}

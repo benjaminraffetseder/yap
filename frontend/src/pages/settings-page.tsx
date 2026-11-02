@@ -47,7 +47,7 @@ import {
   Type,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Link, useNavigate, useSearchParams } from "react-router";
+import { Link, useLocation, useNavigate, useSearchParams } from "react-router";
 const sections = [
   { value: "dictation", label: "Dictation" },
   { value: "profiles", label: "Profiles" },
@@ -80,6 +80,7 @@ const sameShortcut = (left: string, right: string) =>
   !!left.trim() && shortcutKeys(left) === shortcutKeys(right);
 export function SettingsPage() {
   const navigate = useNavigate();
+  const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
   const section = sections.some((item) => item.value === searchParams.get("section"))
     ? searchParams.get("section")!
@@ -102,6 +103,25 @@ export function SettingsPage() {
   const microphoneRequest = useRef(0);
   const busy = isBusy(snapshot.status.phase);
   const controlsDisabled = !isDesktop || busy || loading;
+  const focusedDesktopRequest = useRef<string | null>(null);
+  useEffect(() => {
+    const target = searchParams.get("focus");
+    if (
+      section !== "dictation" ||
+      controlsDisabled ||
+      !["shortcut", "profile-cycle-shortcut"].includes(target ?? "") ||
+      focusedDesktopRequest.current === location.key
+    )
+      return;
+    const frame = requestAnimationFrame(() => {
+      const field = document.getElementById(target!);
+      if (field) {
+        field.focus();
+        focusedDesktopRequest.current = location.key;
+      }
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [section, controlsDisabled, searchParams, location.key]);
   const settingsDirty = settingsDraft.dirty;
   const profileShortcutDirty = shortcutDraft.dirty;
   const dirty = settingsDirty || profileShortcutDirty;

@@ -10092,3 +10092,253 @@ test("auto-save history restores the vocabulary list and transcript, marks curre
     "Original speech",
   );
 });
+
+test("desktop integration: Home retries a conflict once and keeps pending controls stable", async ({
+  page,
+}) => {
+  await homeModelScenario(page);
+  const originalShortcut = await page.evaluate(
+    () => window.dictationTest.snapshot.settings.shortcut,
+  );
+  await page.evaluate(() => {
+    const state = window.dictationTest;
+    state.snapshot.status.shortcutError =
+      "Synthetic hotkey conflict: combination already registered";
+    state.status("idle");
+    const control = { calls: 0, release: () => {} };
+    Reflect.set(window, "desktopRetry", control);
+    Reflect.get(window, "mockBackend").main.App.RetryShortcut = async () => {
+      control.calls++;
+      await new Promise<void>((resolve) => {
+        control.release = resolve;
+      });
+      state.snapshot.status.shortcutError = "";
+      state.callbacks["dictation:status"](structuredClone(state.snapshot.status));
+    };
+  });
+  const recovery = page.getByRole("region", { name: "Shortcut recovery" });
+  await expect(recovery).toBeVisible();
+  await recovery.getByRole("button", { name: "Retry shortcut", exact: true }).click();
+  const pending = recovery.getByRole("button", { name: "Retrying…", exact: true });
+  await expect(pending).toBeDisabled();
+  await pending.dispatchEvent("click");
+  expect(await page.evaluate(() => Reflect.get(window, "desktopRetry").calls)).toBe(1);
+  await page.evaluate(() => Reflect.get(window, "desktopRetry").release());
+  await expect(recovery).toHaveCount(0);
+  expect(await page.evaluate(() => window.dictationTest.snapshot.settings.shortcut)).toBe(
+    originalShortcut,
+  );
+});
+
+for (const dark of [false, true]) {
+  test(`desktop integration: actionable conflict and permission recovery ${dark ? "dark" : "light"}`, async ({
+    page,
+  }, info) => {
+    await homeModelScenario(page);
+    await page.evaluate((dark) => {
+      document.documentElement.classList.toggle("dark", dark);
+      const state = window.dictationTest;
+      state.snapshot.status.shortcutError =
+        "Synthetic hotkey conflict: combination already registered";
+      state.status("idle");
+    }, dark);
+    const recovery = page.getByRole("region", { name: "Shortcut recovery" });
+    await expect(recovery).toBeVisible();
+    await recovery.scrollIntoViewIfNeeded();
+    await expect(recovery.getByText("Synthetic hotkey conflict", { exact: false })).toBeHidden();
+    await recovery.getByText("Technical details", { exact: true }).click();
+    await expect(recovery.getByText("Synthetic hotkey conflict", { exact: false })).toBeVisible();
+    await recovery.getByText("Technical details", { exact: true }).click();
+    await page.screenshot({
+      path: info.outputPath(`desktop-conflict-${dark ? "dark" : "light"}.png`),
+    });
+    await recovery.getByRole("link", { name: "Change shortcut", exact: true }).click();
+    await expect(page.getByLabel("Global shortcut", { exact: true })).toBeFocused();
+    await expect(page).toHaveURL(/section=dictation&focus=shortcut/);
+    await page.getByRole("link", { name: "Dictate", exact: true }).click();
+    await page.evaluate(() => {
+      const state = window.dictationTest;
+      state.snapshot.status.shortcutError = "Accessibility access required";
+      state.status("idle");
+    });
+    await expect(recovery).toContainText("Allow Yap in your system’s accessibility settings");
+    await page.setViewportSize({ width: 760, height: 560 });
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await page.evaluate(() => {
+      document.documentElement.style.fontSize = "200%";
+    });
+    await recovery.getByRole("button", { name: "Retry shortcut", exact: true }).focus();
+    await expect(
+      recovery.getByRole("button", { name: "Retry shortcut", exact: true }),
+    ).toBeInViewport();
+    await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth)).toBe(760);
+    await expect.poll(() => recovery.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
+    expect(await recovery.getByRole("alert").evaluate((el) => el.clientWidth)).toBeGreaterThan(150);
+    await recovery.screenshot({
+      path: info.outputPath(`desktop-recovery-panel-${dark ? "dark" : "light"}-200.png`),
+    });
+    await page.screenshot({
+      path: info.outputPath(`desktop-permission-${dark ? "dark" : "light"}-200.png`),
+      fullPage: true,
+    });
+  });
+}
+
+test("desktop integration: tray routes are validated and focus shortcut settings repeatedly", async ({
+  page,
+}) => {
+  await homeModelScenario(page);
+  for (const route of [
+    "/history",
+    "/settings",
+    "/settings?section=dictation&focus=shortcut",
+    "/settings?section=dictation&focus=shortcut",
+    "/",
+  ]) {
+    await page.evaluate(
+      (route) => window.dictationTest.callbacks["desktop:navigate"](route),
+      route,
+    );
+    await expect(page).toHaveURL(new RegExp(`#${route.replaceAll("?", "\\?")}$`));
+    if (route.includes("focus=shortcut")) {
+      await expect(page.getByLabel("Global shortcut", { exact: true })).toBeFocused();
+      const history = page.getByRole("link", { name: "History", exact: true });
+      await history.focus();
+      await page.evaluate(() => window.dictationTest.status("text-processing"));
+      await expect(page.getByLabel("Global shortcut", { exact: true })).toBeDisabled();
+      await page.evaluate(() => window.dictationTest.status("idle"));
+      await expect(page.getByLabel("Global shortcut", { exact: true })).toBeEnabled();
+      await expect(history).toBeFocused();
+    }
+  }
+  await page.evaluate(() =>
+    window.dictationTest.callbacks["desktop:navigate"]("https://example.com"),
+  );
+  await expect(page).toHaveURL(/#\/$/);
+});
+
+test("desktop integration: completion offers one current result action without showing transcript text", async ({
+  page,
+}, info) => {
+  await homeModelScenario(page);
+  await page.getByRole("link", { name: "History", exact: true }).click();
+  await page.evaluate(() => {
+    const state = window.dictationTest;
+    state.status("transcribing");
+    state.snapshot.status.phase = "done";
+    state.snapshot.status.message = "Paste requested; copied to clipboard";
+    state.snapshot.status.transcript = "Synthetic private transcript stays out of notifications";
+    state.callbacks["dictation:status"](structuredClone(state.snapshot.status));
+  });
+  const toast = page.locator('[data-slot="toast"]').filter({ hasText: "Transcription finished" });
+  await expect(toast).toContainText("Paste requested");
+  await expect(toast).not.toContainText("Synthetic private transcript");
+  await page.screenshot({ path: info.outputPath("desktop-completion.png") });
+  await toast.getByRole("button", { name: "View result", exact: true }).click();
+  await expect(page).toHaveURL(/#\/$/);
+  await expect(toast).toHaveCount(0);
+  await page.evaluate(() => {
+    const state = window.dictationTest;
+    state.callbacks["dictation:status"](structuredClone(state.snapshot.status));
+  });
+  await expect(toast).toHaveCount(0);
+});
+
+test("desktop integration: recovery notification stays actionable and expires on the next recording", async ({
+  page,
+}, info) => {
+  await homeModelScenario(page);
+  await page.getByRole("link", { name: "History", exact: true }).click();
+  await page.evaluate(() => {
+    const state = window.dictationTest;
+    state.status("transcribing");
+    state.snapshot.status.phase = "done";
+    state.snapshot.status.completionWarning = true;
+    state.snapshot.status.message = "Clipboard failed; transcript available in Home";
+    state.callbacks["dictation:status"](structuredClone(state.snapshot.status));
+  });
+  const toast = page
+    .locator('[data-slot="toast"]')
+    .filter({ hasText: "Transcript ready — action needed" });
+  const action = toast.getByRole("button", {
+    name: "View result",
+    exact: true,
+    includeHidden: true,
+  });
+  await expect(action).toBeVisible();
+  await action.focus();
+  // Outlive the ordinary five-second completion notice.
+  await page.waitForTimeout(5500);
+  await expect(toast).toBeVisible();
+  await page.screenshot({ path: info.outputPath("desktop-recovery.png") });
+  await page.evaluate(() => window.dictationTest.status("recording"));
+  await expect(toast).toHaveCount(0);
+});
+
+test("desktop integration: profile-only conflict opens the cycling shortcut", async ({ page }) => {
+  await homeModelScenario(page);
+  await page.evaluate(() => {
+    const state = window.dictationTest;
+    state.snapshot.status.profileShortcutError = "Synthetic profile shortcut conflict";
+    state.status("idle");
+  });
+  const recovery = page.getByRole("region", { name: "Shortcut recovery" });
+  await expect(recovery).toContainText("Profile shortcut unavailable");
+  await recovery.getByRole("link", { name: "Change shortcut", exact: true }).click();
+  await expect(page.getByLabel("Cycle profiles shortcut", { exact: true })).toBeFocused();
+});
+
+test("desktop integration: synthetic conflict-to-result walkthrough", async ({ page }, info) => {
+  await homeModelScenario(page);
+  await page.evaluate(() => {
+    const state = window.dictationTest;
+    document.documentElement.classList.add("dark");
+    state.snapshot.status.shortcutError = "Synthetic shortcut conflict";
+    state.status("idle");
+  });
+  const recovery = page.getByRole("region", { name: "Shortcut recovery" });
+  await recovery.scrollIntoViewIfNeeded();
+  // Pauses make the captured interaction readable.
+  await page.waitForTimeout(700);
+  await recovery.getByRole("link", { name: "Change shortcut", exact: true }).click();
+  await expect(page.getByLabel("Global shortcut", { exact: true })).toBeFocused();
+  await page.waitForTimeout(700);
+  await page.evaluate(() => {
+    const state = window.dictationTest;
+    state.snapshot.status.shortcutError = "";
+    state.status("idle");
+  });
+  await page.getByRole("link", { name: "History", exact: true }).click();
+  await page.evaluate(() => {
+    const state = window.dictationTest;
+    state.status("transcribing");
+    state.snapshot.history = [
+      {
+        id: "desktop-demo",
+        createdAt: "2026-10-31T10:00:00Z",
+        durationMs: 6000,
+        rawTranscript: "Synthetic demo: share the meeting notes tomorrow.",
+        finalTranscript: "Synthetic demo: share the meeting notes tomorrow.",
+        speechModel: "tiny",
+        language: "en",
+        audioPath: "",
+      },
+    ];
+    state.snapshot.status.phase = "done";
+    state.snapshot.status.completionWarning = true;
+    state.snapshot.status.message = "Clipboard failed; transcript available in Home";
+    state.callbacks["dictation:status"](structuredClone(state.snapshot.status));
+  });
+  const toast = page
+    .locator('[data-slot="toast"]')
+    .filter({ hasText: "Transcript ready — action needed" });
+  const view = toast.getByRole("button", { name: "View result", exact: true, includeHidden: true });
+  await expect(view).toBeVisible();
+  await page.waitForTimeout(900);
+  await view.click();
+  const latest = page.getByRole("region", { name: "Latest saved result" });
+  await expect(latest).toContainText("Synthetic demo:");
+  await latest.scrollIntoViewIfNeeded();
+  await page.waitForTimeout(900);
+  await page.screenshot({ path: info.outputPath("desktop-recovered-result.png") });
+});

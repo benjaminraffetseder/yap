@@ -33,6 +33,10 @@ func (a *App) ServiceStartup(ctx context.Context, _ application.ServiceOptions) 
 	a.tray, err = tray.New(a.desktop, tray.Actions{
 		ToggleHistory: a.toggleHistory, Show: a.show, Record: a.trayRecord,
 		Cancel: func() { _ = a.Cancel() }, Quit: a.quit,
+		Result:      func() { a.openDesktopPage("/") },
+		History:     func() { a.openDesktopPage("/history") },
+		Settings:    func() { a.openDesktopPage("/settings") },
+		FixShortcut: a.openShortcutSettings,
 	}, trayIcon)
 	if err != nil {
 		a.status.TrayError = "Background controls unavailable: " + err.Error()
@@ -41,7 +45,7 @@ func (a *App) ServiceStartup(ctx context.Context, _ application.ServiceOptions) 
 	root, err := os.UserConfigDir()
 	if err == nil {
 		a.indicator, err = indicator.New(a.desktop, indicator.Actions{
-			Stop: a.indicatorStop, Cancel: a.indicatorCancel, Show: a.show,
+			Stop: a.indicatorStop, Cancel: a.indicatorCancel, Show: func() { a.openDesktopPage("/") },
 		}, filepath.Join(root, "yap"))
 	}
 	if err != nil {
@@ -61,9 +65,43 @@ func (a *App) ServiceStartup(ctx context.Context, _ application.ServiceOptions) 
 	return nil
 }
 
+// Explicit desktop actions may focus Yap; completion updates never do.
+func (a *App) openDesktopPage(path string) {
+	switch path {
+	case "/", "/history", "/settings", "/settings?section=dictation&focus=shortcut", "/settings?section=dictation&focus=profile-cycle-shortcut":
+	default:
+		return
+	}
+	a.mu.Lock()
+	if a.closing {
+		a.mu.Unlock()
+		return
+	}
+	a.windowRequested = true
+	show, notify := a.showWindow, a.notify
+	a.mu.Unlock()
+	if notify != nil {
+		notify("desktop:navigate", path)
+	}
+	if show != nil {
+		show()
+	}
+}
+
 func (a *App) ServiceShutdown() error {
 	a.shutdown(a.ctx)
 	return nil
+}
+
+func (a *App) openShortcutSettings() {
+	a.mu.Lock()
+	profileOnly := a.status.ShortcutError == "" && a.status.ProfileShortcutError != ""
+	a.mu.Unlock()
+	field := "shortcut"
+	if profileOnly {
+		field = "profile-cycle-shortcut"
+	}
+	a.openDesktopPage("/settings?section=dictation&focus=" + field)
 }
 
 func (a *App) clipboardSetText(text string) error {

@@ -41,6 +41,7 @@ if (methods) {
     "dictation:status",
     "dictation:level",
     "dictation:history",
+    "desktop:navigate",
     "import:queue",
     "setup:changed",
     "profile:changed",

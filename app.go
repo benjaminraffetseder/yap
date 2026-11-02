@@ -361,7 +361,12 @@ func (a *App) updateTray() {
 		if a.shortcutCaptureID != "" {
 			phase = "shortcut-capture"
 		}
-		a.tray.Update(tray.State{Phase: phase, Ready: ready, SaveHistory: a.settings.SaveHistory})
+		resultAvailable := !a.homeResultHidden && (a.homeResult != nil || a.latestResult != nil || len(a.homeHistory) > 0)
+		a.tray.Update(tray.State{
+			Phase: phase, Completion: a.status.Message, Warning: a.status.CompletionWarning,
+			Ready: ready, Busy: a.busy(), SaveHistory: a.settings.SaveHistory, HistoryLocked: a.homeResultOperation,
+			ResultAvailable: resultAvailable, ShortcutUnavailable: a.status.ShortcutError != "" || a.status.ProfileShortcutError != "",
+		})
 	}
 }
 func (a *App) shutdown(ctx context.Context) {
@@ -446,7 +451,7 @@ func (a *App) emit() {
 					profileName = p.Name
 				}
 			}
-			a.indicator.Update(indicator.State{SessionID: a.id, ProfileName: profileName, HistoryMode: historyMode, Phase: a.status.Phase, Message: a.status.Message, StartedAt: a.status.StartedAt})
+			a.indicator.Update(indicator.State{SessionID: a.id, ProfileName: profileName, HistoryMode: historyMode, Phase: a.status.Phase, Message: a.status.Message, StartedAt: a.status.StartedAt, Warning: a.status.CompletionWarning})
 			if a.status.Phase != "recording" && a.status.Phase != "transcribing" {
 				a.indicatorActive = false
 			}
@@ -567,6 +572,7 @@ func (a *App) GetSnapshot() (Snapshot, error) {
 	}
 	if !a.homeResultOperation && a.status.Phase != "backup" {
 		a.homeHistory = history
+		a.updateTray()
 	}
 	ready := speech.Validate(speech.Options{Executable: a.settings.WhisperPath, Model: a.settings.ModelPath}) == nil
 	entries, err := vocabulary.Normalize(a.vocabulary)

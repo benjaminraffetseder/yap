@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"yap/internal/indicator"
 	textmodel "yap/internal/inference/text"
 	"yap/internal/storage"
 )
@@ -233,6 +234,9 @@ func (a *App) HomeResultAction(id, revision, action, text string) error {
 	}
 	a.mu.Lock()
 	if !a.closing {
+		if a.indicator != nil {
+			a.indicator.Update(indicator.State{Phase: "idle"})
+		}
 		if action == "dismiss" {
 			a.homeResult, a.latestResult, a.homeResultHidden = nil, nil, true
 			if a.id == id {
