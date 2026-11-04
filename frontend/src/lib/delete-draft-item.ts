@@ -1,4 +1,5 @@
 import { toastManager } from "@/components/ui/toast";
+import i18n from "@/i18n";
 import type { TextProcessing } from "@/lib/backend";
 import type { Dispatch, SetStateAction } from "react";
 
@@ -24,10 +25,10 @@ export function deleteDraftItem(
 ) {
   apply(after);
   const id = toastManager.add({
-    title: `${label} deleted`,
+    title: i18n.t("deleteDraftItem.deleted", { label }),
     timeout: 8000,
     actionProps: {
-      children: "Undo",
+      children: i18n.t("common.undo"),
       onClick: () => {
         apply((current) => ({
           ...current,

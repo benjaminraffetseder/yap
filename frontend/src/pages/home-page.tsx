@@ -1,3 +1,5 @@
+import { useTranslation } from "react-i18next";
+import { nativeText } from "@/i18n/native-text";
 import { AudioImportButton } from "@/components/audio-import-button";
 import { ProfileSelector } from "@/components/dictation-profiles";
 import { useDictation } from "@/components/dictation-provider";
@@ -21,6 +23,7 @@ import { ArrowRight, Download, Keyboard, Loader2, Mic, Square } from "lucide-rea
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router";
 export function HomePage() {
+  const { t } = useTranslation();
   const resultFallback = useRef<HTMLHeadingElement>(null);
   const reduced = useMotionPreference();
   const { snapshot, loading, level, run, installModel } = useDictation();
@@ -50,7 +53,7 @@ export function HomePage() {
   if (settings.modelPath && !activeModel) {
     modelOptions.unshift({
       value: selectedModel!,
-      label: settings.modelPath.split(/[\\/]/).pop() || "Custom model",
+      label: settings.modelPath.split(/[\\/]/).pop() || t("homePage.customModel"),
       download: false,
     });
   }
@@ -97,7 +100,7 @@ export function HomePage() {
   return (
     <div className="@container/home">
       <section
-        aria-label="Dictation recorder"
+        aria-label={t("homePage.dictationRecorder")}
         className="min-w-0 rounded-b-3xl bg-surface-variant px-6 pt-6 pb-5 @min-[54rem]/home:px-10 @min-[54rem]/home:pt-8 @min-[54rem]/home:pb-6"
       >
         <header className="flex flex-wrap items-center justify-between gap-x-5 gap-y-3">
@@ -120,7 +123,7 @@ export function HomePage() {
             />
             {downloading && (
               <CircularProgress
-                aria-label="Download progress"
+                aria-label={t("homePage.downloadProgress")}
                 value={downloadPercent}
                 className="absolute size-[128px]"
               />
@@ -136,7 +139,7 @@ export function HomePage() {
                 switchingProfile
               }
               onClick={() => void record()}
-              aria-label={recording ? "Stop recording" : "Start recording"}
+              aria-label={recording ? t("homePage.stopRecording") : t("homePage.startRecording")}
               className={`relative flex size-[104px] items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg shadow-primary/10 focus-visible:outline-4 focus-visible:outline-offset-4 focus-visible:outline-ring disabled:cursor-default ${downloading ? "disabled:opacity-100" : "disabled:opacity-50"}`}
             >
               {downloading ? (
@@ -155,34 +158,34 @@ export function HomePage() {
           <div className="w-full min-w-0 max-w-80 space-y-3 [overflow-wrap:anywhere]">
             <h2 className="text-2xl font-semibold tracking-tight @min-[34rem]/home:text-3xl">
               {loading
-                ? "Connecting…"
+                ? t("homePage.connecting")
                 : recording
-                  ? "Recording"
+                  ? t("homePage.recording")
                   : working
-                    ? status.message
+                    ? nativeText(status.message)
                     : ready
-                      ? "Ready to record"
-                      : "Install a speech model"}
+                      ? t("homePage.readyToRecord")
+                      : t("homePage.installASpeechModel")}
             </h2>
             <p className="text-sm leading-6 text-muted-foreground">
               {loading
-                ? "Getting your dictation tools ready."
+                ? t("homePage.gettingYourDictationToolsReady")
                 : recording
-                  ? "Speak naturally. Click stop when you’re finished."
+                  ? t("homePage.speakNaturallyClickStopWhenYouRe")
                   : downloading
-                    ? "Your speech model is on its way."
+                    ? t("homePage.yourSpeechModelIsOnItsWay")
                     : working
-                      ? "You can start another dictation when this finishes."
+                      ? t("homePage.youCanStartAnotherDictationWhenThis")
                       : ready
-                        ? "Click the microphone to record in Yap."
-                        : "Choose a model to turn your voice into text."}
+                        ? t("homePage.clickTheMicrophoneToRecordInYap")
+                        : t("homePage.chooseAModelToTurnYourVoice")}
             </p>
             {ready && !working && !loading && !recording && (
               <div className="space-y-3 text-xs leading-5 text-muted-foreground">
-                <p>Use your shortcut to dictate into another app.</p>
+                <p>{t("homePage.useYourShortcutToDictateIntoAnother")}</p>
                 <p className="flex flex-wrap items-center justify-center gap-1.5 @min-[34rem]/home:justify-start">
                   <Keyboard className="mr-1 size-4 shrink-0" aria-hidden="true" />
-                  {settings.interaction === "hold" && <span>Hold</span>}
+                  {settings.interaction === "hold" && <span>{t("homePage.hold")}</span>}
                   {settings.shortcut.split("+").map((key, index) => (
                     <span key={key} className="inline-flex items-center gap-1.5">
                       {index > 0 && <span aria-hidden="true">+</span>}
@@ -193,8 +196,8 @@ export function HomePage() {
                   ))}
                   <span>
                     {settings.interaction === "hold"
-                      ? "to record · release to transcribe"
-                      : "to start and stop"}
+                      ? t("homePage.toRecordReleaseToTranscribe")
+                      : t("homePage.toStartAndStop")}
                   </span>
                 </p>
               </div>
@@ -226,13 +229,13 @@ export function HomePage() {
             )}
             {downloading && (
               <Button variant="outline" size="sm" onClick={() => void run(backend.cancel, false)}>
-                Cancel download
+                {t("homePage.cancelDownload")}
               </Button>
             )}
             {!ready && !working && !loading && (
               <Link to="/models" className={buttonVariants({ className: "rounded-lg" })}>
                 <Download className="size-4" />
-                Download model
+                {t("homePage.downloadModel")}
               </Link>
             )}
           </div>
@@ -240,7 +243,7 @@ export function HomePage() {
         {(ready || snapshot.models.length > 0) && (
           <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3 border-t pt-5">
             <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2">
-              <span className="text-xs text-muted-foreground">Speech model</span>
+              <span className="text-xs text-muted-foreground">{t("common.speechModel")}</span>
               <Select
                 items={modelOptions}
                 value={selectedModel}
@@ -255,11 +258,11 @@ export function HomePage() {
                 onValueChange={(value) => void selectModel(value)}
               >
                 <SelectTrigger
-                  aria-label="Speech model"
+                  aria-label={t("common.speechModel")}
                   className="w-48 max-w-full border-transparent bg-transparent shadow-none data-[size=default]:h-auto data-[size=default]:min-h-8 dark:bg-transparent *:data-[slot=select-value]:line-clamp-none"
                 >
                   <SelectValue
-                    placeholder="Select a model"
+                    placeholder={t("homePage.selectAModel")}
                     className="min-w-0 whitespace-normal break-words"
                   />
                 </SelectTrigger>
@@ -270,7 +273,7 @@ export function HomePage() {
                       {model.download && (
                         <Download
                           role="img"
-                          aria-label="Download required"
+                          aria-label={t("homePage.downloadRequired")}
                           className="size-3.5 text-muted-foreground translate-y-0.5"
                         />
                       )}
@@ -284,8 +287,8 @@ export function HomePage() {
                 htmlFor="recorder-save-history"
                 title={
                   isBusy(status.phase)
-                    ? "Changes apply to your next dictation."
-                    : "Save recordings and audio imports to History."
+                    ? t("homePage.changesApplyToYourNextDictation")
+                    : t("homePage.saveRecordingsAndAudioImportsToHistory")
                 }
                 className="flex min-h-8 cursor-pointer items-center gap-2 text-xs text-muted-foreground"
               >
@@ -305,16 +308,18 @@ export function HomePage() {
                     }
                   }}
                 />
-                Save to history
+                {t("homePage.saveToHistory")}
               </label>
               <span id="recorder-history-hint" className="sr-only">
                 {isBusy(status.phase)
-                  ? "Changes apply to your next dictation."
-                  : "Applies to recordings and audio imports."}
+                  ? t("homePage.changesApplyToYourNextDictation")
+                  : t("homePage.appliesToRecordingsAndAudioImports")}
               </span>
               {(status.phase === "recording" || status.phase === "transcribing") && (
                 <span className="text-xs text-muted-foreground">
-                  {snapshot.recordingSaveHistory ? "Saving to history" : "Not saving to history"}
+                  {snapshot.recordingSaveHistory
+                    ? t("homePage.savingToHistory")
+                    : t("homePage.notSavingToHistory")}
                 </span>
               )}
             </div>
@@ -344,13 +349,13 @@ export function HomePage() {
         <section>
           <div className="mb-4 flex items-center justify-between">
             <h2 ref={resultFallback} tabIndex={-1} className="text-sm font-semibold outline-none">
-              Recent dictations
+              {t("homePage.recentDictations")}
             </h2>
             <Link
               to="/history"
               className="flex items-center gap-1 text-xs text-muted-foreground hover:text-primary"
             >
-              View all
+              {t("homePage.viewAll")}
               <ArrowRight className="size-3" />
             </Link>
           </div>
@@ -367,7 +372,7 @@ export function HomePage() {
             </div>
           ) : (
             <div className="rounded-xl border border-dashed px-6 py-7 text-center text-sm text-muted-foreground">
-              No dictations yet.
+              {t("homePage.noDictationsYet")}
             </div>
           )}
         </section>

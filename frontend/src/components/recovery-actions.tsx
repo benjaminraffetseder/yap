@@ -1,3 +1,5 @@
+import { useTranslation } from "react-i18next";
+import i18n from "@/i18n";
 import { isDesktop } from "@/lib/desktop";
 import { Clipboard } from "@wailsio/runtime";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -11,13 +13,14 @@ export function RecoveryActions({
   source,
   details,
   onRetry,
-  retryLabel = "Retry interface",
+  retryLabel = i18n.t("recoveryActions.retryInterface"),
 }: {
   source: string;
   details: string;
   onRetry: () => void;
   retryLabel?: string;
 }) {
+  const { t } = useTranslation();
   const [copied, setCopied] = useState(false);
   const [copying, setCopying] = useState(false);
   const [copyError, setCopyError] = useState(false);
@@ -67,7 +70,7 @@ export function RecoveryActions({
         await Clipboard.SetText(report);
       } else if (navigator.clipboard) {
         await navigator.clipboard.writeText(report);
-      } else throw new Error("Clipboard unavailable");
+      } else throw new Error(t("recoveryActions.clipboardUnavailable"));
       if (request.current === id) setCopied(true);
     } catch {
       if (request.current === id) {
@@ -94,7 +97,7 @@ export function RecoveryActions({
           className={`${buttonClass} border bg-background hover:bg-accent`}
           onClick={() => window.location.reload()}
         >
-          Reload window
+          {t("recoveryActions.reloadWindow")}
         </button>
       </div>
       <details
@@ -102,10 +105,12 @@ export function RecoveryActions({
         onToggle={(event) => setExpanded(event.currentTarget.open)}
         className="text-sm"
       >
-        <summary className="cursor-pointer text-muted-foreground">Technical details</summary>
+        <summary className="cursor-pointer text-muted-foreground">
+          {t("diagnosticsPanel.technicalDetails")}
+        </summary>
         <div className="mt-3 space-y-2">
           <label htmlFor="recovery-details" className="sr-only">
-            Diagnostic details
+            {t("recoveryActions.diagnosticDetails")}
           </label>
           <textarea
             ref={field}
@@ -122,17 +127,17 @@ export function RecoveryActions({
               className={`${buttonClass} border bg-background hover:bg-accent`}
               onClick={() => void copy()}
             >
-              {copying ? "Copying…" : "Copy diagnostics"}
+              {copying ? t("recoveryActions.copying") : t("recoveryActions.copyDiagnostics")}
             </button>
             {copied && (
               <span role="status" className="text-xs text-muted-foreground">
-                Diagnostics copied.
+                {t("recoveryActions.diagnosticsCopied")}
               </span>
             )}
           </div>
           {copyError && (
             <p role="alert" className="text-xs text-destructive">
-              Could not copy. Select the details above and copy manually.
+              {t("recoveryActions.couldNotCopySelectTheDetailsAbove")}
             </p>
           )}
         </div>

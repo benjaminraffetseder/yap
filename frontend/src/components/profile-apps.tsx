@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { Badge } from "@/components/ui/badge";
 import {
   Select,
@@ -30,6 +31,7 @@ export function ProfileApps({
   onOpen: () => void;
   onChange: (rules: AppProfileRule[]) => void;
 }) {
+  const { t } = useTranslation();
   const assigned = rules.filter((rule) => rule.profileId === profile.id);
   const options = apps
     .filter((app) => !assigned.some((rule) => rule.applicationId === app.id))
@@ -61,7 +63,7 @@ export function ProfileApps({
   return (
     <div
       role="group"
-      aria-label={`Apps for ${profile.name}`}
+      aria-label={t("profileApps.appsFor", { name: profile.name })}
       className="flex basis-full flex-wrap items-center gap-1.5"
     >
       {assigned.map((rule) => (
@@ -75,7 +77,10 @@ export function ProfileApps({
           </span>
           <button
             type="button"
-            aria-label={`Remove ${rule.applicationName} from ${profile.name}`}
+            aria-label={t("profileApps.removeFrom", {
+              applicationName: rule.applicationName,
+              name: profile.name,
+            })}
             disabled={disabled}
             onClick={() =>
               onChange(rules.filter((item) => item.applicationId !== rule.applicationId))
@@ -99,11 +104,11 @@ export function ProfileApps({
       >
         <SelectTrigger
           size="sm"
-          aria-label={`Add app to ${profile.name}`}
+          aria-label={t("profileApps.addAppTo", { name: profile.name })}
           className="rounded-full border-dashed px-2 text-xs data-[size=sm]:h-6 data-placeholder:text-muted-foreground [&_svg:not([class*='size-'])]:size-3"
         >
           <Plus aria-hidden="true" className="size-3" />
-          <SelectValue placeholder="Add app" />
+          <SelectValue placeholder={t("profileApps.addApp")} />
         </SelectTrigger>
         <SelectContent alignItemWithTrigger={false} align="start" className="w-64">
           {options.map((option) => (
@@ -119,15 +124,15 @@ export function ProfileApps({
           {!options.length && (
             <p className="px-3 py-2 text-xs text-muted-foreground">
               {loading
-                ? "Loading open apps…"
+                ? t("profileApps.loadingOpenApps")
                 : apps.length
-                  ? "All open apps are already added. Open another app, then try again."
-                  : "Open the app you want to add, then try again."}
+                  ? t("profileApps.allOpenAppsAreAlreadyAddedOpen")
+                  : t("profileApps.openTheAppYouWantToAdd")}
             </p>
           )}
           {full && (
             <p className="px-3 py-2 text-xs text-muted-foreground">
-              You can assign up to {ruleLimit} apps.
+              {t("profileApps.limit", { count: ruleLimit })}
             </p>
           )}
         </SelectContent>

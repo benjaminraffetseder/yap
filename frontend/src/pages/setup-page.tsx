@@ -1,3 +1,6 @@
+import i18n from "@/i18n";
+import { useTranslation } from "react-i18next";
+import { nativeText } from "@/i18n/native-text";
 import { useMotionPreference } from "@/lib/use-motion-preference";
 import { useDictation } from "@/components/dictation-provider";
 import { ShortcutInput } from "@/components/shortcut-input";
@@ -31,31 +34,32 @@ import { AnimatePresence, motion } from "motion/react";
 import { MotionReveal } from "@/components/motion-reveal";
 import { fade } from "@/lib/motion";
 
-const steps = [
-  {
-    label: "Speech model",
-    shortLabel: "Model",
-    icon: HardDriveDownload,
-    title: "Choose your speech model",
-    description: "Pick the model that fits your day. You can switch anytime.",
-  },
-  {
-    label: "Microphone",
-    shortLabel: "Mic",
-    icon: Mic,
-    title: "Let’s hear you",
-    description: "Choose your microphone and make sure your voice comes through.",
-  },
-  {
-    label: "Shortcut",
-    shortLabel: "Shortcut",
-    icon: Keyboard,
-    title: "One shortcut. Ready when you are.",
-    description: "Set a global shortcut so Yap is always within reach.",
-  },
-];
-
 export function SetupPage() {
+  const { t } = useTranslation();
+  const steps = [
+    {
+      label: t("common.speechModel"),
+      shortLabel: t("common.model"),
+      icon: HardDriveDownload,
+      title: t("setupPage.chooseYourSpeechModel"),
+      description: t("setupPage.pickTheModelThatFitsYourDay"),
+    },
+    {
+      label: t("settingsPage.microphone"),
+      shortLabel: t("setupPage.mic"),
+      icon: Mic,
+      title: t("setupPage.letSHearYou"),
+      description: t("setupPage.chooseYourMicrophoneAndMakeSureYour"),
+    },
+    {
+      label: t("setupPage.shortcut"),
+      shortLabel: t("setupPage.shortcut"),
+      icon: Keyboard,
+      title: t("setupPage.oneShortcutReadyWhenYouAre"),
+      description: t("setupPage.setAGlobalShortcutSoYapIs"),
+    },
+  ];
+
   const { snapshot, run, level, setMicrophoneTestVisible } = useDictation();
   const [navigation, setNavigation] = useState({ step: 0, direction: 1, animate: false });
   const { step } = navigation;
@@ -118,7 +122,7 @@ export function SetupPage() {
     toastManager.add({
       id: "speech-model-download",
       type: "success",
-      title: "Speech model ready",
+      title: i18n.t("setupPage.speechModelReady"),
       timeout: 5000,
     });
   }, [snapshot.ready, snapshot.settings.modelPath, snapshot.status.phase, step, busy]);
@@ -132,10 +136,10 @@ export function SetupPage() {
     if (step > 0) stepHeading.current?.focus();
   }, [step]);
   const options = [
-    { value: "", label: "System default" },
+    { value: "", label: t("settingsPage.systemDefault") },
     ...microphones.map((device) => ({ value: device.id, label: device.name })),
     ...(mic && !microphones.some((device) => device.id === mic)
-      ? [{ value: mic, label: "Selected microphone (disconnected)" }]
+      ? [{ value: mic, label: t("settingsPage.selectedMicrophoneDisconnected") }]
       : []),
   ];
   async function action(work: () => Promise<unknown>) {
@@ -153,22 +157,22 @@ export function SetupPage() {
   const inputLevel = Math.min(1, Math.max(0, level));
   const guidance = canContinue
     ? step === 2
-      ? "Everything is ready. Let's start dictating."
-      : `Up next: ${steps[step + 1].label.toLowerCase()}`
+      ? t("setupPage.everythingIsReadyLetSStartDictating")
+      : t("setupPage.upNext", { step: steps[step + 1].label.toLowerCase() })
     : step === 0
-      ? "Download or select a model to continue."
+      ? t("setupPage.downloadOrSelectAModelToContinue")
       : step === 1
-        ? "Test your microphone to continue."
+        ? t("setupPage.testYourMicrophoneToContinue")
         : shortcut !== snapshot.settings.shortcut
-          ? "Apply your shortcut, then press it once."
-          : "Press your shortcut once to finish setup.";
+          ? t("setupPage.applyYourShortcutThenPressItOnce")
+          : t("setupPage.pressYourShortcutOnceToFinishSetup");
   return (
     <div className="flex min-h-[calc(100dvh-2rem)] flex-col gap-8">
       <header className="flex flex-wrap items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-semibold tracking-tight">Set up Yap</h1>
+          <h1 className="text-3xl font-semibold tracking-tight">{t("setupPage.setUpYap")}</h1>
         </div>
-        <ol aria-label="Setup steps" className="grid grid-cols-3 gap-2 sm:gap-3">
+        <ol aria-label={t("setupPage.setupSteps")} className="grid grid-cols-3 gap-2 sm:gap-3">
           {steps.map(({ label, shortLabel, icon: Icon }, index) => (
             <li
               key={label}
@@ -200,7 +204,9 @@ export function SetupPage() {
                     <span className="mr-1 tabular-nums">{index + 1}.</span> {label}
                   </span>
                   <span className="sm:hidden">{shortLabel}</span>
-                  {index < step && completed[index] && <span className="sr-only">, complete</span>}
+                  {index < step && completed[index] && (
+                    <span className="sr-only">{t("setupPage.complete")}</span>
+                  )}
                 </p>
               </div>
             </li>
@@ -228,7 +234,7 @@ export function SetupPage() {
           {step === 0 && <ModelsPage embedded />}
           {step === 1 && (
             <section
-              aria-label="Microphone setup"
+              aria-label={t("setupPage.microphoneSetup")}
               className="grid overflow-hidden rounded-2xl border bg-card lg:grid-cols-2"
             >
               <div className="space-y-5 p-5 sm:p-7">
@@ -236,10 +242,10 @@ export function SetupPage() {
                   <span className="flex size-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
                     <Mic className="size-5" aria-hidden="true" />
                   </span>
-                  <h3 className="font-semibold">Test your microphone</h3>
+                  <h3 className="font-semibold">{t("setupPage.testYourMicrophone")}</h3>
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="setup-microphone">Microphone</Label>
+                  <Label htmlFor="setup-microphone">{t("settingsPage.microphone")}</Label>
                   <div className="flex gap-2">
                     <Select
                       items={options}
@@ -269,7 +275,7 @@ export function SetupPage() {
                     <Button
                       variant="outline"
                       size="icon"
-                      aria-label="Refresh microphones"
+                      aria-label={t("settingsPage.refreshMicrophones")}
                       disabled={busy || pending}
                       onClick={() => void action(refreshMicrophones)}
                     >
@@ -278,7 +284,7 @@ export function SetupPage() {
                   </div>
                 </div>
                 <p className="text-sm text-muted-foreground">
-                  Speak for a few seconds. Test audio is deleted and never transcribed.
+                  {t("setupPage.speakForAFewSecondsTestAudio")}
                 </p>
                 <Button
                   pressFeedback
@@ -303,12 +309,12 @@ export function SetupPage() {
                   ) : (
                     <Mic className="size-4" aria-hidden="true" />
                   )}
-                  {testing ? "Stop test" : "Test microphone"}
+                  {testing ? t("setupPage.stopTest") : t("setupPage.testMicrophone")}
                 </Button>
                 <p className="text-xs leading-5 text-muted-foreground">
-                  You can also test transcription in{" "}
+                  {t("setupPage.youCanAlsoTestTranscriptionIn")}{" "}
                   <Link className="text-primary underline underline-offset-4" to="/settings">
-                    dictation diagnostics in Settings
+                    {t("setupPage.dictationDiagnosticsInSettings")}
                   </Link>
                   .
                 </p>
@@ -341,14 +347,14 @@ export function SetupPage() {
                     ))}
                   </div>
                   <div className="mt-3 flex items-center justify-between text-xs text-muted-foreground">
-                    <span>Input level</span>
+                    <span>{t("setupPage.inputLevel")}</span>
                     <span className="tabular-nums">
                       {testing ? `${Math.round(inputLevel * 100)}%` : "—"}
                     </span>
                   </div>
                   {testing && (
                     <meter
-                      aria-label="Microphone level"
+                      aria-label={t("setupPage.microphoneLevel")}
                       className="sr-only"
                       min={0}
                       max={1}
@@ -362,19 +368,19 @@ export function SetupPage() {
                     className={cn("text-sm font-medium", micPassed && !testing && "text-primary")}
                   >
                     {testing
-                      ? "Listening…"
+                      ? t("setupPage.listening")
                       : micPassed
-                        ? "Microphone test passed"
-                        : "Ready to test"}
+                        ? t("setupPage.microphoneTestPassed")
+                        : t("setupPage.readyToTest")}
                   </p>
                   <p className="mt-2 text-xs leading-5 text-muted-foreground">
                     {testing
-                      ? snapshot.status.message
+                      ? nativeText(snapshot.status.message)
                       : micPassed
-                        ? "Your microphone is ready. You can continue."
+                        ? t("setupPage.yourMicrophoneIsReadyYouCanContinue")
                         : micAttempted
-                          ? "Check your microphone access or try another input, then test again."
-                          : "Start the test, then say a few words."}
+                          ? t("setupPage.checkYourMicrophoneAccessOrTryAnother")
+                          : t("setupPage.startTheTestThenSayAFew")}
                   </p>
                 </div>
               </div>
@@ -382,16 +388,18 @@ export function SetupPage() {
           )}
           {step === 2 && (
             <section
-              aria-label="Shortcut setup"
+              aria-label={t("setupPage.shortcutSetup")}
               className="overflow-hidden rounded-2xl border bg-card"
             >
               <div className="space-y-5 bg-muted/20 px-5 py-8 text-center sm:px-7">
                 <span className="mx-auto flex size-12 items-center justify-center rounded-xl bg-primary/10 text-primary">
                   <Keyboard className="size-6" aria-hidden="true" />
                 </span>
-                <h3 className="font-semibold">Test your shortcut</h3>
+                <h3 className="font-semibold">{t("setupPage.testYourShortcut")}</h3>
                 <div
-                  aria-label={`Saved shortcut: ${snapshot.settings.shortcut}`}
+                  aria-label={t("setupPage.savedShortcut", {
+                    shortcut: snapshot.settings.shortcut,
+                  })}
                   className="flex flex-wrap items-center justify-center gap-2"
                 >
                   {snapshot.settings.shortcut.split("+").map((key, index) => (
@@ -415,15 +423,17 @@ export function SetupPage() {
                   )}
                 >
                   {shortcutPassed && <Check className="size-4" aria-hidden="true" />}
-                  {shortcutPassed ? "Shortcut test passed" : "Press your shortcut once to test it"}
+                  {shortcutPassed
+                    ? t("setupPage.shortcutTestPassed")
+                    : t("setupPage.pressYourShortcutOnceToTestIt")}
                 </p>
                 <p className="text-xs leading-5 text-muted-foreground">
-                  This checks your shortcut without starting a recording.
+                  {t("setupPage.thisChecksYourShortcutWithoutStartingA")}
                 </p>
               </div>
               <div className="space-y-4 border-t p-5 sm:p-7">
                 <div className="space-y-2">
-                  <Label htmlFor="setup-shortcut">Global shortcut</Label>
+                  <Label htmlFor="setup-shortcut">{t("settingsPage.globalShortcut")}</Label>
                   <div className="flex flex-wrap items-start gap-2">
                     <div className="min-w-0 flex-1 basis-64">
                       <ShortcutInput
@@ -440,14 +450,14 @@ export function SetupPage() {
                         void action(() => backend.settings({ ...snapshot.settings, shortcut }))
                       }
                     >
-                      Apply shortcut
+                      {t("setupPage.applyShortcut")}
                     </Button>
                   </div>
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  Ctrl, Alt, Shift + Space, A–Z, or F1–F12. Change hold/toggle mode in{" "}
+                  {t("setupPage.ctrlAltShiftSpaceAZOr")}{" "}
                   <Link className="underline" to="/settings">
-                    Settings
+                    {t("common.settings")}
                   </Link>
                   .
                 </p>
@@ -468,7 +478,7 @@ export function SetupPage() {
             disabled={busy || pending}
             onClick={() => void action(() => backend.completeSetup(true))}
           >
-            Skip setup
+            {t("setupPage.skipSetup")}
           </Button>
           {step > 0 && (
             <Button
@@ -479,7 +489,7 @@ export function SetupPage() {
               }
             >
               <ArrowLeft className="size-3.5" aria-hidden="true" />
-              Back
+              {t("common.back")}
             </Button>
           )}
         </div>
@@ -493,7 +503,7 @@ export function SetupPage() {
                 setNavigation({ step: step + 1, direction: 1, animate: event.detail > 0 })
               }
             >
-              Next
+              {t("common.next")}
               <ArrowRight className="size-4" aria-hidden="true" />
             </Button>
           ) : (
@@ -502,7 +512,7 @@ export function SetupPage() {
               disabled={busy || pending || !shortcutPassed}
               onClick={() => void action(() => backend.completeSetup(false))}
             >
-              Finish setup
+              {t("setupPage.finishSetup")}
               <ArrowRight className="size-4" aria-hidden="true" />
             </Button>
           )}

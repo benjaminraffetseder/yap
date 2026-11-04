@@ -1,3 +1,6 @@
+import i18n from "@/i18n";
+import { nativeText } from "@/i18n/native-text";
+import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -35,6 +38,7 @@ export function AudioPlayer(props: AudioPlayerProps) {
 }
 
 function Playback({ src, durationMs = 0, autoPlay = false, onClose, className }: AudioPlayerProps) {
+  const { t } = useTranslation();
   const audio = useRef<HTMLAudioElement>(null);
   const playback = useRef({ mounted: false, request: 0 });
   const lastVolume = useRef(1);
@@ -67,8 +71,8 @@ function Playback({ src, durationMs = 0, autoPlay = false, onClose, className }:
       )
         setError(
           media.error
-            ? "This recording couldn’t be played."
-            : "Playback didn’t start. Press Play to try again.",
+            ? i18n.t("audioPlayer.thisRecordingCouldnTBePlayed")
+            : i18n.t("audioPlayer.playbackDidnTStartPressPlayTo"),
         );
     }
   }, []);
@@ -117,7 +121,7 @@ function Playback({ src, durationMs = 0, autoPlay = false, onClose, className }:
   const silent = muted || volume === 0;
   return (
     <section
-      aria-label="Recording player"
+      aria-label={t("audioPlayer.recordingPlayer")}
       className={cn("@container/audio-player min-w-0 rounded-xl border bg-card/60 p-3", className)}
     >
       <audio
@@ -154,15 +158,17 @@ function Playback({ src, durationMs = 0, autoPlay = false, onClose, className }:
           setFailed(true);
           setPlaying(false);
           setWaiting(false);
-          setError("This recording couldn’t be played.");
+          setError(t("audioPlayer.thisRecordingCouldnTBePlayed"));
         }}
       />
       <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2">
         <Button
           variant="secondary"
           size="icon"
-          aria-label={playing ? "Pause recording" : "Play recording"}
-          title={playing ? "Pause recording" : "Play recording"}
+          aria-label={
+            playing ? t("audioPlayer.pauseRecording") : t("historyEntryPage.playRecording")
+          }
+          title={playing ? t("audioPlayer.pauseRecording") : t("historyEntryPage.playRecording")}
           disabled={failed}
           onClick={toggle}
         >
@@ -178,7 +184,7 @@ function Playback({ src, durationMs = 0, autoPlay = false, onClose, className }:
           )}
         </Button>
         <div
-          aria-label="Playback time"
+          aria-label={t("audioPlayer.playbackTime")}
           className="flex min-w-0 flex-wrap items-center gap-1 font-mono text-xs text-muted-foreground tabular-nums"
         >
           <span className="text-foreground">{timeLabel(position)}</span>
@@ -186,7 +192,7 @@ function Playback({ src, durationMs = 0, autoPlay = false, onClose, className }:
           <span>{timeLabel(length)}</span>
         </div>
         <Slider
-          aria-label="Recording position"
+          aria-label={t("audioPlayer.recordingPosition")}
           className="order-last w-full @min-[36rem]/audio-player:order-none @min-[36rem]/audio-player:w-auto @min-[36rem]/audio-player:flex-1"
           min={0}
           max={Math.max(1, length)}
@@ -210,7 +216,7 @@ function Playback({ src, durationMs = 0, autoPlay = false, onClose, className }:
             }}
           >
             <SelectTrigger
-              aria-label="Playback speed"
+              aria-label={t("audioPlayer.playbackSpeed")}
               size="sm"
               className="w-20 max-w-full border-transparent bg-transparent dark:bg-transparent"
             >
@@ -228,14 +234,16 @@ function Playback({ src, durationMs = 0, autoPlay = false, onClose, className }:
             <Button
               variant="ghost"
               size="icon-sm"
-              aria-label={silent ? "Unmute recording" : "Mute recording"}
-              title={silent ? "Unmute recording" : "Mute recording"}
+              aria-label={
+                silent ? t("audioPlayer.unmuteRecording") : t("audioPlayer.muteRecording")
+              }
+              title={silent ? t("audioPlayer.unmuteRecording") : t("audioPlayer.muteRecording")}
               onClick={toggleMute}
             >
               {silent ? <VolumeX aria-hidden="true" /> : <Volume2 aria-hidden="true" />}
             </Button>
             <Slider
-              aria-label="Volume"
+              aria-label={t("audioPlayer.volume")}
               className="w-20 min-w-0 flex-1"
               min={0}
               max={1}
@@ -255,8 +263,8 @@ function Playback({ src, durationMs = 0, autoPlay = false, onClose, className }:
           <Button
             variant="ghost"
             size="icon-sm"
-            aria-label="Close audio player"
-            title="Close audio player"
+            aria-label={t("audioPlayer.closeAudioPlayer")}
+            title={t("audioPlayer.closeAudioPlayer")}
             className="order-1 ml-auto @min-[36rem]/audio-player:order-none @min-[36rem]/audio-player:ml-0"
             onClick={() => {
               playback.current.request++;
@@ -273,7 +281,7 @@ function Playback({ src, durationMs = 0, autoPlay = false, onClose, className }:
           role="alert"
           className="mt-2 flex flex-wrap items-center gap-x-2 text-xs text-destructive"
         >
-          {error}
+          {nativeText(error)}
           {failed && (
             <Button
               variant="link"
@@ -285,7 +293,7 @@ function Playback({ src, durationMs = 0, autoPlay = false, onClose, className }:
                 void start();
               }}
             >
-              Retry playback
+              {t("audioPlayer.retryPlayback")}
             </Button>
           )}
         </div>

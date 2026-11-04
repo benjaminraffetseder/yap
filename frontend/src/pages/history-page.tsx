@@ -1,3 +1,6 @@
+import { nativeText } from "@/i18n/native-text";
+import { useTranslation } from "react-i18next";
+import i18n from "@/i18n";
 import { AudioImportButton } from "@/components/audio-import-button";
 import { useDictation } from "@/components/dictation-provider";
 import { DictationRow } from "@/components/dictation-row";
@@ -23,12 +26,12 @@ function historyGroups(entries: Session[], deleted: boolean) {
     const key = date.toDateString();
     const label =
       key === today.toDateString()
-        ? "Today"
+        ? i18n.t("historyPage.today")
         : key === yesterday.toDateString()
-          ? "Yesterday"
+          ? i18n.t("historyPage.yesterday")
           : Number.isNaN(date.getTime())
-            ? "Unknown date"
-            : date.toLocaleDateString(undefined, {
+            ? i18n.t("historyPage.unknownDate")
+            : date.toLocaleDateString(i18n.resolvedLanguage, {
                 month: "long",
                 day: "numeric",
                 ...(date.getFullYear() !== today.getFullYear() ? { year: "numeric" } : {}),
@@ -40,11 +43,14 @@ function historyGroups(entries: Session[], deleted: boolean) {
 }
 
 export function HistoryPage() {
+  const { t } = useTranslation();
   const [params, setParams] = useSearchParams();
   const deleted = params.get("view") === "deleted";
   const toggle = useRef<HTMLButtonElement>(null);
   const focusToggle = useRef(false);
-  const toggleLabel = deleted ? "Show all dictations" : "Show Recently Deleted";
+  const toggleLabel = deleted
+    ? t("historyPage.showAllDictations")
+    : t("historyPage.showRecentlyDeleted");
   useEffect(() => {
     if (focusToggle.current) {
       toggle.current?.focus({ preventScroll: true });
@@ -84,6 +90,7 @@ export function HistoryPage() {
 }
 
 function HistoryList({ viewToggle }: { viewToggle: ReactNode }) {
+  const { t } = useTranslation();
   const { snapshot, run, refresh } = useDictation();
   const [params, setParams] = useSearchParams();
   const deleted = params.get("view") === "deleted";
@@ -187,7 +194,10 @@ function HistoryList({ viewToggle }: { viewToggle: ReactNode }) {
       setReload((old) => old + 1);
       toastManager.add({
         type: "success",
-        title: ids.length === 1 ? "Dictation restored" : `${ids.length} dictations restored`,
+        title:
+          ids.length === 1
+            ? t("historyPage.dictationRestored")
+            : t("historyPage.dictationsRestored", { length: ids.length }),
       });
       await run(refresh, false);
     } catch (cause) {
@@ -207,8 +217,8 @@ function HistoryList({ viewToggle }: { viewToggle: ReactNode }) {
         type: "success",
         title:
           ids.length === 1
-            ? "Dictation permanently deleted"
-            : `${ids.length} dictations permanently deleted`,
+            ? t("historyPage.dictationPermanentlyDeleted")
+            : t("historyPage.dictationsPermanentlyDeleted", { length: ids.length }),
       });
     } catch (cause) {
       setDeleteError(message(cause));
@@ -227,11 +237,11 @@ function HistoryList({ viewToggle }: { viewToggle: ReactNode }) {
     <div className="space-y-7 pb-32">
       <div className="sticky top-0 z-20 space-y-4 border-b bg-background py-4">
         <PageHeading
-          title={deleted ? "Recently Deleted" : "History"}
+          title={deleted ? t("historyPage.recentlyDeleted") : t("common.history")}
           description={
             deleted
-              ? "Restore dictations within 30 days, or delete them permanently now."
-              : "Your dictations, ready to revisit."
+              ? t("historyPage.restoreDictationsWithin30DaysOrDelete")
+              : t("historyPage.yourDictationsReadyToRevisit")
           }
           className="items-center"
         >
@@ -242,10 +252,10 @@ function HistoryList({ viewToggle }: { viewToggle: ReactNode }) {
                 className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"
               />
               <Input
-                aria-label="Search transcripts"
+                aria-label={t("historyPage.searchTranscripts")}
                 maxLength={250}
                 className="h-9 rounded-lg bg-card pl-10 text-sm"
-                placeholder="Search transcripts…"
+                placeholder={t("historyPage.searchTranscripts2")}
                 value={query}
                 onChange={(event) => {
                   setLoading(true);
@@ -266,22 +276,22 @@ function HistoryList({ viewToggle }: { viewToggle: ReactNode }) {
         </PageHeading>
         {snapshot.status.phase === "transcribing" && (
           <div role="status" className="flex flex-wrap items-center gap-3 text-sm">
-            <span>{snapshot.status.message}</span>
+            <span>{nativeText(snapshot.status.message)}</span>
             <Button size="sm" variant="outline" onClick={() => void run(backend.cancel, false)}>
-              Cancel transcription
+              {t("historyPage.cancelTranscription")}
             </Button>
           </div>
         )}
         {snapshot.status.historyError && (
           <p role="alert" className="text-sm text-destructive">
-            {snapshot.status.historyError}
+            {nativeText(snapshot.status.historyError)}
           </p>
         )}
         {error && (
           <div role="alert" className="flex items-center gap-3 text-sm text-destructive">
-            {error}
+            {nativeText(error)}
             <Button variant="outline" size="sm" onClick={() => setReload((old) => old + 1)}>
-              Retry
+              {t("common.retry")}
             </Button>
           </div>
         )}
@@ -292,7 +302,9 @@ function HistoryList({ viewToggle }: { viewToggle: ReactNode }) {
         )}
         <div className="flex flex-wrap items-center gap-3">
           <p role="status" className="mr-auto text-xs text-muted-foreground">
-            {loading ? "Loading History…" : `${total} ${total === 1 ? "dictation" : "dictations"}`}
+            {loading
+              ? t("historyPage.loadingHistory")
+              : t("historyPage.dictationCount", { count: total })}
           </p>
           {!!entries.length && (
             <label className="flex items-center gap-2 text-xs">
@@ -305,7 +317,7 @@ function HistoryList({ viewToggle }: { viewToggle: ReactNode }) {
                   setSelected(checked ? entries.map((entry) => entry.id) : [])
                 }
               />
-              Select page
+              {t("historyPage.selectPage")}
             </label>
           )}
         </div>
@@ -315,12 +327,16 @@ function HistoryList({ viewToggle }: { viewToggle: ReactNode }) {
           <History className="mx-auto mb-4 size-7 text-muted-foreground/50" />
           <h2 className="text-sm font-medium">
             {query
-              ? "No matching transcripts"
+              ? t("historyPage.noMatchingTranscripts")
               : deleted
-                ? "No recently deleted dictations"
-                : "No dictations yet"}
+                ? t("historyPage.noRecentlyDeletedDictations")
+                : t("historyPage.noDictationsYet")}
           </h2>
-          {query && <p className="mt-2 text-xs text-muted-foreground">Try a different search.</p>}
+          {query && (
+            <p className="mt-2 text-xs text-muted-foreground">
+              {t("historyPage.tryADifferentSearch")}
+            </p>
+          )}
         </div>
       ) : (
         <div aria-busy={loading} className="space-y-6">
@@ -334,7 +350,9 @@ function HistoryList({ viewToggle }: { viewToggle: ReactNode }) {
                     entry={entry}
                     disabled={unavailable}
                     selection={{
-                      label: `Select dictation ${page * pageSize + index + 1}`,
+                      label: t("historyPage.selectDictation", {
+                        index: page * pageSize + index + 1,
+                      }),
                       checked: selected.includes(entry.id),
                       onCheckedChange: (checked) =>
                         setSelected((old) =>
@@ -357,30 +375,33 @@ function HistoryList({ viewToggle }: { viewToggle: ReactNode }) {
         </div>
       )}
       {total > pageSize && (
-        <nav aria-label="History pages" className="flex items-center justify-between gap-3">
+        <nav
+          aria-label={t("historyPage.historyPages")}
+          className="flex items-center justify-between gap-3"
+        >
           <Button
             variant="outline"
             disabled={unavailable || page === 0}
             onClick={() => changePage(page - 1)}
           >
-            Previous
+            {t("historyPage.previous")}
           </Button>
           <span className="text-xs text-muted-foreground">
-            Page {page + 1} of {pages}
+            {t("historyPage.page")} {page + 1} {t("historyPage.of")} {pages}
           </span>
           <Button
             variant="outline"
             disabled={unavailable || page + 1 >= pages}
             onClick={() => changePage(page + 1)}
           >
-            Next
+            {t("common.next")}
           </Button>
         </nav>
       )}
       {!!selected.length && (
         <div className="pointer-events-none fixed right-0 bottom-[calc(1.25rem+env(safe-area-inset-bottom))] left-[var(--sidebar-width)] z-30 flex justify-center px-3 sm:px-6">
           <section
-            aria-label="Selection actions"
+            aria-label={t("historyPage.selectionActions")}
             data-slot="history-selection-bar"
             className="pointer-events-auto grid max-w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 gap-y-1 rounded-xl border bg-card/95 p-2 shadow-lg backdrop-blur-sm sm:flex"
           >
@@ -388,26 +409,28 @@ function HistoryList({ viewToggle }: { viewToggle: ReactNode }) {
               role="status"
               className="px-2 text-xs whitespace-nowrap text-muted-foreground tabular-nums"
             >
-              {selected.length} selected
+              {t("historyPage.selectedCount", { count: selected.length })}
             </p>
             <div className="col-span-2 row-start-2 flex flex-wrap items-center justify-center gap-1 sm:flex-nowrap">
               {!deleted && (
                 <Button
                   size="sm"
                   variant="ghost"
-                  aria-label="Export selected"
+                  aria-label={t("historyPage.exportSelected")}
                   className="text-xs sm:text-sm"
                   disabled={unavailable}
                   onClick={() => void exportSelected()}
                 >
                   <Download aria-hidden="true" className="size-3.5" />
-                  Export
+                  {t("historyEntryPage.export")}
                 </Button>
               )}
               <Button
                 size="sm"
                 variant="ghost"
-                aria-label={deleted ? "Restore selected" : "Delete selected"}
+                aria-label={
+                  deleted ? t("historyPage.restoreSelected") : t("historyPage.deleteSelected")
+                }
                 className={
                   deleted
                     ? "text-xs sm:text-sm"
@@ -421,19 +444,19 @@ function HistoryList({ viewToggle }: { viewToggle: ReactNode }) {
                 ) : (
                   <Trash2 aria-hidden="true" className="size-3.5" />
                 )}
-                {deleted ? "Restore" : "Delete"}
+                {deleted ? t("historyPage.restore") : t("common.delete")}
               </Button>
               {deleted && (
                 <Button
                   size="sm"
                   variant="ghost"
-                  aria-label="Delete selected permanently"
+                  aria-label={t("historyPage.deleteSelectedPermanently")}
                   className="text-xs text-destructive hover:bg-destructive/10 hover:text-destructive sm:text-sm"
                   disabled={unavailable}
                   onClick={() => void permanentlyRemove(selected)}
                 >
                   <Trash2 aria-hidden="true" className="size-3.5" />
-                  Delete permanently
+                  {t("historyPage.deletePermanently")}
                 </Button>
               )}
             </div>
@@ -443,7 +466,7 @@ function HistoryList({ viewToggle }: { viewToggle: ReactNode }) {
                   <Button
                     size="icon-sm"
                     variant="ghost"
-                    aria-label="Clear selection"
+                    aria-label={t("historyPage.clearSelection")}
                     className="col-start-2 row-start-1 text-muted-foreground"
                     disabled={deletingNow || exporting}
                     onClick={() => {
@@ -455,7 +478,7 @@ function HistoryList({ viewToggle }: { viewToggle: ReactNode }) {
               >
                 <X aria-hidden="true" className="size-3.5" />
               </TooltipTrigger>
-              <TooltipContent>Clear selection</TooltipContent>
+              <TooltipContent>{t("historyPage.clearSelection")}</TooltipContent>
             </Tooltip>
           </section>
         </div>

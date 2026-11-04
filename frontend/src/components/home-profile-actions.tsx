@@ -1,3 +1,5 @@
+import { nativeText } from "@/i18n/native-text";
+import { useTranslation } from "react-i18next";
 import { useDictation } from "@/components/dictation-provider";
 import { Button } from "@/components/ui/button";
 import {
@@ -21,7 +23,7 @@ import {
   type DictationProfile,
   type Snapshot,
 } from "@/lib/backend";
-import { languages } from "@/lib/languages";
+import { useLanguages } from "@/lib/languages";
 import { useId, useRef, useState, type RefObject } from "react";
 
 type Review = { kind: "update" | "new"; baseline: string; choices: DictationProfile };
@@ -71,6 +73,8 @@ export function HomeProfileActions({
   selectorRef: RefObject<HTMLButtonElement | null>;
   showModified?: boolean;
 }) {
+  const languages = useLanguages();
+  const { t } = useTranslation();
   const { snapshot, loading, refresh } = useDictation();
   const [review, setReview] = useState<Review | null>(null);
   const [name, setName] = useState("");
@@ -93,23 +97,23 @@ export function HomeProfileActions({
   const trimmed = name.trim();
   const reason =
     review?.kind === "new" && !trimmed
-      ? "Give this profile a name."
+      ? t("dictationProfiles.giveThisProfileAName")
       : review?.kind === "new" && (Array.from(trimmed).length > 60 || /[\r\n\0]/.test(name))
-        ? "Use a name of up to 60 characters without line breaks."
+        ? t("homeProfileActions.useANameOfUpTo60Characters")
         : review?.kind === "new" &&
             profiles.some((p) => p.name.toLowerCase() === trimmed.toLowerCase())
-          ? "Choose a unique profile name."
+          ? t("homeProfileActions.chooseAUniqueProfileName")
           : review?.kind === "new" && full
-            ? "You can save up to 20 additional profiles."
+            ? t("homeProfileActions.youCanSaveUpTo20Additional")
             : !choices.modelPath
-              ? "Choose a speech model first."
+              ? t("homeProfileActions.chooseASpeechModelFirst")
               : choices.autoPromptId &&
                   !processingOptions(snapshot.textProcessing).some(
                     (p) => p.value === choices.autoPromptId,
                   )
-                ? "Choose an available prompt or chain in Prompts first."
+                ? t("homeProfileActions.chooseAnAvailablePromptOrChainInPrompts")
                 : choices.autoPromptId && !snapshot.textProcessing.enabled
-                  ? "Enable the shared text model in Prompts first."
+                  ? t("homeProfileActions.enableTheSharedTextModelInPromptsFirst")
                   : "";
 
   function open(kind: Review["kind"]) {
@@ -142,10 +146,10 @@ export function HomeProfileActions({
       // A shortcut or another window can change the profile after the UI rendered.
       const fresh = await backend.snapshot();
       if (isBusy(fresh.status.phase))
-        throw new Error("Finish the current operation before changing profiles.");
+        throw new Error(t("homeProfileActions.finishTheCurrentOperationBeforeChangingProfiles"));
       if ((review?.baseline ?? reviewKey(snapshot, profile.id)) !== reviewKey(fresh, profile.id)) {
         await refresh();
-        throw new Error("Settings or profile changed. Review the current choices and try again.");
+        throw new Error(t("homeProfileActions.settingsOrProfileChangedReviewTheCurrentChoices"));
       }
       if (kind === "restore") {
         await backend.applyProfile(profile.id);
@@ -158,10 +162,13 @@ export function HomeProfileActions({
       }
       const receipt =
         kind === "restore"
-          ? `Restored saved choices from ${profile.name}.`
+          ? t("homeProfileActions.restoredChoices", { name: profile.name })
           : kind === "update"
-            ? `Updated ${profile.name}.`
-            : `Saved ${trimmed}. Your active profile is still ${profile.name}.`;
+            ? t("homeProfileActions.updatedProfile", { name: profile.name })
+            : t("homeProfileActions.savedProfile", {
+                name: trimmed,
+                activeProfile: profile.name,
+              });
       setCompleted(receipt);
       // The write is complete even if fetching the resulting snapshot fails.
       try {
@@ -170,7 +177,9 @@ export function HomeProfileActions({
         if (kind === "restore") requestAnimationFrame(() => selectorRef.current?.focus());
       } catch (cause) {
         setRefreshFailed(true);
-        setError(`Changes saved. Could not refresh the current view: ${message(cause)}`);
+        setError(
+          t("homeProfileActions.changesSavedCouldNotRefreshTheCurrent", { cause: message(cause) }),
+        );
       }
     } catch (cause) {
       setError(message(cause));
@@ -193,7 +202,9 @@ export function HomeProfileActions({
       setReview(null);
       requestAnimationFrame(() => selectorRef.current?.focus());
     } catch (cause) {
-      setError(`Changes saved. Could not refresh the current view: ${message(cause)}`);
+      setError(
+        t("homeProfileActions.changesSavedCouldNotRefreshTheCurrent", { cause: message(cause) }),
+      );
     } finally {
       running.current = false;
       setPending(false);
@@ -208,7 +219,7 @@ export function HomeProfileActions({
       tabIndex={-1}
       role="group"
       aria-busy={pending}
-      aria-label={`Changes to ${profile.name}`}
+      aria-label={t("homeProfileActions.changesTo", { name: profile.name })}
       className="min-w-0 max-w-full rounded-md outline-none [overflow-wrap:anywhere] focus-visible:ring-2 focus-visible:ring-ring"
     >
       {(modified || refreshFailed) && (
@@ -222,9 +233,11 @@ export function HomeProfileActions({
             disabled={blocked}
             render={<Button variant="outline" size="sm" />}
             className="h-auto min-h-8 max-w-full border-primary/25 bg-transparent whitespace-normal text-xs text-primary"
-            aria-label={modified ? "Modified" : "Profile changes"}
+            aria-label={
+              modified ? t("dictationProfiles.modified") : t("homeProfileActions.profileChanges")
+            }
           >
-            {modified ? "Modified" : "Profile changes"}
+            {modified ? t("dictationProfiles.modified") : t("homeProfileActions.profileChanges")}
             <ChevronDown aria-hidden="true" className="size-3.5" />
           </Menu.Trigger>
           <Menu.Portal>
@@ -235,15 +248,17 @@ export function HomeProfileActions({
               >
                 <p className="px-2 py-2 text-xs leading-5 text-muted-foreground">
                   {refreshFailed
-                    ? "Changes are saved. Refresh the view before making another change."
-                    : `Current choices differ from ${profile.name}. Your saved profile is unchanged.`}
+                    ? t("homeProfileActions.changesAreSavedRefreshTheViewBefore")
+                    : t("homeProfileActions.currentChoicesDifferFromYourSavedProfile", {
+                        name: profile.name,
+                      })}
                 </p>
                 {refreshFailed ? (
                   <Menu.Item
                     onClick={() => void retryRefresh()}
                     className="rounded-md px-2 py-2 text-sm outline-none data-highlighted:bg-accent"
                   >
-                    Refresh saved changes
+                    {t("homeProfileActions.refreshSavedChanges")}
                   </Menu.Item>
                 ) : (
                   <>
@@ -253,7 +268,7 @@ export function HomeProfileActions({
                       className="flex items-center gap-2 rounded-md px-2 py-2 text-sm outline-none data-highlighted:bg-accent data-disabled:opacity-50"
                     >
                       <RotateCcw aria-hidden="true" className="size-4 shrink-0" />
-                      Restore saved choices
+                      {t("homeProfileActions.restoreSavedChoices")}
                     </Menu.Item>
                     <Menu.Item
                       disabled={blocked}
@@ -261,7 +276,7 @@ export function HomeProfileActions({
                       className="flex items-center gap-2 rounded-md px-2 py-2 text-sm outline-none data-highlighted:bg-accent data-disabled:opacity-50"
                     >
                       <Check aria-hidden="true" className="size-4 shrink-0" />
-                      Update profile…
+                      {t("homeProfileActions.updateProfile")}
                     </Menu.Item>
                     <Menu.Item
                       disabled={blocked || full || !snapshot.settings.modelPath}
@@ -269,11 +284,11 @@ export function HomeProfileActions({
                       className="flex items-center gap-2 rounded-md px-2 py-2 text-sm outline-none data-highlighted:bg-accent data-disabled:opacity-50"
                     >
                       <Plus aria-hidden="true" className="size-4 shrink-0" />
-                      Save as new…
+                      {t("homeProfileActions.saveAsNew")}
                     </Menu.Item>
                     {full && (
                       <p className="px-2 py-2 text-xs text-muted-foreground">
-                        You can save up to 20 additional profiles.
+                        {t("homeProfileActions.youCanSaveUpTo20Additional")}
                       </p>
                     )}
                   </>
@@ -290,12 +305,12 @@ export function HomeProfileActions({
       )}
       {!review && error && (
         <p role="alert" className="break-words text-sm text-destructive">
-          {error}
+          {nativeText(error)}
         </p>
       )}
       {!review && refreshFailed && (
         <Button size="sm" variant="outline" disabled={pending} onClick={() => void retryRefresh()}>
-          Refresh
+          {t("homeProfileActions.refresh")}
         </Button>
       )}
       <Dialog
@@ -319,38 +334,42 @@ export function HomeProfileActions({
         >
           <DialogHeader>
             <DialogTitle>
-              {review?.kind === "new" ? "Save as new profile" : `Update ${review?.choices.name}?`}
+              {review?.kind === "new"
+                ? t("homeProfileActions.saveAsNewProfile")
+                : t("homeProfileActions.update", { name: review?.choices.name })}
             </DialogTitle>
             <DialogDescription>
               {review?.kind === "new"
-                ? "Save these current choices as a separate local profile. This does not activate it or copy app assignments. Choose Use to activate it later."
-                : "Replace this profile’s saved choices with your current settings. Future dictations in its assigned apps and profile cycling will use these choices. Your active settings stay in place."}
+                ? t("homeProfileActions.saveTheseCurrentChoicesAsASeparate")
+                : t("homeProfileActions.replaceThisProfileSSavedChoicesWith")}
             </DialogDescription>
           </DialogHeader>
           <dl className="grid grid-cols-1 gap-x-4 gap-y-2 text-sm @min-[24rem]/review:grid-cols-[auto_minmax(0,1fr)]">
-            <dt className="text-muted-foreground">Speech model</dt>
+            <dt className="text-muted-foreground">{t("common.speechModel")}</dt>
             <dd>
               {snapshot.models.find((m) => m.path === choices.modelPath)?.name ??
                 choices.modelPath.split(/[\\/]/).pop() ??
-                "None"}
+                t("homeProfileActions.none")}
             </dd>
-            <dt className="text-muted-foreground">Language</dt>
+            <dt className="text-muted-foreground">{t("homeProfileActions.language")}</dt>
             <dd>
               {languages.find((l) => l.value === choices.language)?.label ?? choices.language}
             </dd>
-            <dt className="text-muted-foreground">Light cleanup</dt>
-            <dd>{choices.cleanText ? "On" : "Off"}</dd>
-            <dt className="text-muted-foreground">After dictation</dt>
+            <dt className="text-muted-foreground">{t("settingsPage.lightCleanup")}</dt>
+            <dd>{choices.cleanText ? t("common.on") : t("common.off")}</dd>
+            <dt className="text-muted-foreground">{t("dictationProfiles.afterDictation")}</dt>
             <dd>
               {processingOptions(snapshot.textProcessing).find(
                 (p) => p.value === choices.autoPromptId,
               )?.label ??
-                (choices.autoPromptId ? "Prompt or chain unavailable" : "No automatic processing")}
+                (choices.autoPromptId
+                  ? t("dictationProfiles.promptOrChainUnavailable")
+                  : t("common.noAutomaticProcessing"))}
             </dd>
           </dl>
           {review?.kind === "new" && (
             <div className="space-y-2">
-              <Label htmlFor={nameID}>Profile name</Label>
+              <Label htmlFor={nameID}>{t("dictationProfiles.profileName")}</Label>
               <Input
                 id={nameID}
                 value={name}
@@ -367,18 +386,18 @@ export function HomeProfileActions({
                 }}
               />
               <p id={`${nameID}-reason`} role="status" className="text-xs text-muted-foreground">
-                {reason || "Nothing is saved until you choose Save as new."}
+                {reason || t("homeProfileActions.nothingIsSavedUntilYouChooseSave")}
               </p>
             </div>
           )}
           {!completed && stale && (
             <p role="alert" className="text-sm text-destructive">
-              Settings or profile changed. Close this dialog and review the current choices.
+              {t("homeProfileActions.settingsOrProfileChangedCloseThisDialog")}
             </p>
           )}
           {error && (
             <p role="alert" className="text-sm text-destructive">
-              {error}
+              {nativeText(error)}
             </p>
           )}
           {completed && (
@@ -400,18 +419,22 @@ export function HomeProfileActions({
                 setReview(null);
               }}
             >
-              {completed ? "Done" : "Cancel"}
+              {completed ? t("dictationProfiles.done") : t("common.cancel")}
             </Button>
             {refreshFailed ? (
               <Button disabled={pending} onClick={() => void retryRefresh()}>
-                Refresh
+                {t("homeProfileActions.refresh")}
               </Button>
             ) : (
               <Button
                 disabled={blocked || stale || !!reason || !!completed}
                 onClick={() => void mutate(review?.kind === "new" ? "new" : "update")}
               >
-                {pending ? "Saving…" : review?.kind === "new" ? "Save as new" : "Update profile"}
+                {pending
+                  ? t("autoSaveStatus.saving")
+                  : review?.kind === "new"
+                    ? t("homeProfileActions.saveAsNew2")
+                    : t("homeProfileActions.updateProfile2")}
               </Button>
             )}
           </DialogFooter>

@@ -1,3 +1,4 @@
+import i18n from "@/i18n";
 import { useEffect, useRef, useState } from "react";
 import { backend, message } from "@/lib/backend";
 
@@ -28,12 +29,12 @@ export function useTextRequest() {
     try {
       const output = await action(id);
       if (current.current === id) {
-        if (cancelled.current) setError("Processing cancelled");
+        if (cancelled.current) setError(i18n.t("useTextRequest.processingCancelled"));
         else setResult(output);
       }
     } catch (cause) {
       if (current.current === id)
-        setError(cancelled.current ? "Processing cancelled" : message(cause));
+        setError(cancelled.current ? i18n.t("useTextRequest.processingCancelled") : message(cause));
     } finally {
       if (current.current === id) {
         current.current = null;

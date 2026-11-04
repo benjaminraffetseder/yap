@@ -156,6 +156,31 @@ test.beforeEach(async ({ page }) => {
 });
 
 const guide = (page: Page) => page.getByRole("region", { name: "Find a starting point" });
+
+test("German guidance keeps model IDs and spoken language independent from the interface", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    localStorage.setItem("desktop-language", "de");
+    window.modelGuidanceTest.snapshot.settings.language = "en";
+  });
+  await page.goto("/#/models");
+  await page.getByRole("button", { name: "Auswahlhilfe", exact: true }).click();
+  const germanGuide = page.getByRole("region", { name: "Finde einen Ausgangspunkt" });
+  await germanGuide.getByRole("combobox", { name: "Sprache für die Auswahlhilfe" }).click();
+  await page.getByRole("option", { name: "Englisch", exact: true }).click();
+  await expect(germanGuide.getByRole("status")).toContainText("Moonshine V2 Small");
+  await germanGuide.getByRole("combobox", { name: "Sprache für die Auswahlhilfe" }).click();
+  await page.getByRole("option", { name: "Deutsch", exact: true }).click();
+  await expect(germanGuide.getByRole("status")).toContainText("NVIDIA Parakeet TDT v3");
+  expect(await page.evaluate(() => window.modelGuidanceTest.snapshot.settings.language)).toBe("en");
+  await page.goto("/#/settings?section=general");
+  await page.getByRole("combobox", { name: "Sprache der Oberfläche" }).click();
+  await page.getByRole("option", { name: "English", exact: true }).click();
+  await expect(page.locator("html")).toHaveAttribute("lang", "en");
+  expect(await page.evaluate(() => window.modelGuidanceTest.snapshot.settings.language)).toBe("en");
+  expect(await page.evaluate(() => window.modelGuidanceTest.calls)).toEqual([]);
+});
 const card = (page: Page, name: string) => page.getByRole("region", { name, exact: true });
 const help = (page: Page) => page.getByRole("button", { name: "Help me choose", exact: true });
 async function revealGuidance(page: Page) {

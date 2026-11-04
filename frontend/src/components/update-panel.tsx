@@ -1,31 +1,38 @@
+import i18n from "@/i18n";
+import { useTranslation } from "react-i18next";
 import { useDictation } from "@/components/dictation-provider";
 import { SettingsSection } from "@/components/settings-section";
 import { Button } from "@/components/ui/button";
 import { backend, isDesktop } from "@/lib/backend";
 
 export function UpdatePanel() {
+  const { t } = useTranslation();
   const { update, checkingUpdates, updateError, checkUpdates, run } = useDictation();
   return (
-    <SettingsSection title="App updates">
+    <SettingsSection title={t("updatePanel.appUpdates")}>
       <div className="space-y-3 py-4">
-        {update && <p className="text-sm">Installed version: {update.currentVersion}</p>}
+        {update && (
+          <p className="text-sm">
+            {t("updatePanel.installedVersion")} {update.currentVersion}
+          </p>
+        )}
         {!isDesktop ? (
           <p className="text-sm text-muted-foreground">
-            Open Yap on your desktop to check for updates.
+            {t("updatePanel.openYapOnYourDesktopToCheck")}
           </p>
         ) : update && !update.supported ? (
           <p className="text-sm text-muted-foreground">
-            Update checks are available on Windows x64.
+            {t("updatePanel.updateChecksAreAvailableOnWindowsX64")}
           </p>
         ) : update && !update.configured ? (
           <p className="text-sm text-muted-foreground">
-            GitHub update checks aren’t configured for this build.
+            {t("updatePanel.gitHubUpdateChecksArenTConfiguredFor")}
           </p>
         ) : (
           <>
             {checkingUpdates && (
               <p role="status" className="text-sm">
-                Checking for updates…
+                {t("updatePanel.checkingForUpdates")}
               </p>
             )}
             {updateError && (
@@ -35,28 +42,30 @@ export function UpdatePanel() {
             )}
             {update?.available ? (
               <>
-                <p className="text-sm font-medium">Yap {update.latestVersion} is available.</p>
+                <p className="text-sm font-medium">
+                  Yap {update.latestVersion} {t("appLayout.isAvailable")}
+                </p>
                 {update.notes && (
                   <p className="whitespace-pre-wrap text-sm text-muted-foreground">
                     {update.notes}
                   </p>
                 )}
                 <p className="text-sm text-muted-foreground">
-                  Download the installer, choose Quit Yap from the tray menu, then run setup. Your
-                  settings, history, and downloaded models will be kept.
+                  {t("updatePanel.downloadTheInstallerChooseQuitYapFrom")}
                 </p>
                 <Button onClick={() => void run(backend.downloadUpdate, false)}>
-                  Download update
+                  {t("appLayout.downloadUpdate")}
                 </Button>
               </>
             ) : update?.checkedAt && !updateError && !checkingUpdates ? (
               <p role="status" className="text-sm">
-                {update.message || "You’re up to date."}
+                {update.message || t("updatePanel.youReUpToDate")}
               </p>
             ) : null}
             {update?.checkedAt && (
               <p className="text-xs text-muted-foreground">
-                Last checked: {new Date(update.checkedAt).toLocaleString()}
+                {t("updatePanel.lastChecked")}{" "}
+                {new Date(update.checkedAt).toLocaleString(i18n.resolvedLanguage)}
               </p>
             )}
             <Button
@@ -64,12 +73,9 @@ export function UpdatePanel() {
               disabled={checkingUpdates}
               onClick={() => void checkUpdates()}
             >
-              Check for updates
+              {t("commandMenu.checkForUpdates")}
             </Button>
-            <p className="text-xs text-muted-foreground">
-              Yap checks GitHub Releases at startup, at most once a day. Checking sends no
-              recordings or transcripts.
-            </p>
+            <p className="text-xs text-muted-foreground">{t("updatePanel.privacy")}</p>
           </>
         )}
       </div>

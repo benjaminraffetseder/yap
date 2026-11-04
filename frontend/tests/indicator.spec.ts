@@ -96,6 +96,35 @@ test.beforeEach(async ({ page }) => {
   }, recording);
 });
 
+test("indicator translates native labels without changing profile names or action IDs", async ({
+  page,
+}) => {
+  await page.addInitScript(() => localStorage.setItem("desktop-language", "de"));
+  await page.goto("/indicator.html");
+  await sendFrame(page, {
+    label: "1:05 · Saving · Work profile",
+    primary: "Stop",
+    secondary: "Cancel",
+  });
+  await expect(page.locator("#label")).toHaveText("1:05 · Wird gespeichert · Work profile");
+  await expect(page.getByRole("button", { name: "Stopp", exact: true })).toHaveAttribute(
+    "id",
+    "primary",
+  );
+  await expect(page.getByRole("button", { name: "Abbrechen", exact: true })).toHaveAttribute(
+    "id",
+    "secondary",
+  );
+  await sendFrame(page, {
+    phase: "profile",
+    label: "Profile: Work profile",
+    primary: "",
+    secondary: "Dismiss",
+  });
+  await expect(page.locator("#label")).toHaveText("Profil: Work profile");
+  await expect(page.getByRole("button", { name: "Schließen", exact: true })).toBeVisible();
+});
+
 for (const size of [
   { width: 316, height: 40 },
   { width: 376, height: 64 },

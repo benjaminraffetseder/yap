@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { useDictation } from "@/components/dictation-provider";
 import { MotionReveal } from "@/components/motion-reveal";
 import { backend, isDesktop } from "@/lib/backend";
@@ -9,14 +10,15 @@ import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
 
 export function AudioDropImport() {
+  const { t } = useTranslation();
   const { snapshot, loading, run } = useDictation();
   const [dragging, setDragging] = useState(false);
   const reduced = useMotionPreference();
   const pending = useRef(false);
   const unavailable = loading
-    ? "Wait for Yap to finish loading"
+    ? t("audioDropImport.waitForYapToFinishLoading")
     : !snapshot.ready
-      ? "Choose a speech model before importing audio"
+      ? t("audioDropImport.chooseASpeechModelBeforeImportingAudio")
       : "";
   const current = useRef({ unavailable, run });
   current.current = { unavailable, run };
@@ -106,9 +108,13 @@ export function AudioDropImport() {
             className="space-y-3 px-6 text-center"
           >
             <Upload className="mx-auto size-10 text-primary" aria-hidden="true" />
-            <p className="text-lg font-medium">{unavailable || "Drop audio files to import"}</p>
+            <p className="text-lg font-medium">
+              {unavailable || t("audioDropImport.dropAudioFilesToImport")}
+            </p>
             {!unavailable && (
-              <p className="text-sm text-muted-foreground">Up to 25 minutes · 256 MiB</p>
+              <p className="text-sm text-muted-foreground">
+                {t("audioDropImport.upTo25Minutes256MiB")}
+              </p>
             )}
           </MotionReveal>
         </motion.div>

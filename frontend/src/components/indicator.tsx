@@ -1,3 +1,5 @@
+import { nativeText } from "@/i18n/native-text";
+import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { Events } from "@wailsio/runtime";
 import {
@@ -125,6 +127,7 @@ function IndicatorMeter() {
 }
 
 export function Indicator() {
+  const { t } = useTranslation();
   const [frame, setFrame] = useState(emptyFrame);
   const drag = useIndicatorDrag();
 
@@ -148,13 +151,13 @@ export function Indicator() {
     <main
       id="indicator"
       data-phase={frame.phase}
-      aria-label="Dictation status"
+      aria-label={t("indicator.dictationStatus")}
       style={{ "--level": level } as CSSProperties}
       {...drag}
     >
       <IndicatorMeter />
-      <span id="label" title={frame.label}>
-        {frame.label}
+      <span id="label" title={nativeText(frame.label)}>
+        {nativeText(frame.label)}
       </span>
       {(
         [
@@ -174,7 +177,7 @@ export function Indicator() {
               onPointerDown={(event) => event.preventDefault()}
               onClick={() => void emit("indicator:action", { action, revision: frame.revision })}
             >
-              {label}
+              {nativeText(label)}
             </Button>
           ),
       )}

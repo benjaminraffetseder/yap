@@ -1,3 +1,5 @@
+import { useTranslation } from "react-i18next";
+import { nativeText } from "@/i18n/native-text";
 import { Button } from "@/components/ui/button";
 import { CircularProgress } from "@/components/ui/progress";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -8,15 +10,21 @@ import { AudioLines } from "lucide-react";
 import { motion } from "motion/react";
 
 export function ImportQueueFab({ jobs, onOpen }: { jobs: ImportJob[]; onOpen: () => void }) {
+  const { t } = useTranslation();
   const reduced = useMotionPreference();
   const pending = jobs.filter(importPending);
   const active = pending.find((job) => job.state !== "queued");
   const queued = pending.filter((job) => job.state === "queued").length;
   const status = active
-    ? `${active.state === "transcribing" ? "Transcribing" : active.message} ${active.name}${active.progress >= 0 ? ` · ${Math.round(active.progress)}%` : ""} · ${queued} queued`
+    ? t("importQueueFab.activeStatus", {
+        state: nativeText(active.state === "transcribing" ? "Transcribing" : active.message),
+        name: active.name,
+        progress: active.progress >= 0 ? ` · ${Math.round(active.progress)}%` : "",
+        count: queued,
+      })
     : queued
-      ? "Waiting for dictation to finish"
-      : "Imports finished";
+      ? t("importQueueFab.waitingForDictationToFinish")
+      : t("importQueueFab.importsFinished");
   return (
     <motion.div
       data-slot="import-queue-fab"
@@ -35,10 +43,10 @@ export function ImportQueueFab({ jobs, onOpen }: { jobs: ImportJob[]; onOpen: ()
             />
           }
           onClick={onOpen}
-          aria-label="Open import queue"
+          aria-label={t("importQueueFab.openImportQueue")}
         >
           <CircularProgress
-            aria-label="Import progress"
+            aria-label={t("importQueueFab.importProgress")}
             className="absolute -inset-1 size-16"
             value={active && active.progress >= 0 ? active.progress : pending.length ? null : 100}
           />

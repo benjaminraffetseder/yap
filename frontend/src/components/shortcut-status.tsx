@@ -1,3 +1,5 @@
+import { nativeText } from "@/i18n/native-text";
+import { useTranslation } from "react-i18next";
 import { useDictation } from "@/components/dictation-provider";
 import { Button } from "@/components/ui/button";
 import { backend, isBusy, isDesktop } from "@/lib/backend";
@@ -14,6 +16,7 @@ export function ShortcutStatus({
   profile?: boolean;
   variant?: "inline" | "banner";
 }) {
+  const { t } = useTranslation();
   const { snapshot, run } = useDictation();
   const [pending, setPending] = useState(false);
   const retrying = useRef(false);
@@ -42,14 +45,18 @@ export function ShortcutStatus({
       disabled={disabled || pending || !isDesktop || isBusy(snapshot.status.phase)}
       onClick={() => void retry()}
     >
-      {pending ? "Retrying…" : profile ? "Retry profile shortcut" : "Retry shortcut"}
+      {pending
+        ? t("shortcutStatus.retrying")
+        : profile
+          ? t("shortcutStatus.retryProfileShortcut")
+          : t("shortcutStatus.retryShortcut")}
     </Button>
   );
   if (variant === "banner") {
     const permission = /accessibility|permission|input monitoring/i.test(error);
     return (
       <section
-        aria-label="Shortcut recovery"
+        aria-label={t("shortcutStatus.shortcutRecovery")}
         className="@container/shortcut min-w-0 rounded-xl border border-amber-500/25 bg-amber-500/5 [overflow-wrap:anywhere]"
       >
         <div className="flex min-w-0 gap-3 p-4 @max-[20rem]/shortcut:p-3">
@@ -60,12 +67,14 @@ export function ShortcutStatus({
           <div className="min-w-0 flex-1 space-y-3">
             <div role="alert" className="space-y-1">
               <p className="text-sm font-medium">
-                {profile ? "Profile shortcut unavailable" : "Global shortcut unavailable"}
+                {profile
+                  ? t("shortcutStatus.profileShortcutUnavailable")
+                  : t("shortcutStatus.globalShortcutUnavailable")}
               </p>
               <p className="text-sm leading-6 text-muted-foreground">
                 {permission
-                  ? "Allow Yap in your system’s accessibility settings, then retry."
-                  : "Release this shortcut in the other app, or choose a different combination."}
+                  ? t("shortcutStatus.allowYapInYourSystemSAccessibility")
+                  : t("shortcutStatus.releaseThisShortcutInTheOtherApp")}
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
@@ -80,14 +89,14 @@ export function ShortcutStatus({
                   />
                 }
               >
-                Change shortcut
+                {t("shortcutStatus.changeShortcut")}
               </Button>
             </div>
             <details className="text-xs leading-5 text-muted-foreground [overflow-wrap:anywhere]">
               <summary className="w-fit cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-ring">
-                Technical details
+                {t("diagnosticsPanel.technicalDetails")}
               </summary>
-              <p className="mt-2">{error}</p>
+              <p className="mt-2">{nativeText(error)}</p>
             </details>
           </div>
         </div>
@@ -97,7 +106,7 @@ export function ShortcutStatus({
   return (
     <div className="mt-2 space-y-2">
       <p role="alert" className="text-xs text-destructive">
-        {error}
+        {nativeText(error)}
       </p>
       {retryButton}
     </div>

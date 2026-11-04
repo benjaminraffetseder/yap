@@ -1,3 +1,5 @@
+import { useTranslation } from "react-i18next";
+import i18n from "@/i18n";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -8,7 +10,7 @@ import { Link } from "react-router";
 function speechModelLabel(model: string) {
   const match = /^(?:ggml-)?(tiny|base|small)(\.en)?(?:\.bin)?$/i.exec(model);
   return match
-    ? `Whisper ${match[1][0].toUpperCase()}${match[1].slice(1).toLowerCase()}${match[2] ? " · English" : ""}`
+    ? `Whisper ${match[1][0].toUpperCase()}${match[1].slice(1).toLowerCase()}${match[2] ? i18n.t("dictationRow.english") : ""}`
     : model;
 }
 
@@ -42,6 +44,7 @@ export function DictationRow({
   inset = true,
   selection,
 }: DictationRowProps) {
+  const { t } = useTranslation();
   const text = entry.finalTranscript ?? entry.rawTranscript;
   const changed = text !== entry.rawTranscript;
   const Icon = changed ? FileText : AudioLines;
@@ -51,19 +54,25 @@ export function DictationRow({
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-[11px] text-muted-foreground">
         {deleted ? (
           entry.deletedAt &&
-          `Deleted ${new Date(entry.deletedAt).toLocaleDateString()} · ${Math.max(0, Math.ceil((Date.parse(entry.deletedAt) + 30 * 86400000 - Date.now()) / 86400000))} days left to restore`
+          t("dictationRow.deletedStatus", {
+            date: new Date(entry.deletedAt).toLocaleDateString(i18n.resolvedLanguage),
+            days: Math.max(
+              0,
+              Math.ceil((Date.parse(entry.deletedAt) + 30 * 86400000 - Date.now()) / 86400000),
+            ),
+          })
         ) : (
           <>
             <span
               className={`inline-flex items-center gap-1.5 rounded-md px-1.5 py-0.5 ${changed ? "bg-primary/10 text-primary" : "bg-muted/60"}`}
             >
               <Icon aria-hidden="true" className="size-3.5" />
-              {changed ? "Result" : "Transcription"}
+              {changed ? t("historyEntryPage.result") : t("historyEntryPage.transcription")}
             </span>
             <time dateTime={entry.createdAt} className="tabular-nums">
               {showDate
-                ? new Date(entry.createdAt).toLocaleString()
-                : new Date(entry.createdAt).toLocaleTimeString(undefined, {
+                ? new Date(entry.createdAt).toLocaleString(i18n.resolvedLanguage)
+                : new Date(entry.createdAt).toLocaleTimeString(i18n.resolvedLanguage, {
                     hour: "numeric",
                     minute: "2-digit",
                   })}
@@ -118,7 +127,7 @@ export function DictationRow({
                 <Button
                   size="icon-sm"
                   variant="ghost"
-                  aria-label="Restore"
+                  aria-label={t("historyPage.restore")}
                   className="text-muted-foreground"
                   disabled={disabled}
                   onClick={deleted.onRestore}
@@ -127,7 +136,7 @@ export function DictationRow({
             >
               <RotateCcw aria-hidden="true" className="size-3.5" />
             </TooltipTrigger>
-            <TooltipContent side="left">Restore</TooltipContent>
+            <TooltipContent side="left">{t("historyPage.restore")}</TooltipContent>
           </Tooltip>
           <Tooltip>
             <TooltipTrigger
@@ -135,7 +144,7 @@ export function DictationRow({
                 <Button
                   size="icon-sm"
                   variant="ghost"
-                  aria-label="Delete permanently"
+                  aria-label={t("historyPage.deletePermanently")}
                   className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
                   disabled={disabled}
                   onClick={deleted.onDeletePermanently}
@@ -144,7 +153,7 @@ export function DictationRow({
             >
               <Trash2 aria-hidden="true" className="size-3.5" />
             </TooltipTrigger>
-            <TooltipContent side="left">Delete permanently</TooltipContent>
+            <TooltipContent side="left">{t("historyPage.deletePermanently")}</TooltipContent>
           </Tooltip>
         </div>
       )}

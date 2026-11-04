@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { fade, motionTransition } from "@/lib/motion";
 import { useMotionPreference } from "@/lib/use-motion-preference";
@@ -8,11 +9,12 @@ import { motion } from "motion/react";
 export const toastManager = Toast.createToastManager();
 
 export function Toaster() {
+  const { t } = useTranslation();
   return (
     <Toast.Provider toastManager={toastManager}>
       <Toast.Portal>
         <Toast.Viewport
-          aria-label="Notifications"
+          aria-label={t("toast.notifications")}
           className="pointer-events-none fixed right-5 bottom-[calc(var(--setup-footer-height,0px)+1.25rem)] z-[100] flex w-96 max-w-[calc(100vw-2.5rem)] flex-col gap-3 outline-none [body:has([data-slot=history-selection-bar])_&]:bottom-32"
         >
           <ToastList />
@@ -23,6 +25,7 @@ export function Toaster() {
 }
 
 function ToastList() {
+  const { t } = useTranslation();
   const { toasts } = Toast.useToastManager();
   const reduced = useMotionPreference();
   return toasts.map((toast) => (
@@ -67,7 +70,7 @@ function ToastList() {
         </div>
         {toast.actionProps && <Toast.Action render={<Button size="xs" variant="outline" />} />}
         <Toast.Close
-          aria-label="Dismiss notification"
+          aria-label={t("toast.dismissNotification")}
           aria-hidden={false}
           render={<Button variant="ghost" size="icon-xs" className="-mr-1" />}
         >

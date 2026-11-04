@@ -1,8 +1,11 @@
+import { useTranslation } from "react-i18next";
+import { nativeText } from "@/i18n/native-text";
 import { useDictation } from "@/components/dictation-provider";
 import { backend, duration } from "@/lib/backend";
 import { AudioLines, Loader2, Square, X } from "lucide-react";
 import { useEffect, useState } from "react";
 export function RecordingStatus() {
+  const { t } = useTranslation();
   const {
     snapshot: { status, floatingIndicator, recordingSaveHistory },
     level,
@@ -41,13 +44,15 @@ export function RecordingStatus() {
         )}
         <span className="text-sm font-medium">
           {capturing
-            ? `${diagnostic ? "Dictation test" : testing ? "Microphone test" : "Recording"} · ${duration(Math.max(0, now - status.startedAt))}`
+            ? `${diagnostic ? t("recordingStatus.dictationTest") : testing ? t("recordingStatus.microphoneTest") : t("homePage.recording")} · ${duration(Math.max(0, now - status.startedAt))}`
             : diagnostic
-              ? "Transcribing test…"
-              : status.message}
+              ? t("diagnosticsPanel.transcribingTest")
+              : nativeText(status.message)}
           {recording && (
             <span className="ml-2 text-xs text-muted-foreground">
-              {recordingSaveHistory ? "Saving to history" : "Not saving to history"}
+              {recordingSaveHistory
+                ? t("homePage.savingToHistory")
+                : t("homePage.notSavingToHistory")}
             </span>
           )}
         </span>
@@ -55,10 +60,10 @@ export function RecordingStatus() {
           <button
             aria-label={
               diagnostic
-                ? "Stop test recording"
+                ? t("recordingStatus.stopTestRecording")
                 : testing
-                  ? "Stop microphone test"
-                  : "Stop recording"
+                  ? t("recordingStatus.stopMicrophoneTest")
+                  : t("homePage.stopRecording")
             }
             className="rounded-lg p-2 hover:bg-accent"
             onClick={() =>
@@ -75,7 +80,7 @@ export function RecordingStatus() {
           </button>
         )}
         <button
-          aria-label="Cancel"
+          aria-label={t("common.cancel")}
           className="rounded-lg p-2 hover:bg-accent"
           onClick={() => void run(backend.cancel)}
         >

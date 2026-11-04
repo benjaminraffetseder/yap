@@ -1,3 +1,6 @@
+import { nativeText } from "@/i18n/native-text";
+import { useTranslation } from "react-i18next";
+import i18n from "@/i18n";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -18,7 +21,7 @@ export function ShortcutInput({
   value,
   disabled,
   onChange,
-  recordLabel = "Record shortcut",
+  recordLabel = i18n.t("shortcutInput.recordShortcut"),
 }: {
   id: string;
   value: string;
@@ -60,7 +63,7 @@ export function ShortcutInput({
       </div>
       {error && (
         <p role="alert" className="text-xs text-destructive">
-          {error}
+          {nativeText(error)}
         </p>
       )}
       {open && (
@@ -84,6 +87,7 @@ function ShortcutCapture({
   returnFocus: RefObject<HTMLButtonElement | null>;
   onFinish: (value: string | undefined, warning: string) => void;
 }) {
+  const { t } = useTranslation();
   const [ready, setReady] = useState(false);
   const [candidate, setCandidate] = useState("");
   const [preview, setPreview] = useState("");
@@ -111,16 +115,17 @@ function ShortcutCapture({
     mounted.current = true;
     const off = Events.On("shortcut:capture-ended", ({ data: token }: { data: string }) => {
       if (active && token === lease.current && !closing.current)
-        finish.current(undefined, "Shortcut capture timed out. Try again.");
+        finish.current(undefined, i18n.t("shortcutInput.shortcutCaptureTimedOutTryAgain"));
     });
-    const blur = () => finish.current(undefined, "Shortcut capture cancelled when Yap lost focus.");
+    const blur = () =>
+      finish.current(undefined, i18n.t("shortcutInput.shortcutCaptureCancelledWhenYapLostFocus"));
     const visibility = () => {
       if (document.hidden) blur();
     };
     window.addEventListener("blur", blur);
     document.addEventListener("visibilitychange", visibility);
     const timer = setTimeout(
-      () => finish.current(undefined, "Shortcut capture timed out. Try again."),
+      () => finish.current(undefined, i18n.t("shortcutInput.shortcutCaptureTimedOutTryAgain")),
       45000,
     );
     // Strict Mode reconnects effects. Share the in-flight lease instead of
@@ -181,13 +186,13 @@ function ShortcutCapture({
         }}
       >
         <DialogHeader>
-          <DialogTitle>Record shortcut</DialogTitle>
-          <DialogDescription>Ctrl, Alt, or Shift with Space, A–Z, or F1–F12.</DialogDescription>
+          <DialogTitle>{t("shortcutInput.recordShortcut")}</DialogTitle>
+          <DialogDescription>{t("shortcutInput.ctrlAltOrShiftWithSpaceA")}</DialogDescription>
         </DialogHeader>
         <div
           ref={area}
           role="group"
-          aria-label="Shortcut capture"
+          aria-label={t("shortcutInput.shortcutCapture")}
           aria-describedby="shortcut-capture-help"
           tabIndex={0}
           className="rounded-xl border bg-muted/40 px-4 py-8 text-center outline-none focus-visible:ring-2 focus-visible:ring-ring"
@@ -201,13 +206,13 @@ function ShortcutCapture({
             if (event.metaKey || event.getModifierState("AltGraph")) {
               setCandidate("");
               setPreview("");
-              setError("Use Ctrl, Alt, or Shift. Command, Windows, and AltGr are not supported.");
+              setError(t("shortcutInput.useCtrlAltOrShiftCommandWindows"));
               return;
             }
             if (event.nativeEvent.isComposing || event.key === "Dead" || event.key === "Process") {
               setCandidate("");
               setPreview("");
-              setError("Finish composing text, then press a shortcut.");
+              setError(t("shortcutInput.finishComposingTextThenPressAShortcut"));
               return;
             }
             const modifiers = [
@@ -230,9 +235,7 @@ function ShortcutCapture({
             if (ambiguousMacLetter) {
               setCandidate("");
               setPreview("");
-              setError(
-                "Enter this shortcut manually using the base letter, or record Space or F1–F12.",
-              );
+              setError(t("shortcutInput.enterThisShortcutManuallyUsingTheBase"));
               return;
             }
             const key =
@@ -250,8 +253,8 @@ function ShortcutCapture({
               setPreview("");
               setError(
                 !modifiers.length
-                  ? "Include at least one modifier: Ctrl, Alt, or Shift."
-                  : "Use Space, A–Z, or F1–F12.",
+                  ? t("shortcutInput.includeAtLeastOneModifierCtrlAlt")
+                  : t("shortcutInput.useSpaceAZOrF1F12"),
               );
               return;
             }
@@ -262,28 +265,31 @@ function ShortcutCapture({
           }}
         >
           <span aria-live="polite" className="font-mono text-lg">
-            {preview || (ready ? "Press a key combination" : "Preparing capture…")}
+            {preview ||
+              (ready
+                ? t("shortcutInput.pressAKeyCombination")
+                : t("shortcutInput.preparingCapture"))}
           </span>
         </div>
         <p id="shortcut-capture-help" className="text-xs text-muted-foreground">
           {candidate && held
-            ? "Release the keys to continue."
-            : "Tab moves to the buttons. Escape cancels. The shortcut is checked when saved."}
+            ? t("shortcutInput.releaseTheKeysToContinue")
+            : t("shortcutInput.tabMovesToTheButtonsEscapeCancels")}
         </p>
         {error && (
           <p role="alert" className="text-sm text-destructive">
-            {error}
+            {nativeText(error)}
           </p>
         )}
         <DialogFooter>
           <Button variant="outline" disabled={finishing} onClick={() => finish.current()}>
-            Cancel
+            {t("common.cancel")}
           </Button>
           <Button
             disabled={!ready || !candidate || held || finishing}
             onClick={() => finish.current(candidate)}
           >
-            Use shortcut
+            {t("shortcutInput.useShortcut")}
           </Button>
         </DialogFooter>
       </DialogContent>

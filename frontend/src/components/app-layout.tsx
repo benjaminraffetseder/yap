@@ -1,3 +1,5 @@
+import { nativeText } from "@/i18n/native-text";
+import { useTranslation } from "react-i18next";
 import { AudioDropImport } from "@/components/audio-drop-import";
 import { CommandMenu } from "@/components/command-menu";
 import { useDictation } from "@/components/dictation-provider";
@@ -24,14 +26,6 @@ import {
 import { useEffect, useState, type CSSProperties } from "react";
 import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router";
 
-const navigation = [
-  { to: "/", label: "Dictate", icon: Mic },
-  { to: "/history", label: "History", icon: History },
-  { to: "/models", label: "Models", icon: HardDriveDownload },
-  { to: "/vocabulary", label: "Vocabulary", icon: BookOpen },
-  { to: "/prompts", label: "Prompts & chains", icon: Sparkles },
-  { to: "/settings", label: "Settings", icon: Settings2 },
-];
 const sidebarKey = "yap-sidebar-collapsed";
 
 function readCollapsed() {
@@ -43,6 +37,16 @@ function readCollapsed() {
 }
 
 export function AppLayout() {
+  const { t } = useTranslation();
+  const navigation = [
+    { to: "/", label: t("appLayout.dictate"), icon: Mic },
+    { to: "/history", label: t("common.history"), icon: History },
+    { to: "/models", label: t("modelsPage.models"), icon: HardDriveDownload },
+    { to: "/vocabulary", label: t("common.vocabulary"), icon: BookOpen },
+    { to: "/prompts", label: t("promptsPage.promptsChains"), icon: Sparkles },
+    { to: "/settings", label: t("common.settings"), icon: Settings2 },
+  ];
+
   const { snapshot, error, clearError, loading, run, refresh, update } = useDictation();
   const location = useLocation();
   const navigate = useNavigate();
@@ -50,7 +54,7 @@ export function AppLayout() {
   const [collapsed, setCollapsed] = useState(readCollapsed);
   const sidebarWidth = collapsed ? "4.5rem" : "13.75rem";
   const [commandOpen, setCommandOpen] = useState(false);
-  const toggleLabel = collapsed ? "Expand sidebar" : "Collapse sidebar";
+  const toggleLabel = collapsed ? t("appLayout.expandSidebar") : t("appLayout.collapseSidebar");
   const connectionFailure = !!error && (loading || error === backendVersionMismatchMessage);
   const homeSurface =
     location.pathname === "/" &&
@@ -87,7 +91,7 @@ export function AppLayout() {
     toastManager.add({
       id: "app-error",
       type: "error",
-      title: error,
+      title: nativeText(error),
       priority: "high",
       timeout: 8000,
     });
@@ -120,7 +124,11 @@ export function AppLayout() {
         >
           <div className="mb-6 flex h-11 items-center justify-between">
             {!collapsed && (
-              <NavLink to="/" className="flex items-center gap-2.5 pl-3" aria-label="Yap home">
+              <NavLink
+                to="/"
+                className="flex items-center gap-2.5 pl-3"
+                aria-label={t("appLayout.yapHome")}
+              >
                 <AudioLines className="size-5 text-primary" aria-hidden="true" />
                 <span className="text-xl font-semibold tracking-tight">yap.</span>
               </NavLink>
@@ -144,7 +152,7 @@ export function AppLayout() {
               <TooltipContent side="right">{toggleLabel}</TooltipContent>
             </Tooltip>
           </div>
-          <nav aria-label="Main navigation" className="flex flex-1 flex-col gap-1">
+          <nav aria-label={t("appLayout.mainNavigation")} className="flex flex-1 flex-col gap-1">
             {navigation.map(({ to, label, icon: Icon }) => (
               <Tooltip key={`${to}-${collapsed}`} disabled={!collapsed}>
                 <TooltipTrigger
@@ -168,24 +176,26 @@ export function AppLayout() {
               <div className={homeSurface ? "mx-auto max-w-5xl px-6 pt-6 lg:px-10" : undefined}>
                 {!isDesktop && (
                   <div className="mb-6 rounded-lg border bg-muted/50 px-4 py-3 text-sm text-muted-foreground">
-                    Browser preview. Native features require the desktop app.
+                    {t("appLayout.browserPreviewNativeFeaturesRequireTheDesktop")}
                   </div>
                 )}
                 {connectionFailure && (
                   <section
-                    aria-label="Connection recovery"
+                    aria-label={t("appLayout.connectionRecovery")}
                     className="mb-6 space-y-4 rounded-lg border border-destructive/30 bg-card p-4"
                   >
                     <div className="space-y-2">
-                      <h2 className="text-sm font-semibold">Couldn’t connect to Yap</h2>
+                      <h2 className="text-sm font-semibold">
+                        {t("appLayout.couldnTConnectToYap")}
+                      </h2>
                       <p role="alert" className="text-sm text-destructive">
-                        {error}
+                        {nativeText(error)}
                       </p>
                     </div>
                     <RecoveryActions
-                      source="Backend connection"
+                      source={t("appLayout.backendConnection")}
                       details={error}
-                      retryLabel="Retry loading"
+                      retryLabel={t("appLayout.retryLoading")}
                       onRetry={() => void run(refresh, false)}
                     />
                   </section>
@@ -195,37 +205,39 @@ export function AppLayout() {
                     role="status"
                     className="mt-6 flex items-center gap-3 text-sm text-muted-foreground"
                   >
-                    <span>Loading app…</span>
+                    <span>{t("appLayout.loadingApp")}</span>
                     <Button variant="outline" size="sm" onClick={() => void run(refresh, false)}>
-                      Retry loading
+                      {t("appLayout.retryLoading")}
                     </Button>
                   </div>
                 )}
                 {showUpdate && update && (
                   <section
-                    aria-label="App update available"
+                    aria-label={t("appLayout.appUpdateAvailable")}
                     className="mb-6 space-y-3 rounded-lg border bg-card p-4"
                   >
-                    <p className="text-sm font-medium">Yap {update.latestVersion} is available.</p>
+                    <p className="text-sm font-medium">
+                      Yap {update.latestVersion} {t("appLayout.isAvailable")}
+                    </p>
                     <p className="text-sm text-muted-foreground">
-                      Download the installer, quit Yap from the tray, and run setup to update.
+                      {t("appLayout.downloadTheInstallerQuitYapFromThe")}
                     </p>
                     <div className="flex flex-wrap items-center gap-3">
                       <Button size="sm" onClick={() => void run(backend.downloadUpdate, false)}>
-                        Download update
+                        {t("appLayout.downloadUpdate")}
                       </Button>
                       <Link
                         to="/settings?section=general"
                         className="text-sm text-primary underline underline-offset-4"
                       >
-                        Update details
+                        {t("appLayout.updateDetails")}
                       </Link>
                       <Button
                         size="sm"
                         variant="ghost"
                         onClick={() => setDismissedUpdate(update.latestVersion)}
                       >
-                        Later
+                        {t("appLayout.later")}
                       </Button>
                     </div>
                   </section>

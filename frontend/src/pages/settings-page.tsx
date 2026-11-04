@@ -1,3 +1,5 @@
+import { nativeText } from "@/i18n/native-text";
+import { useTranslation } from "react-i18next";
 import { AudioSupportPanel } from "@/components/audio-support-panel";
 import { AutoSaveStatus } from "@/components/auto-save-status";
 import { BackupPanel } from "@/components/backup-panel";
@@ -10,6 +12,7 @@ import { SettingRow, SettingsSection, ToggleSetting } from "@/components/setting
 import { ShortcutInput } from "@/components/shortcut-input";
 import { ShortcutStatus } from "@/components/shortcut-status";
 import { useTheme } from "@/components/theme-provider";
+import { languages as interfaceLanguages } from "@/i18n";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -31,7 +34,7 @@ import { Tabs, TabsContent } from "@/components/ui/tabs";
 import { toastManager } from "@/components/ui/toast";
 import { UpdatePanel } from "@/components/update-panel";
 import { backend, isBusy, isDesktop, message, type Microphone } from "@/lib/backend";
-import { languages } from "@/lib/languages";
+import { useLanguages } from "@/lib/languages";
 import { useAutoSave } from "@/lib/use-auto-save";
 import { useSavedDraft } from "@/lib/use-saved-draft";
 import { cn } from "@/lib/utils";
@@ -48,28 +51,7 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router";
-const sections = [
-  { value: "dictation", label: "Dictation" },
-  { value: "profiles", label: "Profiles" },
-  { value: "general", label: "General" },
-  { value: "history", label: "History & data" },
-  { value: "advanced", label: "Advanced" },
-];
-const themes = [
-  { value: "light", label: "Light", icon: Sun },
-  { value: "dark", label: "Dark", icon: Moon },
-  { value: "system", label: "System", icon: Monitor },
-] as const;
-const recordingModes = [
-  { value: "hold", label: "Hold to talk" },
-  { value: "toggle", label: "Press to start / press to stop" },
-];
-const retentionOptions = [
-  { value: "0", label: "Keep forever" },
-  { value: "7", label: "7 days" },
-  { value: "30", label: "30 days" },
-  { value: "90", label: "90 days" },
-];
+
 const shortcutKeys = (value: string) =>
   value
     .split("+")
@@ -79,6 +61,31 @@ const shortcutKeys = (value: string) =>
 const sameShortcut = (left: string, right: string) =>
   !!left.trim() && shortcutKeys(left) === shortcutKeys(right);
 export function SettingsPage() {
+  const languages = useLanguages();
+  const { t, i18n } = useTranslation();
+  const sections = [
+    { value: "dictation", label: t("historyEntryPage.dictation") },
+    { value: "profiles", label: t("settingsPage.profiles") },
+    { value: "general", label: t("settingsPage.general") },
+    { value: "history", label: t("settingsPage.historyData") },
+    { value: "advanced", label: t("settingsPage.advanced") },
+  ];
+  const themes = [
+    { value: "light", label: t("settingsPage.light"), icon: Sun },
+    { value: "dark", label: t("settingsPage.dark"), icon: Moon },
+    { value: "system", label: t("settingsPage.system"), icon: Monitor },
+  ] as const;
+  const recordingModes = [
+    { value: "hold", label: t("settingsPage.holdToTalk") },
+    { value: "toggle", label: t("settingsPage.pressToStartPressToStop") },
+  ];
+  const retentionOptions = [
+    { value: "0", label: t("settingsPage.keepForever") },
+    { value: "7", label: t("settingsPage.7Days") },
+    { value: "30", label: t("settingsPage.30Days") },
+    { value: "90", label: t("settingsPage.90Days") },
+  ];
+
   const navigate = useNavigate();
   const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -135,15 +142,15 @@ export function SettingsPage() {
     !!settings.microphoneId &&
     !microphones.some((mic) => mic.id === settings.microphoneId);
   const microphoneOptions = [
-    { value: "", label: "System default" },
+    { value: "", label: t("settingsPage.systemDefault") },
     ...microphones.map((mic) => ({ value: mic.id, label: mic.name })),
     ...(settings.microphoneId && !microphones.some((mic) => mic.id === settings.microphoneId)
       ? [
           {
             value: settings.microphoneId,
             label: selectedMicrophoneMissing
-              ? "Selected microphone (disconnected)"
-              : "Selected microphone",
+              ? t("settingsPage.selectedMicrophoneDisconnected")
+              : t("settingsPage.selectedMicrophone"),
           },
         ]
       : []),
@@ -210,7 +217,7 @@ export function SettingsPage() {
           : [saveSettings, saveProfileShortcut];
     try {
       if (profileShortcut.trim() && sameShortcut(profileShortcut, settings.shortcut))
-        throw new Error("Recording and profile cycling must use different shortcuts.");
+        throw new Error(t("settingsPage.recordingAndProfileCyclingMustUseDifferentShortcuts"));
       for (const step of steps) await step();
       settingsDraft.markSubmitted(settings);
       shortcutDraft.markSubmitted(profileShortcut);
@@ -283,13 +290,13 @@ export function SettingsPage() {
       }}
     >
       <header
-        aria-label="Settings"
+        aria-label={t("common.settings")}
         className="flex min-w-0 flex-wrap items-center justify-between gap-4"
       >
         <div className="min-w-0">
-          <h1 className="text-[1.75rem] font-semibold tracking-tight">Settings</h1>
+          <h1 className="text-[1.75rem] font-semibold tracking-tight">{t("common.settings")}</h1>
           <p className="mt-1 text-sm leading-6 text-muted-foreground">
-            Configure dictation, appearance and local data.
+            {t("settingsPage.configureDictationAppearanceAndLocalData")}
           </p>
         </div>
         <AutoSaveStatus
@@ -315,20 +322,20 @@ export function SettingsPage() {
         className="gap-5"
       >
         <SectionTabs
-          label="Settings sections"
+          label={t("settingsPage.settingsSections")}
           sections={sections}
           className="@min-[42rem]/settings:sticky @min-[42rem]/settings:top-0 @min-[42rem]/settings:z-20"
         />
         <TabsContent value="dictation" keepMounted className="space-y-5">
           <fieldset disabled={controlsDisabled} className="space-y-5 disabled:opacity-60">
             <SettingsSection
-              title="Recording"
+              title={t("homePage.recording")}
               icon={<Mic aria-hidden="true" className="size-4 text-muted-foreground" />}
             >
               <SettingRow
-                title="Microphone"
+                title={t("settingsPage.microphone")}
                 htmlFor="microphone"
-                description="Choose the input for your next dictation."
+                description={t("settingsPage.chooseTheInputForYourNextDictation")}
               >
                 <div className="flex gap-2">
                   <Select
@@ -359,7 +366,7 @@ export function SettingsPage() {
                     size="icon"
                     disabled={loadingMicrophones}
                     onClick={() => void refreshMicrophones()}
-                    aria-label="Refresh microphones"
+                    aria-label={t("settingsPage.refreshMicrophones")}
                   >
                     <RefreshCw
                       className={`size-4 ${loadingMicrophones ? "animate-spin motion-reduce:animate-none" : ""}`}
@@ -374,18 +381,18 @@ export function SettingsPage() {
                 >
                   {microphoneError ||
                     (loadingMicrophones
-                      ? "Checking microphones…"
+                      ? t("settingsPage.checkingMicrophones")
                       : selectedMicrophoneMissing
-                        ? "Reconnect the selected microphone or choose another input."
+                        ? t("settingsPage.reconnectTheSelectedMicrophoneOrChooseAnother")
                         : microphonesLoaded && microphones.length === 0
-                          ? "No microphones found. Connect one and refresh."
-                          : "System default follows your computer’s input setting.")}
+                          ? t("settingsPage.noMicrophonesFoundConnectOneAndRefresh")
+                          : t("settingsPage.systemDefaultFollowsYourComputerSInput"))}
                 </p>
               </SettingRow>
               <SettingRow
-                title="Spoken language"
+                title={t("settingsPage.spokenLanguage")}
                 htmlFor="language"
-                description="Choose a language, or let the speech model detect it."
+                description={t("settingsPage.chooseALanguageOrLetTheSpeech")}
                 indicator={<ProfileSettingIndicator field="language" value={settings.language} />}
               >
                 <Select
@@ -410,13 +417,13 @@ export function SettingsPage() {
               </SettingRow>
             </SettingsSection>
             <SettingsSection
-              title="Shortcuts"
+              title={t("settingsPage.shortcuts")}
               icon={<Keyboard aria-hidden="true" className="size-4 text-muted-foreground" />}
             >
               <SettingRow
-                title="Global shortcut"
+                title={t("settingsPage.globalShortcut")}
                 htmlFor="shortcut"
-                description="Starts dictation from any app. Use Ctrl, Alt, or Shift with Space, a letter, or F1–F12."
+                description={t("settingsPage.startsDictationFromAnyAppUseCtrl")}
               >
                 <ShortcutInput
                   id="shortcut"
@@ -427,9 +434,9 @@ export function SettingsPage() {
                 <ShortcutStatus disabled={controlsDisabled} />
               </SettingRow>
               <SettingRow
-                title="Recording mode"
+                title={t("settingsPage.recordingMode")}
                 htmlFor="interaction"
-                description="How the global shortcut starts and stops dictation."
+                description={t("settingsPage.howTheGlobalShortcutStartsAndStops")}
               >
                 <Select
                   items={recordingModes}
@@ -452,13 +459,13 @@ export function SettingsPage() {
                 </Select>
               </SettingRow>
               <SettingRow
-                title="Cycle profiles shortcut"
+                title={t("settingsPage.cycleProfilesShortcut")}
                 htmlFor="profile-cycle-shortcut"
-                description="Optional. Switches to the next available profile, overriding the app's profile for your next dictation there. Leave empty to disable."
+                description={t("settingsPage.optionalSwitchesToTheNextAvailableProfile")}
               >
                 <ShortcutInput
                   id="profile-cycle-shortcut"
-                  recordLabel="Record profile shortcut"
+                  recordLabel={t("settingsPage.recordProfileShortcut")}
                   value={profileShortcut}
                   disabled={controlsDisabled}
                   onChange={setProfileShortcut}
@@ -467,51 +474,51 @@ export function SettingsPage() {
               </SettingRow>
             </SettingsSection>
             <SettingsSection
-              title="Text & delivery"
+              title={t("settingsPage.textDelivery")}
               icon={<Type aria-hidden="true" className="size-4 text-muted-foreground" />}
             >
               <ToggleSetting
-                title="Light cleanup"
+                title={t("settingsPage.lightCleanup")}
                 indicator={<ProfileSettingIndicator field="cleanText" value={settings.cleanText} />}
-                description="Fix spacing, capitalization, and punctuation; remove common English/German fillers. Keep the original when history saving is on."
+                description={t("settingsPage.fixSpacingCapitalizationAndPunctuationRemoveCommon")}
                 checked={settings.cleanText}
                 disabled={controlsDisabled}
                 onCheckedChange={(cleanText) => setSettings((old) => ({ ...old, cleanText }))}
               />
               <ToggleSetting
-                title="Copy automatically to clipboard"
-                description="Copy completed dictation to the clipboard. When off, retrieve the result in History or the temporary latest-result panel."
+                title={t("settingsPage.copyAutomaticallyToClipboard")}
+                description={t("settingsPage.copyCompletedDictationToTheClipboardWhen")}
                 checked={settings.autoCopy}
                 disabled={controlsDisabled}
                 onCheckedChange={(autoCopy) => setSettings((old) => ({ ...old, autoCopy }))}
               />
               <ToggleSetting
-                title="Paste automatically"
-                description="Paste into the focused app after shortcut dictation. Requires automatic clipboard copying."
+                title={t("settingsPage.pasteAutomatically")}
+                description={t("settingsPage.pasteIntoTheFocusedAppAfterShortcut")}
                 checked={settings.autoPaste}
                 disabled={controlsDisabled || !settings.autoCopy}
                 onCheckedChange={(autoPaste) => setSettings((old) => ({ ...old, autoPaste }))}
               />
               <div className="flex flex-wrap items-center justify-between gap-3 py-4">
                 <span className="text-sm text-muted-foreground">
-                  LLM instructions and generated outputs
+                  {t("settingsPage.lLMInstructionsAndGeneratedOutputs")}
                 </span>
                 <Link
                   to="/prompts?section=prompts"
                   className="text-sm font-medium text-primary underline underline-offset-4"
                 >
-                  Manage prompts
+                  {t("settingsPage.managePrompts")}
                 </Link>
               </div>
             </SettingsSection>
           </fieldset>
           <div className="flex flex-wrap items-center justify-between gap-3 pt-1 text-xs leading-5 text-muted-foreground">
-            <span>Save different choices for different tasks or apps.</span>
+            <span>{t("settingsPage.saveDifferentChoicesForDifferentTasksOr")}</span>
             <Link
               to="/settings?section=profiles"
               className="inline-flex items-center gap-2 font-medium text-primary"
             >
-              Manage dictation profiles{" "}
+              {t("settingsPage.manageDictationProfiles")}{" "}
               <ArrowRight aria-hidden="true" className="size-3.5 shrink-0" />
             </Link>
           </div>
@@ -526,9 +533,40 @@ export function SettingsPage() {
         </TabsContent>
         <TabsContent value="general" keepMounted className="space-y-5">
           <UpdatePanel />
-          <SettingsSection title="Appearance">
-            <SettingRow title="Color theme" description="Applies immediately.">
-              <div className="flex flex-wrap gap-2" role="group" aria-label="Color theme">
+          <SettingsSection title={t("settingsPage.appearance")}>
+            <SettingRow
+              title={t("settingsPage.interfaceLanguage")}
+              htmlFor="interface-language"
+              description={t("settingsPage.interfaceLanguageDescription")}
+            >
+              <Select
+                items={interfaceLanguages.map(({ code, label }) => ({ value: code, label }))}
+                value={i18n.resolvedLanguage ?? "en"}
+                onValueChange={(value) => {
+                  if (value) void i18n.changeLanguage(value);
+                }}
+              >
+                <SelectTrigger id="interface-language" className="h-9 w-full min-w-0 bg-background">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent alignItemWithTrigger={false} align="start">
+                  {interfaceLanguages.map(({ code, label }) => (
+                    <SelectItem key={code} value={code}>
+                      {label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </SettingRow>
+            <SettingRow
+              title={t("settingsPage.colorTheme")}
+              description={t("settingsPage.appliesImmediately")}
+            >
+              <div
+                className="flex flex-wrap gap-2"
+                role="group"
+                aria-label={t("settingsPage.colorTheme")}
+              >
                 {themes.map(({ value, label, icon: Icon }) => (
                   <Button
                     key={value}
@@ -544,9 +582,9 @@ export function SettingsPage() {
             </SettingRow>
           </SettingsSection>
           <fieldset disabled={controlsDisabled} className="disabled:opacity-60">
-            <SettingsSection title="Startup">
+            <SettingsSection title={t("settingsPage.startup")}>
               <ToggleSetting
-                title="Launch at login"
+                title={t("settingsPage.launchAtLogin")}
                 checked={settings.launchAtLogin}
                 disabled={controlsDisabled || !snapshot.launchAtLoginAvailable}
                 onCheckedChange={(launchAtLogin) =>
@@ -554,8 +592,8 @@ export function SettingsPage() {
                 }
               />
               <ToggleSetting
-                title="Start in tray / menu bar"
-                description="Keep the main window hidden on the next launch."
+                title={t("settingsPage.startInTrayMenuBar")}
+                description={t("settingsPage.keepTheMainWindowHiddenOnThe")}
                 checked={settings.startInTray}
                 disabled={
                   controlsDisabled || (!snapshot.startInTrayAvailable && !settings.startInTray)
@@ -564,13 +602,13 @@ export function SettingsPage() {
               />
               {snapshot.status.startupError ? (
                 <p role="alert" className="py-4 text-xs text-destructive">
-                  {snapshot.status.startupError}
+                  {nativeText(snapshot.status.startupError)}
                 </p>
               ) : (
                 !snapshot.launchAtLoginAvailable &&
                 !snapshot.startInTrayAvailable && (
                   <p className="py-4 text-xs text-muted-foreground">
-                    Startup options require a packaged Windows or macOS app.
+                    {t("settingsPage.startupOptionsRequireAPackagedWindowsOr")}
                   </p>
                 )
               )}
@@ -579,25 +617,25 @@ export function SettingsPage() {
         </TabsContent>
         <TabsContent value="history" keepMounted className="space-y-5">
           <fieldset disabled={controlsDisabled} className="disabled:opacity-60">
-            <SettingsSection title="History">
+            <SettingsSection title={t("common.history")}>
               <ToggleSetting
-                title="Save dictations to history"
-                description="Keep transcripts and generated text in History. Turn off for temporary dictation."
+                title={t("settingsPage.saveDictationsToHistory")}
+                description={t("settingsPage.keepTranscriptsAndGeneratedTextInHistory")}
                 checked={settings.saveHistory}
                 disabled={controlsDisabled}
                 onCheckedChange={(saveHistory) => setSettings((old) => ({ ...old, saveHistory }))}
               />
               <ToggleSetting
-                title="Keep recordings"
-                description="Save audio for playback when history saving is on. Otherwise, delete it after processing."
+                title={t("settingsPage.keepRecordings")}
+                description={t("settingsPage.saveAudioForPlaybackWhenHistorySaving")}
                 checked={settings.saveAudio}
                 disabled={controlsDisabled || !settings.saveHistory}
                 onCheckedChange={(saveAudio) => setSettings((old) => ({ ...old, saveAudio }))}
               />
               <SettingRow
-                title="History retention"
+                title={t("settingsPage.historyRetention")}
                 htmlFor="history-retention"
-                description="Automatically delete older transcripts and retained audio."
+                description={t("settingsPage.automaticallyDeleteOlderTranscriptsAndRetainedAudio")}
               >
                 <Select
                   items={retentionOptions}
@@ -628,15 +666,15 @@ export function SettingsPage() {
               </SettingRow>
               {snapshot.status.historyError && (
                 <p role="alert" className="py-4 text-xs text-destructive">
-                  {snapshot.status.historyError}
+                  {nativeText(snapshot.status.historyError)}
                 </p>
               )}
             </SettingsSection>
           </fieldset>
           <BackupPanel disabled={controlsDisabled || saving || dirty} unsaved={dirty} />
           {snapshot.dataDir && (
-            <SettingsSection title="Local storage">
-              <SettingRow title="Data folder">
+            <SettingsSection title={t("settingsPage.localStorage")}>
+              <SettingRow title={t("settingsPage.dataFolder")}>
                 <p className="break-all font-mono text-xs leading-5 text-muted-foreground">
                   {snapshot.dataDir}
                 </p>
@@ -645,27 +683,26 @@ export function SettingsPage() {
           )}
         </TabsContent>
         <TabsContent value="advanced" keepMounted className="space-y-5">
-          <SettingsSection title="Performance details">
+          <SettingsSection title={t("settingsPage.performanceDetails")}>
             <ToggleSetting
-              title="Stats for Nerds"
-              description="Show transcription timing, model details, token usage, and speed in results and History. Available stats stay on this device with your results."
+              title={t("settingsPage.statsForNerds")}
+              description={t("settingsPage.showTranscriptionTimingModelDetailsTokenUsage")}
               checked={settings.statsForNerds ?? false}
               disabled={controlsDisabled}
               onCheckedChange={(value) => setSettings((old) => ({ ...old, statsForNerds: value }))}
             />
           </SettingsSection>
           <fieldset disabled={controlsDisabled} className="disabled:opacity-60">
-            <SettingsSection title="Local speech files">
+            <SettingsSection title={t("settingsPage.localSpeechFiles")}>
               <div className="flex flex-wrap items-center justify-between gap-3 py-4">
                 <span className="text-sm text-muted-foreground">
-                  Download and switch speech models. Parakeet and Moonshine manage their runtimes
-                  automatically.
+                  {t("settingsPage.downloadAndSwitchSpeechModelsParakeetAnd")}
                 </span>
                 <Link
                   to="/models"
                   className="text-sm font-medium text-primary underline underline-offset-4"
                 >
-                  Manage models
+                  {t("settingsPage.manageModels")}
                 </Link>
               </div>
               {(
@@ -673,14 +710,14 @@ export function SettingsPage() {
                   {
                     key: "whisperPath",
                     kind: "runtime",
-                    title: "Whisper executable",
-                    placeholder: "Select whisper-cli",
+                    title: t("settingsPage.whisperExecutable"),
+                    placeholder: t("settingsPage.selectWhisperCli"),
                   },
                   {
                     key: "modelPath",
                     kind: "model",
-                    title: "Speech model",
-                    placeholder: "Select a model file or managed model folder",
+                    title: t("common.speechModel"),
+                    placeholder: t("settingsPage.selectAModelFileOrManagedModel"),
                   },
                 ] as const
               ).map((field) => (
@@ -709,7 +746,7 @@ export function SettingsPage() {
                     <Button
                       variant="outline"
                       size="icon"
-                      aria-label={`Browse ${field.title}`}
+                      aria-label={t("settingsPage.browse", { title: field.title })}
                       onClick={() => void browse(field.kind)}
                     >
                       <FolderOpen aria-hidden="true" className="size-4" />
@@ -721,10 +758,10 @@ export function SettingsPage() {
           </fieldset>
           <AudioSupportPanel active={section === "advanced"} disabled={saving || loading} />
           <DiagnosticsPanel disabled={dirty || saving || loading} />
-          <SettingsSection title="Setup">
+          <SettingsSection title={t("settingsPage.setup")}>
             <SettingRow
-              title="Run setup again"
-              description="Revisit model installation, microphone testing, and your shortcut."
+              title={t("settingsPage.runSetupAgain")}
+              description={t("settingsPage.revisitModelInstallationMicrophoneTestingAndYour")}
             >
               <Button
                 variant="outline"
@@ -736,11 +773,11 @@ export function SettingsPage() {
                   })
                 }
               >
-                Run setup
+                {t("settingsPage.runSetup")}
               </Button>
               {dirty && (
                 <p className="mt-2 text-xs text-muted-foreground">
-                  Finish saving settings before running setup.
+                  {t("settingsPage.finishSavingSettingsBeforeRunningSetup")}
                 </p>
               )}
             </SettingRow>
@@ -756,16 +793,14 @@ export function SettingsPage() {
       >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Enable automatic deletion?</DialogTitle>
+            <DialogTitle>{t("settingsPage.enableAutomaticDeletion")}</DialogTitle>
             <DialogDescription>
-              Saving removes transcripts and retained audio older than{" "}
-              {settings.historyRetentionDays} days now and during future cleanup. Deletion is
-              permanent.
+              {t("settingsPage.retentionDescription", { days: settings.historyRetentionDays })}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
             <Button variant="outline" onClick={cancelRetention}>
-              Cancel
+              {t("common.cancel")}
             </Button>
             <Button
               variant="destructive"
@@ -775,7 +810,7 @@ export function SettingsPage() {
                 void autoSave.retry();
               }}
             >
-              Save and delete older history
+              {t("settingsPage.saveAndDeleteOlderHistory")}
             </Button>
           </DialogFooter>
         </DialogContent>

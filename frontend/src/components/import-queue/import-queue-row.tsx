@@ -1,3 +1,6 @@
+import { useTranslation } from "react-i18next";
+import { nativeText } from "@/i18n/native-text";
+import i18n from "@/i18n";
 import { useDictation } from "@/components/dictation-provider";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
@@ -8,10 +11,12 @@ import { Reorder, useDragControls } from "motion/react";
 import { Link } from "react-router";
 
 function importLabel(job: ImportJob) {
-  if (job.message === "Cancelling…") return job.message;
+  if (job.message === "Cancelling…") return nativeText(job.message);
   if (job.state === "transcribing")
-    return job.progress < 0 ? "Transcribing…" : `Transcribing ${Math.round(job.progress)}%`;
-  return job.error || job.message || job.state;
+    return job.progress < 0
+      ? i18n.t("importQueueRow.transcribing")
+      : i18n.t("importQueueRow.transcriptionProgress", { percent: Math.round(job.progress) });
+  return nativeText(job.error || job.message || job.state);
 }
 
 export function ImportQueueRow({
@@ -25,6 +30,7 @@ export function ImportQueueRow({
   onMove: (id: string, direction: number) => void;
   reorderDisabled: boolean;
 }) {
+  const { t } = useTranslation();
   const controls = useDragControls();
   const { run } = useDictation();
   const reduced = useMotionPreference();
@@ -35,8 +41,8 @@ export function ImportQueueRow({
       <Button
         size="icon-sm"
         variant="ghost"
-        aria-label={`Reorder ${job.name}`}
-        aria-description="Use Alt+ArrowUp or Alt+ArrowDown to move this file"
+        aria-label={t("importQueueRow.reorder", { name: job.name })}
+        aria-description={t("importQueueRow.useAltArrowUpOrAltArrowDownToMove")}
         disabled={!queued || reorderDisabled}
         focusableWhenDisabled={queued}
         className="shrink-0 touch-none cursor-grab active:cursor-grabbing"
@@ -67,7 +73,7 @@ export function ImportQueueRow({
         {pending && job.state !== "queued" && (
           <Progress
             className="h-1"
-            aria-label={`Progress for ${job.name}`}
+            aria-label={t("importQueueRow.progressFor", { name: job.name })}
             value={job.progress < 0 ? null : job.progress}
           />
         )}
@@ -80,7 +86,7 @@ export function ImportQueueRow({
           <Button
             size="icon-sm"
             variant="ghost"
-            aria-label={`Copy ${job.name}`}
+            aria-label={t("importQueueRow.copy", { name: job.name })}
             onClick={() => void run(() => backend.copy(job.transcript), false)}
           >
             <Copy className="size-4" />
@@ -91,7 +97,7 @@ export function ImportQueueRow({
             size="icon-sm"
             variant="ghost"
             render={<Link to={`/history/${job.sessionId}`} />}
-            aria-label={`Open ${job.name}`}
+            aria-label={t("importQueueRow.open", { name: job.name })}
           >
             <ArrowUpRight className="size-4" />
           </Button>
@@ -100,7 +106,7 @@ export function ImportQueueRow({
           <Button
             size="icon-sm"
             variant="ghost"
-            aria-label={`Retry ${job.name}`}
+            aria-label={t("importQueueRow.retry", { name: job.name })}
             onClick={() => void run(() => backend.retryImport(job.id), false)}
           >
             <RotateCcw className="size-4" />
@@ -110,7 +116,7 @@ export function ImportQueueRow({
           <Button
             size="icon-sm"
             variant="ghost"
-            aria-label={`${queued ? "Remove" : "Cancel"} ${job.name}`}
+            aria-label={`${queued ? t("common.remove") : t("common.cancel")} ${job.name}`}
             onClick={() => void run(() => backend.removeImport(job.id), false)}
           >
             <X className="size-4" />

@@ -1,3 +1,5 @@
+import i18n from "@/i18n";
+import { useTranslation } from "react-i18next";
 import { AutoSaveStatus } from "@/components/auto-save-status";
 import { useDictation } from "@/components/dictation-provider";
 import { ProfileSettingIndicator } from "@/components/profile-setting-indicator";
@@ -59,13 +61,16 @@ const localServers = [
     endpoint: "http://127.0.0.1:8080/v1",
   },
 ];
-const serverOptions = [...localServers, { value: "custom", label: "Custom" }];
-const sections = [
-  { value: "prompts", label: "Prompts" },
-  { value: "chains", label: "Chains" },
-  { value: "models", label: "Text model" },
-];
+
 export function PromptsPage() {
+  const { t } = useTranslation();
+  const serverOptions = [...localServers, { value: "custom", label: t("promptsPage.custom") }];
+  const sections = [
+    { value: "prompts", label: t("promptsPage.prompts") },
+    { value: "chains", label: t("promptsPage.chains") },
+    { value: "models", label: t("promptsPage.textModel") },
+  ];
+
   const [searchParams, setSearchParams] = useSearchParams();
   const section = sections.some((item) => item.value === searchParams.get("section"))
     ? searchParams.get("section")!
@@ -102,7 +107,7 @@ export function PromptsPage() {
   const manual = manualModel || !listed;
   const modelOptions = [
     ...discovery.models.map((id) => ({ value: `model:${id}`, label: id })),
-    { value: "manual", label: "Enter model ID manually" },
+    { value: "manual", label: t("promptsPage.enterModelIDManually") },
   ];
   useEffect(() => {
     if (!draft.prompts.some((p) => p.id === selected)) setSelected(draft.prompts[0]?.id ?? "");
@@ -116,7 +121,7 @@ export function PromptsPage() {
       toastManager.add({
         id: "prompt-model-test",
         type: "success",
-        title: "Model responded successfully.",
+        title: i18n.t("promptsPage.modelRespondedSuccessfully"),
       });
     else if (modelTest.error)
       toastManager.add({
@@ -133,7 +138,7 @@ export function PromptsPage() {
   const controlsDisabled = !isDesktop || busy || loading;
   const promptOptions = draft.prompts.map((prompt) => ({
     value: prompt.id,
-    label: prompt.name || "Untitled prompt",
+    label: prompt.name || t("promptsPage.untitledPrompt"),
   }));
   const prompt = draft.prompts.find((p) => p.id === selected);
   const automaticPrompt = [...draft.prompts, ...(draft.chains ?? [])].find(
@@ -168,7 +173,9 @@ export function PromptsPage() {
   function addPrompt() {
     if (controlsDisabled || draft.prompts.length >= 30) return;
     const id = crypto.randomUUID();
-    update({ prompts: [...draft.prompts, { id, name: "New prompt", instruction: "" }] });
+    update({
+      prompts: [...draft.prompts, { id, name: t("promptsPage.newPrompt"), instruction: "" }],
+    });
     setSelected(id);
   }
   function updatePrompt(value: Partial<TextPrompt>) {
@@ -250,12 +257,14 @@ export function PromptsPage() {
         className="gap-4"
       >
         <header
-          aria-label="Prompts & chains"
+          aria-label={t("promptsPage.promptsChains")}
           className="space-y-3 bg-background pt-1 pb-2 @min-[42rem]/prompts:sticky @min-[42rem]/prompts:top-0 @min-[42rem]/prompts:z-20"
         >
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div className="min-w-0">
-              <h1 className="text-2xl font-semibold tracking-tight">Prompts &amp; chains</h1>
+              <h1 className="text-2xl font-semibold tracking-tight">
+                {t("promptsPage.promptsChains")}
+              </h1>
             </div>
             <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
               <AutoSaveStatus
@@ -273,7 +282,7 @@ export function PromptsPage() {
               />
             </div>
           </div>
-          <SectionTabs label="Prompts sections" sections={sections} />
+          <SectionTabs label={t("promptsPage.promptsSections")} sections={sections} />
         </header>
         {saveError && autoSave.failed && (
           <p role="alert" className="text-xs text-destructive">
@@ -281,10 +290,10 @@ export function PromptsPage() {
           </p>
         )}
         <TabsContent value="models" keepMounted>
-          <SettingsSection title="Text model">
+          <SettingsSection title={t("promptsPage.textModel")}>
             <fieldset disabled={controlsDisabled} className="divide-y disabled:opacity-60">
               <ToggleSetting
-                title="Enable LLM processing"
+                title={t("promptsPage.enableLLMProcessing")}
                 checked={draft.enabled}
                 disabled={controlsDisabled}
                 onCheckedChange={(checked) =>
@@ -294,7 +303,7 @@ export function PromptsPage() {
                   })
                 }
               />
-              <SettingRow title="Server" htmlFor="llm-server">
+              <SettingRow title={t("promptsPage.server")} htmlFor="llm-server">
                 <Select
                   items={serverOptions}
                   value={server}
@@ -327,7 +336,7 @@ export function PromptsPage() {
                   </SelectContent>
                 </Select>
               </SettingRow>
-              <SettingRow title="Local server URL" htmlFor="llm-endpoint">
+              <SettingRow title={t("promptsPage.localServerURL")} htmlFor="llm-endpoint">
                 <Input
                   id="llm-endpoint"
                   value={draft.endpoint}
@@ -336,13 +345,13 @@ export function PromptsPage() {
                   onChange={(event) => update({ endpoint: event.target.value })}
                 />
                 <p id="llm-endpoint-help" className="mt-2 text-xs text-muted-foreground">
-                  Use the local /v1 base URL, without /models or /api.
+                  {t("promptsPage.useTheLocalV1BaseURLWithout")}
                 </p>
               </SettingRow>
               <SettingRow
-                title="Model"
+                title={t("common.model")}
                 htmlFor="llm-picker"
-                description="Models are listed for the selected server. Requests go to this computer; your server controls any onward connections."
+                description={t("promptsPage.modelsAreListedForTheSelectedServer")}
               >
                 <div className="space-y-3">
                   <Select
@@ -376,12 +385,12 @@ export function PromptsPage() {
                   </Select>
                   {manual && (
                     <div className="space-y-2">
-                      <Label htmlFor="llm-model">Model identifier</Label>
+                      <Label htmlFor="llm-model">{t("promptsPage.modelIdentifier")}</Label>
                       <Input
                         id="llm-model"
                         maxLength={200}
                         value={draft.model}
-                        placeholder="Model ID from your server"
+                        placeholder={t("promptsPage.modelIDFromYourServer")}
                         onChange={(event) => {
                           setManualModel(true);
                           update({ model: event.target.value });
@@ -398,7 +407,7 @@ export function PromptsPage() {
                     <RefreshCw
                       className={`size-3.5 ${discovery.phase === "checking" ? "animate-spin motion-reduce:animate-none" : ""}`}
                     />
-                    Refresh models
+                    {t("promptsPage.refreshModels")}
                   </Button>
                   <p
                     id="llm-discovery-status"
@@ -406,26 +415,29 @@ export function PromptsPage() {
                     className={`text-xs ${discovery.phase === "error" ? "text-destructive" : "text-muted-foreground"}`}
                   >
                     {discovery.phase === "checking"
-                      ? "Checking server…"
+                      ? t("promptsPage.checkingServer")
                       : discovery.phase === "error"
                         ? discovery.error
                         : discovery.phase === "ready"
                           ? discovery.models.length === 0
-                            ? "Server responded. No models listed. Download or load a model in your server, then refresh."
+                            ? t("promptsPage.serverRespondedNoModelsListedDownloadOr")
                             : draft.model && !listed
-                              ? "Server responded. This model is not listed. Load it in your server or choose another; Test model can check a manual ID."
-                              : `Server responded. ${discovery.models.length} ${discovery.models.length === 1 ? "model" : "models"} available.`
-                          : "Checking available models."}
+                              ? t("promptsPage.serverRespondedThisModelIsNotListed")
+                              : t("promptsPage.serverRespondedAvailable", {
+                                  length: discovery.models.length,
+                                  models: discovery.models.length === 1 ? "model" : "models",
+                                })
+                          : t("promptsPage.checkingAvailableModels")}
                   </p>
                 </div>
               </SettingRow>
             </fieldset>
-            <SettingRow title="Connection test">
+            <SettingRow title={t("promptsPage.connectionTest")}>
               {modelTest.pending ? (
                 <div className="flex flex-wrap items-center gap-3" role="status">
-                  <span className="text-sm">Testing model…</span>
+                  <span className="text-sm">{t("promptsPage.testingModel")}</span>
                   <Button variant="outline" size="sm" onClick={() => void modelTest.cancel()}>
-                    Cancel test
+                    {t("promptsPage.cancelTest")}
                   </Button>
                 </div>
               ) : (
@@ -435,11 +447,11 @@ export function PromptsPage() {
                     disabled={controlsDisabled || dirty || !saved.enabled}
                     onClick={() => void modelTest.request(backend.testTextModel)}
                   >
-                    Test model
+                    {t("promptsPage.testModel")}
                   </Button>
                   {dirty && (
                     <span className="text-xs text-muted-foreground">
-                      Wait until saved before testing.
+                      {t("promptsPage.waitUntilSavedBeforeTesting")}
                     </span>
                   )}
                 </div>
@@ -471,7 +483,7 @@ export function PromptsPage() {
           <fieldset disabled={controlsDisabled} className="min-w-0 disabled:opacity-60">
             <div className="mb-4 flex items-end gap-3 @3xl:hidden">
               <div className="flex min-w-0 flex-1 flex-col gap-2">
-                <Label htmlFor="saved-prompt">Saved prompt</Label>
+                <Label htmlFor="saved-prompt">{t("promptsPage.savedPrompt")}</Label>
                 <Select
                   items={promptOptions}
                   value={selected || null}
@@ -484,7 +496,7 @@ export function PromptsPage() {
                     id="saved-prompt"
                     className="data-[size=default]:h-9 w-full min-w-0 rounded-md bg-background"
                   >
-                    <SelectValue placeholder="No saved prompts" />
+                    <SelectValue placeholder={t("promptsPage.noSavedPrompts")} />
                   </SelectTrigger>
                   <SelectContent alignItemWithTrigger={false} align="start">
                     {promptOptions.map((option) => (
@@ -505,7 +517,7 @@ export function PromptsPage() {
                 onClick={addPrompt}
               >
                 <Plus aria-hidden="true" className="size-4" />
-                Add prompt
+                {t("promptsPage.addPrompt")}
               </Button>
             </div>
             <div className="grid min-w-0 items-start gap-5 @3xl:grid-cols-[13rem_minmax(0,1fr)] @3xl:gap-8">
@@ -518,12 +530,12 @@ export function PromptsPage() {
                     id="prompt-library-title"
                     className="text-xs font-medium text-muted-foreground"
                   >
-                    Saved prompts
+                    {t("promptsPage.savedPrompts")}
                   </h2>
                   <Button
                     variant="ghost"
                     size="icon-sm"
-                    aria-label="Add prompt"
+                    aria-label={t("promptsPage.addPrompt")}
                     disabled={controlsDisabled || draft.prompts.length >= 30}
                     onClick={addPrompt}
                   >
@@ -531,14 +543,14 @@ export function PromptsPage() {
                   </Button>
                 </header>
                 <nav
-                  aria-label="Saved prompts"
+                  aria-label={t("promptsPage.savedPrompts")}
                   className="max-h-[max(12rem,calc(100dvh-15rem))] space-y-0.5 overflow-y-auto overscroll-contain pb-2"
                 >
                   {draft.prompts.map((item) => (
                     <button
                       key={item.id}
                       type="button"
-                      aria-label={item.name || "Untitled prompt"}
+                      aria-label={item.name || t("promptsPage.untitledPrompt")}
                       aria-pressed={selected === item.id}
                       disabled={controlsDisabled}
                       onClick={() => {
@@ -549,29 +561,36 @@ export function PromptsPage() {
                     >
                       <span className="flex w-full min-w-0 flex-wrap items-center justify-between gap-1.5 text-sm">
                         <span className="min-w-0 [overflow-wrap:anywhere]">
-                          {item.name || "Untitled prompt"}
+                          {item.name || t("promptsPage.untitledPrompt")}
                         </span>
                         {draft.autoPromptId === item.id && (
-                          <span className="text-[10px] text-primary">Automatic</span>
+                          <span className="text-[10px] text-primary">
+                            {t("promptsPage.automatic")}
+                          </span>
                         )}
                       </span>
                     </button>
                   ))}
                 </nav>
               </section>
-              <section aria-label="Prompt details" className="flex min-w-0 flex-col">
+              <section
+                aria-label={t("promptsPage.promptDetails")}
+                className="flex min-w-0 flex-col"
+              >
                 {prompt ? (
                   <div className="flex min-h-0 flex-1 flex-col gap-5">
                     <header className="space-y-2">
                       <div className="flex flex-wrap items-center justify-between gap-3">
-                        <h2 className="sr-only">{prompt.name || "Untitled prompt"}</h2>
+                        <h2 className="sr-only">
+                          {prompt.name || t("promptsPage.untitledPrompt")}
+                        </h2>
                         <Label htmlFor="prompt-name" className="sr-only">
-                          Name
+                          {t("promptsPage.name")}
                         </Label>
                         <input
                           id="prompt-name"
                           value={prompt.name}
-                          placeholder="Prompt name"
+                          placeholder={t("promptsPage.promptName")}
                           maxLength={80}
                           onChange={(event) => updatePrompt({ name: event.target.value })}
                           className="-ml-2 h-12 min-w-40 flex-1 rounded-md border border-transparent bg-transparent px-2 text-2xl font-medium tracking-tight outline-none placeholder:text-muted-foreground hover:border-input focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30"
@@ -582,7 +601,7 @@ export function PromptsPage() {
                               htmlFor="auto-prompt"
                               className="text-xs font-normal text-muted-foreground"
                             >
-                              Run after dictation
+                              {t("promptsPage.runAfterDictation")}
                             </Label>
                             <ProfileSettingIndicator
                               field="autoPromptId"
@@ -590,9 +609,9 @@ export function PromptsPage() {
                               currentLabel={
                                 draft.autoPromptId
                                   ? automaticPrompt
-                                    ? automaticPrompt.name || "Untitled prompt"
-                                    : "Prompt unavailable"
-                                  : "No automatic processing"
+                                    ? automaticPrompt.name || t("promptsPage.untitledPrompt")
+                                    : t("promptsPage.promptUnavailable")
+                                  : t("common.noAutomaticProcessing")
                               }
                             />
                             <Switch
@@ -611,7 +630,7 @@ export function PromptsPage() {
                               ref={deleteButton}
                               disabled={controlsDisabled}
                               render={<Button variant="ghost" size="icon-sm" />}
-                              aria-label="More prompt actions"
+                              aria-label={t("promptsPage.morePromptActions")}
                             >
                               <Ellipsis aria-hidden="true" className="size-4" />
                             </Menu.Trigger>
@@ -626,7 +645,7 @@ export function PromptsPage() {
                                     onClick={() => setHistoryPrompt(prompt)}
                                   >
                                     <History aria-hidden="true" className="size-4" />
-                                    Version history
+                                    {t("promptsPage.versionHistory")}
                                   </Menu.Item>
                                   {includedPrompt && (
                                     <Menu.Item
@@ -636,7 +655,7 @@ export function PromptsPage() {
                                       }
                                       className="rounded-md px-3 py-2 text-sm outline-none data-highlighted:bg-accent"
                                     >
-                                      Reset instructions
+                                      {t("promptsPage.resetInstructions")}
                                     </Menu.Item>
                                   )}
                                   <Menu.Item
@@ -645,7 +664,7 @@ export function PromptsPage() {
                                     className="flex items-center gap-2 rounded-md px-3 py-2 text-sm text-destructive outline-none data-highlighted:bg-destructive/10"
                                   >
                                     <Trash2 aria-hidden="true" className="size-4" />
-                                    Delete prompt
+                                    {t("promptsPage.deletePrompt")}
                                   </Menu.Item>
                                 </Menu.Popup>
                               </Menu.Positioner>
@@ -660,31 +679,33 @@ export function PromptsPage() {
                       >
                         {!draft.enabled ? (
                           <>
-                            Enable LLM processing in{" "}
+                            {t("promptsPage.enableLLMProcessingIn")}{" "}
                             <button
                               type="button"
                               onClick={() => selectSection("models")}
                               className="text-primary underline underline-offset-4 focus-visible:outline-ring"
                             >
-                              Text model
+                              {t("promptsPage.textModel")}
                             </button>{" "}
-                            to run prompts automatically.
+                            {t("promptsPage.toRunPromptsAutomatically")}
                           </>
                         ) : draft.autoPromptId === prompt.id ? (
-                          "Runs automatically after every dictation."
+                          t("promptsPage.runsAutomaticallyAfterEveryDictation")
                         ) : automaticPrompt ? (
-                          `Turn on to replace ${automaticPrompt.name || "Untitled prompt"} after dictation.`
+                          t("promptsPage.turnOnToReplaceAfterDictation", {
+                            prompt: automaticPrompt.name || t("promptsPage.untitledPrompt"),
+                          })
                         ) : (
-                          "Automatic processing is off."
+                          t("promptsPage.automaticProcessingIsOff")
                         )}
                       </p>
                     </header>
                     <div className="flex min-h-0 flex-1 flex-col gap-2">
                       <Label htmlFor="prompt-instruction" className="sr-only">
-                        Instructions
+                        {t("promptsPage.instructions")}
                       </Label>
                       <p id="prompt-instruction-help" className="sr-only">
-                        Describe the result you want. Your transcript is supplied automatically.
+                        {t("promptsPage.describeTheResultYouWantYourTranscript")}
                       </p>
                       <textarea
                         id="prompt-instruction"
@@ -707,10 +728,13 @@ export function PromptsPage() {
                           onClick={refine}
                         >
                           <Sparkles aria-hidden="true" className="size-3.5" />
-                          Refine prompt
+                          {t("promptsPage.refinePrompt")}
                         </Button>
                         <span className="text-xs tabular-nums text-muted-foreground">
-                          {Array.from(prompt.instruction).length.toLocaleString()} / 8,000
+                          {Array.from(prompt.instruction).length.toLocaleString(
+                            i18n.resolvedLanguage,
+                          )}{" "}
+                          / 8,000
                         </span>
                       </div>
                     </div>
@@ -722,9 +746,9 @@ export function PromptsPage() {
                   </div>
                 ) : (
                   <div className="space-y-3">
-                    <h2 className="text-lg font-semibold">No saved prompts</h2>
+                    <h2 className="text-lg font-semibold">{t("promptsPage.noSavedPrompts")}</h2>
                     <p className="text-sm text-muted-foreground">
-                      Add a prompt or start with Cleanup and Summary.
+                      {t("promptsPage.addAPromptOrStartWithCleanup")}
                     </p>
                     <Button
                       variant="outline"
@@ -736,7 +760,7 @@ export function PromptsPage() {
                         })
                       }
                     >
-                      Restore default prompts
+                      {t("promptsPage.restoreDefaultPrompts")}
                     </Button>
                   </div>
                 )}
@@ -749,7 +773,7 @@ export function PromptsPage() {
         <RevisionHistory
           kind="prompt"
           itemId={historyPrompt.id}
-          title="Prompt version history"
+          title={t("promptsPage.promptVersionHistory")}
           current={JSON.stringify(
             draft.prompts.find((item) => item.id === historyPrompt.id) ?? historyPrompt,
           )}
@@ -780,19 +804,23 @@ export function PromptsPage() {
           finalFocus={deleteButton}
         >
           <DialogHeader>
-            <DialogTitle>Delete this prompt?</DialogTitle>
+            <DialogTitle>{t("promptsPage.deleteThisPrompt")}</DialogTitle>
             <DialogDescription>
-              “{deleting?.name || "Untitled prompt"}” will be removed. You can undo this deletion.
+              {t("promptsPage.deleteDescription", {
+                name: deleting?.name || t("promptsPage.untitledPrompt"),
+              })}
               {deleting &&
                 draft.autoPromptId === deleting.id &&
-                " Automatic processing after dictation will be turned off."}
+                t("promptsPage.automaticProcessingAfterDictationWillBeTurnedOff")}
               {dependentChains.length > 0 &&
-                ` Update or delete the chains using this prompt first: ${dependentChains.map((chain) => chain.name).join(", ")}.`}
+                t("promptsPage.dependentChains", {
+                  chains: dependentChains.map((chain) => chain.name).join(", "),
+                })}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
             <Button ref={cancelDeleteButton} variant="outline" onClick={() => setDeleting(null)}>
-              Cancel
+              {t("common.cancel")}
             </Button>
             <Button
               variant="destructive"
@@ -803,7 +831,7 @@ export function PromptsPage() {
               }
               onClick={deletePrompt}
             >
-              Delete prompt
+              {t("promptsPage.deletePrompt")}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -822,14 +850,14 @@ export function PromptsPage() {
           {refining && (
             <>
               <DialogHeader>
-                <DialogTitle>Refine prompt</DialogTitle>
+                <DialogTitle>{t("promptsPage.refinePrompt")}</DialogTitle>
                 <DialogDescription>
-                  Review the refined instructions before applying them to your draft.
+                  {t("promptsPage.reviewTheRefinedInstructionsBeforeApplyingThem")}
                 </DialogDescription>
               </DialogHeader>
               <div className="grid items-start gap-4 md:grid-cols-2">
                 <section className="min-w-0 space-y-2">
-                  <Label htmlFor="refine-original">Your instructions</Label>
+                  <Label htmlFor="refine-original">{t("promptsPage.yourInstructions")}</Label>
                   <textarea
                     id="refine-original"
                     readOnly
@@ -839,14 +867,16 @@ export function PromptsPage() {
                   />
                 </section>
                 <section className="min-w-0 space-y-2">
-                  <Label htmlFor="refine-preview">Refined instructions</Label>
+                  <Label htmlFor="refine-preview">{t("promptsPage.refinedInstructions")}</Label>
                   <textarea
                     id="refine-preview"
                     readOnly
                     rows={9}
                     value={refinement.result}
                     placeholder={
-                      refinement.pending ? "Refining instructions…" : "No refined instructions yet."
+                      refinement.pending
+                        ? t("promptsPage.refiningInstructions")
+                        : t("promptsPage.noRefinedInstructionsYet")
                     }
                     className="max-h-[40vh] w-full resize-y rounded-md border border-primary/25 bg-primary/5 px-3 py-2 text-sm leading-6"
                   />
@@ -855,9 +885,9 @@ export function PromptsPage() {
               <p className="break-words text-xs text-muted-foreground">{refining.model}</p>
               {refinement.pending && (
                 <div role="status" className="flex items-center gap-3">
-                  <span className="text-sm">Refining instructions…</span>
+                  <span className="text-sm">{t("promptsPage.refiningInstructions")}</span>
                   <Button variant="outline" size="sm" onClick={() => void refinement.cancel()}>
-                    Cancel refinement
+                    {t("promptsPage.cancelRefinement")}
                   </Button>
                 </div>
               )}
@@ -868,12 +898,12 @@ export function PromptsPage() {
               )}
               {!refinementCurrent && (
                 <p role="alert" className="text-sm text-destructive">
-                  Prompt or model settings changed. Close this preview and refine again.
+                  {t("promptsPage.promptOrModelSettingsChangedCloseThis")}
                 </p>
               )}
               <DialogFooter>
                 <Button variant="outline" onClick={closeRefinement}>
-                  Discard preview
+                  {t("promptsPage.discardPreview")}
                 </Button>
                 {!refinement.pending && (
                   <Button
@@ -890,7 +920,7 @@ export function PromptsPage() {
                       )
                     }
                   >
-                    Refine again
+                    {t("promptsPage.refineAgain")}
                   </Button>
                 )}
                 <Button
@@ -908,10 +938,10 @@ export function PromptsPage() {
                       ),
                     });
                     setRefining(null);
-                    setRefinementNotice("Refined instructions applied.");
+                    setRefinementNotice(t("promptsPage.refinedInstructionsApplied"));
                   }}
                 >
-                  Apply to draft
+                  {t("promptsPage.applyToDraft")}
                 </Button>
               </DialogFooter>
             </>

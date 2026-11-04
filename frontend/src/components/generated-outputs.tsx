@@ -1,3 +1,6 @@
+import { nativeText } from "@/i18n/native-text";
+import i18n from "@/i18n";
+import { useTranslation } from "react-i18next";
 import { useDictation } from "@/components/dictation-provider";
 import { InferenceStats } from "@/components/inference-stats";
 import { MarkdownContent } from "@/components/markdown-content";
@@ -29,6 +32,7 @@ export function GeneratedOutputs({
   sessionID: string;
   unavailable: boolean;
 }) {
+  const { t } = useTranslation();
   const { snapshot, run } = useDictation();
   const { enabled } = snapshot.textProcessing;
   const options = processingOptions(snapshot.textProcessing);
@@ -105,12 +109,12 @@ export function GeneratedOutputs({
     (chain) => chain.id === selected,
   );
   return (
-    <section aria-label="Generated outputs" className="space-y-5">
+    <section aria-label={t("generatedOutputs.generatedOutputs")} className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-x-5 gap-y-2">
         <div className="flex min-w-0 max-w-full flex-wrap items-center gap-3">
           <div className="inline-flex max-w-full flex-wrap items-center gap-1 rounded-lg border bg-muted/15 p-1">
             <Label htmlFor="output-prompt" className="sr-only">
-              Output prompt
+              {t("generatedOutputs.outputPrompt")}
             </Label>
             <Select
               items={options}
@@ -125,13 +129,16 @@ export function GeneratedOutputs({
             >
               <SelectTrigger
                 id="output-prompt"
-                aria-description={selectedChain ? "Prompt chain" : undefined}
+                aria-description={selectedChain ? t("dictationProfiles.promptChain") : undefined}
                 className="w-28 min-w-0 border-transparent bg-transparent text-xs data-[size=default]:h-8 hover:bg-muted/50 sm:w-44 dark:bg-transparent"
               >
                 {selectedChain && (
                   <Workflow aria-hidden="true" className="size-3.5 text-muted-foreground" />
                 )}
-                <SelectValue className="min-w-0" placeholder="Choose a prompt" />
+                <SelectValue
+                  className="min-w-0"
+                  placeholder={t("generatedOutputs.chooseAPrompt")}
+                />
               </SelectTrigger>
               <SelectContent alignItemWithTrigger={false} align="start">
                 <ProcessingSelectItems options={options} />
@@ -147,7 +154,9 @@ export function GeneratedOutputs({
                     aria-hidden="true"
                     className="size-3 animate-spin motion-reduce:animate-none"
                   />
-                  {selectedChain ? snapshot.status.message : "Generating output…"}
+                  {selectedChain
+                    ? nativeText(snapshot.status.message)
+                    : t("generatedOutputs.generatingOutput")}
                 </span>
                 <Button
                   size="sm"
@@ -155,7 +164,7 @@ export function GeneratedOutputs({
                   className="text-muted-foreground"
                   onClick={() => void generation.cancel()}
                 >
-                  Cancel generation
+                  {t("generatedOutputs.cancelGeneration")}
                 </Button>
               </div>
             ) : (
@@ -163,7 +172,11 @@ export function GeneratedOutputs({
                 pressFeedback
                 size="sm"
                 variant="ghost"
-                aria-label={selectedChain ? "Run chain" : "Generate output"}
+                aria-label={
+                  selectedChain
+                    ? t("generatedOutputs.runChain")
+                    : t("generatedOutputs.generateOutput")
+                }
                 className="bg-primary/10 text-xs text-primary hover:bg-primary/15 hover:text-primary"
                 disabled={!canGenerate || !selected}
                 onClick={() =>
@@ -171,7 +184,7 @@ export function GeneratedOutputs({
                 }
               >
                 <Sparkles className="size-3.5" />
-                {selectedChain ? "Run chain" : "Generate"}
+                {selectedChain ? t("generatedOutputs.runChain") : t("generatedOutputs.generate")}
               </Button>
             )}
           </div>
@@ -180,14 +193,14 @@ export function GeneratedOutputs({
               to="/prompts"
               className="text-xs text-muted-foreground underline underline-offset-4"
             >
-              Set up text model
+              {t("generatedOutputs.setUpTextModel")}
             </Link>
           )}
         </div>
         <p className="text-[11px] leading-5 text-muted-foreground">
           {selectedChain
-            ? "Each step uses its chosen input. Completed results are saved separately, even if a later step fails."
-            : "Uses your saved transcript. New outputs are saved separately."}
+            ? t("generatedOutputs.eachStepUsesItsChosenInputCompleted")
+            : t("generatedOutputs.usesYourSavedTranscriptNewOutputsAre")}
         </p>
       </div>
       {generation.error && (
@@ -197,25 +210,27 @@ export function GeneratedOutputs({
       )}
       {generation.result && (
         <p role="status" className="text-sm text-primary">
-          {selectedChain ? "Chain complete. All step results saved." : "Output saved."}
+          {selectedChain
+            ? t("generatedOutputs.chainCompleteAllStepResultsSaved")
+            : t("generatedOutputs.outputSaved")}
         </p>
       )}
       {loading && (
         <p role="status" className="text-sm text-muted-foreground">
-          Loading outputs…
+          {t("generatedOutputs.loadingOutputs")}
         </p>
       )}
       {error && (
         <div role="alert" className="flex flex-wrap items-center gap-3 text-sm text-destructive">
-          {error}
+          {nativeText(error)}
           <Button size="sm" variant="outline" onClick={() => setReload((old) => old + 1)}>
-            Retry outputs
+            {t("generatedOutputs.retryOutputs")}
           </Button>
         </div>
       )}
       {!loading && !error && !outputs.length && (
         <p className="rounded-xl border border-dashed p-5 text-sm text-muted-foreground">
-          No generated outputs yet.
+          {t("generatedOutputs.noGeneratedOutputsYet")}
         </p>
       )}
       <div aria-busy={loading} className="space-y-4">
@@ -227,12 +242,12 @@ export function GeneratedOutputs({
               from="translateY(8px)"
               enter={enteringIds.has(output.id)}
             >
-              <article aria-label={`${output.prompt.name} output`}>
+              <article aria-label={t("generatedOutputs.output", { name: output.prompt.name })}>
                 <TextPanel
                   variant="reading"
                   title={output.prompt.name}
                   kind="result"
-                  description={`${output.model} · ${new Date(output.createdAt).toLocaleString()}`}
+                  description={`${output.model} · ${new Date(output.createdAt).toLocaleString(i18n.resolvedLanguage)}`}
                   action={
                     <div className="flex items-center gap-1">
                       <InferenceStats output={output} />
@@ -243,26 +258,30 @@ export function GeneratedOutputs({
                         onClick={() => void run(() => backend.copy(output.text), false)}
                       >
                         <Copy className="size-3.5" />
-                        Copy output
+                        {t("generatedOutputs.copyOutput")}
                       </Button>
                     </div>
                   }
                 >
                   {output.chain?.runId && (
                     <p className="mb-3 text-xs text-muted-foreground">
-                      {output.chain.name} · Step {output.chain.step} of {output.chain.total}
-                      {" · Input: "}
+                      {output.chain.name} {t("generatedOutputs.step")} {output.chain.step}{" "}
+                      {t("historyPage.of")} {output.chain.total}
+                      {t("generatedOutputs.input")}
                       {output.chain.input === "original"
-                        ? "Original transcription"
+                        ? t("historyEntryPage.originalTranscription")
                         : output.chain.input === "transcript"
-                          ? "Saved transcript"
+                          ? t("generatedOutputs.savedTranscript")
                           : (() => {
                               const source = outputs.find(
                                 (item) => item.id === output.chain?.sourceOutputId,
                               );
                               return source
-                                ? `Step ${source.chain?.step}: ${source.prompt.name}`
-                                : "Earlier step (saved input below)";
+                                ? t("generatedOutputs.stepLabel", {
+                                    step: source.chain?.step,
+                                    prompt: source.prompt.name,
+                                  })
+                                : t("generatedOutputs.earlierStepSavedInputBelow");
                             })()}
                     </p>
                   )}
@@ -278,7 +297,7 @@ export function GeneratedOutputs({
                       }
                     >
                       <RefreshCw className="size-3.5" />
-                      Regenerate
+                      {t("generatedOutputs.regenerate")}
                     </Button>
                     <Button
                       size="sm"
@@ -291,22 +310,24 @@ export function GeneratedOutputs({
                       }}
                     >
                       <Trash2 className="size-3.5" />
-                      Delete output
+                      {t("generatedOutputs.deleteOutput")}
                     </Button>
                   </div>
                   <details className="mt-3 text-xs">
                     <summary className="cursor-pointer text-muted-foreground">
-                      Input and prompt
+                      {t("generatedOutputs.inputAndPrompt")}
                     </summary>
                     <div className="mt-3 space-y-3">
                       <div>
-                        <h4 className="font-semibold">Input text</h4>
+                        <h4 className="font-semibold">{t("generatedOutputs.inputText")}</h4>
                         <MarkdownContent className="mt-1 max-h-52 overflow-auto text-xs leading-6">
                           {output.input}
                         </MarkdownContent>
                       </div>
                       <div>
-                        <h4 className="font-semibold">Prompt instructions</h4>
+                        <h4 className="font-semibold">
+                          {t("generatedOutputs.promptInstructions")}
+                        </h4>
                         <p className="mt-1 max-h-52 overflow-auto whitespace-pre-wrap break-words leading-6">
                           {output.prompt.instruction}
                         </p>
@@ -321,8 +342,7 @@ export function GeneratedOutputs({
       </div>
       {!!outputs.length && (
         <p className="text-xs text-muted-foreground">
-          Regenerating reuses the saved input and prompt with your current model. Earlier outputs
-          are kept.
+          {t("generatedOutputs.regeneratingReusesTheSavedInputAndPrompt")}
         </p>
       )}
       <Dialog
@@ -334,9 +354,9 @@ export function GeneratedOutputs({
       >
         <DialogContent showCloseButton={false}>
           <DialogHeader>
-            <DialogTitle>Delete this output?</DialogTitle>
+            <DialogTitle>{t("generatedOutputs.deleteThisOutput")}</DialogTitle>
             <DialogDescription>
-              This removes the generated output. Your transcription and other outputs are kept.
+              {t("generatedOutputs.thisRemovesTheGeneratedOutputYourTranscription")}
             </DialogDescription>
           </DialogHeader>
           {deleteError && (
@@ -346,10 +366,10 @@ export function GeneratedOutputs({
           )}
           <DialogFooter>
             <Button variant="outline" disabled={deletingNow} onClick={() => setDeleting(null)}>
-              Cancel
+              {t("common.cancel")}
             </Button>
             <Button variant="destructive" disabled={deletingNow} onClick={() => void remove()}>
-              {deletingNow ? "Deleting…" : "Delete output"}
+              {deletingNow ? t("dictationProfiles.deleting") : t("generatedOutputs.deleteOutput")}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -1,3 +1,5 @@
+import { nativeText } from "@/i18n/native-text";
+import { useTranslation } from "react-i18next";
 import { AutoSaveStatus } from "@/components/auto-save-status";
 import { useDictation } from "@/components/dictation-provider";
 import { MarkdownContent } from "@/components/markdown-content";
@@ -34,6 +36,7 @@ export function TranscriptEditor({
   onClose: () => void;
   onSaved: () => void;
 }) {
+  const { t } = useTranslation();
   const initial = session.finalTranscript ?? session.rawTranscript;
   const [saved, setSaved] = useState(initial);
   const [text, setText, draftState] = useSavedDraft(`transcript:${session.id}`, saved);
@@ -55,11 +58,11 @@ export function TranscriptEditor({
   const dirty = text !== initial;
   if (!dirty && referenceTab === "changes") setReferenceTab("original");
   const reason = !text.trim()
-    ? "Enter transcript text."
+    ? t("transcriptEditor.enterTranscriptText")
     : text.includes("\0")
-      ? "Remove null characters from the transcript."
+      ? t("transcriptEditor.removeNullCharactersFromTheTranscript")
       : Array.from(text).length > 100000
-        ? "Use at most 100,000 characters."
+        ? t("transcriptEditor.useAtMost100000Characters")
         : "";
   async function save() {
     setError("");
@@ -117,7 +120,7 @@ export function TranscriptEditor({
               setText(result);
               setSelection("");
               setProcessing(false);
-              setNotice("Result applied. Changes save automatically.");
+              setNotice(t("transcriptEditor.resultAppliedChangesSaveAutomatically"));
             }}
           />
         ) : term !== null ? (
@@ -128,28 +131,33 @@ export function TranscriptEditor({
             onCancel={() => setTerm(null)}
             onSaved={() => {
               setTerm(null);
-              setNotice("Added to vocabulary");
+              setNotice(t("transcriptEditor.addedToVocabulary"));
             }}
           />
         ) : (
           <>
             <DialogHeader className="shrink-0 px-5 pt-5 pb-6 text-left sm:px-7 sm:pt-7">
-              <DialogTitle className="text-xl">Edit transcript</DialogTitle>
+              <DialogTitle className="text-xl">{t("historyEntryPage.editTranscript")}</DialogTitle>
               <DialogDescription>
-                Changes update the saved text. The original transcription is preserved.
+                {t("transcriptEditor.changesUpdateTheSavedTextTheOriginal")}
               </DialogDescription>
             </DialogHeader>
             <div className="min-h-0 space-y-5 overflow-y-auto px-5 pb-6 sm:px-7">
               <div className="grid items-start gap-5 md:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
-                <section aria-label="Editable text" className="min-w-0 space-y-3">
+                <section
+                  aria-label={t("transcriptEditor.editableText")}
+                  className="min-w-0 space-y-3"
+                >
                   <div className="flex items-center justify-between gap-3">
-                    <h3 className="text-sm font-medium">Your draft</h3>
+                    <h3 className="text-sm font-medium">{t("transcriptEditor.yourDraft")}</h3>
                     <span className="text-xs text-muted-foreground">
-                      {text.trim().split(/\s+/).filter(Boolean).length} words
+                      {t("transcriptEditor.wordCount", {
+                        count: text.trim().split(/\s+/).filter(Boolean).length,
+                      })}
                     </span>
                   </div>
                   <Label htmlFor="transcript-editor" className="sr-only">
-                    Editable text
+                    {t("transcriptEditor.editableText")}
                   </Label>
                   <textarea
                     ref={input}
@@ -194,27 +202,27 @@ export function TranscriptEditor({
                 >
                   <div className="flex flex-wrap items-center gap-2">
                     <TabsList
-                      aria-label="Editor reference"
+                      aria-label={t("transcriptEditor.editorReference")}
                       className="group-data-[orientation=horizontal]/tabs:h-8"
                     >
                       <TabsTrigger value="original" className="px-3 text-xs">
-                        Original
+                        {t("historyEntryPage.original")}
                       </TabsTrigger>
                       {dirty && (
                         <TabsTrigger value="changes" className="px-3 text-xs">
-                          Changes
+                          {t("historyEntryPage.changes")}
                         </TabsTrigger>
                       )}
                     </TabsList>
                     <Button variant="ghost" size="sm" onClick={() => setHistory(true)}>
-                      Version history
+                      {t("promptsPage.versionHistory")}
                     </Button>
                   </div>
                   <TabsContent value="original" keepMounted>
                     <TextPanel
-                      title="Original transcription"
+                      title={t("historyEntryPage.originalTranscription")}
                       kind="source"
-                      description="From the recording · read only"
+                      description={t("transcriptEditor.fromTheRecordingReadOnly")}
                     >
                       <MarkdownContent className="max-h-[50vh] overflow-y-auto text-base leading-8">
                         {session.rawTranscript}
@@ -224,9 +232,9 @@ export function TranscriptEditor({
                   {dirty && (
                     <TabsContent value="changes" keepMounted>
                       <TextPanel
-                        title="Draft changes"
+                        title={t("transcriptEditor.draftChanges")}
                         kind="source"
-                        description="Saved text → Your draft"
+                        description={t("transcriptEditor.savedTextYourDraft")}
                       >
                         <div className="max-h-[50vh] overflow-y-auto">
                           <TranscriptDiff before={initial} after={text} />
@@ -253,7 +261,7 @@ export function TranscriptEditor({
                     setProcessing(true);
                   }}
                 >
-                  Process text
+                  {t("transcriptEditor.processText")}
                 </Button>
                 {!snapshot.textProcessing.enabled && (
                   <Link
@@ -261,7 +269,7 @@ export function TranscriptEditor({
                     onClick={() => void close()}
                     className="text-xs text-muted-foreground underline"
                   >
-                    Set up text model
+                    {t("generatedOutputs.setUpTextModel")}
                   </Link>
                 )}
                 <Button
@@ -273,10 +281,10 @@ export function TranscriptEditor({
                     setTerm(selection);
                   }}
                 >
-                  Add to vocabulary
+                  {t("transcriptEditor.addToVocabulary")}
                 </Button>
                 <span className="text-xs text-muted-foreground">
-                  Select a name or term in the transcript.
+                  {t("transcriptEditor.selectANameOrTermInThe")}
                 </span>
               </div>
               {notice && (
@@ -286,7 +294,7 @@ export function TranscriptEditor({
               )}
               {error && (
                 <p id="transcript-save-error" role="alert" className="text-sm text-destructive">
-                  {error}
+                  {nativeText(error)}
                 </p>
               )}
             </div>
@@ -299,7 +307,7 @@ export function TranscriptEditor({
                 disabled={closing}
               />
               <Button variant="outline" disabled={closing} onClick={() => void close()}>
-                Done
+                {t("dictationProfiles.done")}
               </Button>
             </DialogFooter>
           </>
@@ -309,7 +317,7 @@ export function TranscriptEditor({
         <RevisionHistory
           kind="transcript"
           itemId={session.id}
-          title="Transcript version history"
+          title={t("transcriptEditor.transcriptVersionHistory")}
           current={text}
           onClose={() => setHistory(false)}
           onRestore={setText}
@@ -332,6 +340,7 @@ function VocabularyTermForm({
   onCancel: () => void;
   onSaved: () => void;
 }) {
+  const { t } = useTranslation();
   const [canonical, setCanonical] = useState(selected);
   const [aliases, setAliases] = useState("");
   const [saving, setSaving] = useState(false);
@@ -376,13 +385,13 @@ function VocabularyTermForm({
       }}
     >
       <DialogHeader>
-        <DialogTitle>Add to vocabulary</DialogTitle>
+        <DialogTitle>{t("transcriptEditor.addToVocabulary")}</DialogTitle>
         <DialogDescription>
-          Applies to future dictations. Your transcript draft stays open.
+          {t("transcriptEditor.appliesToFutureDictationsYourTranscriptDraft")}
         </DialogDescription>
       </DialogHeader>
       <div className="space-y-2">
-        <Label htmlFor="correction-term">Preferred spelling</Label>
+        <Label htmlFor="correction-term">{t("vocabularyPage.preferredSpelling")}</Label>
         <Input
           ref={input}
           id="correction-term"
@@ -393,10 +402,10 @@ function VocabularyTermForm({
         />
       </div>
       <div className="space-y-2">
-        <Label htmlFor="correction-aliases">Aliases (comma-separated)</Label>
+        <Label htmlFor="correction-aliases">{t("vocabularyPage.aliasesCommaSeparated")}</Label>
         <Input
           id="correction-aliases"
-          placeholder="Optional alternative spellings"
+          placeholder={t("transcriptEditor.optionalAlternativeSpellings")}
           value={aliases}
           disabled={saving}
           onChange={(event) => setAliases(event.target.value)}
@@ -404,20 +413,20 @@ function VocabularyTermForm({
       </div>
       {busy && (
         <p className="text-sm text-muted-foreground">
-          Finish the current operation before adding a term.
+          {t("transcriptEditor.finishTheCurrentOperationBeforeAddingA")}
         </p>
       )}
       {error && (
         <p role="alert" className="text-sm text-destructive">
-          {error}
+          {nativeText(error)}
         </p>
       )}
       <DialogFooter>
         <Button type="button" variant="outline" disabled={saving} onClick={onCancel}>
-          Cancel
+          {t("common.cancel")}
         </Button>
         <Button type="submit" disabled={saving || busy || !canonical.trim()}>
-          {saving ? "Saving…" : "Save term"}
+          {saving ? t("autoSaveStatus.saving") : t("transcriptEditor.saveTerm")}
         </Button>
       </DialogFooter>
     </form>

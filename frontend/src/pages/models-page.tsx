@@ -1,3 +1,6 @@
+import { nativeText } from "@/i18n/native-text";
+import i18n from "@/i18n";
+import { useTranslation } from "react-i18next";
 import { useDictation } from "@/components/dictation-provider";
 import { ModelCard } from "@/components/model-card";
 import { ModelGuidance } from "@/components/model-guidance";
@@ -47,6 +50,7 @@ function modelFamily(model: Model) {
 }
 
 export function ModelsPage({ embedded = false }: { embedded?: boolean }) {
+  const { t } = useTranslation();
   const layoutId = useId();
   const guidanceId = useId();
   const { snapshot, run, refresh, loading, installModel, downloadingModelId } = useDictation();
@@ -61,7 +65,11 @@ export function ModelsPage({ embedded = false }: { embedded?: boolean }) {
   const busy = isBusy(status.phase) || loading || downloadingModelId !== null;
   const downloadPercent = Math.round(Math.min(1, Math.max(0, status.progress)) * 100);
   const megabytes = (bytes: number) =>
-    `${new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 }).format(bytes / 1_000_000)} MB`;
+    t("modelGuidance.downloadSize", {
+      size: new Intl.NumberFormat(i18n.resolvedLanguage, { maximumFractionDigits: 1 }).format(
+        bytes / 1_000_000,
+      ),
+    });
   const diskBytes = models.reduce((sum, model) => sum + (model.diskBytes ?? 0), 0);
   const installedCount = models.filter((model) => model.installed).length;
   const currentModel = models.find((model) => !!model.path && settings.modelPath === model.path);
@@ -101,19 +109,21 @@ export function ModelsPage({ embedded = false }: { embedded?: boolean }) {
     <div className="space-y-7">
       {!embedded && (
         <PageHeading
-          title="Models"
-          description="Find the right balance of speed, size, and accuracy."
+          title={t("modelsPage.models")}
+          description={t("modelsPage.findTheRightBalanceOfSpeedSize")}
         >
           <div
             role="group"
-            aria-label="Model storage"
+            aria-label={t("modelsPage.modelStorage")}
             className="flex items-center gap-3 rounded-xl border bg-card px-4 py-3"
           >
             <HardDrive className="size-4 text-muted-foreground" aria-hidden="true" />
             <div>
               <p className="text-sm font-medium tabular-nums">{megabytes(diskBytes)}</p>
               <p className="mt-0.5 text-xs text-muted-foreground">
-                {installedCount} {installedCount === 1 ? "model" : "models"} downloaded
+                {installedCount}{" "}
+                {installedCount === 1 ? t("modelsPage.model") : t("modelsPage.models2")}{" "}
+                {t("modelsPage.downloaded")}
               </p>
             </div>
           </div>
@@ -121,17 +131,17 @@ export function ModelsPage({ embedded = false }: { embedded?: boolean }) {
       )}
       {settings.modelPath && (
         <section
-          aria-label="Current speech model"
+          aria-label={t("modelsPage.currentSpeechModel")}
           className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-4 rounded-2xl border border-primary/25 bg-primary/5 p-5 sm:flex sm:flex-wrap sm:p-6"
         >
           <div className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
             <AudioLines className="size-6" aria-hidden="true" />
           </div>
           <div className="min-w-0 flex-1">
-            <p className="text-xs text-muted-foreground">Your current model</p>
+            <p className="text-xs text-muted-foreground">{t("modelsPage.yourCurrentModel")}</p>
             <div className="mt-1 flex flex-wrap items-center gap-3">
               <p className="text-lg font-semibold tracking-tight">
-                {currentModel?.name ?? "Custom model"}
+                {currentModel?.name ?? t("homePage.customModel")}
               </p>
               <Badge
                 variant="outline"
@@ -141,13 +151,13 @@ export function ModelsPage({ embedded = false }: { embedded?: boolean }) {
                 )}
               >
                 {currentReady && <Check aria-hidden="true" />}
-                {currentReady ? "Active" : "Needs attention"}
+                {currentReady ? t("modelsPage.active") : t("modelsPage.needsAttention")}
               </Badge>
             </div>
             <p className="mt-1 text-xs leading-5 text-muted-foreground">
               {currentReady
-                ? "Selected for your next dictation."
-                : "Check your model and runtime to get ready to dictate."}
+                ? t("modelsPage.selectedForYourNextDictation")
+                : t("modelsPage.checkYourModelAndRuntimeToGet")}
             </p>
           </div>
           {currentModel?.installed && (
@@ -159,7 +169,7 @@ export function ModelsPage({ embedded = false }: { embedded?: boolean }) {
               onClick={() => void installModel(currentModel)}
             >
               <Wrench className="size-3.5" aria-hidden="true" />
-              Check &amp; repair runtime
+              {t("modelsPage.checkRepairRuntime")}
             </Button>
           )}
         </section>
@@ -169,14 +179,14 @@ export function ModelsPage({ embedded = false }: { embedded?: boolean }) {
           role="alert"
           className="rounded-xl border border-destructive/30 bg-destructive/5 p-4 text-sm whitespace-pre-wrap text-destructive"
         >
-          {status.message}
+          {nativeText(status.message)}
         </p>
       )}
       <section aria-labelledby="model-library-heading" className="space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
             <h2 id="model-library-heading" className="text-sm font-semibold">
-              Choose your model
+              {t("modelsPage.chooseYourModel")}
             </h2>
             <Button
               variant="ghost"
@@ -186,7 +196,7 @@ export function ModelsPage({ embedded = false }: { embedded?: boolean }) {
               aria-controls={guidanceId}
               onClick={() => setGuidanceOpen((open) => !open)}
             >
-              Help me choose
+              {t("modelsPage.helpMeChoose")}
               <ChevronDown
                 className={cn("size-3.5", guidanceOpen && "rotate-180")}
                 aria-hidden="true"
@@ -195,7 +205,7 @@ export function ModelsPage({ embedded = false }: { embedded?: boolean }) {
           </div>
           <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
             <ShieldCheck className="size-3.5" aria-hidden="true" />
-            Dictation runs on your device
+            {t("modelsPage.dictationRunsOnYourDevice")}
           </span>
         </div>
         <div id={guidanceId} hidden={!guidanceOpen}>
@@ -226,19 +236,20 @@ export function ModelsPage({ embedded = false }: { embedded?: boolean }) {
                 className="rounded-2xl border bg-card px-5 sm:px-6"
               >
                 <AccordionTrigger
-                  aria-label={`${family.name} models`}
+                  aria-label={t("modelsPage.models3", { name: family.name })}
                   className="items-center gap-3 py-5 hover:no-underline sm:py-6"
                 >
                   <span className="flex flex-wrap items-center gap-2.5">
                     <span className="text-base font-semibold">{family.name}</span>
                     <span className="text-xs font-normal text-muted-foreground">
-                      {family.models.length} {family.models.length === 1 ? "model" : "models"}
+                      {family.models.length}{" "}
+                      {family.models.length === 1 ? t("modelsPage.model") : t("modelsPage.models2")}
                     </span>
                     {downloading &&
                       downloadingModel &&
                       modelFamily(downloadingModel) === family.id && (
                         <Badge variant="outline" className="border-primary/20 text-primary">
-                          Downloading
+                          {t("modelsPage.downloading")}
                         </Badge>
                       )}
                   </span>
@@ -279,16 +290,16 @@ export function ModelsPage({ embedded = false }: { embedded?: boolean }) {
       <div className="flex flex-wrap items-center gap-3 rounded-xl border border-dashed px-5 py-4">
         <FolderOpen className="size-5 shrink-0 text-muted-foreground" aria-hidden="true" />
         <div className="min-w-0 flex-1">
-          <p className="text-sm font-medium">Bring your own model</p>
+          <p className="text-sm font-medium">{t("modelsPage.bringYourOwnModel")}</p>
           <p className="mt-1 text-xs leading-5 text-muted-foreground">
-            Use local model files or an existing Whisper installation.
+            {t("modelsPage.useLocalModelFilesOrAnExisting")}
           </p>
         </div>
         <Link
           className="flex items-center gap-1 rounded-sm text-xs font-medium text-primary underline-offset-4 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring"
           to="/settings"
         >
-          Open Settings
+          {t("modelsPage.openSettings")}
           <ArrowUpRight className="size-3.5" aria-hidden="true" />
         </Link>
       </div>
@@ -301,23 +312,24 @@ export function ModelsPage({ embedded = false }: { embedded?: boolean }) {
       >
         <DialogContent showCloseButton={false}>
           <DialogHeader>
-            <DialogTitle>Remove {removing?.name}?</DialogTitle>
+            <DialogTitle>
+              {t("common.remove")} {removing?.name}?
+            </DialogTitle>
             <DialogDescription>
-              This removes {megabytes(removing?.diskBytes ?? 0)} from this device. You can download
-              the model again.
+              {t("modelsPage.removeDescription", { size: megabytes(removing?.diskBytes ?? 0) })}
             </DialogDescription>
           </DialogHeader>
           {error && (
             <p role="alert" className="text-sm text-destructive">
-              {error}
+              {nativeText(error)}
             </p>
           )}
           <DialogFooter>
             <Button variant="outline" disabled={pending} onClick={() => setRemoving(null)}>
-              Cancel
+              {t("common.cancel")}
             </Button>
             <Button variant="destructive" disabled={pending || busy} onClick={() => void remove()}>
-              {pending ? "Removing…" : "Remove model"}
+              {pending ? t("modelsPage.removing") : t("modelsPage.removeModel")}
             </Button>
           </DialogFooter>
         </DialogContent>

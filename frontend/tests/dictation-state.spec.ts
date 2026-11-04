@@ -1765,7 +1765,9 @@ for (const theme of ["light", "dark"] as const) {
     await expect(automatic).not.toBeChecked();
     await expect(page.getByLabel("Name", { exact: true })).toHaveValue("My cleanup");
     await page.getByLabel("Instructions", { exact: true }).scrollIntoViewIfNeeded();
-    await expect(page.locator('header[aria-label="Prompts"]').getByRole("status")).toBeInViewport();
+    await expect(
+      page.locator('header[aria-label="Prompts & chains"]').getByRole("status"),
+    ).toBeInViewport();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
       true,
     );
@@ -1815,7 +1817,7 @@ test("prompt automatic switch respects model and busy guards and preserves a fai
     "",
   );
   await page.getByRole("link", { name: "History", exact: true }).click();
-  await page.getByRole("link", { name: "Prompts", exact: true }).click();
+  await page.getByRole("link", { name: "Prompts & chains", exact: true }).click();
   await expect(automatic).toBeChecked();
   await page.evaluate(() => {
     window.dictationTest.failSave = false;
@@ -1931,7 +1933,7 @@ test("prompts tabs preserve shared drafts and keep save actions visible in narro
     animations: "disabled",
   });
   await page.getByLabel("Instructions", { exact: true }).scrollIntoViewIfNeeded();
-  const save = page.locator('header[aria-label="Prompts"]').getByRole("status");
+  const save = page.locator('header[aria-label="Prompts & chains"]').getByRole("status");
   await expect(save).toBeInViewport();
   await saveDraft(page);
   await expect
@@ -1994,7 +1996,7 @@ test("prompt auto-save status and model response toasts reflect saved state", as
   await page.goto("/#/prompts?section=models");
   await page.getByLabel("Model identifier", { exact: true }).fill("new-model");
   await saveDraft(page);
-  const saved = page.locator('header[aria-label="Prompts"]').getByRole("status");
+  const saved = page.locator('header[aria-label="Prompts & chains"]').getByRole("status");
   await expect(saved).toBeVisible();
   expect(await page.evaluate(() => window.dictationTest.snapshot.textProcessing.model)).toBe(
     "new-model",
@@ -2054,9 +2056,9 @@ test("failed prompt saves show an error toast and retain edits for retry", async
     window.dictationTest.failSave = false;
   });
   await saveDraft(page);
-  await expect(page.locator('header[aria-label="Prompts"]').getByRole("status")).toHaveText(
-    "Changes save automatically",
-  );
+  await expect(
+    page.locator('header[aria-label="Prompts & chains"]').getByRole("status"),
+  ).toHaveText("Changes save automatically");
   expect(
     await page.evaluate(() => window.dictationTest.snapshot.textProcessing.prompts[0].name),
   ).toBe("Retry cleanup");
@@ -7419,7 +7421,7 @@ test("an outdated backend keeps the interface visible and recovers after restart
   });
   await page.goto("/#/prompts?section=models");
   await expect(page.getByRole("alert").filter({ hasText: "different versions" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Prompts", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Prompts & chains", exact: true })).toBeVisible();
   await expect(page.getByRole("navigation", { name: "Main navigation" })).toBeVisible();
   await expect(page.getByRole("switch", { name: "Enable LLM processing" })).toBeDisabled();
   await page.evaluate(() => {
@@ -7433,7 +7435,7 @@ test("an outdated backend keeps the interface visible and recovers after restart
     window.dictationTest.history();
   });
   await expect(page.getByRole("alert").filter({ hasText: "different versions" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Prompts", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Prompts & chains", exact: true })).toBeVisible();
   expect(errors).toEqual([]);
 });
 
@@ -7654,7 +7656,7 @@ test("older backends show discovery restart guidance without hiding Prompts", as
   });
   await page.goto("/#/prompts?section=models");
   await expect(page.getByRole("alert").filter({ hasText: "restart wails3 dev" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Prompts", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Prompts & chains", exact: true })).toBeVisible();
   await page.getByLabel("Model identifier").fill("manual-model");
   expect(errors).toEqual([]);
 });
@@ -7710,7 +7712,7 @@ test("render crashes show copyable recovery and retry preserves saved data", asy
   });
   await page.getByRole("button", { name: "Retry interface", exact: true }).click();
   await expect(page.getByRole("region", { name: "Dictation recorder", exact: true })).toBeVisible();
-  await expect(page.getByText("Saved correction", { exact: true })).toBeVisible();
+  await expect(page.getByRole("link").filter({ hasText: "Saved correction" })).toBeVisible();
   await page.getByRole("link", { name: "Settings", exact: true }).click();
   await expect(
     page
@@ -7760,7 +7762,7 @@ test("persistent crashes stay recoverable and window reload keeps persisted pref
     page.getByRole("button", { name: "Reload window", exact: true }).click(),
   ]);
   await expect(page.getByRole("region", { name: "Dictation recorder", exact: true })).toBeVisible();
-  await expect(page.getByText("Persisted history", { exact: true })).toBeVisible();
+  await expect(page.getByRole("link").filter({ hasText: "Persisted history" })).toBeVisible();
   await expect(page.locator("html")).toHaveClass(/dark/);
   await expect(page.getByRole("button", { name: "Expand sidebar", exact: true })).toBeVisible();
   await page.getByRole("link", { name: "Settings", exact: true }).click();
@@ -8442,7 +8444,7 @@ test("temporary latest result supports copy, explicit save, and dismiss", async 
 test("page drafts flush on navigation and remain saved when returning", async ({ page }) => {
   await page.goto("/#/settings");
   await page.getByLabel("Global shortcut", { exact: true }).fill("Ctrl+Alt+P");
-  await page.getByRole("link", { name: "Prompts", exact: true }).click();
+  await page.getByRole("link", { name: "Prompts & chains", exact: true }).click();
   await expect
     .poll(() => page.evaluate(() => window.dictationTest.snapshot.settings.shortcut))
     .toBe("Ctrl+Alt+P");
@@ -8454,7 +8456,7 @@ test("page drafts flush on navigation and remain saved when returning", async ({
   await page.getByRole("link", { name: "History", exact: true }).click();
   await page.getByRole("link", { name: "Settings", exact: true }).click();
   await expect(page.getByLabel("Global shortcut", { exact: true })).toHaveValue("Ctrl+Alt+P");
-  await page.getByRole("link", { name: "Prompts", exact: true }).click();
+  await page.getByRole("link", { name: "Prompts & chains", exact: true }).click();
   await page.getByRole("tab", { name: "Text model", exact: true }).click();
   await expect(page.getByLabel("Model identifier")).toHaveValue("unsaved-local-model");
   await saveDraft(page);
@@ -8883,7 +8885,7 @@ test("automatic prompt indicator explains the selected prompt and follows save d
     window.dictationTest.snapshot.textProcessing.autoPromptId = "cleanup";
   });
   await homeModelScenario(page);
-  await page.getByRole("link", { name: "Prompts", exact: true }).click();
+  await page.getByRole("link", { name: "Prompts & chains", exact: true }).click();
   const automatic = page.getByRole("switch", { name: "Run after dictation", exact: true });
   const marker = page.getByRole("img", {
     name: "Run after dictation changed from Default",
@@ -8928,7 +8930,7 @@ test("automatic prompt indicator explains the selected prompt and follows save d
   await page.getByRole("link", { name: "Settings", exact: true }).click();
   await page.getByRole("tab", { name: "Profiles", exact: true }).click();
   await page.getByRole("button", { name: "Use Default", exact: true }).click();
-  await page.getByRole("link", { name: "Prompts", exact: true }).click();
+  await page.getByRole("link", { name: "Prompts & chains", exact: true }).click();
   await expect(marker).toHaveCount(0);
   expect(await page.evaluate(() => window.dictationTest.snapshot.textProcessing.autoPromptId)).toBe(
     "cleanup",
@@ -8990,14 +8992,16 @@ test("prompt chains can be saved with explicit sources and selected for automati
   await expect
     .poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
     .toBe(true);
-  await expect(page.locator('header[aria-label="Prompts"]').getByRole("status")).toBeInViewport();
+  await expect(
+    page.locator('header[aria-label="Prompts & chains"]').getByRole("status"),
+  ).toBeInViewport();
   await page.screenshot({
     path: testInfo.outputPath("prompt-chain-editor-narrow.png"),
     fullPage: true,
   });
   await page.setViewportSize({ width: 1280, height: 720 });
   await page.getByRole("link", { name: "History", exact: true }).click();
-  await page.getByRole("link", { name: "Prompts", exact: true }).click();
+  await page.getByRole("link", { name: "Prompts & chains", exact: true }).click();
   await page.getByRole("tab", { name: "Chains", exact: true }).click();
   await expect(page.getByRole("textbox", { name: "Chain name", exact: true })).toHaveValue(
     "Meeting follow-up",
@@ -9651,7 +9655,7 @@ test("auto-save pauses invalid vocabulary and prompts, then resumes after correc
   await expect
     .poll(() => page.evaluate(() => window.dictationTest.snapshot.vocabulary.length))
     .toBe(1);
-  await page.getByRole("link", { name: "Prompts", exact: true }).click();
+  await page.getByRole("link", { name: "Prompts & chains", exact: true }).click();
   await page.getByLabel("Instructions", { exact: true }).fill("");
   await expect(page.getByRole("status").filter({ hasText: "Not saved yet:" })).toContainText(
     "Cleanup needs instructions",

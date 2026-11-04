@@ -23,6 +23,7 @@ Linux support is incomplete.
 - Run cleanup or custom prompts through an optional local text model.
 - Save prompt chains with a chosen input for each step and keep intermediate results.
 - Back up history, prompts, vocabulary, and saved recordings.
+- Use the interface in English or German.
 
 ## Getting started
 
@@ -47,6 +48,11 @@ without pasting into another app.
 Closing the window leaves Yap running in the tray. Choose **Quit Yap** from the
 tray menu to exit. Settings lets you change the shortcut, microphone, recording
 mode, and startup behavior.
+
+The interface follows your system language when English or German is available,
+and otherwise uses English. Change it in **Settings → General → Interface language**.
+Your choice is remembered and applies immediately, including to the recording indicator.
+The spoken language for transcription is configured separately in **Settings → Dictation**.
 
 Windows release builds check GitHub Releases and show a notice when a newer
 version is available. You can also check in **Settings → General → App updates**.

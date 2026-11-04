@@ -1,3 +1,5 @@
+import { nativeText } from "@/i18n/native-text";
+import { useTranslation } from "react-i18next";
 import { AutoSaveStatus } from "@/components/auto-save-status";
 import { HomeProfileActions } from "@/components/home-profile-actions";
 import { useDictation } from "@/components/dictation-provider";
@@ -38,7 +40,7 @@ import {
   type ProcessingOption,
   type ProfileApplication,
 } from "@/lib/backend";
-import { languages } from "@/lib/languages";
+import { useLanguages } from "@/lib/languages";
 import { useAutoSave } from "@/lib/use-auto-save";
 import { useSavedDraft } from "@/lib/use-saved-draft";
 import { Pencil, Plus, Settings2, Trash2, Workflow } from "lucide-react";
@@ -52,6 +54,7 @@ export function ProfileSelector({
   disabled?: boolean;
   onPendingChange?: (pending: boolean) => void;
 }) {
+  const { t } = useTranslation();
   const { snapshot, loading, refresh, run } = useDictation();
   const [pending, setPending] = useState(false);
   const [actionPending, setActionPending] = useState(false);
@@ -86,7 +89,9 @@ export function ProfileSelector({
   }
   return (
     <div className="flex min-w-0 max-w-full flex-wrap items-center gap-2">
-      <span className="text-xs text-muted-foreground @max-[38rem]/home:sr-only">Profile</span>
+      <span className="text-xs text-muted-foreground @max-[38rem]/home:sr-only">
+        {t("dictationProfiles.profile")}
+      </span>
       <Select
         items={options}
         value={selected}
@@ -105,10 +110,13 @@ export function ProfileSelector({
       >
         <SelectTrigger
           ref={selectorRef}
-          aria-label="Dictation profile"
+          aria-label={t("dictationProfiles.dictationProfile")}
           className="w-40 max-w-full bg-transparent"
         >
-          <SelectValue placeholder="Choose a profile" className="min-w-0 truncate" />
+          <SelectValue
+            placeholder={t("dictationProfiles.chooseAProfile")}
+            className="min-w-0 truncate"
+          />
         </SelectTrigger>
         <SelectContent alignItemWithTrigger={false}>
           {options.map((option) => (
@@ -138,8 +146,8 @@ export function ProfileSelector({
       )}
       <Link
         to="/settings?section=profiles"
-        aria-label="Manage dictation profiles"
-        title="Manage dictation profiles"
+        aria-label={t("settingsPage.manageDictationProfiles")}
+        title={t("settingsPage.manageDictationProfiles")}
         className="rounded-md p-2 text-muted-foreground outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring"
       >
         <Settings2 className="size-4" aria-hidden="true" />
@@ -149,6 +157,8 @@ export function ProfileSelector({
 }
 
 export function ProfilesPanel({ disabled }: { disabled: boolean }) {
+  const languages = useLanguages();
+  const { t } = useTranslation();
   const { snapshot, refresh } = useDictation();
   const [editing, setEditing] = useState<DictationProfile | null>(null);
   const [deleting, setDeleting] = useState<DictationProfile | null>(null);
@@ -195,12 +205,11 @@ export function ProfilesPanel({ disabled }: { disabled: boolean }) {
   }
   return (
     <>
-      <SettingsSection title="Dictation profiles">
+      <SettingsSection title={t("dictationProfiles.dictationProfiles")}>
         <div className="space-y-4 py-4">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <p className="max-w-lg text-xs leading-5 text-muted-foreground">
-              Save a speech model, language, cleanup and after-dictation choices together. Assign
-              apps below to use a profile with shortcut dictation.
+              {t("dictationProfiles.saveASpeechModelLanguageCleanupAnd")}
             </p>
             <Button
               size="sm"
@@ -224,12 +233,12 @@ export function ProfilesPanel({ disabled }: { disabled: boolean }) {
               }}
             >
               <Plus className="size-4" />
-              New profile
+              {t("dictationProfiles.newProfile")}
             </Button>
           </div>
           {!profiles.length && (
             <p className="text-sm text-muted-foreground">
-              No profiles yet. Create one from your saved settings.
+              {t("dictationProfiles.noProfilesYetCreateOneFromYour")}
             </p>
           )}
           {profiles.map((profile) => (
@@ -263,10 +272,10 @@ export function ProfilesPanel({ disabled }: { disabled: boolean }) {
                           <ModifiedMarker />
                         )}
                       </TooltipTrigger>
-                      <TooltipContent>Modified</TooltipContent>
+                      <TooltipContent>{t("dictationProfiles.modified")}</TooltipContent>
                     </Tooltip>
                     {snapshot.activeProfileId === profile.id && (
-                      <span className="ml-2 text-xs text-primary">Active</span>
+                      <span className="ml-2 text-xs text-primary">{t("modelsPage.active")}</span>
                     )}
                   </p>
                 </div>
@@ -277,7 +286,7 @@ export function ProfilesPanel({ disabled }: { disabled: boolean }) {
                   <Button
                     size="sm"
                     variant="outline"
-                    aria-label={`Use ${profile.name}`}
+                    aria-label={t("dictationProfiles.use", { name: profile.name })}
                     disabled={
                       disabled ||
                       pending ||
@@ -285,12 +294,12 @@ export function ProfilesPanel({ disabled }: { disabled: boolean }) {
                     }
                     onClick={() => void apply(profile.id)}
                   >
-                    Use
+                    {t("common.use")}
                   </Button>
                   <Button
                     size="icon-sm"
                     variant="ghost"
-                    aria-label={`Edit ${profile.name}`}
+                    aria-label={t("dictationProfiles.edit", { name: profile.name })}
                     disabled={disabled || pending}
                     onClick={() => setEditing(profile)}
                   >
@@ -300,7 +309,7 @@ export function ProfilesPanel({ disabled }: { disabled: boolean }) {
                     <Button
                       size="icon-sm"
                       variant="ghost"
-                      aria-label={`Delete ${profile.name}`}
+                      aria-label={t("dictationProfiles.delete", { name: profile.name })}
                       disabled={disabled || pending}
                       onClick={() => {
                         setError("");
@@ -314,31 +323,37 @@ export function ProfilesPanel({ disabled }: { disabled: boolean }) {
               </div>
               <dl className="grid min-w-0 grid-cols-1 gap-x-6 gap-y-4 text-sm @min-[26rem]/settings:grid-cols-2">
                 <div className="min-w-0">
-                  <dt className="text-xs text-muted-foreground">Speech model</dt>
+                  <dt className="text-xs text-muted-foreground">{t("common.speechModel")}</dt>
                   <dd className="mt-1">
                     {snapshot.models.find((model) => model.path === profile.modelPath)?.name ??
                       profile.modelPath.split(/[\\/]/).pop()}
                   </dd>
                 </div>
                 <div className="min-w-0">
-                  <dt className="text-xs text-muted-foreground">Spoken language</dt>
+                  <dt className="text-xs text-muted-foreground">
+                    {t("settingsPage.spokenLanguage")}
+                  </dt>
                   <dd className="mt-1">
                     {languages.find((language) => language.value === profile.language)?.label ??
                       profile.language}
                   </dd>
                 </div>
                 <div className="min-w-0">
-                  <dt className="text-xs text-muted-foreground">Light cleanup</dt>
-                  <dd className="mt-1">{profile.cleanText ? "On" : "Off"}</dd>
+                  <dt className="text-xs text-muted-foreground">
+                    {t("settingsPage.lightCleanup")}
+                  </dt>
+                  <dd className="mt-1">{profile.cleanText ? t("common.on") : t("common.off")}</dd>
                 </div>
                 <div className="min-w-0">
-                  <dt className="text-xs text-muted-foreground">After dictation</dt>
+                  <dt className="text-xs text-muted-foreground">
+                    {t("dictationProfiles.afterDictation")}
+                  </dt>
                   <dd className="mt-1">
                     {profile.autoPromptId
                       ? (processingOptions(snapshot.textProcessing).find(
                           (p) => p.value === profile.autoPromptId,
-                        )?.label ?? "Prompt or chain unavailable")
-                      : "No automatic processing"}
+                        )?.label ?? t("dictationProfiles.promptOrChainUnavailable"))
+                      : t("common.noAutomaticProcessing")}
                   </dd>
                 </div>
               </dl>
@@ -358,7 +373,7 @@ export function ProfilesPanel({ disabled }: { disabled: boolean }) {
           ))}
           {error && !deleting && (
             <p role="alert" className="text-sm text-destructive">
-              {error}
+              {nativeText(error)}
             </p>
           )}
         </div>
@@ -380,22 +395,24 @@ export function ProfilesPanel({ disabled }: { disabled: boolean }) {
       >
         <DialogContent showCloseButton={false}>
           <DialogHeader>
-            <DialogTitle>Delete {deleting?.name}?</DialogTitle>
+            <DialogTitle>
+              {t("common.delete")} {deleting?.name}?
+            </DialogTitle>
             <DialogDescription>
-              Your current dictation settings and saved transcripts will be kept.
+              {t("dictationProfiles.yourCurrentDictationSettingsAndSavedTranscripts")}
               {deleting &&
                 rules.some((rule) => rule.profileId === deleting.id) &&
-                " Its apps will use your manually selected profile again."}
+                t("dictationProfiles.itsAppsWillUseYourManuallySelectedProfile")}
             </DialogDescription>
           </DialogHeader>
           {error && (
             <p role="alert" className="text-sm text-destructive">
-              {error}
+              {nativeText(error)}
             </p>
           )}
           <DialogFooter>
             <Button variant="outline" disabled={pending} onClick={() => setDeleting(null)}>
-              Cancel
+              {t("common.cancel")}
             </Button>
             <Button
               variant="destructive"
@@ -415,7 +432,7 @@ export function ProfilesPanel({ disabled }: { disabled: boolean }) {
                 }
               }}
             >
-              {pending ? "Deleting…" : "Delete profile"}
+              {pending ? t("dictationProfiles.deleting") : t("dictationProfiles.deleteProfile")}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -433,6 +450,8 @@ function ProfileEditor({
   disabled: boolean;
   onClose: () => void;
 }) {
+  const languages = useLanguages();
+  const { t } = useTranslation();
   const { snapshot, refresh } = useDictation();
   const [saved, setSaved] = useState(profile);
   const [draft, setDraft, draftState] = useSavedDraft(`profile:${profile.id || "new"}`, saved);
@@ -445,34 +464,34 @@ function ProfileEditor({
   if (!models.some((model) => model.value === draft.modelPath))
     models.push({
       value: draft.modelPath,
-      label: draft.modelPath.split(/[\\/]/).pop() || "Selected model",
+      label: draft.modelPath.split(/[\\/]/).pop() || t("dictationProfiles.selectedModel"),
     });
   const languageOptions = languages.some((language) => language.value === draft.language)
     ? languages
     : [...languages, { value: draft.language, label: draft.language }];
   const processing = processingOptions(snapshot.textProcessing);
   const prompts: ProcessingOption[] = [
-    { value: "", label: "No automatic processing" },
+    { value: "", label: t("common.noAutomaticProcessing") },
     ...processing,
   ];
   const unavailablePrompt = !prompts.some((p) => p.value === draft.autoPromptId);
   if (unavailablePrompt)
     prompts.push({
       value: draft.autoPromptId,
-      label: "Prompt or chain unavailable — choose another",
+      label: t("dictationProfiles.promptOrChainUnavailableChooseAnother"),
     });
   const selectedPrompt = prompts.find((prompt) => prompt.value === draft.autoPromptId);
   const reason = !draft.name.trim()
-    ? "Give this profile a name."
+    ? t("dictationProfiles.giveThisProfileAName")
     : Array.from(draft.name.trim()).length > 60 ||
         ["\r", "\n", "\0"].some((character) => draft.name.includes(character))
-      ? "Use a profile name of up to 60 characters without line breaks."
+      ? t("dictationProfiles.useAProfileNameOfUpTo60")
       : !draft.modelPath
-        ? "Choose a speech model."
+        ? t("dictationProfiles.chooseASpeechModel")
         : unavailablePrompt
-          ? "Choose an available prompt or chain."
+          ? t("dictationProfiles.chooseAnAvailablePromptOrChain")
           : draft.autoPromptId && !snapshot.textProcessing.enabled
-            ? "Enable the shared text model first."
+            ? t("dictationProfiles.enableTheSharedTextModelFirst")
             : "";
   async function save() {
     setError("");
@@ -513,26 +532,28 @@ function ProfileEditor({
       <DialogContent showCloseButton={false} className="max-h-[calc(100dvh-2rem)] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>
-            {profile.id ? "Edit dictation profile" : "New dictation profile"}
+            {profile.id
+              ? t("dictationProfiles.editDictationProfile")
+              : t("dictationProfiles.newDictationProfile")}
           </DialogTitle>
           <DialogDescription>
-            Saving a profile leaves your current settings in place. Choose Use to activate it.
+            {t("dictationProfiles.savingAProfileLeavesYourCurrentSettings")}
           </DialogDescription>
         </DialogHeader>
         <fieldset disabled={disabled || closing} className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="profile-name">Profile name</Label>
+            <Label htmlFor="profile-name">{t("dictationProfiles.profileName")}</Label>
             <Input
               id="profile-name"
               disabled={profile.id === snapshot.defaultProfileId}
               maxLength={60}
-              placeholder="For example, Quick note or Email"
+              placeholder={t("dictationProfiles.forExampleQuickNoteOrEmail")}
               value={draft.name}
               onChange={(e) => setDraft({ ...draft, name: e.target.value })}
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="profile-model">Speech model</Label>
+            <Label htmlFor="profile-model">{t("common.speechModel")}</Label>
             <Select
               items={models}
               value={draft.modelPath}
@@ -553,7 +574,7 @@ function ProfileEditor({
             </Select>
           </div>
           <div className="space-y-2">
-            <Label htmlFor="profile-language">Spoken language</Label>
+            <Label htmlFor="profile-language">{t("settingsPage.spokenLanguage")}</Label>
             <Select
               items={languageOptions}
               value={draft.language}
@@ -574,14 +595,14 @@ function ProfileEditor({
             </Select>
           </div>
           <label className="flex items-center justify-between gap-3 text-sm">
-            <span>Light cleanup</span>
+            <span>{t("settingsPage.lightCleanup")}</span>
             <Switch
               checked={draft.cleanText}
               onCheckedChange={(cleanText) => setDraft({ ...draft, cleanText })}
             />
           </label>
           <div className="space-y-2">
-            <Label htmlFor="profile-prompt">After dictation</Label>
+            <Label htmlFor="profile-prompt">{t("dictationProfiles.afterDictation")}</Label>
             <Select
               items={prompts}
               value={draft.autoPromptId}
@@ -592,7 +613,9 @@ function ProfileEditor({
               <SelectTrigger
                 id="profile-prompt"
                 className="w-full"
-                aria-description={selectedPrompt?.isChain ? "Prompt chain" : undefined}
+                aria-description={
+                  selectedPrompt?.isChain ? t("dictationProfiles.promptChain") : undefined
+                }
               >
                 {selectedPrompt?.isChain && (
                   <Workflow aria-hidden="true" className="size-3.5 text-muted-foreground" />
@@ -601,10 +624,10 @@ function ProfileEditor({
               </SelectTrigger>
               <SelectContent>
                 <SelectGroup>
-                  <SelectItem value="">No automatic processing</SelectItem>
+                  <SelectItem value="">{t("common.noAutomaticProcessing")}</SelectItem>
                   {unavailablePrompt && (
                     <SelectItem value={draft.autoPromptId}>
-                      Prompt or chain unavailable — choose another
+                      {t("dictationProfiles.promptOrChainUnavailableChooseAnother")}
                     </SelectItem>
                   )}
                 </SelectGroup>
@@ -613,14 +636,13 @@ function ProfileEditor({
               </SelectContent>
             </Select>
             <p className="text-xs leading-5 text-muted-foreground">
-              Automatic prompts and chains use your shared local text model. Configure and enable it
-              in Prompts first.
+              {t("dictationProfiles.automaticPromptsAndChainsUseYourShared")}
             </p>
           </div>
         </fieldset>
         {error && (
           <p role="alert" className="text-sm text-destructive">
-            {error}
+            {nativeText(error)}
           </p>
         )}
         <DialogFooter className="items-center sm:justify-between">
@@ -632,7 +654,7 @@ function ProfileEditor({
             disabled={disabled || closing}
           />
           <Button variant="outline" disabled={closing} onClick={() => void close()}>
-            Done
+            {t("dictationProfiles.done")}
           </Button>
         </DialogFooter>
       </DialogContent>

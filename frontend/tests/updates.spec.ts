@@ -80,6 +80,7 @@ test.beforeEach(async ({ page }) => {
         main: {
           App: {
             GetSnapshot: async () => structuredClone(snapshot),
+            GetHomeResult: async () => null,
             GetMicrophones: async () => [],
             GetDiagnosticChecks: async () => [],
             GetAudioSupport: async () => ({

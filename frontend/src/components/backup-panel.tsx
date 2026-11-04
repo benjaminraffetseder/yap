@@ -1,3 +1,6 @@
+import { nativeText } from "@/i18n/native-text";
+import i18n from "@/i18n";
+import { useTranslation } from "react-i18next";
 import { useEffect, useRef, useState } from "react";
 import { Download, Loader2, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -20,11 +23,19 @@ function restoredMessage(summary: BackupSummary) {
     summary.skippedPrompts +
     (summary.skippedChains ?? 0) +
     summary.skippedVocabulary;
-  const chains = summary.chains ? `, ${summary.chains} chains` : "";
-  return `Restored ${summary.sessions} dictations, ${summary.outputs} outputs, ${summary.prompts} prompts${chains}, and ${summary.vocabulary} terms.${skipped ? ` ${skipped} existing or conflicting entries kept.` : ""}`;
+  const chains = summary.chains ? i18n.t("backupPanel.chainsCount", { count: summary.chains }) : "";
+  return i18n.t("backupPanel.restoreSummary", {
+    sessions: summary.sessions,
+    outputs: summary.outputs,
+    prompts: summary.prompts,
+    chains: chains,
+    vocabulary: summary.vocabulary,
+    skipped: skipped ? i18n.t("backupPanel.keptCount", { count: skipped }) : "",
+  });
 }
 
 export function BackupPanel({ disabled, unsaved }: { disabled: boolean; unsaved: boolean }) {
+  const { t } = useTranslation();
   const { refresh, snapshot } = useDictation();
   const [audio, setAudio] = useState(false);
   const [preferences, setPreferences] = useState(false);
@@ -49,7 +60,14 @@ export function BackupPanel({ disabled, unsaved }: { disabled: boolean; unsaved:
       const result = await backend.exportBackup(audio);
       if (active.current && result)
         setNotice(
-          `Backup saved: ${result.sessions} dictations, ${result.outputs} outputs, and ${result.recordings} recordings.${result.missingRecordings ? ` ${result.missingRecordings} unavailable recordings omitted.` : ""}`,
+          t("backupPanel.backupSavedDictationsOutputsAndRecordings", {
+            sessions: result.sessions,
+            outputs: result.outputs,
+            recordings: result.recordings,
+            omitted: result.missingRecordings
+              ? t("backupPanel.omittedCount", { count: result.missingRecordings })
+              : "",
+          }),
         );
     } catch (cause) {
       if (active.current) setError(message(cause));
@@ -113,23 +131,22 @@ export function BackupPanel({ disabled, unsaved }: { disabled: boolean; unsaved:
   const operationMessage = backupRunning
     ? snapshot.status.message
     : working === "export"
-      ? "Creating backup…"
+      ? t("backupPanel.creatingBackup")
       : working === "preview"
-        ? "Checking backup…"
-        : "Restoring backup…";
+        ? t("backupPanel.checkingBackup")
+        : t("backupPanel.restoringBackup");
   const blocked = disabled || !!working || backupRunning;
   return (
     <section className="settings-section space-y-4" aria-labelledby="backup-heading">
       <h2 id="backup-heading" className="font-semibold">
-        Backup & restore
+        {t("backupPanel.backupRestore")}
       </h2>
       <p className="text-xs text-muted-foreground">
-        Save History, generated outputs, prompts, chains, vocabulary, and portable preferences in
-        one file.
+        {t("backupPanel.saveHistoryGeneratedOutputsPromptsChainsVocabulary")}
       </p>
       <label className="flex items-center gap-2 text-sm">
         <Checkbox checked={audio} disabled={blocked} onCheckedChange={setAudio} />
-        Include retained recordings
+        {t("backupPanel.includeRetainedRecordings")}
       </label>
       <div className="flex flex-wrap gap-2">
         <Button variant="outline" disabled={blocked} onClick={() => void exportBackup()}>
@@ -138,7 +155,7 @@ export function BackupPanel({ disabled, unsaved }: { disabled: boolean; unsaved:
           ) : (
             <Download className="size-4" />
           )}
-          Export backup
+          {t("backupPanel.exportBackup")}
         </Button>
         <Button variant="outline" disabled={blocked} onClick={() => void chooseBackup()}>
           {working === "preview" ? (
@@ -146,12 +163,12 @@ export function BackupPanel({ disabled, unsaved }: { disabled: boolean; unsaved:
           ) : (
             <Upload className="size-4" />
           )}
-          Restore backup
+          {t("backupPanel.restoreBackup")}
         </Button>
       </div>
       {unsaved && (
         <p className="text-xs text-muted-foreground">
-          Finish saving settings before using backups.
+          {t("backupPanel.finishSavingSettingsBeforeUsingBackups")}
         </p>
       )}
       {(working || backupRunning) && (
@@ -163,7 +180,7 @@ export function BackupPanel({ disabled, unsaved }: { disabled: boolean; unsaved:
               variant="outline"
               onClick={() => void backend.cancel().catch((cause) => setError(message(cause)))}
             >
-              Cancel operation
+              {t("backupPanel.cancelOperation")}
             </Button>
           )}
         </div>
@@ -175,7 +192,7 @@ export function BackupPanel({ disabled, unsaved }: { disabled: boolean; unsaved:
       )}
       {error && !preview && (
         <p role="alert" className="text-sm text-destructive">
-          {error}
+          {nativeText(error)}
         </p>
       )}
       <Dialog
@@ -190,10 +207,9 @@ export function BackupPanel({ disabled, unsaved }: { disabled: boolean; unsaved:
           className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-lg"
         >
           <DialogHeader>
-            <DialogTitle>Restore backup?</DialogTitle>
+            <DialogTitle>{t("backupPanel.restoreBackup2")}</DialogTitle>
             <DialogDescription>
-              New entries will be added. Existing dictations, outputs, and conflicting prompts,
-              chains, or terms will be kept.
+              {t("backupPanel.newEntriesWillBeAddedExistingDictations")}
             </DialogDescription>
           </DialogHeader>
           {preview && (
@@ -201,21 +217,25 @@ export function BackupPanel({ disabled, unsaved }: { disabled: boolean; unsaved:
               <div className="min-w-0 space-y-1">
                 <p className="break-all text-sm font-medium">{preview.filename}</p>
                 <p className="text-xs text-muted-foreground">
-                  {new Date(preview.createdAt).toLocaleString()}
+                  {new Date(preview.createdAt).toLocaleString(i18n.resolvedLanguage)}
                 </p>
               </div>
               <dl className="divide-y rounded-lg border px-4">
                 {[
                   ["Dictations", preview.summary.sessions, preview.summary.duplicateSessions],
-                  ["Generated outputs", preview.summary.outputs, preview.summary.duplicateOutputs],
+                  [
+                    t("generatedOutputs.generatedOutputs"),
+                    preview.summary.outputs,
+                    preview.summary.duplicateOutputs,
+                  ],
                   ["Prompts", preview.summary.prompts, preview.summary.skippedPrompts],
                   [
-                    "Prompt chains",
+                    t("promptChainsEditor.promptChains"),
                     preview.summary.chains ?? 0,
                     preview.summary.skippedChains ?? 0,
                   ],
                   [
-                    "Vocabulary terms",
+                    t("backupPanel.vocabularyTerms"),
                     preview.summary.vocabulary,
                     preview.summary.skippedVocabulary,
                   ],
@@ -227,7 +247,13 @@ export function BackupPanel({ disabled, unsaved }: { disabled: boolean; unsaved:
                   >
                     <dt>{label}</dt>
                     <dd className="text-muted-foreground">
-                      {added} to add{Number(kept) > 0 && <span> · {kept} kept / skipped</span>}
+                      {added} {t("backupPanel.toAdd")}
+                      {Number(kept) > 0 && (
+                        <span>
+                          {" "}
+                          · {kept} {t("backupPanel.keptSkipped")}
+                        </span>
+                      )}
                     </dd>
                   </div>
                 ))}
@@ -239,12 +265,12 @@ export function BackupPanel({ disabled, unsaved }: { disabled: boolean; unsaved:
                     disabled={blocked}
                     onCheckedChange={setPreferences}
                   />
-                  Restore portable preferences
+                  {t("backupPanel.restorePortablePreferences")}
                 </label>
                 <p className="text-xs leading-5 text-muted-foreground">
-                  Language ({preview.preferences.language}), recording mode, cleanup, automatic
-                  paste, and Keep recordings. Microphone, shortcuts, models, startup, local server,
-                  and History retention stay unchanged.
+                  {t("backupPanel.language")}
+                  {preview.preferences.language}
+                  {t("backupPanel.recordingModeCleanupAutomaticPasteAndKeep")}
                 </p>
               </div>
             </>
@@ -252,27 +278,27 @@ export function BackupPanel({ disabled, unsaved }: { disabled: boolean; unsaved:
           {working === "restore" && (
             <div className="flex items-center gap-3" role="status">
               <Loader2 className="size-4 animate-spin motion-reduce:animate-none" />
-              <span className="text-sm">Restoring backup…</span>
+              <span className="text-sm">{t("backupPanel.restoringBackup")}</span>
               <Button
                 size="sm"
                 variant="outline"
                 onClick={() => void backend.cancel().catch((cause) => setError(message(cause)))}
               >
-                Cancel operation
+                {t("backupPanel.cancelOperation")}
               </Button>
             </div>
           )}
           {error && (
             <p role="alert" className="text-sm text-destructive">
-              {error}
+              {nativeText(error)}
             </p>
           )}
           <DialogFooter>
             <Button variant="outline" disabled={!!working} onClick={() => void dismiss()}>
-              Cancel
+              {t("common.cancel")}
             </Button>
             <Button disabled={blocked || !preview} onClick={() => void restore()}>
-              Restore backup
+              {t("backupPanel.restoreBackup")}
             </Button>
           </DialogFooter>
         </DialogContent>

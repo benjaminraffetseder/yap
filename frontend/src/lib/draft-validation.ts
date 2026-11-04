@@ -1,3 +1,4 @@
+import i18n from "@/i18n";
 /* eslint-disable no-control-regex -- These checks mirror backend text validation. */
 import type { TextProcessing, VocabularyEntry } from "@/lib/backend";
 
@@ -47,57 +48,63 @@ export function validateTextProcessing(value: TextProcessing): string {
       (port && !/^:\d*$/.test(port)) ||
       (port.length > 1 && (Number(port.slice(1)) < 1 || Number(port.slice(1)) > 65535))
     )
-      return "Use an HTTP(S) loopback URL ending in /v1, without credentials or query parameters.";
+      return i18n.t("draftValidation.useAnHTTPSLoopbackURLEnding");
   } catch {
-    return "Enter a local server URL, such as http://127.0.0.1:11434/v1.";
+    return i18n.t("draftValidation.enterALocalServerURLSuchAs");
   }
   if (
     !validText(value.model) ||
     length(value.model.trim()) > 200 ||
     /[\r\n\x00]/.test(value.model.trim())
   )
-    return "Enter a valid model identifier (up to 200 characters).";
+    return i18n.t("draftValidation.enterAValidModelIdentifierUpTo");
   if (value.enabled && !value.model.trim())
-    return "Enter the local model identifier before enabling processing.";
-  if (value.prompts.length > 30) return "Save up to 30 prompts.";
+    return i18n.t("draftValidation.enterTheLocalModelIdentifierBeforeEnabling");
+  if (value.prompts.length > 30) return i18n.t("draftValidation.saveUpTo30Prompts");
   const ids = new Set<string>();
   for (const prompt of value.prompts) {
     if (!validID(prompt.id) || ids.has(prompt.id))
-      return "Prompt identifiers must be unique and nonempty.";
-    if (!validName(prompt.name, 80)) return "Give each prompt a name of up to 80 characters.";
+      return i18n.t("draftValidation.promptIdentifiersMustBeUniqueAndNonempty");
+    if (!validName(prompt.name, 80)) return i18n.t("draftValidation.giveEachPromptANameOfUp");
     if (
       !prompt.instruction.trim() ||
       !validText(prompt.instruction) ||
       length(prompt.instruction.trim()) > 8000 ||
       prompt.instruction.includes("\0")
     )
-      return `${prompt.name} needs instructions of up to 8,000 characters.`;
+      return i18n.t("draftValidation.needsInstructionsOfUpTo8000", { name: prompt.name });
     ids.add(prompt.id);
   }
-  if ((value.chains?.length ?? 0) > 30) return "Save up to 30 prompt chains.";
+  if ((value.chains?.length ?? 0) > 30) return i18n.t("draftValidation.saveUpTo30PromptChains");
   for (const chain of value.chains ?? []) {
     if (!validID(chain.id) || ids.has(chain.id))
-      return "Prompt and chain identifiers must be unique and nonempty.";
-    if (!validName(chain.name, 80)) return "Give each chain a name of up to 80 characters.";
+      return i18n.t("draftValidation.promptAndChainIdentifiersMustBeUnique");
+    if (!validName(chain.name, 80)) return i18n.t("draftValidation.giveEachChainANameOfUp");
     if (!chain.steps.length || chain.steps.length > 10)
-      return `${chain.name} needs between 1 and 10 steps.`;
+      return i18n.t("draftValidation.needsBetween1And10Steps", { name: chain.name });
     const steps = new Set<string>();
     for (const [index, step] of chain.steps.entries()) {
       if (!validID(step.id) || steps.has(step.id))
-        return `${chain.name} needs unique step identifiers.`;
+        return i18n.t("draftValidation.needsUniqueStepIdentifiers", { name: chain.name });
       if (!value.prompts.some((prompt) => prompt.id === step.promptId))
-        return `${chain.name} step ${index + 1} needs an existing prompt. Update chains before deleting their prompts.`;
+        return i18n.t("draftValidation.stepNeedsAnExistingPromptUpdateChains", {
+          name: chain.name,
+          index: index + 1,
+        });
       if (
         !["original", "transcript"].includes(step.input) &&
         (!step.input.startsWith("step:") || !steps.has(step.input.slice(5)))
       )
-        return `${chain.name} step ${index + 1} must use the original, saved transcript, or an earlier step.`;
+        return i18n.t("draftValidation.stepMustUseTheOriginalSavedTranscript", {
+          name: chain.name,
+          index: index + 1,
+        });
       steps.add(step.id);
     }
     ids.add(chain.id);
   }
   if (value.autoPromptId && (!value.enabled || !ids.has(value.autoPromptId)))
-    return "Enable a model and select a saved prompt or chain for automatic processing.";
+    return i18n.t("draftValidation.enableAModelAndSelectASaved");
   return "";
 }
 
@@ -125,10 +132,12 @@ export function validateVocabulary(entries: VocabularyEntry[]): Record<string, s
   const ids = new Set<string>();
   for (const entry of entries) {
     if (!entry.id || new TextEncoder().encode(entry.id).length > 64 || ids.has(entry.id))
-      errors[entry.id] = "Vocabulary entry IDs must be unique.";
+      errors[entry.id] = i18n.t("draftValidation.vocabularyEntryIDsMustBeUnique");
     ids.add(entry.id);
-    if (entries.length > 100) errors[entry.id] = "Use at most 100 vocabulary entries.";
-    if (entry.aliases.length > 10) errors[entry.id] = "Use at most 10 aliases per term.";
+    if (entries.length > 100)
+      errors[entry.id] = i18n.t("draftValidation.useAtMost100VocabularyEntries");
+    if (entry.aliases.length > 10)
+      errors[entry.id] = i18n.t("draftValidation.useAtMost10AliasesPerTerm");
     for (const phrase of [entry.canonical, ...entry.aliases]) {
       if (
         !phrase.trim() ||
@@ -136,7 +145,7 @@ export function validateVocabulary(entries: VocabularyEntry[]): Record<string, s
         length(phrase.trim()) > 80 ||
         /\p{Cc}/u.test(phrase.trim())
       )
-        errors[entry.id] = "Use 1–80 characters without line breaks for each spelling and alias.";
+        errors[entry.id] = i18n.t("draftValidation.use180CharactersWithoutLineBreaksFor");
       // Unicode-aware case-insensitive matching uses simple folding, like Go's
       // EqualFold (including micro sign, long-s, and final sigma).
       const pattern = new RegExp(`^${phrase.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "iu");
@@ -144,7 +153,9 @@ export function validateVocabulary(entries: VocabularyEntry[]): Record<string, s
         (previous) => previous.owner !== entry.id && pattern.test(previous.phrase),
       );
       if (duplicate) {
-        const reason = `“${phrase.trim()}” is already assigned to another term.`;
+        const reason = i18n.t("draftValidation.duplicateTerm", {
+          phrase: phrase.trim(),
+        });
         errors[entry.id] = reason;
         errors[duplicate.owner] = reason;
       }

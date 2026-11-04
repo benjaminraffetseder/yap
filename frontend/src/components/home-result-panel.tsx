@@ -1,3 +1,6 @@
+import { nativeText } from "@/i18n/native-text";
+import { useTranslation } from "react-i18next";
+import i18n from "@/i18n";
 import { useDictation } from "@/components/dictation-provider";
 import { InferenceStats } from "@/components/inference-stats";
 import { Button } from "@/components/ui/button";
@@ -15,11 +18,18 @@ import { Link } from "react-router";
 
 function recoveryWarning(result: HomeResult) {
   const outcome = result.outcomes;
-  if (outcome.history === "failed") return "Not saved to History. Save this result to keep it.";
+  if (outcome.history === "failed")
+    return i18n.t("homeResultPanel.notSavedToHistorySaveThisResult");
   if (outcome.processing === "failed" || outcome.processing === "cancelled")
-    return `Processing ${outcome.processing}. ${result.saved ? "Open History" : "Save to History"} to retry.`;
-  if (outcome.clipboard === "failed") return "Copy failed. Try Copy again.";
-  if (outcome.paste === "failed") return "Automatic paste failed. Copy, then paste manually.";
+    return i18n.t("homeResultPanel.processingRecovery", {
+      outcome: nativeText(outcome.processing).toLowerCase(),
+      action: result.saved
+        ? i18n.t("homeResultPanel.openHistory")
+        : i18n.t("homeResultPanel.saveToHistory"),
+    });
+  if (outcome.clipboard === "failed") return i18n.t("homeResultPanel.copyFailedTryCopyAgain");
+  if (outcome.paste === "failed")
+    return i18n.t("homeResultPanel.automaticPasteFailedCopyThenPasteManually");
   return "";
 }
 
@@ -28,6 +38,7 @@ export function HomeResultPanel({
 }: {
   fallbackFocus: React.RefObject<HTMLHeadingElement | null>;
 }) {
+  const { t } = useTranslation();
   const { snapshot, loading, refresh } = useDictation();
   const [result, setResult] = useState<HomeResult | null>(null);
   const [editing, setEditing] = useState<HomeResult | null>(null);
@@ -87,7 +98,7 @@ export function HomeResultPanel({
       current.current?.session.id !== target.session.id ||
       current.current?.revision !== target.revision
     ) {
-      setError("This result changed. Your draft is kept; cancel and reopen the latest result.");
+      setError(t("homeResultPanel.thisResultChangedYourDraftIsKept"));
       return false;
     }
     actionPending.current = true;
@@ -100,8 +111,8 @@ export function HomeResultPanel({
     } catch {
       setError(
         action === "edit"
-          ? "Couldn’t apply this edit. Your draft is kept. Retry, or cancel and reopen if the result changed."
-          : "Couldn’t complete this action. Your text is kept. Review the latest result before trying again.",
+          ? t("homeResultPanel.couldnTApplyThisEditYourDraft")
+          : t("homeResultPanel.couldnTCompleteThisActionYourText"),
       );
       actionPending.current = false;
       setPending(false);
@@ -125,12 +136,12 @@ export function HomeResultPanel({
     );
     setNotice(
       action.startsWith("copy")
-        ? "Copied to clipboard. Paste manually when ready."
+        ? t("homeResultPanel.copiedToClipboardPasteManuallyWhenReady")
         : action === "edit"
           ? target.saved
-            ? "Changes saved to History."
-            : "Changes kept in memory. Save to History when ready."
-          : "Saved to History.",
+            ? t("homeResultPanel.changesSavedToHistory")
+            : t("homeResultPanel.changesKeptInMemorySaveToHistory")
+          : t("homeResultPanel.savedToHistory"),
     );
     try {
       const value = await backend.homeResult();
@@ -160,22 +171,22 @@ export function HomeResultPanel({
       aria-label={
         result
           ? result.saved
-            ? "Latest saved result"
-            : "Temporary latest result"
-          : "Latest result"
+            ? t("homeResultPanel.latestSavedResult")
+            : t("homeResultPanel.temporaryLatestResult")
+          : t("homeResultPanel.latestResult")
       }
       className="@container/home-result min-w-0 overflow-hidden rounded-xl border bg-card/60 [overflow-wrap:anywhere] [&_button]:h-auto [&_button]:min-h-8 [&_button]:max-w-full [&_button]:whitespace-normal [&_button]:py-1"
     >
       <header className="flex flex-wrap items-start justify-between gap-3 px-3 pt-5 @min-[28rem]/home-result:px-6">
         <div className="min-w-0">
           <h2 tabIndex={-1} className="text-sm font-semibold outline-none">
-            Latest result
+            {t("homeResultPanel.latestResult")}
           </h2>
           {result && (
             <p className="mt-1 text-xs leading-5 text-muted-foreground">
               {result.saved
-                ? "Saved in History · edits preserve original recognition and generated outputs"
-                : "Temporary · kept in memory until the next dictation or app exit"}
+                ? t("homeResultPanel.savedInHistoryEditsPreserveOriginalRecognition")
+                : t("homeResultPanel.temporaryKeptInMemoryUntilTheNext")}
             </p>
           )}
         </div>
@@ -187,7 +198,7 @@ export function HomeResultPanel({
                 to={`/history/${encodeURIComponent(result.session.id)}`}
                 className="text-xs leading-6 text-muted-foreground underline underline-offset-4"
               >
-                Open in History
+                {t("homeResultPanel.openInHistory")}
               </Link>
             )}
           </div>
@@ -197,11 +208,13 @@ export function HomeResultPanel({
         <>
           <div className="space-y-4 px-3 py-4 @min-[28rem]/home-result:px-6">
             <p className="text-xs font-medium text-muted-foreground">
-              {result.outputId ? "Generated result" : "Transcript"}
+              {result.outputId
+                ? t("homeResultPanel.generatedResult")
+                : t("homeResultPanel.transcript")}
             </p>
             <p
               tabIndex={0}
-              aria-label="Result text"
+              aria-label={t("homeResultPanel.resultText")}
               className="max-h-64 overflow-auto whitespace-pre-wrap break-words text-sm leading-6 outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
               {result.text}
@@ -214,12 +227,15 @@ export function HomeResultPanel({
             {!!result.outputs.length && (
               <details className="text-xs leading-6 text-muted-foreground">
                 <summary className="cursor-pointer font-medium text-foreground">
-                  Original generated outputs ({result.outputs.length})
+                  {t("homeResultPanel.originalGeneratedOutputs")}
+                  {result.outputs.length})
                 </summary>
                 {result.outputs.map((output) => (
                   <div key={output.id} className="mt-3 min-w-0 space-y-2 border-l pl-3">
                     <p className="break-words font-medium">
-                      {output.chain?.step ? `Step ${output.chain.step}: ` : ""}
+                      {output.chain?.step
+                        ? t("homeResultPanel.step", { step: output.chain.step })
+                        : ""}
                       {output.prompt.name}
                     </p>
                     <p
@@ -234,7 +250,7 @@ export function HomeResultPanel({
                       disabled={unavailable}
                       onClick={() => void act(result, `copy:${output.id}`)}
                     >
-                      Copy output
+                      {t("generatedOutputs.copyOutput")}
                     </Button>
                   </div>
                 ))}
@@ -249,7 +265,7 @@ export function HomeResultPanel({
               onClick={() => void act(result, "copy")}
             >
               <Copy aria-hidden="true" />
-              Copy
+              {t("common.copy")}
             </Button>
             <Button
               ref={editTrigger}
@@ -263,11 +279,11 @@ export function HomeResultPanel({
               }}
             >
               <Pencil aria-hidden="true" />
-              Edit result
+              {t("homeResultPanel.editResult")}
             </Button>
             {!result.saved && (
               <Button size="sm" disabled={unavailable} onClick={() => void act(result, "save")}>
-                Save to History
+                {t("homeResultPanel.saveToHistory")}
               </Button>
             )}
             <Button
@@ -276,17 +292,17 @@ export function HomeResultPanel({
               disabled={unavailable}
               onClick={() => void act(result, "dismiss")}
             >
-              Dismiss
+              {t("homeResultPanel.dismiss")}
             </Button>
             {pending && (
               <Loader2
-                aria-label="Result action in progress"
+                aria-label={t("homeResultPanel.resultActionInProgress")}
                 className="size-4 animate-spin motion-reduce:animate-none"
               />
             )}
             {busy && (
               <span className="text-xs text-muted-foreground">
-                Available after the current operation.
+                {t("homeResultPanel.availableAfterTheCurrentOperation")}
               </span>
             )}
           </footer>
@@ -305,7 +321,7 @@ export function HomeResultPanel({
           role="alert"
           className="px-3 pb-4 text-sm text-destructive @min-[28rem]/home-result:px-6"
         >
-          {error}
+          {nativeText(error)}
         </p>
       )}
       {fetchError && (
@@ -313,14 +329,14 @@ export function HomeResultPanel({
           role="alert"
           className="flex flex-wrap items-center gap-2 px-3 pb-4 text-sm @min-[28rem]/home-result:px-6"
         >
-          Couldn’t refresh the result. Any completed save is kept.
+          {t("homeResultPanel.couldnTRefreshTheResultAnyCompleted")}
           <Button
             variant="outline"
             size="sm"
             disabled={busy || pending}
             onClick={() => setReload((value) => value + 1)}
           >
-            Refresh result
+            {t("homeResultPanel.refreshResult")}
           </Button>
         </div>
       )}
@@ -373,6 +389,7 @@ function HomeResultEditor({
   onCancel: () => void;
   onSubmit: (text: string) => Promise<void>;
 }) {
+  const { t } = useTranslation();
   const [text, setText] = useState(result.text);
   const input = useRef<HTMLTextAreaElement>(null);
   const composing = useRef(false);
@@ -405,10 +422,10 @@ function HomeResultEditor({
         className="flex max-h-[calc(100dvh-2rem)] flex-col overflow-y-auto sm:max-w-2xl"
       >
         <DialogHeader className="text-left">
-          <DialogTitle>Edit result</DialogTitle>
+          <DialogTitle>{t("homeResultPanel.editResult")}</DialogTitle>
         </DialogHeader>
         <label htmlFor="home-result-draft" className="text-sm font-medium">
-          Your text
+          {t("homeResultPanel.yourText")}
         </label>
         <textarea
           ref={input}
@@ -441,32 +458,32 @@ function HomeResultEditor({
         {(stale || readFailed || busy) && (
           <p id="home-result-edit-state" className="text-xs leading-5 text-muted-foreground">
             {stale
-              ? "The result changed. Your draft is kept; cancel and reopen the latest result."
+              ? t("homeResultPanel.theResultChangedYourDraftIsKept")
               : readFailed
-                ? "Could not refresh. Your draft is kept."
+                ? t("homeResultPanel.couldNotRefreshYourDraftIsKept")
                 : pending
-                  ? "Applying changes..."
-                  : "Wait for the current operation. Your draft is kept."}
+                  ? t("homeResultPanel.applyingChanges")
+                  : t("homeResultPanel.waitForTheCurrentOperationYourDraft")}
           </p>
         )}
         {readFailed && (
           <Button variant="outline" size="sm" disabled={pending} onClick={onRefresh}>
-            Refresh result
+            {t("homeResultPanel.refreshResult")}
           </Button>
         )}
         {invalid && (
           <p id="home-result-edit-validation" role="alert" className="text-xs text-destructive">
-            Enter 1–100,000 characters without null characters.
+            {t("homeResultPanel.enter1100000CharactersWithoutNull")}
           </p>
         )}
         {error && (
           <p id="home-result-edit-error" role="alert" className="text-sm text-destructive">
-            {error}
+            {nativeText(error)}
           </p>
         )}
         <DialogFooter className="shrink-0">
           <Button variant="outline" disabled={pending} onClick={onCancel}>
-            Cancel
+            {t("common.cancel")}
           </Button>
           <Button
             disabled={busy || invalid || stale || text === result.text}
@@ -479,7 +496,7 @@ function HomeResultEditor({
             ) : (
               <Check aria-hidden="true" />
             )}
-            Apply changes
+            {t("homeResultPanel.applyChanges")}
           </Button>
         </DialogFooter>
       </DialogContent>

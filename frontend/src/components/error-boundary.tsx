@@ -1,5 +1,6 @@
 import { Component, type ErrorInfo, type ReactNode } from "react";
 import { RecoveryActions } from "@/components/recovery-actions";
+import i18n from "@/i18n";
 
 type Failure = { message: string; stack: string };
 type State = { failure: Failure | null; componentStack: string };
@@ -10,7 +11,7 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, State> {
     const error =
       cause instanceof Error
         ? cause
-        : new Error(typeof cause === "string" ? cause : "Unknown interface error");
+        : new Error(typeof cause === "string" ? cause : i18n.t("errorBoundary.unknown"));
     return { failure: { message: error.message, stack: error.stack ?? "" }, componentStack: "" };
   }
   componentDidCatch(_cause: unknown, info: ErrorInfo) {
@@ -27,18 +28,15 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, State> {
         >
           <div className="space-y-2">
             <h1 id="recovery-title" className="text-xl font-semibold">
-              Yap couldn’t display the interface
+              {i18n.t("errorBoundary.title")}
             </h1>
             <p role="alert" className="text-sm text-muted-foreground">
-              Retry or reload the window. Saved settings and History are kept; unsaved edits may be
-              lost.
+              {i18n.t("errorBoundary.description")}
             </p>
-            <p className="text-sm text-muted-foreground">
-              Use the tray or menu bar for recording controls while you recover.
-            </p>
+            <p className="text-sm text-muted-foreground">{i18n.t("errorBoundary.hint")}</p>
           </div>
           <RecoveryActions
-            source="Interface rendering"
+            source={i18n.t("errorBoundary.source")}
             details={[failure.stack || failure.message, componentStack]
               .filter(Boolean)
               .join("\n\n")}

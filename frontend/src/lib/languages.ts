@@ -1,3 +1,6 @@
+import i18n from "@/i18n";
+import { useTranslation } from "react-i18next";
+
 export const languages = [
   { value: "auto", label: "Detect automatically" },
   { value: "en", label: "English" },
@@ -12,3 +15,126 @@ export const languages = [
   { value: "zh", label: "Chinese" },
   { value: "uk", label: "Ukrainian" },
 ];
+
+export function useLanguages() {
+  const { t, i18n } = useTranslation();
+  const names = new Intl.DisplayNames([i18n.resolvedLanguage ?? "en"], { type: "language" });
+  return languages.map(({ value, label }) => ({
+    value,
+    label: value === "auto" ? t("settingsPage.detectAutomatically") : (names.of(value) ?? label),
+  }));
+}
+
+// Catalog language names are stable identifiers used by model recommendations.
+// Localize their presentation without changing the recommendation inputs.
+const languageCodes: Record<string, string> = {
+  Afrikaans: "af",
+  Albanian: "sq",
+  Amharic: "am",
+  Arabic: "ar",
+  Armenian: "hy",
+  Assamese: "as",
+  Azerbaijani: "az",
+  Bashkir: "ba",
+  Basque: "eu",
+  Belarusian: "be",
+  Bengali: "bn",
+  Bosnian: "bs",
+  Breton: "br",
+  Bulgarian: "bg",
+  Cantonese: "yue",
+  Catalan: "ca",
+  Chinese: "zh",
+  Croatian: "hr",
+  Czech: "cs",
+  Danish: "da",
+  Dutch: "nl",
+  English: "en",
+  Estonian: "et",
+  Faroese: "fo",
+  Finnish: "fi",
+  French: "fr",
+  Galician: "gl",
+  Georgian: "ka",
+  German: "de",
+  Greek: "el",
+  Gujarati: "gu",
+  "Haitian Creole": "ht",
+  Hausa: "ha",
+  Hawaiian: "haw",
+  Hebrew: "he",
+  Hindi: "hi",
+  Hungarian: "hu",
+  Icelandic: "is",
+  Indonesian: "id",
+  Italian: "it",
+  Japanese: "ja",
+  Javanese: "jv",
+  Kannada: "kn",
+  Kazakh: "kk",
+  Khmer: "km",
+  Korean: "ko",
+  Lao: "lo",
+  Latin: "la",
+  Latvian: "lv",
+  Lingala: "ln",
+  Lithuanian: "lt",
+  Luxembourgish: "lb",
+  Macedonian: "mk",
+  Malagasy: "mg",
+  Malay: "ms",
+  Malayalam: "ml",
+  Maltese: "mt",
+  Maori: "mi",
+  Marathi: "mr",
+  Mongolian: "mn",
+  Myanmar: "my",
+  Nepali: "ne",
+  Norwegian: "no",
+  Nynorsk: "nn",
+  Occitan: "oc",
+  Pashto: "ps",
+  Persian: "fa",
+  Polish: "pl",
+  Portuguese: "pt",
+  Punjabi: "pa",
+  Romanian: "ro",
+  Russian: "ru",
+  Sanskrit: "sa",
+  Serbian: "sr",
+  Shona: "sn",
+  Sindhi: "sd",
+  Sinhala: "si",
+  Slovak: "sk",
+  Slovenian: "sl",
+  Somali: "so",
+  Spanish: "es",
+  Sundanese: "su",
+  Swahili: "sw",
+  Swedish: "sv",
+  Tagalog: "tl",
+  Tajik: "tg",
+  Tamil: "ta",
+  Tatar: "tt",
+  Telugu: "te",
+  Thai: "th",
+  Tibetan: "bo",
+  Turkish: "tr",
+  Turkmen: "tk",
+  Ukrainian: "uk",
+  Urdu: "ur",
+  Uzbek: "uz",
+  Vietnamese: "vi",
+  Welsh: "cy",
+  Yiddish: "yi",
+  Yoruba: "yo",
+};
+
+export function languageName(value: string) {
+  if (i18n.resolvedLanguage === "en" && languageCodes[value]) return value;
+  const code = languageCodes[value] ?? (/^[a-z]{2,3}$/i.test(value) ? value : undefined);
+  if (!code) return value;
+  return (
+    new Intl.DisplayNames([i18n.resolvedLanguage ?? "en"], { type: "language" }).of(code) ?? value
+  );
+}

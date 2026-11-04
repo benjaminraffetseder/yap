@@ -1,3 +1,5 @@
+import { nativeText } from "@/i18n/native-text";
+import { useTranslation } from "react-i18next";
 import { AutoSaveStatus } from "@/components/auto-save-status";
 import { useDictation } from "@/components/dictation-provider";
 import { PageHeading } from "@/components/page-heading";
@@ -30,6 +32,7 @@ import { useEffect, useMemo, useState } from "react";
 const PAGE_SIZE = 10;
 
 export function VocabularyPage() {
+  const { t } = useTranslation();
   const { snapshot, refresh, loading } = useDictation();
   const saved = useMemo(() => draftOf(snapshot.vocabulary), [snapshot.vocabulary]);
   const [draft, setDraft, draftState] = useSavedDraft("vocabulary", saved);
@@ -77,15 +80,15 @@ export function VocabularyPage() {
   return (
     <div className="space-y-7">
       <PageHeading
-        title="Vocabulary"
-        description="Teach Yap the names, brands, and terms you use."
+        title={t("common.vocabulary")}
+        description={t("vocabularyPage.teachYapTheNamesBrandsAndTerms")}
       />
       <fieldset disabled={disabled} className="min-w-0 space-y-6 disabled:opacity-60">
         <section aria-labelledby="vocabulary-terms-heading" className="space-y-4">
           <div className="sticky top-0 z-20 flex flex-wrap items-center justify-between gap-3 bg-background py-3">
             <div className="flex flex-wrap items-center gap-3">
               <h2 id="vocabulary-terms-heading" className="text-sm font-semibold">
-                Your terms
+                {t("vocabularyPage.yourTerms")}
               </h2>
               <span className="text-xs tabular-nums text-muted-foreground">
                 {draft.length} / 100
@@ -118,17 +121,17 @@ export function VocabularyPage() {
                 }}
               >
                 <Plus className="size-3.5" />
-                Add term
+                {t("vocabularyPage.addTerm")}
               </Button>
               <Button variant="ghost" size="sm" onClick={() => setHistory(true)}>
                 <History aria-hidden="true" className="size-3.5" />
-                Version history
+                {t("promptsPage.versionHistory")}
               </Button>
             </div>
           </div>
           {error && autoSave.failed && (
             <p role="alert" className="text-xs text-destructive">
-              {error}
+              {nativeText(error)}
             </p>
           )}
           {!draft.length ? (
@@ -137,9 +140,11 @@ export function VocabularyPage() {
                 className="mx-auto mb-4 size-7 text-muted-foreground/60"
                 aria-hidden="true"
               />
-              <h3 className="text-sm font-medium">A vocabulary that sounds like you</h3>
+              <h3 className="text-sm font-medium">
+                {t("vocabularyPage.aVocabularyThatSoundsLikeYou")}
+              </h3>
               <p className="mx-auto mt-2 max-w-sm text-xs leading-5 text-muted-foreground">
-                Add names, brands, or technical terms you use often.
+                {t("vocabularyPage.addNamesBrandsOrTechnicalTermsYou")}
               </p>
             </div>
           ) : (
@@ -149,12 +154,12 @@ export function VocabularyPage() {
                   <TableHeader>
                     <TableRow className="hover:bg-transparent">
                       <TableHead className="w-10">
-                        <span className="sr-only">Enabled</span>
+                        <span className="sr-only">{t("vocabularyPage.enabled")}</span>
                       </TableHead>
-                      <TableHead>Preferred spelling</TableHead>
-                      <TableHead>Aliases</TableHead>
+                      <TableHead>{t("vocabularyPage.preferredSpelling")}</TableHead>
+                      <TableHead>{t("vocabularyPage.aliases")}</TableHead>
                       <TableHead className="w-13">
-                        <span className="sr-only">Actions</span>
+                        <span className="sr-only">{t("vocabularyPage.actions")}</span>
                       </TableHead>
                     </TableRow>
                   </TableHeader>
@@ -164,7 +169,7 @@ export function VocabularyPage() {
                         <TableCell>
                           <div className="flex items-center justify-center">
                             <Checkbox
-                              aria-label="Enabled"
+                              aria-label={t("vocabularyPage.enabled")}
                               disabled={disabled}
                               checked={entry.enabled}
                               onCheckedChange={(checked) =>
@@ -184,14 +189,14 @@ export function VocabularyPage() {
                         </TableCell>
                         <TableCell className="whitespace-normal">
                           <Label htmlFor={`term-${entry.id}`} className="sr-only">
-                            Preferred spelling
+                            {t("vocabularyPage.preferredSpelling")}
                           </Label>
                           <Input
                             id={`term-${entry.id}`}
                             aria-invalid={!!errors[entry.id]}
                             aria-describedby={errors[entry.id] ? `error-${entry.id}` : undefined}
                             maxLength={80}
-                            placeholder="e.g. PostgreSQL"
+                            placeholder={t("vocabularyPage.eGPostgreSQL")}
                             value={entry.canonical}
                             onChange={(event) =>
                               update(entry.id, { canonical: event.target.value })
@@ -200,11 +205,11 @@ export function VocabularyPage() {
                         </TableCell>
                         <TableCell className="whitespace-normal">
                           <Label htmlFor={`aliases-${entry.id}`} className="sr-only">
-                            Aliases (comma-separated)
+                            {t("vocabularyPage.aliasesCommaSeparated")}
                           </Label>
                           <Input
                             id={`aliases-${entry.id}`}
-                            placeholder="e.g. postgres, post gre SQL"
+                            placeholder={t("vocabularyPage.eGPostgresPostGreSQL")}
                             value={entry.aliases}
                             onChange={(event) => update(entry.id, { aliases: event.target.value })}
                           />
@@ -214,7 +219,9 @@ export function VocabularyPage() {
                             variant="ghost"
                             size="icon-sm"
                             className="text-muted-foreground hover:text-destructive"
-                            aria-label={`Remove ${entry.canonical || "term"}`}
+                            aria-label={t("vocabularyPage.remove", {
+                              term: entry.canonical || "term",
+                            })}
                             onClick={() =>
                               setDraft((old) => old.filter((item) => item.id !== entry.id))
                             }
@@ -229,7 +236,7 @@ export function VocabularyPage() {
               </div>
               {draft.length > PAGE_SIZE && (
                 <nav
-                  aria-label="Vocabulary pages"
+                  aria-label={t("vocabularyPage.vocabularyPages")}
                   className="flex items-center justify-between gap-3"
                 >
                   <Button
@@ -238,10 +245,10 @@ export function VocabularyPage() {
                     disabled={page === 0}
                     onClick={() => setPage((current) => Math.max(0, current - 1))}
                   >
-                    Previous
+                    {t("historyPage.previous")}
                   </Button>
                   <span className="text-xs text-muted-foreground">
-                    Page {page + 1} of {pages}
+                    {t("historyPage.page")} {page + 1} {t("historyPage.of")} {pages}
                   </span>
                   <Button
                     variant="outline"
@@ -249,7 +256,7 @@ export function VocabularyPage() {
                     disabled={page + 1 >= pages}
                     onClick={() => setPage((current) => Math.min(pages - 1, current + 1))}
                   >
-                    Next
+                    {t("common.next")}
                   </Button>
                 </nav>
               )}
@@ -261,7 +268,7 @@ export function VocabularyPage() {
         <RevisionHistory
           kind="vocabulary"
           itemId=""
-          title="Vocabulary version history"
+          title={t("vocabularyPage.vocabularyVersionHistory")}
           current={JSON.stringify(snapshot.vocabulary)}
           onClose={() => setHistory(false)}
           onRestore={(value) => setDraft(draftOf(JSON.parse(value) as VocabularyEntry[]))}

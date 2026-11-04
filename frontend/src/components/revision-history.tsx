@@ -1,3 +1,6 @@
+import { nativeText } from "@/i18n/native-text";
+import { useTranslation } from "react-i18next";
+import i18n from "@/i18n";
 import { TranscriptDiff } from "@/components/transcript-diff";
 import { Button } from "@/components/ui/button";
 import {
@@ -28,20 +31,22 @@ function preview(kind: RevisionKind, value: string, prompts: TextPrompt[]): stri
       (parsed as VocabularyEntry[])
         .map(
           (entry) =>
-            `${entry.canonical}${entry.enabled ? "" : " (disabled)"}${entry.aliases.length ? ` — ${entry.aliases.join(", ")}` : ""}`,
+            `${entry.canonical}${entry.enabled ? "" : i18n.t("revisionHistory.disabled")}${entry.aliases.length ? ` — ${entry.aliases.join(", ")}` : ""}`,
         )
-        .join("\n") || "Empty vocabulary"
+        .join("\n") || i18n.t("revisionHistory.emptyVocabulary")
     );
   const chain = parsed as PromptChain;
   return `${chain.name}\n\n${chain.steps
     .map((step, index) => {
       const source =
         step.input === "original"
-          ? "Original transcription"
+          ? i18n.t("historyEntryPage.originalTranscription")
           : step.input === "transcript"
-            ? "Saved transcript"
-            : `Step ${chain.steps.findIndex((item) => item.id === step.input.slice(5)) + 1}`;
-      return `${index + 1}. ${prompts.find((prompt) => prompt.id === step.promptId)?.name ?? "Unavailable prompt"} · ${source}`;
+            ? i18n.t("generatedOutputs.savedTranscript")
+            : i18n.t("revisionHistory.stepLabel", {
+                step: chain.steps.findIndex((item) => item.id === step.input.slice(5)) + 1,
+              });
+      return `${index + 1}. ${prompts.find((prompt) => prompt.id === step.promptId)?.name ?? i18n.t("revisionHistory.unavailablePrompt")} · ${source}`;
     })
     .join("\n")}`;
 }
@@ -55,7 +60,7 @@ function same(kind: RevisionKind, left: string, right: string) {
 }
 function relative(stamp: string) {
   const seconds = Math.round((Date.parse(stamp) - Date.now()) / 1000);
-  const format = new Intl.RelativeTimeFormat(undefined, { numeric: "auto" });
+  const format = new Intl.RelativeTimeFormat(i18n.resolvedLanguage, { numeric: "auto" });
   if (Math.abs(seconds) < 60) return format.format(seconds, "second");
   if (Math.abs(seconds) < 3600) return format.format(Math.round(seconds / 60), "minute");
   if (Math.abs(seconds) < 86400) return format.format(Math.round(seconds / 3600), "hour");
@@ -81,6 +86,7 @@ export function RevisionHistory({
   validate?: (value: string) => string;
   prompts?: TextPrompt[];
 }) {
+  const { t } = useTranslation();
   const [revisions, setRevisions] = useState<Revision[]>([]);
   const [selected, setSelected] = useState<Revision | null>(null);
   const [error, setError] = useState("");
@@ -117,7 +123,7 @@ export function RevisionHistory({
       after = preview(kind, selected.value, prompts);
       reason = validate?.(selected.value) ?? "";
     } catch {
-      reason = "This version cannot be read.";
+      reason = t("revisionHistory.thisVersionCannotBeRead");
     }
   }
   const isCurrent = !!selected && same(kind, current, selected.value);
@@ -132,27 +138,27 @@ export function RevisionHistory({
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
           <DialogDescription>
-            Preview an earlier version and restore it to your draft. Changes save automatically.
+            {t("revisionHistory.previewAnEarlierVersionAndRestoreIt")}
           </DialogDescription>
         </DialogHeader>
         {loading ? (
-          <p role="status">Loading versions…</p>
+          <p role="status">{t("revisionHistory.loadingVersions")}</p>
         ) : error ? (
           <div>
             <p role="alert" className="text-sm text-destructive">
-              {error}
+              {nativeText(error)}
             </p>
             <Button variant="outline" onClick={() => setRequest((value) => value + 1)}>
-              Retry
+              {t("common.retry")}
             </Button>
           </div>
         ) : !revisions.length ? (
           <p className="text-sm text-muted-foreground">
-            No earlier versions yet. History starts with your first change.
+            {t("revisionHistory.noEarlierVersionsYetHistoryStartsWith")}
           </p>
         ) : (
           <div className="grid min-h-0 gap-4 overflow-y-auto md:grid-cols-[12rem_minmax(0,1fr)]">
-            <nav aria-label="Versions" className="space-y-1">
+            <nav aria-label={t("revisionHistory.versions")} className="space-y-1">
               {revisions.map((revision) => (
                 <button
                   key={revision.id}
@@ -163,23 +169,27 @@ export function RevisionHistory({
                 >
                   <time
                     dateTime={revision.updatedAt}
-                    title={new Date(revision.updatedAt).toLocaleString()}
+                    title={new Date(revision.updatedAt).toLocaleString(i18n.resolvedLanguage)}
                   >
                     {relative(revision.updatedAt)}
                   </time>
                   {same(kind, current, revision.value) && (
-                    <span className="ml-2 text-xs text-muted-foreground">Current</span>
+                    <span className="ml-2 text-xs text-muted-foreground">
+                      {t("revisionHistory.current")}
+                    </span>
                   )}
                 </button>
               ))}
             </nav>
-            <section aria-label="Version preview" className="min-w-0 space-y-3">
+            <section aria-label={t("revisionHistory.versionPreview")} className="min-w-0 space-y-3">
               <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-md border p-3 text-sm">
                 {after}
               </pre>
               {(kind === "transcript" || kind === "prompt") && (
                 <div className="rounded-md border p-3">
-                  <p className="mb-2 text-xs text-muted-foreground">Current → Selected version</p>
+                  <p className="mb-2 text-xs text-muted-foreground">
+                    {t("revisionHistory.currentSelectedVersion")}
+                  </p>
                   <TranscriptDiff before={before} after={after} />
                 </div>
               )}
@@ -193,7 +203,7 @@ export function RevisionHistory({
         )}
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>
-            Close
+            {t("common.close")}
           </Button>
           <Button
             disabled={!selected || loading || !!error || isCurrent || !!reason}
@@ -204,7 +214,7 @@ export function RevisionHistory({
               }
             }}
           >
-            Restore version
+            {t("revisionHistory.restoreVersion")}
           </Button>
         </DialogFooter>
       </DialogContent>

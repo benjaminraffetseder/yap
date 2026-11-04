@@ -1,3 +1,5 @@
+import i18n from "@/i18n";
+import { useTranslation } from "react-i18next";
 import { useDictation } from "@/components/dictation-provider";
 import { useTheme } from "@/components/theme-provider";
 import {
@@ -58,6 +60,7 @@ export function CommandMenu({
   collapsed: boolean;
   toggleSidebar: () => void;
 }) {
+  const { t } = useTranslation();
   const { run } = useDictation();
   const [pending, setPending] = useState(false);
   const running = useRef(false);
@@ -97,8 +100,8 @@ export function CommandMenu({
 
   return (
     <CommandDialog
-      title="Command palette"
-      description="Navigate Yap, run actions, or search dictation history."
+      title={t("commandMenu.commandPalette")}
+      description={t("commandMenu.navigateYapRunActionsOrSearchDictation")}
       open={open}
       onOpenChange={onOpenChange}
     >
@@ -129,6 +132,7 @@ function CommandMenuContent({
   pending: boolean;
   runAction: RunAction;
 }) {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const { snapshot, loading, run, update, checkingUpdates, checkUpdates } = useDictation();
   const { theme, setTheme } = useTheme();
@@ -188,71 +192,71 @@ function CommandMenuContent({
 
   const groups: { heading: string; items: CommandAction[] }[] = [
     {
-      heading: "Navigate",
+      heading: t("commandMenu.navigate"),
       items: [
-        { label: "Dictate", to: "/", icon: Mic, keywords: ["home", "record"] },
+        { label: t("appLayout.dictate"), to: "/", icon: Mic, keywords: ["home", "record"] },
         {
-          label: "History",
+          label: t("common.history"),
           to: "/history",
           icon: History,
           keywords: ["transcripts", "dictations"],
         },
         {
-          label: "Recently deleted",
+          label: t("commandMenu.recentlyDeleted"),
           to: "/history?view=deleted",
           icon: History,
           keywords: ["trash", "restore"],
         },
         {
-          label: "Models",
+          label: t("modelsPage.models"),
           to: "/models",
           icon: HardDriveDownload,
           keywords: ["speech", "whisper"],
         },
         {
-          label: "Vocabulary",
+          label: t("common.vocabulary"),
           to: "/vocabulary",
           icon: BookOpen,
           keywords: ["dictionary", "words"],
         },
         {
-          label: "Prompts",
+          label: t("promptsPage.prompts"),
           to: "/prompts?section=prompts",
           icon: Sparkles,
           keywords: ["instructions"],
         },
         {
-          label: "Chains",
+          label: t("promptsPage.chains"),
           to: "/prompts?section=chains",
           icon: Workflow,
           keywords: ["prompts", "steps"],
         },
         {
-          label: "Text model",
+          label: t("promptsPage.textModel"),
           to: "/prompts?section=models",
           icon: Sparkles,
           keywords: ["llm", "ollama"],
         },
         {
-          label: "Settings: Dictation",
+          label: t("commandMenu.settingsDictation"),
           to: "/settings?section=dictation",
           icon: Settings2,
           keywords: ["microphone", "shortcut", "profiles"],
         },
         {
-          label: "Settings: General",
+          label: t("commandMenu.settingsGeneral"),
           to: "/settings?section=general",
           icon: Settings2,
           keywords: ["updates", "startup"],
         },
         {
-          label: "Settings: History & data",
+          label: t("commandMenu.settingsHistoryData"),
           to: "/settings?section=history",
           icon: Settings2,
           keywords: ["backup", "retention", "storage"],
         },
         {
-          label: "Settings: Advanced",
+          label: t("commandMenu.settingsAdvanced"),
           to: "/settings?section=advanced",
           icon: Settings2,
           keywords: ["diagnostics", "audio support"],
@@ -260,10 +264,10 @@ function CommandMenuContent({
       ].map(({ to, ...item }) => ({ ...item, action: () => navigate(to) })),
     },
     {
-      heading: "Dictation",
+      heading: t("historyEntryPage.dictation"),
       items: [
         {
-          label: recording ? "Stop recording" : "Start recording",
+          label: recording ? t("homePage.stopRecording") : t("homePage.startRecording"),
           icon: recording ? Square : Mic,
           keywords: ["record", "dictate", "microphone"],
           shortcut: recording ? undefined : settings.shortcut,
@@ -273,7 +277,7 @@ function CommandMenuContent({
         ...(status.phase === "downloading"
           ? [
               {
-                label: "Cancel download",
+                label: t("homePage.cancelDownload"),
                 icon: X,
                 keywords: ["stop", "download"],
                 disabled: unavailable,
@@ -282,14 +286,16 @@ function CommandMenuContent({
             ]
           : []),
         {
-          label: "Import audio files…",
+          label: t("commandMenu.importAudioFiles"),
           icon: Upload,
           keywords: ["transcribe", "file", "wav", "mp3"],
           disabled: unavailable || !snapshot.ready,
           action: native(backend.importAudio),
         },
         {
-          label: `Turn Save to history ${settings.saveHistory ? "off" : "on"}`,
+          label: t("commandMenu.turnSaveToHistory", {
+            on: (settings.saveHistory ? t("common.off") : t("common.on")).toLowerCase(),
+          }),
           icon: Save,
           keywords: ["save", "history", "privacy"],
           disabled: unavailable || status.phase === "backup",
@@ -298,14 +304,14 @@ function CommandMenuContent({
         ...(latestResult && !busy
           ? [
               {
-                label: "Copy latest result",
+                label: t("commandMenu.copyLatestResult"),
                 icon: Copy,
                 keywords: ["clipboard", "transcript"],
                 disabled: unavailable,
                 action: native(() => backend.copy(latestResult.text), false),
               },
               {
-                label: "Save latest result to history",
+                label: t("commandMenu.saveLatestResultToHistory"),
                 icon: Save,
                 keywords: ["keep", "transcript"],
                 disabled: unavailable,
@@ -316,10 +322,10 @@ function CommandMenuContent({
       ],
     },
     {
-      heading: "Profiles and model",
+      heading: t("commandMenu.profilesAndModel"),
       items: [
         ...(snapshot.dictationProfiles ?? []).map((profile) => ({
-          label: `Switch to profile: ${profile.name}`,
+          label: t("commandMenu.switchToProfile", { name: profile.name }),
           icon: Workflow,
           keywords: ["profile", "dictation"],
           checked: snapshot.activeProfileId === profile.id,
@@ -329,7 +335,7 @@ function CommandMenuContent({
         ...snapshot.models
           .filter((model) => model.installed)
           .map((model) => ({
-            label: `Use speech model: ${model.name}`,
+            label: t("commandMenu.useSpeechModel", { name: model.name }),
             icon: HardDriveDownload,
             keywords: ["speech", "model"],
             checked: settings.modelPath === model.path,
@@ -337,7 +343,7 @@ function CommandMenuContent({
             action: native(() => backend.settings({ ...settings, modelPath: model.path })),
           })),
         {
-          label: "Download a speech model…",
+          label: t("commandMenu.downloadASpeechModel"),
           icon: Download,
           keywords: ["install", "whisper", "models"],
           action: () => navigate("/models"),
@@ -345,23 +351,23 @@ function CommandMenuContent({
       ],
     },
     {
-      heading: "Appearance",
+      heading: t("settingsPage.appearance"),
       items: [
         ...(
           [
-            { value: "light", label: "Light", icon: Sun },
-            { value: "dark", label: "Dark", icon: Moon },
-            { value: "system", label: "System", icon: Monitor },
+            { value: "light", label: t("settingsPage.light"), icon: Sun },
+            { value: "dark", label: t("settingsPage.dark"), icon: Moon },
+            { value: "system", label: t("settingsPage.system"), icon: Monitor },
           ] as const
         ).map(({ value, label, icon }) => ({
-          label: `Theme: ${label}`,
+          label: t("commandMenu.theme", { label: label }),
           icon,
           keywords: [value, "appearance", "theme"],
           checked: theme === value,
           action: () => setTheme(value),
         })),
         {
-          label: collapsed ? "Expand sidebar" : "Collapse sidebar",
+          label: collapsed ? t("appLayout.expandSidebar") : t("appLayout.collapseSidebar"),
           icon: collapsed ? PanelLeftOpen : PanelLeftClose,
           keywords: ["sidebar", "navigation", "appearance"],
           action: toggleSidebar,
@@ -369,12 +375,12 @@ function CommandMenuContent({
       ],
     },
     {
-      heading: "App",
+      heading: t("commandMenu.app"),
       items: [
         ...(!update || (update.supported && update.configured)
           ? [
               {
-                label: "Check for updates",
+                label: t("commandMenu.checkForUpdates"),
                 icon: RefreshCw,
                 keywords: ["version", "upgrade"],
                 disabled: unavailable || busy || checkingUpdates,
@@ -385,7 +391,7 @@ function CommandMenuContent({
         ...(update?.available
           ? [
               {
-                label: "Download update",
+                label: t("appLayout.downloadUpdate"),
                 icon: Download,
                 keywords: ["version", "upgrade"],
                 disabled: unavailable || busy,
@@ -410,11 +416,11 @@ function CommandMenuContent({
   const searchingHistory = isDesktop && search.length >= 2;
 
   return (
-    <Command label="Yap commands" vimBindings={false}>
+    <Command label={t("commandMenu.yapCommands")} vimBindings={false}>
       <CommandInput
         ref={input}
-        placeholder="Search commands or dictation history…"
-        aria-label="Search commands or dictation history"
+        placeholder={t("commandMenu.searchCommandsOrDictationHistory")}
+        aria-label={t("commandMenu.searchCommandsOrDictationHistory2")}
         value={query}
         onValueChange={setQuery}
         maxLength={250}
@@ -433,23 +439,26 @@ function CommandMenuContent({
               >
                 <Icon aria-hidden="true" />
                 <span className="min-w-0 truncate">{label}</span>
-                {checked && <span className="sr-only"> (current)</span>}
+                {checked && <span className="sr-only"> {t("commandMenu.current")}</span>}
                 {shortcut && <CommandShortcut>{shortcut}</CommandShortcut>}
               </CommandItem>
             ))}
           </CommandGroup>
         ))}
         {(!search || searchingHistory) && (
-          <CommandGroup heading={search ? "History matches" : "Recent dictations"} forceMount>
+          <CommandGroup
+            heading={search ? t("commandMenu.historyMatches") : t("homePage.recentDictations")}
+            forceMount
+          >
             {searchingHistory && (
               <p role="status" className="px-2 py-1.5 text-xs text-muted-foreground">
                 {result?.query !== search
-                  ? "Searching history…"
+                  ? t("commandMenu.searchingHistory")
                   : result.failed
-                    ? "History search failed."
+                    ? t("commandMenu.historySearchFailed")
                     : !entries.length
-                      ? "No matching dictations."
-                      : `${entries.length} matching dictations`}
+                      ? t("commandMenu.noMatchingDictations")
+                      : t("commandMenu.matchingDictations", { length: entries.length })}
               </p>
             )}
             {entries.map((entry) => (
@@ -465,10 +474,10 @@ function CommandMenuContent({
                   {(entry.finalTranscript || entry.rawTranscript)
                     .replace(/\s+/g, " ")
                     .trim()
-                    .slice(0, 120) || "Untitled dictation"}
+                    .slice(0, 120) || t("commandMenu.untitledDictation")}
                 </span>
                 <span className="shrink-0 text-xs text-muted-foreground">
-                  {new Date(entry.createdAt).toLocaleDateString(undefined, {
+                  {new Date(entry.createdAt).toLocaleDateString(i18n.resolvedLanguage, {
                     month: "short",
                     day: "numeric",
                     year: "numeric",
@@ -479,7 +488,7 @@ function CommandMenuContent({
           </CommandGroup>
         )}
         {search && (
-          <CommandGroup heading="Search history" forceMount>
+          <CommandGroup heading={t("commandMenu.searchHistory")} forceMount>
             <CommandItem
               value="search-all-history"
               keywords={["history", "search", search]}
@@ -487,7 +496,11 @@ function CommandMenuContent({
               onSelect={() => select(() => navigate(`/history?q=${encodeURIComponent(search)}`))}
             >
               <Search aria-hidden="true" />
-              <span className="truncate">Search all history for &quot;{search}&quot;</span>
+              <span className="truncate">
+                {t("commandMenu.searchAllHistoryFor")}
+                {search}
+                {t("commandMenu.text")}
+              </span>
             </CommandItem>
           </CommandGroup>
         )}

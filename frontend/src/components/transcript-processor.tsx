@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -24,6 +25,7 @@ export function TranscriptProcessor({
   onCancel: () => void;
   onUse: (result: string) => void;
 }) {
+  const { t } = useTranslation();
   const { snapshot } = useDictation();
   const { prompts } = snapshot.textProcessing;
   const [selected, setSelected] = useState(prompts[0]?.id ?? "");
@@ -36,13 +38,13 @@ export function TranscriptProcessor({
   return (
     <>
       <DialogHeader>
-        <DialogTitle>Process transcript</DialogTitle>
+        <DialogTitle>{t("transcriptProcessor.processTranscript")}</DialogTitle>
         <DialogDescription>
-          Review the generated result before replacing your editable text.
+          {t("transcriptProcessor.reviewTheGeneratedResultBeforeReplacingYour")}
         </DialogDescription>
       </DialogHeader>
       <div className="space-y-2">
-        <Label htmlFor="process-prompt">Prompt</Label>
+        <Label htmlFor="process-prompt">{t("promptChainsEditor.prompt")}</Label>
         <Select
           items={options}
           value={selected || null}
@@ -59,7 +61,7 @@ export function TranscriptProcessor({
             id="process-prompt"
             className="data-[size=default]:h-9 w-full min-w-0 rounded-md bg-background"
           >
-            <SelectValue placeholder="Choose a prompt" />
+            <SelectValue placeholder={t("generatedOutputs.chooseAPrompt")} />
           </SelectTrigger>
           <SelectContent alignItemWithTrigger={false} align="start">
             {options.map((option) => (
@@ -72,9 +74,9 @@ export function TranscriptProcessor({
       </div>
       {generation.pending ? (
         <div className="flex items-center gap-3" role="status">
-          <span className="text-sm">Processing…</span>
+          <span className="text-sm">{t("transcriptProcessor.processing")}</span>
           <Button variant="outline" onClick={() => void generation.cancel()}>
-            Cancel processing
+            {t("transcriptProcessor.cancelProcessing")}
           </Button>
         </div>
       ) : (
@@ -83,15 +85,21 @@ export function TranscriptProcessor({
           disabled={!selected || isBusy(snapshot.status.phase)}
           onClick={() => void generation.request((id) => backend.processText(id, input, selected))}
         >
-          {generation.result ? "Generate again" : "Generate preview"}
+          {generation.result
+            ? t("transcriptProcessor.generateAgain")
+            : t("transcriptProcessor.generatePreview")}
         </Button>
       )}
       <div className="grid items-start gap-4 md:grid-cols-2">
-        <TextPanel title="Input text" kind="source" description="Current draft">
+        <TextPanel
+          title={t("generatedOutputs.inputText")}
+          kind="source"
+          description={t("transcriptProcessor.currentDraft")}
+        >
           <MarkdownContent className="max-h-[40vh] overflow-y-auto">{input}</MarkdownContent>
         </TextPanel>
         <TextPanel
-          title="Generated result"
+          title={t("homeResultPanel.generatedResult")}
           kind="result"
           description={prompts.find((prompt) => prompt.id === selected)?.name}
         >
@@ -101,7 +109,9 @@ export function TranscriptProcessor({
             </MarkdownContent>
           ) : (
             <p className="text-sm text-muted-foreground">
-              {generation.pending ? "Generating result…" : "Generate a preview to see the result."}
+              {generation.pending
+                ? t("transcriptProcessor.generatingResult")
+                : t("transcriptProcessor.generateAPreviewToSeeTheResult")}
             </p>
           )}
         </TextPanel>
@@ -113,13 +123,13 @@ export function TranscriptProcessor({
       )}
       <DialogFooter>
         <Button variant="outline" onClick={onCancel}>
-          Back to transcript
+          {t("transcriptProcessor.backToTranscript")}
         </Button>
         <Button
           disabled={!generation.result || generation.pending}
           onClick={() => onUse(generation.result)}
         >
-          Replace draft
+          {t("transcriptProcessor.replaceDraft")}
         </Button>
       </DialogFooter>
     </>

@@ -1,3 +1,5 @@
+import i18n from "@/i18n";
+import { nativeText } from "@/i18n/native-text";
 import { toastManager } from "@/components/ui/toast";
 import {
   backend,
@@ -44,7 +46,7 @@ const empty: Snapshot = {
   },
   status: {
     phase: "idle",
-    message: "Ready when you are",
+    message: i18n.t("dictationProvider.readyWhenYouAre"),
     startedAt: 0,
     transcript: "",
     progress: 0,
@@ -59,7 +61,7 @@ const empty: Snapshot = {
       id: "tiny",
       name: "Whisper Tiny",
       size: 77691713,
-      description: "Fastest · short dictation",
+      description: i18n.t("dictationProvider.fastestShortDictation"),
       installed: false,
       path: "",
       diskBytes: 0,
@@ -69,7 +71,7 @@ const empty: Snapshot = {
       id: "base",
       name: "Whisper Base",
       size: 147951465,
-      description: "Lightweight · everyday dictation",
+      description: i18n.t("dictationProvider.lightweightEverydayDictation"),
       installed: false,
       path: "",
       diskBytes: 0,
@@ -79,7 +81,7 @@ const empty: Snapshot = {
       id: "small",
       name: "Whisper Small",
       size: 487601967,
-      description: "Balanced · better accuracy",
+      description: i18n.t("dictationProvider.balancedBetterAccuracy"),
       installed: false,
       path: "",
       diskBytes: 0,
@@ -89,7 +91,7 @@ const empty: Snapshot = {
       id: "medium",
       name: "Whisper Medium",
       size: 1533763059,
-      description: "Higher accuracy · more memory",
+      description: i18n.t("dictationProvider.higherAccuracyMoreMemory"),
       installed: false,
       path: "",
       diskBytes: 0,
@@ -99,7 +101,7 @@ const empty: Snapshot = {
       id: "large-v3",
       name: "Whisper Large v3",
       size: 3095033483,
-      description: "Large v3 · highest memory use",
+      description: i18n.t("dictationProvider.largeV3HighestMemoryUse"),
       installed: false,
       path: "",
       diskBytes: 0,
@@ -109,7 +111,7 @@ const empty: Snapshot = {
       id: "parakeet-tdt-0.6b-v3",
       name: "NVIDIA Parakeet TDT v3",
       size: 713975456,
-      description: "25 European languages · automatic detection",
+      description: i18n.t("dictationProvider.25EuropeanLanguagesAutomaticDetection"),
       installed: false,
       path: "",
       diskBytes: 0,
@@ -119,7 +121,7 @@ const empty: Snapshot = {
       id: "moonshine-v2-tiny",
       name: "Moonshine V2 Tiny",
       size: 45233659,
-      description: "English only · fastest",
+      description: i18n.t("dictationProvider.englishOnlyFastest"),
       installed: false,
       path: "",
       diskBytes: 0,
@@ -129,7 +131,7 @@ const empty: Snapshot = {
       id: "moonshine-v2-small",
       name: "Moonshine V2 Small",
       size: 142300974,
-      description: "English only · very fast",
+      description: i18n.t("dictationProvider.englishOnlyVeryFast"),
       installed: false,
       path: "",
       diskBytes: 0,
@@ -139,7 +141,7 @@ const empty: Snapshot = {
       id: "moonshine-v2-medium",
       name: "Moonshine V2 Medium",
       size: 269141623,
-      description: "English only · better accuracy",
+      description: i18n.t("dictationProvider.englishOnlyBetterAccuracy"),
       installed: false,
       path: "",
       diskBytes: 0,
@@ -149,7 +151,7 @@ const empty: Snapshot = {
       id: "moonshine-base",
       name: "Moonshine Base",
       size: 141001190,
-      description: "English only · lightweight",
+      description: i18n.t("dictationProvider.englishOnlyLightweight"),
       installed: false,
       path: "",
       diskBytes: 0,
@@ -349,14 +351,16 @@ export function DictationProvider({ children }: { children: ReactNode }) {
         toastManager.add({
           id: "transcription-complete",
           type: warning ? "warning" : "success",
-          title: warning ? "Transcript ready — action needed" : "Transcription finished",
+          title: warning
+            ? i18n.t("dictationProvider.transcriptReadyActionNeeded")
+            : i18n.t("dictationProvider.transcriptionFinished"),
           description: warning
-            ? "Review the latest result on Home. You can edit, save or copy it there."
-            : status.message,
+            ? i18n.t("dictationProvider.reviewTheLatestResultOnHomeYou")
+            : nativeText(status.message),
           timeout: warning ? 0 : 5000,
           priority: warning ? "high" : "low",
           actionProps: {
-            children: "View result",
+            children: i18n.t("dictationProvider.viewResult"),
             onClick: () => {
               toastManager.close("transcription-complete");
               window.dispatchEvent(new Event("yap:show-result"));
@@ -381,7 +385,7 @@ export function DictationProvider({ children }: { children: ReactNode }) {
           toastManager.add({
             id: "speech-model-download",
             type: "error",
-            title: status.message,
+            title: nativeText(status.message),
             priority: "high",
             timeout: 8000,
           });
@@ -389,7 +393,9 @@ export function DictationProvider({ children }: { children: ReactNode }) {
           toastManager.add({
             id: "speech-model-download",
             type: "success",
-            title: `${download.model.name} downloaded and ready to use.`,
+            title: i18n.t("dictationProvider.downloadedAndReadyToUse", {
+              name: download.model.name,
+            }),
           });
       }
     });
@@ -415,9 +421,9 @@ export function DictationProvider({ children }: { children: ReactNode }) {
         toastManager.add({
           id: "import-summary",
           title: [
-            `${done} ${done === 1 ? "import" : "imports"} finished`,
-            failed ? `${failed} failed` : "",
-            cancelled ? `${cancelled} cancelled` : "",
+            i18n.t("dictationProvider.finishedImport", { count: done }),
+            failed ? i18n.t("dictationProvider.failedImports", { count: failed }) : "",
+            cancelled ? i18n.t("dictationProvider.cancelledImports", { count: cancelled }) : "",
           ]
             .filter(Boolean)
             .join(", "),
@@ -445,7 +451,10 @@ export function DictationProvider({ children }: { children: ReactNode }) {
       "profile:changed",
       ({ data: [name, error] }: { data: [string, string] }) => {
         if (!active) return;
-        toastManager.add({ type: error ? "error" : "success", title: error || `Profile: ${name}` });
+        toastManager.add({
+          type: error ? "error" : "success",
+          title: error || i18n.t("dictationProvider.profile", { name: name }),
+        });
       },
     );
     void refresh().catch((cause) => {

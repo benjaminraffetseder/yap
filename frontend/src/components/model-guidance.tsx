@@ -1,3 +1,5 @@
+import i18n from "@/i18n";
+import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import {
@@ -16,6 +18,8 @@ import {
   type GuidanceTask,
 } from "@/lib/model-guidance";
 import { modelProfiles } from "@/lib/model-profiles";
+import { languageName } from "@/lib/languages";
+import { nativeText } from "@/i18n/native-text";
 import { ArrowDown } from "lucide-react";
 import { useId, useState } from "react";
 
@@ -30,6 +34,20 @@ export function ModelGuidance({
   selectedModelPath: string;
   onShow: (model: Model) => void;
 }) {
+  const { t } = useTranslation();
+  const languageOptions = guidanceLanguages.map((option) => ({
+    ...option,
+    label: option.value === "auto" ? t("modelGuidance.unsure") : languageName(option.value),
+  }));
+  const taskOptions = guidanceTasks.map((option) => ({
+    ...option,
+    label:
+      option.value === "everyday"
+        ? t("modelGuidance.everyday")
+        : option.value === "quick"
+          ? t("modelGuidance.quick")
+          : t("modelGuidance.qualityTask"),
+  }));
   const id = useId();
   const [spokenLanguage, setSpokenLanguage] = useState(() => initialGuidanceLanguage(language));
   const [task, setTask] = useState<GuidanceTask>("everyday");
@@ -37,7 +55,11 @@ export function ModelGuidance({
   const profile = model && modelProfiles[model.id];
   const downloadSize =
     model &&
-    `${new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 }).format(model.size / 1_000_000)} MB`;
+    t("modelGuidance.downloadSize", {
+      size: new Intl.NumberFormat(i18n.resolvedLanguage, { maximumFractionDigits: 1 }).format(
+        model.size / 1_000_000,
+      ),
+    });
 
   return (
     <section
@@ -46,18 +68,17 @@ export function ModelGuidance({
     >
       <div>
         <h2 id={`${id}-heading`} className="text-base font-semibold">
-          Find a starting point
+          {t("modelGuidance.findAStartingPoint")}
         </h2>
         <p className="mt-1 text-xs leading-5 text-muted-foreground">
-          Choose your language and task for a suggestion. This only guides this page; your settings
-          stay unchanged.
+          {t("modelGuidance.chooseYourLanguageAndTaskForA")}
         </p>
       </div>
       <div className="grid min-w-0 gap-4 sm:grid-cols-2">
         <div className="min-w-0 space-y-2">
-          <Label htmlFor={`${id}-language`}>Language for guidance</Label>
+          <Label htmlFor={`${id}-language`}>{t("modelGuidance.languageForGuidance")}</Label>
           <Select
-            items={guidanceLanguages}
+            items={languageOptions}
             value={spokenLanguage}
             onValueChange={(value) => {
               if (value !== null) setSpokenLanguage(value);
@@ -70,7 +91,7 @@ export function ModelGuidance({
               <SelectValue />
             </SelectTrigger>
             <SelectContent alignItemWithTrigger={false} align="start">
-              {guidanceLanguages.map((option) => (
+              {languageOptions.map((option) => (
                 <SelectItem
                   key={option.value}
                   value={option.value}
@@ -83,9 +104,9 @@ export function ModelGuidance({
           </Select>
         </div>
         <div className="min-w-0 space-y-2">
-          <Label htmlFor={`${id}-task`}>What will you dictate?</Label>
+          <Label htmlFor={`${id}-task`}>{t("modelGuidance.whatWillYouDictate")}</Label>
           <Select
-            items={guidanceTasks}
+            items={taskOptions}
             value={task}
             onValueChange={(value) => {
               if (value !== null) setTask(value);
@@ -98,7 +119,7 @@ export function ModelGuidance({
               <SelectValue />
             </SelectTrigger>
             <SelectContent alignItemWithTrigger={false} align="start">
-              {guidanceTasks.map((option) => (
+              {taskOptions.map((option) => (
                 <SelectItem
                   key={option.value}
                   value={option.value}
@@ -119,21 +140,27 @@ export function ModelGuidance({
       >
         {model && profile ? (
           <>
-            <p className="text-xs font-medium text-muted-foreground">Suggested starting point</p>
+            <p className="text-xs font-medium text-muted-foreground">
+              {t("modelGuidance.suggestedStartingPoint")}
+            </p>
             <p className="mt-1 font-semibold break-words">{model.name}</p>
-            <p className="mt-1 text-sm leading-6 text-muted-foreground">{profile.tagline}</p>
+            <p className="mt-1 text-sm leading-6 text-muted-foreground">
+              {nativeText(profile.tagline)}
+            </p>
             <p className="mt-2 text-xs leading-5 text-muted-foreground">
               {spokenLanguage === "auto"
-                ? "Broad language coverage while you decide."
-                : `Supports ${spokenLanguage}.`}{" "}
-              Speed: {profile.speed.label.toLowerCase()} · Quality:{" "}
-              {profile.accuracy.label.toLowerCase()} · Download: {downloadSize}.
+                ? t("modelGuidance.broadLanguageCoverageWhileYouDecide")
+                : t("modelGuidance.supports", {
+                    spokenLanguage: languageName(spokenLanguage),
+                  })}{" "}
+              {t("modelGuidance.speed")} {nativeText(profile.speed.label).toLowerCase()}{" "}
+              {t("modelGuidance.quality")} {nativeText(profile.accuracy.label).toLowerCase()}{" "}
+              {t("modelGuidance.download")} {downloadSize}.
             </p>
           </>
         ) : (
           <p className="text-sm leading-6 text-muted-foreground">
-            No catalog suggestion for this language is available. Browse every model below or use
-            your own model in Settings.
+            {t("modelGuidance.noCatalogSuggestionForThisLanguageIs")}
           </p>
         )}
       </div>
@@ -144,23 +171,22 @@ export function ModelGuidance({
             className="h-auto min-h-9 whitespace-normal"
             onClick={() => onShow(model)}
           >
-            Show model
+            {t("modelGuidance.showModel")}
             <ArrowDown className="size-3.5" aria-hidden="true" />
           </Button>
           <p className="min-w-0 flex-1 text-xs leading-5 text-muted-foreground">
             {model.installed && model.path === selectedModelPath
-              ? "This model is already active for your next dictation."
+              ? t("modelGuidance.thisModelIsAlreadyActiveForYour")
               : model.installed
-                ? "Already downloaded. Choose Use model below to switch."
+                ? t("modelGuidance.alreadyDownloadedChooseUseModelBelowTo")
                 : model.removable
-                  ? "Choose Repair & use below to check the files and switch when ready."
-                  : "Choose Download & use below to install and switch when ready."}
+                  ? t("modelGuidance.chooseRepairUseBelowToCheckThe")
+                  : t("modelGuidance.chooseDownloadUseBelowToInstallAnd")}
           </p>
         </div>
       )}
       <p className="text-xs leading-5 text-muted-foreground">
-        Speed and quality are qualitative guides. Results depend on your device, language and audio.
-        All models remain available below.
+        {t("modelGuidance.speedAndQualityAreQualitativeGuidesResults")}
       </p>
     </section>
   );

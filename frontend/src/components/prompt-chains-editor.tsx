@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { ProfileSettingIndicator } from "@/components/profile-setting-indicator";
 import { RevisionHistory } from "@/components/revision-history";
 import { Button } from "@/components/ui/button";
@@ -65,6 +66,7 @@ export function PromptChainsEditor({
   onConfigureModel: () => void;
   onDelete: (chain: PromptChain) => void;
 }) {
+  const { t } = useTranslation();
   const chains = config.chains ?? emptyChains;
   const [selected, setSelected] = useState(chains[0]?.id ?? "");
   const [deleting, setDeleting] = useState(false);
@@ -101,7 +103,7 @@ export function PromptChainsEditor({
         ...chains,
         {
           id,
-          name: "New chain",
+          name: t("promptChainsEditor.newChain"),
           steps: [
             { id: crypto.randomUUID(), promptId: config.prompts[0]?.id ?? "", input: "original" },
           ],
@@ -127,23 +129,26 @@ export function PromptChainsEditor({
   }
   const chainOptions = chains.map((item) => ({
     value: item.id,
-    label: item.name || "Untitled chain",
+    label: item.name || t("promptChainsEditor.untitledChain"),
   }));
   const promptOptions = config.prompts.map((prompt) => ({
     value: prompt.id,
-    label: prompt.name || "Untitled prompt",
+    label: prompt.name || t("promptsPage.untitledPrompt"),
   }));
 
   return (
-    <section aria-label="Prompt chains" className="@container min-w-0 space-y-5">
+    <section
+      aria-label={t("promptChainsEditor.promptChains")}
+      className="@container min-w-0 space-y-5"
+    >
       <p className="text-sm leading-6 text-muted-foreground">
-        Turn a dictation into a finished result, one prompt at a time.
+        {t("promptChainsEditor.turnADictationIntoAFinishedResult")}
       </p>
       <fieldset disabled={disabled} className="min-w-0 space-y-5 disabled:opacity-60">
         <div className="flex flex-wrap items-center gap-3">
           <div className="min-w-48 flex-1">
             <Label htmlFor="saved-chain" className="sr-only">
-              Saved chain
+              {t("promptChainsEditor.savedChain")}
             </Label>
             <Select
               items={chainOptions}
@@ -158,7 +163,10 @@ export function PromptChainsEditor({
                 className="data-[size=default]:h-9 w-full @xl:max-w-sm"
               >
                 <Workflow aria-hidden="true" className="size-4 text-muted-foreground" />
-                <SelectValue className="min-w-0 truncate" placeholder="No saved chains" />
+                <SelectValue
+                  className="min-w-0 truncate"
+                  placeholder={t("promptChainsEditor.noSavedChains")}
+                />
               </SelectTrigger>
               <SelectContent alignItemWithTrigger={false} align="start">
                 {chainOptions.map((item) => (
@@ -179,7 +187,7 @@ export function PromptChainsEditor({
             onClick={addChain}
           >
             <Plus aria-hidden="true" className="size-4" />
-            Add chain
+            {t("promptChainsEditor.addChain")}
           </Button>
         </div>
 
@@ -187,11 +195,13 @@ export function PromptChainsEditor({
           <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed px-6 py-10 text-center">
             <Workflow aria-hidden="true" className="size-8 text-muted-foreground/60" />
             <div className="space-y-1">
-              <h2 className="text-sm font-medium">Your prompts, working together</h2>
+              <h2 className="text-sm font-medium">
+                {t("promptChainsEditor.yourPromptsWorkingTogether")}
+              </h2>
               <p className="max-w-sm text-sm leading-6 text-muted-foreground">
                 {config.prompts.length
-                  ? "Add a chain, then choose the prompts to run. Try Cleanup → Summary → Email."
-                  : "Add a saved prompt before creating your first chain."}
+                  ? t("promptChainsEditor.addAChainThenChooseThePrompts")
+                  : t("promptChainsEditor.addASavedPromptBeforeCreatingYour")}
               </p>
             </div>
           </div>
@@ -202,7 +212,7 @@ export function PromptChainsEditor({
             <div className="overflow-hidden rounded-xl border bg-card">
               <div className="space-y-1 px-4 pt-4 pb-3">
                 <Label htmlFor="chain-name" className="text-xs text-muted-foreground">
-                  Chain name
+                  {t("promptChainsEditor.chainName")}
                 </Label>
                 <Input
                   ref={nameInput}
@@ -216,27 +226,27 @@ export function PromptChainsEditor({
               <div className="flex items-center justify-between gap-4 border-t bg-muted/15 px-4 py-3">
                 <div className="min-w-0 space-y-1">
                   <Label htmlFor="chain-automatic" className="text-sm">
-                    Run chain after dictation
+                    {t("promptChainsEditor.runChainAfterDictation")}
                   </Label>
                   <p id="chain-automatic-help" className="text-xs leading-5 text-muted-foreground">
                     {!config.enabled ? (
                       <>
-                        Enable your{" "}
+                        {t("promptChainsEditor.enableYour")}{" "}
                         <button
                           type="button"
                           className="underline underline-offset-4"
                           onClick={onConfigureModel}
                         >
-                          text model
+                          {t("promptChainsEditor.textModel")}
                         </button>{" "}
-                        to run automatically.
+                        {t("promptChainsEditor.toRunAutomatically")}
                       </>
                     ) : automatic ? (
-                      "Use the last step as your dictation result."
+                      t("promptChainsEditor.useTheLastStepAsYourDictation")
                     ) : automaticName ? (
-                      `Replaces ${automaticName} when turned on.`
+                      t("promptChainsEditor.replacesWhenTurnedOn", { automaticName: automaticName })
                     ) : (
-                      "Run this chain when you finish recording."
+                      t("promptChainsEditor.runThisChainWhenYouFinishRecording")
                     )}
                   </p>
                 </div>
@@ -257,7 +267,7 @@ export function PromptChainsEditor({
 
             <div className="space-y-3">
               <div className="flex items-center justify-between gap-3">
-                <h2 className="text-sm font-medium">Steps</h2>
+                <h2 className="text-sm font-medium">{t("promptChainsEditor.steps")}</h2>
                 <span className="text-xs tabular-nums text-muted-foreground">
                   {chain.steps.length} / 10
                 </span>
@@ -267,18 +277,23 @@ export function PromptChainsEditor({
                   const inputOptions = [
                     {
                       value: "original",
-                      label: "Original transcription",
-                      description: "Unedited speech recognition",
+                      label: t("historyEntryPage.originalTranscription"),
+                      description: t("promptChainsEditor.uneditedSpeechRecognition"),
                     },
                     {
                       value: "transcript",
-                      label: "Saved transcript",
-                      description: "Includes saved corrections and cleanup",
+                      label: t("generatedOutputs.savedTranscript"),
+                      description: t("promptChainsEditor.includesSavedCorrectionsAndCleanup"),
                     },
                     ...chain.steps.slice(0, index).map((earlier, earlierIndex) => ({
                       value: `step:${earlier.id}`,
-                      label: `Step ${earlierIndex + 1}: ${config.prompts.find((prompt) => prompt.id === earlier.promptId)?.name || "Untitled prompt"}`,
-                      description: "Use this step's generated result",
+                      label: t("promptChainsEditor.step", {
+                        earlierIndex: earlierIndex + 1,
+                        prompt:
+                          config.prompts.find((prompt) => prompt.id === earlier.promptId)?.name ||
+                          t("promptsPage.untitledPrompt"),
+                      }),
+                      description: t("promptChainsEditor.useThisStepSGeneratedResult"),
                     })),
                   ];
                   const referenced = chain.steps.some((other) => other.input === `step:${step.id}`);
@@ -291,7 +306,7 @@ export function PromptChainsEditor({
                   return (
                     <li
                       key={step.id}
-                      aria-label={`Step ${index + 1}`}
+                      aria-label={t("promptChainsEditor.step2", { index: index + 1 })}
                       className="grid grid-cols-[1.75rem_minmax(0,1fr)_2rem] items-start gap-x-3 gap-y-3 p-4 @xl:grid-cols-[1.75rem_minmax(0,1fr)_minmax(0,1fr)_2rem]"
                     >
                       <span
@@ -306,11 +321,11 @@ export function PromptChainsEditor({
                             htmlFor={`chain-prompt-${step.id}`}
                             className="text-xs text-muted-foreground"
                           >
-                            Prompt
+                            {t("promptChainsEditor.prompt")}
                           </Label>
                           {index === chain.steps.length - 1 && (
                             <span className="shrink-0 text-[11px] text-muted-foreground">
-                              Final output
+                              {t("promptChainsEditor.finalOutput")}
                             </span>
                           )}
                         </div>
@@ -329,12 +344,12 @@ export function PromptChainsEditor({
                         >
                           <SelectTrigger
                             id={`chain-prompt-${step.id}`}
-                            aria-label={`Step ${index + 1} prompt`}
+                            aria-label={t("promptChainsEditor.stepPrompt", { index: index + 1 })}
                             className="data-[size=default]:h-9 w-full min-w-0 bg-background"
                           >
                             <SelectValue
                               className="min-w-0 truncate"
-                              placeholder="Choose a prompt"
+                              placeholder={t("generatedOutputs.chooseAPrompt")}
                             />
                           </SelectTrigger>
                           <SelectContent alignItemWithTrigger={false} align="start">
@@ -355,7 +370,7 @@ export function PromptChainsEditor({
                           htmlFor={`chain-input-${step.id}`}
                           className="text-xs text-muted-foreground"
                         >
-                          Use text from
+                          {t("promptChainsEditor.useTextFrom")}
                         </Label>
                         <Select
                           items={inputOptions}
@@ -372,7 +387,7 @@ export function PromptChainsEditor({
                         >
                           <SelectTrigger
                             id={`chain-input-${step.id}`}
-                            aria-label={`Step ${index + 1} input`}
+                            aria-label={t("promptChainsEditor.stepInput", { index: index + 1 })}
                             className="data-[size=default]:h-9 w-full min-w-0 bg-background"
                           >
                             <InputIcon
@@ -409,7 +424,7 @@ export function PromptChainsEditor({
                         <Menu.Root>
                           <Menu.Trigger
                             disabled={disabled}
-                            aria-label={`Step ${index + 1} actions`}
+                            aria-label={t("promptChainsEditor.stepActions", { index: index + 1 })}
                             render={
                               <Button
                                 variant="ghost"
@@ -424,16 +439,20 @@ export function PromptChainsEditor({
                             <Menu.Positioner align="end" sideOffset={4} className="z-50">
                               <Menu.Popup className={menuClass}>
                                 <Menu.Item
-                                  aria-label={`Move step ${index + 1} up`}
+                                  aria-label={t("promptChainsEditor.moveStepUp", {
+                                    index: index + 1,
+                                  })}
                                   disabled={disabled || index === 0 || !validOrder(move(index, -1))}
                                   onClick={() => update({ steps: move(index, -1) })}
                                   className={menuItemClass}
                                 >
                                   <ArrowUp aria-hidden="true" className="size-4" />
-                                  Move up
+                                  {t("promptChainsEditor.moveUp")}
                                 </Menu.Item>
                                 <Menu.Item
-                                  aria-label={`Move step ${index + 1} down`}
+                                  aria-label={t("promptChainsEditor.moveStepDown", {
+                                    index: index + 1,
+                                  })}
                                   disabled={
                                     disabled ||
                                     index === chain.steps.length - 1 ||
@@ -443,10 +462,12 @@ export function PromptChainsEditor({
                                   className={menuItemClass}
                                 >
                                   <ArrowDown aria-hidden="true" className="size-4" />
-                                  Move down
+                                  {t("promptChainsEditor.moveDown")}
                                 </Menu.Item>
                                 <Menu.Item
-                                  aria-label={`Remove step ${index + 1}`}
+                                  aria-label={t("promptChainsEditor.removeStep", {
+                                    index: index + 1,
+                                  })}
                                   disabled={disabled || chain.steps.length === 1 || referenced}
                                   onClick={() =>
                                     update({
@@ -456,12 +477,11 @@ export function PromptChainsEditor({
                                   className={`${menuItemClass} text-destructive data-highlighted:bg-destructive/10`}
                                 >
                                   <Trash2 aria-hidden="true" className="size-4" />
-                                  Remove step
+                                  {t("promptChainsEditor.removeStep2")}
                                 </Menu.Item>
                                 {referenced && (
                                   <p className="mt-1 max-w-56 border-t px-3 pt-2 pb-1 text-xs leading-5 text-muted-foreground">
-                                    Later steps use this result. Change their input before removing
-                                    this step or moving it after them.
+                                    {t("promptChainsEditor.laterStepsUseThisResultChangeTheir")}
                                   </p>
                                 )}
                               </Menu.Popup>
@@ -484,7 +504,7 @@ export function PromptChainsEditor({
                   }
                 >
                   <Plus aria-hidden="true" className="size-4" />
-                  Add step
+                  {t("promptChainsEditor.addStep")}
                 </Menu.Trigger>
                 <Menu.Portal>
                   <Menu.Positioner align="start" sideOffset={4} className="z-50">
@@ -492,7 +512,7 @@ export function PromptChainsEditor({
                       className={`${menuClass} max-h-80 w-72 max-w-[calc(100vw-2rem)] overflow-y-auto`}
                     >
                       <p className="px-3 py-2 text-xs text-muted-foreground">
-                        Choose a prompt to add
+                        {t("promptChainsEditor.chooseAPromptToAdd")}
                       </p>
                       {promptOptions.map((prompt) => (
                         <Menu.Item
@@ -513,11 +533,11 @@ export function PromptChainsEditor({
               </Menu.Root>
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <p className="text-xs leading-5 text-muted-foreground">
-                  Steps run in order. Every completed result is kept.
+                  {t("promptChainsEditor.stepsRunInOrderEveryCompletedResult")}
                 </p>
                 <Button variant="ghost" size="sm" onClick={() => setHistory(chain)}>
                   <History aria-hidden="true" className="size-3.5" />
-                  Version history
+                  {t("promptsPage.versionHistory")}
                 </Button>
                 <Button
                   variant="ghost"
@@ -526,7 +546,7 @@ export function PromptChainsEditor({
                   onClick={() => setDeleting(true)}
                 >
                   <Trash2 aria-hidden="true" className="size-3.5" />
-                  Delete chain
+                  {t("promptChainsEditor.deleteChain")}
                 </Button>
               </div>
             </div>
@@ -537,7 +557,7 @@ export function PromptChainsEditor({
         <RevisionHistory
           kind="chain"
           itemId={history.id}
-          title="Chain version history"
+          title={t("promptChainsEditor.chainVersionHistory")}
           prompts={config.prompts}
           current={JSON.stringify(chains.find((item) => item.id === history.id) ?? history)}
           onClose={() => setHistory(null)}
@@ -547,7 +567,7 @@ export function PromptChainsEditor({
               (step) => !config.prompts.some((prompt) => prompt.id === step.promptId),
             );
             return missing
-              ? "This version uses a prompt that no longer exists. Restore or recreate that prompt first."
+              ? t("promptChainsEditor.thisVersionUsesAPromptThatNo")
               : validateTextProcessing({
                   ...config,
                   chains: chains.map((item) =>
@@ -570,16 +590,16 @@ export function PromptChainsEditor({
       <Dialog open={deleting} onOpenChange={setDeleting}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Delete this chain?</DialogTitle>
+            <DialogTitle>{t("promptChainsEditor.deleteThisChain")}</DialogTitle>
             <DialogDescription>
-              “{chain?.name}” will be removed. Its prompts and previously generated results are
-              kept.
-              {config.autoPromptId === chain?.id && " Automatic processing will be turned off."}
+              {t("promptChainsEditor.deleteDescription", { name: chain?.name ?? "" })}
+              {config.autoPromptId === chain?.id &&
+                t("promptChainsEditor.automaticProcessingWillBeTurnedOff")}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDeleting(false)}>
-              Cancel
+              {t("common.cancel")}
             </Button>
             <Button
               variant="destructive"
@@ -589,7 +609,7 @@ export function PromptChainsEditor({
                 setDeleting(false);
               }}
             >
-              Delete chain
+              {t("promptChainsEditor.deleteChain")}
             </Button>
           </DialogFooter>
         </DialogContent>

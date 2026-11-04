@@ -1,3 +1,4 @@
+import i18n from "@/i18n";
 import { cn } from "@/lib/utils";
 import { Command as CommandPrimitive } from "cmdk";
 import * as React from "react";
@@ -26,8 +27,8 @@ function Command({ className, ...props }: React.ComponentProps<typeof CommandPri
 }
 
 function CommandDialog({
-  title = "Command Palette",
-  description = "Search for a command to run...",
+  title = i18n.t("command.commandPalette"),
+  description = i18n.t("command.searchForACommandToRun"),
   children,
   className,
   showCloseButton = false,

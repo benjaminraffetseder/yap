@@ -1,3 +1,5 @@
+import { nativeText } from "@/i18n/native-text";
+import { useTranslation } from "react-i18next";
 import { useEffect, useRef, useState } from "react";
 import { Check, Loader2, RefreshCw, Square } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -5,6 +7,7 @@ import { useDictation } from "@/components/dictation-provider";
 import { backend, isBusy, isDesktop, message, type DiagnosticCheck } from "@/lib/backend";
 
 export function DiagnosticsPanel({ disabled = false }: { disabled?: boolean }) {
+  const { t } = useTranslation();
   const { snapshot, run, level } = useDictation();
   const [checks, setChecks] = useState<DiagnosticCheck[]>([]);
   const [checking, setChecking] = useState(false);
@@ -54,12 +57,12 @@ export function DiagnosticsPanel({ disabled = false }: { disabled?: boolean }) {
     <section className="settings-section space-y-5" aria-labelledby="diagnostics-title">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 id="diagnostics-title" className="font-semibold">
-          Dictation diagnostics
+          {t("diagnosticsPanel.dictationDiagnostics")}
         </h2>
         <Button
           variant="outline"
           size="icon"
-          aria-label="Refresh diagnostics"
+          aria-label={t("diagnosticsPanel.refreshDiagnostics")}
           disabled={!isDesktop || checking || busy || pending}
           onClick={() => void refreshChecks()}
         >
@@ -72,9 +75,11 @@ export function DiagnosticsPanel({ disabled = false }: { disabled?: boolean }) {
         <dl className="grid gap-4 @lg/settings:grid-cols-3">
           {checks.map((check) => (
             <div key={check.id} className="min-w-0">
-              <dt className="text-xs font-medium text-muted-foreground">{check.name}</dt>
+              <dt className="text-xs font-medium text-muted-foreground">
+                {nativeText(check.name)}
+              </dt>
               <dd className={`mt-1 break-words text-sm ${check.ready ? "" : "text-destructive"}`}>
-                {check.message}
+                {nativeText(check.message)}
               </dd>
             </div>
           ))}
@@ -87,24 +92,23 @@ export function DiagnosticsPanel({ disabled = false }: { disabled?: boolean }) {
       )}
       {disabled && (
         <p className="text-xs text-muted-foreground">
-          Finish saving settings before testing the changes.
+          {t("diagnosticsPanel.finishSavingSettingsBeforeTestingTheChanges")}
         </p>
       )}
       <p className="text-sm text-muted-foreground">
-        Say a short sentence to verify your saved runtime and model. Test audio is deleted; the
-        preview stays out of History and the clipboard.
+        {t("diagnosticsPanel.sayAShortSentenceToVerifyYour")}
       </p>
       {recording && (
         <div className="space-y-2">
           <meter
-            aria-label="Dictation test microphone level"
+            aria-label={t("diagnosticsPanel.dictationTestMicrophoneLevel")}
             className="h-4 w-full"
             min={0}
             max={1}
             value={level}
           />
           <p role="status" className="text-sm">
-            Say a short sentence, then stop the test. Recording stops after 10 seconds.
+            {t("diagnosticsPanel.sayAShortSentenceThenStopThe")}
           </p>
         </div>
       )}
@@ -126,20 +130,20 @@ export function DiagnosticsPanel({ disabled = false }: { disabled?: boolean }) {
           {recording ? (
             <>
               <Square className="size-4" />
-              Stop dictation test
+              {t("diagnosticsPanel.stopDictationTest")}
             </>
           ) : transcribing ? (
             <>
               <Loader2 className="size-4 animate-spin motion-reduce:animate-none" />
-              Transcribing test…
+              {t("diagnosticsPanel.transcribingTest")}
             </>
           ) : (
-            "Test dictation"
+            t("diagnosticsPanel.testDictation")
           )}
         </Button>
         {(recording || transcribing) && (
           <Button variant="outline" disabled={pending} onClick={() => void act(backend.cancel)}>
-            Cancel test
+            {t("promptsPage.cancelTest")}
           </Button>
         )}
       </div>
@@ -154,13 +158,15 @@ export function DiagnosticsPanel({ disabled = false }: { disabled?: boolean }) {
           </p>
           {result.transcript && (
             <div className="rounded-lg border bg-background p-4">
-              <p className="mb-2 text-xs font-medium text-muted-foreground">Transcript preview</p>
+              <p className="mb-2 text-xs font-medium text-muted-foreground">
+                {t("diagnosticsPanel.transcriptPreview")}
+              </p>
               <p className="whitespace-pre-wrap text-sm leading-7">{result.transcript}</p>
             </div>
           )}
           {result.details && (
             <details className="text-xs text-muted-foreground">
-              <summary className="cursor-pointer">Technical details</summary>
+              <summary className="cursor-pointer">{t("diagnosticsPanel.technicalDetails")}</summary>
               <pre className="mt-3 max-h-48 overflow-auto whitespace-pre-wrap break-all">
                 {result.details}
               </pre>

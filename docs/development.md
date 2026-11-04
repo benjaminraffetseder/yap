@@ -62,6 +62,20 @@ To add a UI component, run `npm run ui:add -- <component>` from `frontend`.
 Use the existing Base UI components and theme rather than introducing another
 component library.
 
+Interface translations use i18next and react-i18next, following the
+[Wails React/TypeScript template](https://github.com/benjaminraffetseder/wails-react-ts-shadcn-template).
+Both entry points initialize `frontend/src/i18n/index.ts`. Add matching keys to
+`frontend/src/i18n/locales/en.json` and `de.json`, and use `useTranslation()` in
+components. The English catalog supplies the TypeScript key definitions. Use
+interpolation and plural forms for counts; format dates and numbers with the
+resolved interface language.
+
+The `desktop-language` preference is stored locally and synchronized between
+webviews. It is independent of the backend's spoken-language setting. Keep
+model IDs, language codes, profile names, transcripts, and saved prompt instructions
+unchanged. Known native status messages are localized at display time through
+`frontend/src/i18n/native-text.ts`; raw backend details remain available.
+
 ## Build files
 
 The tracked files in `build/` are inputs to Wails: the icons, Windows manifest

@@ -1,12 +1,14 @@
+import { useTranslation } from "react-i18next";
 import { ProcessingOptionLabel } from "@/components/processing-option-label";
 import { SelectGroup, SelectItem, SelectLabel, SelectSeparator } from "@/components/ui/select";
 import type { ProcessingOption } from "@/lib/backend";
 import { Fragment } from "react";
 
 export function ProcessingSelectItems({ options }: { options: ProcessingOption[] }) {
+  const { t } = useTranslation();
   const groups = [
-    { label: "Prompts", options: options.filter((option) => !option.isChain) },
-    { label: "Chains", options: options.filter((option) => option.isChain) },
+    { label: t("promptsPage.prompts"), options: options.filter((option) => !option.isChain) },
+    { label: t("promptsPage.chains"), options: options.filter((option) => option.isChain) },
   ].filter((group) => group.options.length > 0);
 
   return groups.map((group, index) => (
@@ -18,7 +20,7 @@ export function ProcessingSelectItems({ options }: { options: ProcessingOption[]
           <SelectItem
             key={option.value}
             value={option.value}
-            aria-description={option.isChain ? "Prompt chain" : undefined}
+            aria-description={option.isChain ? t("dictationProfiles.promptChain") : undefined}
           >
             <ProcessingOptionLabel option={option} />
           </SelectItem>

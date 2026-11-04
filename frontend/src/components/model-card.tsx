@@ -1,3 +1,6 @@
+import { useTranslation } from "react-i18next";
+import { nativeText } from "@/i18n/native-text";
+import { languageName } from "@/lib/languages";
 import { MotionReveal } from "@/components/motion-reveal";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -12,19 +15,20 @@ import { Check, Download, HardDrive, Languages, Loader2, Trash2, X } from "lucid
 import { AnimatePresence, motion } from "motion/react";
 
 function RatingBar({ name, rating }: { name: "Accuracy" | "Speed"; rating: ModelRating }) {
+  useTranslation();
   return (
     <div className="space-y-1.5">
       <div className="flex items-baseline justify-between gap-2 text-[11px]">
-        <span className="text-muted-foreground">{name}</span>
-        <span className="font-medium">{rating.label}</span>
+        <span className="text-muted-foreground">{nativeText(name)}</span>
+        <span className="font-medium">{nativeText(rating.label)}</span>
       </div>
       <div
         role="meter"
-        aria-label={name}
+        aria-label={nativeText(name)}
         aria-valuemin={0}
         aria-valuemax={5}
         aria-valuenow={rating.score}
-        aria-valuetext={rating.label}
+        aria-valuetext={nativeText(rating.label)}
         className="h-1.5 overflow-hidden rounded-full bg-muted"
       >
         <div
@@ -62,6 +66,7 @@ export function ModelCard({
   onRemove,
   onCancelDownload,
 }: ModelCardProps) {
+  const { t } = useTranslation();
   const selected = selectedModelPath === model.path && model.installed;
   const active = !!model.path && selectedModelPath === model.path;
   const repair = model.removable && !model.installed;
@@ -90,7 +95,7 @@ export function ModelCard({
             {model.name}
           </h3>
           <p className="mt-1.5 max-w-xl text-xs leading-5 text-muted-foreground">
-            {profile?.tagline ?? model.description}
+            {nativeText(profile?.tagline ?? model.description)}
           </p>
         </div>
         {profile && (
@@ -121,41 +126,44 @@ export function ModelCard({
                 <TooltipTrigger
                   render={<Badge variant="outline" render={<button type="button" />} />}
                   className="h-6 cursor-help gap-1.5 border-border/80 text-muted-foreground hover:bg-muted"
-                  aria-label={`Supported languages for ${model.name}`}
+                  aria-label={t("modelCard.supportedLanguagesFor", { name: model.name })}
                   data-model-language={model.id}
                   aria-describedby={`model-${model.id}-languages`}
                 >
                   <Languages aria-hidden="true" />
-                  Multilingual
+                  {t("modelCard.multilingual")}
                 </TooltipTrigger>
                 <TooltipContent
                   side="top"
                   align="start"
                   className="block max-w-[min(32rem,calc(100vw-2rem))] px-3.5 py-3 leading-5"
                 >
-                  <p className="mb-1 font-semibold">{profile.languages.length} languages</p>
-                  <p>{profile.languages.join(", ")}</p>
+                  <p className="mb-1 font-semibold">
+                    {t("modelCard.languageCount", { count: profile.languages.length })}
+                  </p>
+                  <p>{profile.languages.map(languageName).join(", ")}</p>
                 </TooltipContent>
               </Tooltip>
             ) : (
               <Badge variant="outline" className="h-6 border-border/80 text-muted-foreground">
-                English only
+                {t("modelCard.englishOnly")}
               </Badge>
             ))}
           <span className="flex items-center gap-1.5">
             <HardDrive className="size-3.5" aria-hidden="true" />
-            <span>{model.diskBytes ? "On disk" : "Download size"}</span>
+            <span>{model.diskBytes ? t("modelCard.onDisk") : t("modelCard.downloadSize")}</span>
             <span className="font-medium text-foreground tabular-nums">{sizeLabel}</span>
           </span>
           {!isDownloading && (model.installed || repair) && (
             <span className="flex items-center gap-1.5">
               {model.installed && <Check className="size-3.5 text-primary" aria-hidden="true" />}
-              {model.installed ? "Downloaded" : "Repair needed"}
+              {model.installed ? t("modelCard.downloaded") : t("modelCard.repairNeeded")}
             </span>
           )}
           {profile && profile.languages.length > 1 && (
             <span id={`model-${model.id}-languages`} className="sr-only">
-              {profile.languages.length} languages: {profile.languages.join(", ")}
+              {t("modelCard.languageCount", { count: profile.languages.length })}:{" "}
+              {profile.languages.map(languageName).join(", ")}
             </span>
           )}
         </div>
@@ -180,14 +188,14 @@ export function ModelCard({
                 {selected ? (
                   <>
                     <Check className="size-4" aria-hidden="true" />
-                    Active
+                    {t("modelsPage.active")}
                   </>
                 ) : model.installed ? (
-                  "Use model"
+                  t("modelCard.useModel")
                 ) : (
                   <>
                     <Download className="size-4" aria-hidden="true" />
-                    {repair ? "Repair & use" : "Download & use"}
+                    {repair ? t("modelCard.repairUse") : t("modelCard.downloadUse")}
                   </>
                 )}
               </Button>
@@ -196,12 +204,12 @@ export function ModelCard({
                   size="icon"
                   variant="ghost"
                   className="size-9 rounded-lg text-muted-foreground hover:text-destructive"
-                  aria-label={`Remove ${model.name}`}
+                  aria-label={t("modelCard.remove", { name: model.name })}
                   disabled={disabled || active}
                   title={
                     active
-                      ? "Switch to another model before removing this one"
-                      : `Remove ${model.name}`
+                      ? t("modelCard.switchToAnotherModelBeforeRemovingThis")
+                      : t("modelCard.remove", { name: model.name })
                   }
                   onClick={onRemove}
                 >
@@ -215,10 +223,10 @@ export function ModelCard({
       {!selected && !isDownloading && (
         <p className="mt-3 text-xs leading-5 text-muted-foreground">
           {model.installed
-            ? "Use model switches your next dictation to this downloaded model."
+            ? t("modelCard.useModelSwitchesYourNextDictationTo")
             : repair
-              ? "Repair & use checks the files, downloads what is needed, then switches to this model."
-              : "Download & use installs this model and its runtime, then switches when ready."}
+              ? t("modelCard.repairUseChecksTheFilesDownloadsWhat")
+              : t("modelCard.downloadUseInstallsThisModelAndIts")}
         </p>
       )}
       <AnimatePresence initial={false} mode="popLayout">
@@ -235,22 +243,22 @@ export function ModelCard({
                   className="size-3.5 animate-spin motion-reduce:animate-none"
                   aria-hidden="true"
                 />
-                Downloading
+                {t("modelsPage.downloading")}
               </span>
               <span className="tabular-nums">{download.percent}%</span>
             </div>
-            <Progress aria-label="Model download progress" value={download.percent} />
+            <Progress aria-label={t("modelCard.modelDownloadProgress")} value={download.percent} />
             <p className="text-xs leading-5 break-words text-muted-foreground">
               {download.message}
             </p>
             <Button
               variant="outline"
               className="h-10 w-full rounded-lg"
-              aria-label="Cancel download"
+              aria-label={t("homePage.cancelDownload")}
               onClick={onCancelDownload}
             >
               <X className="size-3.5" aria-hidden="true" />
-              Cancel download
+              {t("homePage.cancelDownload")}
             </Button>
           </MotionReveal>
         ) : null}

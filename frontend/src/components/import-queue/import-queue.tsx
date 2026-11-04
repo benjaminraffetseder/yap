@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { useDictation } from "@/components/dictation-provider";
 import { Button } from "@/components/ui/button";
 import {
@@ -16,6 +17,7 @@ import { ImportQueueFab } from "./import-queue-fab";
 import { ImportQueueRow } from "./import-queue-row";
 
 export function ImportQueue({ sidebarWidth }: { sidebarWidth: string }) {
+  const { t } = useTranslation();
   const { importQueue: jobs, setImportQueueMinimized, run, refresh } = useDictation();
   const [view, setView] = useState<{
     mode: "hidden" | "open" | "minimized";
@@ -98,10 +100,11 @@ export function ImportQueue({ sidebarWidth }: { sidebarWidth: string }) {
           <DrawerHeader className="flex-row items-center justify-between gap-2 pb-2 text-left">
             <div className="min-w-0">
               <DrawerTitle>
-                Imports · {Math.min(jobs.length, finished + (active ? 1 : 0))} of {jobs.length}
+                {t("importQueue.imports")} {Math.min(jobs.length, finished + (active ? 1 : 0))}{" "}
+                {t("historyPage.of")} {jobs.length}
               </DrawerTitle>
               <DrawerDescription className="sr-only">
-                Audio imports run one at a time and yield to dictation between files.
+                {t("importQueue.audioImportsRunOneAtATime")}
               </DrawerDescription>
             </div>
             <div className="flex items-center gap-1">
@@ -111,12 +114,12 @@ export function ImportQueue({ sidebarWidth }: { sidebarWidth: string }) {
                 disabled={!finished}
                 onClick={() => void run(backend.clearFinishedImports, false)}
               >
-                Clear finished
+                {t("importQueue.clearFinished")}
               </Button>
               <Button
                 variant="ghost"
                 size="icon-sm"
-                aria-label="Minimize import queue"
+                aria-label={t("importQueue.minimizeImportQueue")}
                 onClick={minimize}
               >
                 <ChevronDown className="size-4" />
@@ -132,7 +135,7 @@ export function ImportQueue({ sidebarWidth }: { sidebarWidth: string }) {
             }}
             layoutScroll
             className="min-h-0 overflow-y-auto px-2 pb-2"
-            aria-label="Import files"
+            aria-label={t("importQueue.importFiles")}
           >
             {rows.map((job) => (
               <ImportQueueRow

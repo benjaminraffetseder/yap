@@ -1,3 +1,5 @@
+import i18n from "@/i18n";
+import { useTranslation } from "react-i18next";
 import { useDictation } from "@/components/dictation-provider";
 import { Button } from "@/components/ui/button";
 import {
@@ -15,17 +17,19 @@ import type { ReactNode } from "react";
 const available = (value: number | null | undefined) =>
   value != null && Number.isFinite(value) && value >= 0;
 const count = (value: number | null | undefined) =>
-  available(value) ? value!.toLocaleString() : "Unavailable";
+  available(value)
+    ? value!.toLocaleString(i18n.resolvedLanguage)
+    : i18n.t("inferenceStats.unavailable");
 const elapsed = (ms: number | null | undefined) =>
   !available(ms)
-    ? "Unavailable"
+    ? i18n.t("inferenceStats.unavailable")
     : ms! < 1000
-      ? `${ms!.toLocaleString(undefined, { maximumFractionDigits: 1 })} ms`
-      : `${(ms! / 1000).toLocaleString(undefined, { maximumFractionDigits: 2 })} s`;
+      ? `${ms!.toLocaleString(i18n.resolvedLanguage, { maximumFractionDigits: 1 })} ms`
+      : `${(ms! / 1000).toLocaleString(i18n.resolvedLanguage, { maximumFractionDigits: 2 })} s`;
 const rate = (value: number | null | undefined) =>
   available(value)
-    ? `${value!.toLocaleString(undefined, { maximumFractionDigits: 1 })} tokens/s`
-    : "Unavailable";
+    ? `${value!.toLocaleString(i18n.resolvedLanguage, { maximumFractionDigits: 1 })} tokens/s`
+    : i18n.t("inferenceStats.unavailable");
 
 function Metric({ label, children }: { label: string; children: ReactNode }) {
   return (
@@ -39,6 +43,7 @@ function Metric({ label, children }: { label: string; children: ReactNode }) {
 }
 
 function TextMetrics({ stats }: { stats: TextStats }) {
+  const { t } = useTranslation();
   const responseRate =
     available(stats.outputTokens) && stats.responseMs > 0
       ? (stats.outputTokens! * 1000) / stats.responseMs
@@ -46,29 +51,35 @@ function TextMetrics({ stats }: { stats: TextStats }) {
   return (
     <>
       <dl className="grid grid-cols-2 gap-x-5 gap-y-3 sm:grid-cols-3">
-        <Metric label="Text model">{stats.model}</Metric>
-        <Metric label="LLM time">{elapsed(stats.durationMs)}</Metric>
-        <Metric label="Response rate">{rate(responseRate)}</Metric>
+        <Metric label={t("promptsPage.textModel")}>{stats.model}</Metric>
+        <Metric label={t("inferenceStats.lLMTime")}>{elapsed(stats.durationMs)}</Metric>
+        <Metric label={t("inferenceStats.responseRate")}>{rate(responseRate)}</Metric>
         {available(stats.generationTokensPerSecond) && (
-          <Metric label="Generation speed">{rate(stats.generationTokensPerSecond)}</Metric>
+          <Metric label={t("inferenceStats.generationSpeed")}>
+            {rate(stats.generationTokensPerSecond)}
+          </Metric>
         )}
-        <Metric label="Input tokens">{count(stats.inputTokens)}</Metric>
-        <Metric label="Output tokens">{count(stats.outputTokens)}</Metric>
-        <Metric label="Total tokens">{count(stats.totalTokens)}</Metric>
+        <Metric label={t("inferenceStats.inputTokens")}>{count(stats.inputTokens)}</Metric>
+        <Metric label={t("inferenceStats.outputTokens")}>{count(stats.outputTokens)}</Metric>
+        <Metric label={t("inferenceStats.totalTokens")}>{count(stats.totalTokens)}</Metric>
         {available(stats.cachedInputTokens) && (
-          <Metric label="Cached input tokens">{count(stats.cachedInputTokens)}</Metric>
+          <Metric label={t("inferenceStats.cachedInputTokens")}>
+            {count(stats.cachedInputTokens)}
+          </Metric>
         )}
         {available(stats.reasoningTokens) && (
-          <Metric label="Reasoning tokens">{count(stats.reasoningTokens)}</Metric>
+          <Metric label={t("inferenceStats.reasoningTokens")}>
+            {count(stats.reasoningTokens)}
+          </Metric>
         )}
-        <Metric label="Requests">{count(stats.attempts)}</Metric>
-        {stats.finishReason && <Metric label="Finish reason">{stats.finishReason}</Metric>}
+        <Metric label={t("inferenceStats.requests")}>{count(stats.attempts)}</Metric>
+        {stats.finishReason && (
+          <Metric label={t("inferenceStats.finishReason")}>{stats.finishReason}</Metric>
+        )}
       </dl>
       <p className="mt-3 text-muted-foreground">
-        Response rate is output tokens divided by the full request time, including prompt processing
-        and model loading. Generation speed, when available, is reported by the server.
-        {stats.attempts > 1 &&
-          " LLM time includes retries; token counts and rates describe the final response."}
+        {t("inferenceStats.responseRateIsOutputTokensDividedBy")}
+        {stats.attempts > 1 && t("inferenceStats.lLMTimeIncludesRetriesTokenCountsAndRates")}
       </p>
     </>
   );
@@ -83,6 +94,7 @@ export function InferenceStats({
   outputs?: GeneratedOutput[];
   output?: GeneratedOutput;
 }) {
+  const { t } = useTranslation();
   const { snapshot } = useDictation();
   if (!snapshot.settings.statsForNerds) return null;
   const generated = output ? [output] : outputs;
@@ -97,8 +109,8 @@ export function InferenceStats({
           <Button
             variant="ghost"
             size="icon-sm"
-            aria-label="Stats for Nerds"
-            title="Stats for Nerds"
+            aria-label={t("settingsPage.statsForNerds")}
+            title={t("settingsPage.statsForNerds")}
             className="text-muted-foreground"
           />
         }
@@ -107,55 +119,64 @@ export function InferenceStats({
       </DialogTrigger>
       <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-2xl">
         <DialogHeader className="pr-8 text-left">
-          <DialogTitle>Stats for Nerds</DialogTitle>
+          <DialogTitle>{t("settingsPage.statsForNerds")}</DialogTitle>
           <DialogDescription>
-            Timing, model details, and available token usage for this{" "}
-            {session ? "dictation" : "output"}.
+            {t("inferenceStats.timingModelDetailsAndAvailableTokenUsage")}{" "}
+            {session ? t("historyPage.dictation") : t("inferenceStats.output")}.
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-5 text-xs leading-5">
           {session && (
             <div>
               <dl className="grid grid-cols-2 gap-x-5 gap-y-3 sm:grid-cols-3">
-                <Metric label="Speech model">{session.speechModel}</Metric>
-                <Metric label="Speech engine">{session.stats?.engine ?? "Unavailable"}</Metric>
-                <Metric label="Language setting">
-                  {session.language === "auto" ? "Auto" : session.language}
+                <Metric label={t("common.speechModel")}>{session.speechModel}</Metric>
+                <Metric label={t("inferenceStats.speechEngine")}>
+                  {session.stats?.engine ?? t("inferenceStats.unavailable")}
                 </Metric>
-                <Metric label="Audio length">{elapsed(session.durationMs)}</Metric>
-                <Metric label="Transcription time">
+                <Metric label={t("inferenceStats.languageSetting")}>
+                  {session.language === "auto" ? t("inferenceStats.auto") : session.language}
+                </Metric>
+                <Metric label={t("inferenceStats.audioLength")}>
+                  {elapsed(session.durationMs)}
+                </Metric>
+                <Metric label={t("inferenceStats.transcriptionTime")}>
                   {elapsed(session.stats?.transcriptionMs)}
                 </Metric>
-                <Metric label="Transcription speed">
+                <Metric label={t("inferenceStats.transcriptionSpeed")}>
                   {speed === undefined
-                    ? "Unavailable"
-                    : `${speed.toLocaleString(undefined, { maximumFractionDigits: 1 })}× real time`}
+                    ? t("inferenceStats.unavailable")
+                    : t("inferenceStats.realTime", {
+                        speed: speed.toLocaleString(i18n.resolvedLanguage, {
+                          maximumFractionDigits: 1,
+                        }),
+                      })}
                 </Metric>
-                <Metric label="Transcript words">
+                <Metric label={t("inferenceStats.transcriptWords")}>
                   {session.rawTranscript
                     .trim()
                     .split(/\s+/)
                     .filter(Boolean)
-                    .length.toLocaleString()}
+                    .length.toLocaleString(i18n.resolvedLanguage)}
                 </Metric>
               </dl>
               <p className="mt-3 text-muted-foreground">
-                Transcription time includes speech model loading. Audio preparation and text
-                processing are excluded.
-                {!session.stats && " Timing was not recorded for this dictation."}
+                {t("inferenceStats.transcriptionTimeIncludesSpeechModelLoadingAudio")}
+                {!session.stats && t("inferenceStats.timingWasNotRecordedForThisDictation")}
               </p>
             </div>
           )}
           {generated.map((item) => (
             <div key={item.id} className={session ? "border-t pt-4" : ""}>
               <p className="mb-3 break-words font-medium">
-                {item.chain?.step ? `Step ${item.chain.step}: ` : ""}
+                {item.chain?.step ? t("homeResultPanel.step", { step: item.chain.step }) : ""}
                 {item.prompt.name}
               </p>
               {item.stats ? (
                 <TextMetrics stats={item.stats} />
               ) : (
-                <p className="text-muted-foreground">Stats were not recorded for this output.</p>
+                <p className="text-muted-foreground">
+                  {t("inferenceStats.statsWereNotRecordedForThisOutput")}
+                </p>
               )}
             </div>
           ))}

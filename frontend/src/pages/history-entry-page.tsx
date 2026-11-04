@@ -1,3 +1,6 @@
+import { nativeText } from "@/i18n/native-text";
+import i18n from "@/i18n";
+import { useTranslation } from "react-i18next";
 import { AudioPlayer } from "@/components/audio-player";
 import { useDictation } from "@/components/dictation-provider";
 import { GeneratedOutputs } from "@/components/generated-outputs";
@@ -31,6 +34,7 @@ export function HistoryEntryPage() {
 }
 
 function EntryDetail({ id }: { id: string }) {
+  const { t } = useTranslation();
   const { snapshot, loading: connecting, run, refresh } = useDictation();
   const navigate = useNavigate();
   const location = useLocation();
@@ -128,11 +132,11 @@ function EntryDetail({ id }: { id: string }) {
           <div className="flex min-w-0 flex-[1_1_16rem] items-start gap-3">
             <Link
               to={back}
-              title="Back to History"
+              title={t("historyEntryPage.backToHistory")}
               className="mt-0.5 inline-flex size-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
             >
               <ArrowLeft aria-hidden="true" className="size-4" />
-              <span className="sr-only">Back to History</span>
+              <span className="sr-only">{t("historyEntryPage.backToHistory")}</span>
             </Link>
             <div className="min-w-0">
               <h1
@@ -140,11 +144,11 @@ function EntryDetail({ id }: { id: string }) {
                 tabIndex={-1}
                 className="text-xl font-semibold tracking-tight outline-none"
               >
-                Dictation
+                {t("historyEntryPage.dictation")}
               </h1>
               {entry && (
                 <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-muted-foreground sm:text-xs">
-                  <span>{new Date(entry.createdAt).toLocaleString()}</span>
+                  <span>{new Date(entry.createdAt).toLocaleString(i18n.resolvedLanguage)}</span>
                   <span aria-hidden="true" className="text-border">
                     ·
                   </span>
@@ -169,7 +173,7 @@ function EntryDetail({ id }: { id: string }) {
                       ) : (
                         <AudioLines className="size-3" />
                       )}
-                      Play recording
+                      {t("historyEntryPage.playRecording")}
                     </Button>
                   )}
                 </div>
@@ -182,7 +186,7 @@ function EntryDetail({ id }: { id: string }) {
               <Button
                 size="sm"
                 variant="outline"
-                aria-label="Edit transcript"
+                aria-label={t("historyEntryPage.editTranscript")}
                 disabled={unavailable}
                 onClick={(event) => {
                   editTrigger.current = event.currentTarget;
@@ -190,24 +194,29 @@ function EntryDetail({ id }: { id: string }) {
                 }}
               >
                 <Pencil className="size-3.5" />
-                Edit<span className="hidden sm:inline"> transcript</span>
+                {t("common.edit")}
+                <span className="hidden sm:inline"> {t("historyEntryPage.transcript")}</span>
               </Button>
               <Button
                 size="sm"
                 variant="ghost"
                 className="text-muted-foreground"
-                aria-label={changed ? "Export result" : "Export transcription"}
+                aria-label={
+                  changed
+                    ? t("historyEntryPage.exportResult")
+                    : t("historyEntryPage.exportTranscription")
+                }
                 disabled={unavailable}
                 onClick={() => void run(() => backend.export(id), false)}
               >
                 <Download className="size-3.5" />
-                Export
+                {t("historyEntryPage.export")}
               </Button>
               <Button
                 size="icon-sm"
                 variant="ghost"
-                aria-label="Delete"
-                title="Delete dictation"
+                aria-label={t("common.delete")}
+                title={t("historyEntryPage.deleteDictation")}
                 disabled={unavailable}
                 className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
                 onClick={() => void remove()}
@@ -225,21 +234,23 @@ function EntryDetail({ id }: { id: string }) {
       )}
       {loading && (
         <p role="status" className="text-sm text-muted-foreground">
-          Loading dictation…
+          {t("historyEntryPage.loadingDictation")}
         </p>
       )}
       {error && (
         <div role="alert" className="flex flex-wrap items-center gap-3 text-sm text-destructive">
-          {error}
+          {nativeText(error)}
           <Button size="sm" variant="outline" onClick={() => setReload((old) => old + 1)}>
-            Retry
+            {t("common.retry")}
           </Button>
         </div>
       )}
       {!loading && !error && !entry && (
         <section className="space-y-2 rounded-xl border border-dashed p-6">
-          <h2 className="text-sm font-semibold">Dictation not found</h2>
-          <p className="text-sm text-muted-foreground">It may have been deleted from History.</p>
+          <h2 className="text-sm font-semibold">{t("historyEntryPage.dictationNotFound")}</h2>
+          <p className="text-sm text-muted-foreground">
+            {t("historyEntryPage.itMayHaveBeenDeletedFromHistory")}
+          </p>
         </section>
       )}
       {entry && (
@@ -252,7 +263,7 @@ function EntryDetail({ id }: { id: string }) {
           <div className="sticky top-0 z-10 overflow-x-auto border-b bg-background pb-1">
             <TabsList
               variant="line"
-              aria-label="Dictation contents"
+              aria-label={t("historyEntryPage.dictationContents")}
               className="group-data-[orientation=horizontal]/tabs:h-10"
             >
               <TabsTrigger
@@ -260,21 +271,21 @@ function EntryDetail({ id }: { id: string }) {
                 className="px-2 text-xs data-active:text-primary after:bg-primary sm:px-3 sm:text-sm"
               >
                 <FileText className="hidden size-4 sm:block" aria-hidden="true" />
-                Transcription
+                {t("historyEntryPage.transcription")}
               </TabsTrigger>
               <TabsTrigger
                 value="original"
                 className="px-2 text-xs data-active:text-primary after:bg-primary sm:px-3 sm:text-sm"
               >
                 <AudioLines className="hidden size-4 sm:block" aria-hidden="true" />
-                Original
+                {t("historyEntryPage.original")}
               </TabsTrigger>
               <TabsTrigger
                 value="outputs"
                 className="px-2 text-xs data-active:text-primary after:bg-primary sm:px-3 sm:text-sm"
               >
                 <Sparkles className="hidden size-4 sm:block" aria-hidden="true" />
-                Outputs
+                {t("historyEntryPage.outputs")}
               </TabsTrigger>
               {changed && (
                 <TabsTrigger
@@ -282,17 +293,22 @@ function EntryDetail({ id }: { id: string }) {
                   className="px-2 text-xs data-active:text-primary after:bg-primary sm:px-3 sm:text-sm"
                 >
                   <GitCompareArrows className="hidden size-4 sm:block" aria-hidden="true" />
-                  Changes
+                  {t("historyEntryPage.changes")}
                 </TabsTrigger>
               )}
             </TabsList>
           </div>
           <TabsContent value="transcription" keepMounted>
             <TextPanel
-              title={changed ? "Result" : "Transcription"}
+              title={changed ? t("historyEntryPage.result") : t("historyEntryPage.transcription")}
               variant="reading"
               kind={changed ? "result" : "source"}
-              description={`${text.trim().split(/\s+/).filter(Boolean).length} words · ${changed ? "Edited or processed text" : "Saved transcription"}`}
+              description={t("historyEntryPage.wordCount", {
+                count: text.trim().split(/\s+/).filter(Boolean).length,
+                type: changed
+                  ? t("historyEntryPage.editedOrProcessedText")
+                  : t("historyEntryPage.savedTranscription"),
+              })}
               action={
                 <Button
                   size="sm"
@@ -301,7 +317,9 @@ function EntryDetail({ id }: { id: string }) {
                   onClick={() => void run(() => backend.copy(text), false)}
                 >
                   <Copy className="size-3.5" />
-                  {changed ? "Copy result" : "Copy transcription"}
+                  {changed
+                    ? t("historyEntryPage.copyResult")
+                    : t("historyEntryPage.copyTranscription")}
                 </Button>
               }
             >
@@ -310,10 +328,10 @@ function EntryDetail({ id }: { id: string }) {
           </TabsContent>
           <TabsContent value="original" keepMounted>
             <TextPanel
-              title="Original transcription"
+              title={t("historyEntryPage.originalTranscription")}
               variant="reading"
               kind="source"
-              description="From the recording · Read only"
+              description={t("historyEntryPage.fromTheRecordingReadOnly")}
               action={
                 <Button
                   size="sm"
@@ -322,7 +340,7 @@ function EntryDetail({ id }: { id: string }) {
                   onClick={() => void run(() => backend.copy(entry.rawTranscript), false)}
                 >
                   <Copy className="size-3.5" />
-                  Copy original
+                  {t("historyEntryPage.copyOriginal")}
                 </Button>
               }
             >
@@ -337,10 +355,12 @@ function EntryDetail({ id }: { id: string }) {
           {changed && (
             <TabsContent value="changes" keepMounted>
               <TextPanel
-                title="Changes"
+                title={t("historyEntryPage.changes")}
                 kind="result"
                 variant="reading"
-                description="Original recording → Current transcription · Text comparison"
+                description={t(
+                  "historyEntryPage.originalRecordingCurrentTranscriptionTextComparison",
+                )}
               >
                 <TranscriptDiff before={entry.rawTranscript} after={text} />
               </TextPanel>
