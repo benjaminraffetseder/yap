@@ -11,6 +11,11 @@ If focus has moved or paste is blocked, retrieve the result in Yap and paste it
 manually. Yap reports a sent paste request without confirming insertion by the app.
 Recording from Yap's microphone button or tray menu copies without pasting.
 
+On Dictate, **Recording options** contains the profile, speech model, and
+**Save to history** controls. **History off** stays visible beside it when saving
+is disabled. Changing the history preference during recording applies to the next
+dictation or import.
+
 Under **Settings → Dictation → Text & delivery**, **Copy automatically to
 clipboard** is enabled by default. Turn it off to keep completed
 dictation in History without changing the clipboard. Automatic paste also pauses
@@ -23,7 +28,12 @@ Copying there checks that the result is still current and never pastes into anot
 app. Cancelled automatic processing leaves the speech transcript available.
 
 Home shows the latest saved or temporary result with **Copy** and **Edit result**.
-The editor applies changes only when you submit; Cancel keeps the existing result.
+The inline editor applies changes only when you choose **Apply changes**;
+**Cancel** discards the draft and keeps the existing result. Unapplied drafts survive
+navigation within the app session: return to Home and reopen **Edit result** to resume
+while the same result and revision are current. A draft is not reused for a replacement
+result. If the result changes while its editor is open, the draft stays visible but
+cannot overwrite the newer result.
 Saved edits update History, preserving original recognition and generated outputs.
 Temporary edits stay in memory until you choose **Save to History**. A failed initial
 History save also keeps recognized text available for explicit saving or copying.
@@ -46,10 +56,13 @@ saved combination intact. On macOS, grant Accessibility access before retrying.
 
 ### Choosing a speech model
 
-Models shows your current model and the full catalog. **Help me choose** opens
-optional language and task guidance; these choices do not change your settings.
-**Show model** takes you to the suggested model's existing download or use action.
-Ratings are qualitative guides, and changing models remains an explicit choice.
+Models opens on **Downloaded** when you already have an installed model. Choose
+**All models** to browse the full catalog, or search by model name or language.
+Select a model's language count to search its supported languages.
+**Help me choose** opens optional language and task guidance; choosing guidance
+options does not change your settings. Use **Download & use** or **Use model** to
+apply the suggestion, or **Show model** to find it in the catalog. Speed and accuracy
+are qualitative guides, and changing models remains an explicit choice.
 
 ### Dictation profiles
 
@@ -57,9 +70,10 @@ Under **Settings → Profiles**, choose **New profile** to
 start from your saved settings. Name it, then choose its speech model, spoken
 language, light cleanup, and optional **After dictation** prompt. Changes save
 automatically once a name and model are present; choose **Done** to close the editor.
-Choose **Use** or select it in the **Profile** menu on Dictate to activate it. You can save
-up to 20 additional profiles and edit or delete them from Settings. Yap creates
-and selects **Default** from your setup choices or existing saved settings.
+Choose **Make active** or select it under **Recording options → Profile** on Dictate
+to activate it. You can save up to 20 additional profiles and edit or delete them
+from Settings. Yap creates and selects **Default** from your setup choices or
+existing saved settings.
 Default stays available and can be edited, but cannot be renamed or deleted.
 
 Saving a profile does not activate it. Switching applies all its choices together
@@ -72,10 +86,11 @@ failed switches leave the previous settings in place.
 Automatic prompts use the shared local text model configured in Prompts. A profile
 with **No automatic processing** clears the automatic prompt while keeping that
 model available for manual use. Changing a profile's speech model, language,
-cleanup, or automatic prompt keeps its name selected. On Home, **Modified** opens
-a menu: **Restore saved choices** reapplies the saved profile; **Update profile…**
-reviews replacing its four saved choices; **Save as new…** saves the current choices
-under a unique name after explicit submission. Saving a new profile does not
+cleanup, or automatic prompt keeps its name selected. On Home, open **Recording
+options**, then **Modified** to show the available actions. **Restore saved choices**
+reapplies the saved profile; **Update profile…** reviews replacing its four saved
+choices; **Save as new…** saves the current choices under a unique name after explicit
+submission. Saving a new profile does not
 activate it or copy app assignments. Cancel or Escape before submission writes
 nothing. Settings keeps its existing modified icon and profile editor.
 The speech-model, language, light-cleanup, and **Run after dictation** controls also
@@ -85,16 +100,24 @@ profile value, and the current value. Edits that aren't saved yet are identified
 the tooltip. Matching the profile value removes the icon.
 Microphone, shortcut, and history changes do not mark it modified. Saved profiles
 are kept intact until you update them. You can also select a profile again (or
-choose **Use** in Settings) to restore its saved choices.
+choose **Make active** in Settings) to restore its saved choices.
 Deleting a selected profile keeps your current settings, selects Default, and
 marks it modified when those settings differ. Profiles persist locally across app restarts
 and are not included in portable backups because they reference this computer's
 speech-model paths.
 
+### Settings and drafts
+
+Settings opens as a dialog over your current page. Its search finds controls across
+categories; selecting a result opens the category and focuses the matching control.
+Close the dialog to return to the page you were using.
+
 Settings save automatically. Toggles and menus save right away; typed fields such
 as shortcuts and file paths save when you leave the field or press Enter. If a save
-fails, Settings keeps your edit and offers **Retry** or **Discard changes**. Turning on
-automatic history deletion still asks for confirmation first.
+fails, Settings keeps your edit and offers **Retry** or **Discard**. **Error details**
+opens a reader for the full failure message. Failed drafts also survive closing and
+reopening Settings during the app session. Turning on automatic history deletion
+still asks for confirmation first.
 
 Prompts, chains, the text model, and Vocabulary save automatically after a short
 pause, including while you type instructions. Valid edits also save when you leave
@@ -153,14 +176,14 @@ shortcut, choose another; the microphone button still works.
 Closing the window hides Yap to the tray or Mac menu bar. Use **Open Yap** to
 bring it back and **Quit Yap** to exit.
 
-**Launch at login** and **Start in tray / menu bar** are under Settings → Startup.
+**Launch at login** and **Start in tray / menu bar** are under **Settings → General → Startup**.
 Both are off by default. They apply to packaged builds; development builds stay
 visible and don't register for startup. If you move the app, open it from its new
 location and turn **Launch at login** off and on again.
 
 ## History and vocabulary
 
-History lets you search original and edited text, open a dictation, and copy or
+History lets you search titles, original and edited text, open a dictation, and copy or
 export it. Select entries to export or delete several at once. Deletion moves
 dictations to **History → Recently Deleted** immediately, with an **Undo** toast.
 Restore them individually or in a selection for 30 days, or choose **Delete
@@ -169,6 +192,16 @@ removes a selection. Permanent deletion cannot be undone. Transcripts, edits,
 retained audio, and generated outputs stay together during that window. After
 30 days, Yap permanently removes them during cleanup, including on its next
 launch if it was closed. Recently Deleted is excluded from portable backups.
+
+Use the pencil button on a History row or beside an open dictation's heading to
+**Rename dictation**. Enter a title of up to 80 characters and choose **Save title**;
+leave it blank to use the transcript preview instead. Titles do not change transcripts
+or audio, and are included in exports and backups.
+
+When a text model is enabled and configured, **Generate title** is available as a
+sparkle button beside the title input. It uses the saved transcript to suggest a
+name. You can cancel generation with the square button, edit the suggestion, or
+discard it. The title is saved only when you choose **Save title**.
 
 When an entry has retained audio, **Play recording** opens the recording player.
 Use its play/pause button, seek bar, playback speed, mute and volume controls.
@@ -183,19 +216,21 @@ source in **Edit transcript**. Copy and export keep the source text and formatti
 markers so you can reuse them elsewhere.
 
 **Edit transcript** changes the saved result while keeping the original
-transcription. Edits save after a short pause; **Done** and Escape also save before
-closing. Empty text is never saved. Ctrl/Cmd+Enter saves immediately and keeps the
-editor open. To reuse a corrected spelling, select a name or phrase and choose
-**Add to vocabulary**; the transcript continues to save automatically.
+transcription. It opens an inline editor; **Compare with original** shows a read-only
+reference alongside the draft where space allows. Edits save after a short pause;
+**Done** or Escape in the text field also saves before closing. Empty text is never
+saved. Ctrl/Cmd+Enter saves immediately and keeps the editor open. To reuse a
+corrected spelling, select a name or phrase and choose **Add to vocabulary**;
+the transcript continues to save automatically.
 
 Vocabulary entries have a preferred spelling and optional aliases. For example,
 `postgres` can map to `PostgreSQL`. Matching uses whole words or phrases, not
 fuzzy matching. Vocabulary also gives Whisper and Moonshine V2 recognition hints, but it won't
 guarantee a particular transcription. The limit is 100 terms, with ten aliases each.
 
-**Light cleanup**, under Settings → Text processing, tidies spacing, capitalization,
-punctuation, and common English/German filler words. It uses local rules and is
-off by default. It doesn't need a text model or change older transcripts.
+**Light cleanup**, under **Settings → Dictation → Text & delivery**, tidies spacing,
+capitalization, punctuation, and common English/German filler words. It uses local
+rules and is off by default. It doesn't need a text model or change older transcripts.
 
 ## Importing audio
 
@@ -237,8 +272,9 @@ See [Audio support](audio-support.md) for manual setup and download details.
 Text processing is optional. It needs a running model server on your computer;
 Yap doesn't install the server or load a GGUF file itself.
 
-In **Prompts → Text model**, select a server and model, enable LLM processing, wait
-until the changes are saved, and choose **Test model**. The presets use these base URLs:
+In **Prompts → Text model**, select a server and model, turn on **Enable text
+processing**, wait until the changes are saved, and choose **Test model**. The presets
+use these base URLs:
 
 | Server       | URL                         |
 | ------------ | --------------------------- |
@@ -260,10 +296,14 @@ if you want to keep it; applied instructions save automatically.
 
 There are three ways to process text:
 
-- **Generated outputs** on a dictation page saves separate versions using a prompt
-  or a saved chain. A single prompt uses the saved transcript. Each output keeps
-  its input, instructions, and model details.
-  **Regenerate** uses that saved input and prompt with your current model.
+- The **Outputs** tab on a dictation page saves separate versions using a prompt
+  or a saved chain. Choose **New output** if outputs already exist, select an
+  **Output prompt**, then choose **Generate** or **Run chain**. A single prompt uses
+  the saved transcript. Use the output picker above the text to switch versions;
+  **Source & prompt** shows their captured input, instructions, and model details.
+  **Regenerate** uses that saved input and prompt with your current model. Opening
+  **Edit transcript** leaves generation running. Leaving the dictation page cancels
+  an unfinished generation request; completed outputs remain saved.
 - **Process text** in the transcript editor previews a result from your draft.
   Choose **Replace draft** to apply the result; it saves automatically.
 - **Run after dictation**, inside a prompt's details, runs that prompt before
@@ -292,8 +332,9 @@ Open a step's actions menu to move or remove it. Change dependent inputs before
 removing a step. Valid chain changes save automatically.
 There can be up to 30 chains, each containing 1–10 steps.
 
-To run a chain manually, open a dictation's **Outputs** tab, choose the chain in
-the prompt picker, and select **Run chain**. To run it automatically, turn on
+To run a chain manually, open a dictation's **Outputs** tab, choose **New output**
+if the composer is closed, then choose the chain in the prompt picker and select
+**Run chain**. To run it automatically, turn on
 **Run chain after dictation** in its details, or choose it under **After dictation**
 in a dictation profile. All steps use the shared local text model. Automatic
 execution copies or pastes only the last step after the entire chain succeeds.
@@ -301,7 +342,7 @@ execution copies or pastes only the last step after the entire chain succeeds.
 Each completed step is saved immediately as a separate output with its chain,
 step number, exact input, prompt, and model. A failed or cancelled step stops the
 chain and keeps completed results. With **Save to history** off, results remain
-temporary on Home; expand **Completed chain steps** to inspect or copy them.
+temporary on Home; select its **Outputs** tab to inspect or copy completed steps.
 **Save to history** saves the transcript and all completed steps together.
 
 Regenerating an individual output creates a separate version from its captured
@@ -323,8 +364,8 @@ remain available when text processing is disabled.
 ### Version history
 
 Open **Version history** from a prompt's **More prompt actions** menu, a chain's
-actions, the Vocabulary header, or the transcript editor beside **Original** and
-**Changes**. Select a version to preview it, then choose **Restore version** to
+actions, the Vocabulary header, or **Tools → Version history** in the transcript
+editor. Select a version to preview it, then choose **Restore version** to
 load it into the draft. Restored content saves automatically. Transcript and prompt
 previews also show a text comparison. A chain cannot be restored if one of its
 steps refers to a prompt that no longer exists.
@@ -337,11 +378,12 @@ The original transcription remains available separately. Transcript versions sta
 with dictations in Recently Deleted and are removed on permanent deletion.
 Version history stays on this computer and is excluded from portable backups.
 
-## Stats for Nerds
+## Performance statistics
 
-Enable **Settings → Advanced → Stats for Nerds** to show a stats icon button
-on the latest Home result, in a dictation's History header, and beside each
-generated output's Copy button. Select it to open performance details in a dialog.
+Enable **Settings → Advanced → Performance statistics** to show a stats icon button
+on the latest Home result and in a dictation's History header. For a generated
+output, expand **Source & prompt** to find it. Select the icon to open performance
+details in a dialog.
 The setting is off by default.
 
 New dictations retain transcription time, speech engine, model, audio length,
@@ -364,8 +406,8 @@ configuration folder: `%APPDATA%\yap` on Windows or
 `~/Library/Application Support/yap` on macOS.
 
 Audio retention is off by default. History retention defaults to **Keep forever**;
-you can choose 7, 30, or 90 days under Settings → History & storage. Cleanup runs
-when you save that setting, start Yap, finish a dictation, and hourly while Yap
+you can choose 7, 30, or 90 days under **Settings → History & data → History retention**.
+Cleanup runs when you save that setting, start Yap, finish a dictation, and hourly while Yap
 is running. This policy permanently removes expired active entries; manually
 deleted dictations keep their separate 30-day recovery window. Turning retention
 off doesn't recover entries already removed by the policy, so export anything
@@ -375,8 +417,9 @@ In Models, switch away from a model before removing it. Yap only removes managed
 downloads, not custom files. **Repair & use** replaces a damaged model;
 **Check & repair runtime** checks the managed Windows runtime.
 
-Settings → Backup & restore exports a `.yap-backup.zip` with history, edited
-text, generated outputs, prompts, chains, vocabulary, and portable preferences.
+**Settings → History & data → Backup & restore** exports a `.yap-backup.zip` with
+history, titles, edited text, generated outputs, prompts, chains, vocabulary, and
+portable preferences.
 **Include retained recordings** is off by default. Models and runtimes aren't
 included. Save backups outside Yap's data folder and keep them private: they
 are unencrypted.
@@ -390,7 +433,8 @@ Backups wait until pending settings edits finish saving.
 ## When something goes wrong
 
 - **No microphone input:** check OS permission and the saved input device.
-  **Settings → Run setup** lets you repeat the microphone and shortcut checks.
+  **Settings → Advanced → Setup → Run setup** lets you repeat the microphone and
+  shortcut checks.
 - **Transcription fails:** run **Dictation diagnostics** under Settings → Advanced.
   It records a short test and shows runtime errors without saving to History or
   changing the clipboard. Technical details can help with a bug report.

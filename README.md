@@ -15,12 +15,12 @@ Linux support is incomplete.
 
 - Hold-to-talk or toggle recording with a global shortcut.
 - Dictate in the background, with tray controls and a floating indicator.
-- Search, edit, copy, and export past transcripts.
+- Search, name, edit, copy, and export past transcripts.
 - Add names and preferred spellings to a custom vocabulary.
 - Switch dictation profiles with saved speech-model, language, cleanup, and prompt choices.
 - Choose profiles automatically per app, or cycle them with a global shortcut.
 - Transcribe audio files, including WAV, MP3, and M4A.
-- Run cleanup or custom prompts through an optional local text model.
+- Use an optional local text model for cleanup, custom prompts, and title suggestions.
 - Save prompt chains with a chosen input for each step and keep intermediate results.
 - Back up history, prompts, vocabulary, and saved recordings.
 - Use the interface in English or German.
@@ -44,10 +44,12 @@ The first model download needs internet. Yap downloads and verifies the model's
 native runtime automatically; no Python installation is needed. Dictation works offline after that.
 You can also record with the microphone button in Yap; this copies the result
 without pasting into another app.
+On Dictate, **Recording options** groups the profile, speech model, and history-saving
+controls. The latest result stays below the recorder for reading, copying, and editing.
 
 Closing the window leaves Yap running in the tray. Choose **Quit Yap** from the
 tray menu to exit. Settings lets you change the shortcut, microphone, recording
-mode, and startup behavior.
+mode, and startup behavior. Search within Settings to find a control across its categories.
 
 The interface follows your system language when English or German is available,
 and otherwise uses English. Change it in **Settings → General → Interface language**.
@@ -69,8 +71,8 @@ upload audio. Models and optional audio support download only when requested.
 Windows release builds check public GitHub release metadata at startup, at most
 once per day. Update checks send no audio, transcripts, or app settings.
 
-History is saved locally by default. Turn **Save to history** off on Home, in
-**Settings → History & data**, or in the tray menu for temporary dictation.
+History is saved locally by default. Turn **Save to history** off in Home's
+**Recording options**, **Settings → History & data**, or the tray menu for temporary dictation.
 The choice persists and applies to the next recording or audio import. Unsaved
 results stay in memory until the next dictation or app exit; Home offers **Copy**,
 **Save to history**, and **Dismiss**. This also covers recovery after text processing

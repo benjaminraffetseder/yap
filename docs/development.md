@@ -76,6 +76,19 @@ model IDs, language codes, profile names, transcripts, and saved prompt instruct
 unchanged. Known native status messages are localized at display time through
 `frontend/src/i18n/native-text.ts`; raw backend details remain available.
 
+### UI state and asynchronous actions
+
+`DraftProvider` keeps unsaved edits in memory across navigation. Home result edits
+require **Apply changes**; the History transcript editor saves automatically.
+Home drafts belong to a session ID and result revision: preserve a draft when
+returning to the same result, and do not apply it to a replacement result. Cancel
+discards the Home draft; a successful Apply must leave it clean.
+
+Keep output-generation requests mounted while the inline transcript editor is
+open. Hiding the detail tabs preserves their request owner; unmounting it cancels
+the request. Copy confirmation must also belong to the text version that started
+the request, so a late reply cannot confirm a different tab's text.
+
 ## Build files
 
 The tracked files in `build/` are inputs to Wails: the icons, Windows manifest
@@ -105,6 +118,10 @@ npm run test:ui
 The browser tests use the real Wails v3 runtime with an in-memory test transport
 (`tests/wails-mock.ts`) and a separate Vite cache, so they
 can run alongside `wails3 dev`.
+They cover draft navigation, stale-result checks, output/chain continuity while
+editing, and delayed clipboard replies. They do not prove native microphone,
+global-shortcut, paste, or live-model behavior. For animated UI assertions, poll
+the expected end state instead of assuming two animation frames finish a transition.
 
 Native and download tests are opt-in. Run them from the repo root on Windows:
 
