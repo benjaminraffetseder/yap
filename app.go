@@ -109,6 +109,7 @@ type App struct {
 	textConfig                       textmodel.Config
 	recordTextConfig                 textmodel.Config
 	textEngine                       textmodel.Engine
+	chatVoice                        *chatVoiceCapture
 	textJobID                        string
 	cancelledTextRequests            map[string]time.Time
 	textCancel                       context.CancelFunc
@@ -1192,6 +1193,10 @@ func (a *App) CopyText(text string) error { return a.copyText(text) }
 func (a *App) SaveTranscript(id, text string) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	return a.saveTranscriptLocked(id, text)
+}
+
+func (a *App) saveTranscriptLocked(id, text string) error {
 	if err := a.historyAvailableLocked(); err != nil {
 		return err
 	}

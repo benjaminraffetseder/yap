@@ -324,6 +324,50 @@ There are three ways to process text:
   If processing fails or is cancelled, the speech transcript stays
   in History, but nothing is copied or pasted.
 
+### Chat with a transcription
+
+Open a saved transcription and choose **Chat**. It opens a floating pane, like
+Activity, without resizing the transcription. Minimize it to reach content behind
+it; opening Activity minimizes chat. The source picker in the compact header
+chooses the saved or original transcription. Chat uses the local model configured
+in **Prompts**. Ask questions, find passages,
+or refine a draft with follow-up messages. Enter sends a message; Shift+Enter adds
+a new line. **Stop** keeps the interrupted reply, and **Retry reply** tries that
+question again. Leaving the transcription stops an unfinished reply; closing just
+the chat panel leaves it running.
+
+Use the microphone icon to record a message with your configured local speech
+model. Choose **Transcribe voice message** to place it in the composer, where you
+can edit it before sending. Existing typed text is preserved. The discard icon,
+minimizing chat, or leaving the page cancels a voice recording. Voice input does
+not create a History entry, paste text elsewhere, or retain its audio. Recordings
+stop automatically after two minutes.
+
+New replies use the latest saved transcription by default. **Source for new
+replies** also offers the original recognition. Each turn keeps its source
+snapshot, so editing the transcript does not change earlier answers or their
+references. Click a passage reference to scroll to and highlight its source text.
+Changed or ambiguous passages are flagged instead of highlighting different text.
+Select a passage in the transcription and choose **Ask about selection** to attach
+it to your next message. Saved outputs offer **Discuss in chat** in their actions.
+
+**Copy reply** copies an answer without citation markers. **Save as output** keeps
+it in Outputs with clickable source references. The references keep their source
+snapshot even after clearing chat and are included in backups. Older chat Outputs
+with numbered citation markers also support references. Continue in chat to refine these outputs rather than regenerating
+them from a saved prompt. **Review rewrite** shows a comparison before applying
+a reply. A selected-passage rewrite preserves the surrounding text; other rewrites
+replace the saved transcription. Finish an open transcript edit before applying
+a chat rewrite. The original transcription and revision history are preserved.
+
+Conversations save locally with their transcriptions and are included in backups.
+Undoing a transcription deletion restores its chat; permanent deletion removes
+both. **Clear chat** removes the conversation while keeping the transcription and
+saved outputs. Older conversation context is summarized automatically for the
+model while the full visible conversation remains saved. The transcript itself
+is supplied in full: if it exceeds the model's context window, use a larger
+context window or a shorter transcript.
+
 ### Prompt chains
 
 Open **Prompts → Chains → Add chain**, give it a name, then select **Add step**

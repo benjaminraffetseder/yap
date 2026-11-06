@@ -1,3 +1,4 @@
+import { ChatCitationContent } from "@/components/chat-citation-content";
 import { CopyButton } from "@/components/copy-button";
 import { useDictation } from "@/components/dictation-provider";
 import { InferenceStats } from "@/components/inference-stats";
@@ -25,12 +26,20 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import i18n from "@/i18n";
 import { nativeText } from "@/i18n/native-text";
-import { backend, isBusy, message, processingOptions, type GeneratedOutput } from "@/lib/backend";
+import {
+  backend,
+  isBusy,
+  message,
+  processingOptions,
+  type ChatReference,
+  type GeneratedOutput,
+} from "@/lib/backend";
 import { useTextRequest } from "@/lib/use-text-request";
 import {
   Download,
   FileText,
   Loader2,
+  MessageSquare,
   Plus,
   RefreshCw,
   Sparkles,
@@ -45,9 +54,13 @@ import { Link } from "react-router";
 export function GeneratedOutputs({
   sessionID,
   unavailable,
+  onDiscuss,
+  onReveal,
 }: {
   sessionID: string;
   unavailable: boolean;
+  onDiscuss?: (output: GeneratedOutput) => void;
+  onReveal?: (output: GeneratedOutput, references: ChatReference[]) => void;
 }) {
   const { t } = useTranslation();
   const { snapshot } = useDictation();
@@ -151,7 +164,7 @@ export function GeneratedOutputs({
     ? outputs.find((item) => item.id === output.chain?.sourceOutputId)
     : undefined;
   const sourceLabel =
-    output?.chain?.input === "original"
+    output?.citations?.source === "original" || output?.chain?.input === "original"
       ? t("historyEntryPage.originalTranscription")
       : output?.chain && output.chain.input !== "transcript"
         ? sourceOutput
@@ -423,11 +436,11 @@ export function GeneratedOutputs({
                       size="icon-sm"
                       variant="ghost"
                       className="text-muted-foreground hover:text-foreground"
-                      disabled={!canGenerate}
+                      disabled={!canGenerate || output.prompt.id === "chat"}
                     />
                   }
                   aria-label={t("generatedOutputs.regenerate")}
-                  disabled={!canGenerate}
+                  disabled={!canGenerate || output.prompt.id === "chat"}
                   onClick={() =>
                     void generate((id) => backend.regenerateOutput(id, sessionID, output.id))
                   }
@@ -441,6 +454,12 @@ export function GeneratedOutputs({
                 label={t("uiPolish.outputActions")}
                 disabled={disabled}
               >
+                {onDiscuss && (
+                  <ActionMenuItem disabled={disabled} onClick={() => onDiscuss(output)}>
+                    <MessageSquare aria-hidden="true" />
+                    {t("chat.discussOutput")}
+                  </ActionMenuItem>
+                )}
                 <ActionMenuItem disabled={disabled} onClick={() => setExporting(output.id)}>
                   <Download aria-hidden="true" />
                   {t("transcriptExport.exportThisOutput")}
@@ -506,7 +525,16 @@ export function GeneratedOutputs({
               {t("uiPolish.fromSource", { source: sourceLabel })}
             </p>
           </div>
-          <MarkdownContent className="text-base leading-7">{output.text}</MarkdownContent>
+          {output.citations && onReveal ? (
+            <ChatCitationContent
+              text={output.text}
+              references={output.citations.references ?? []}
+              onReference={(ref) => onReveal(output, [ref])}
+              className="text-base leading-7"
+            />
+          ) : (
+            <MarkdownContent className="text-base leading-7">{output.text}</MarkdownContent>
+          )}
           <details className="border-t pt-4 text-sm">
             <summary className="cursor-pointer text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring">
               {t("uiPolish.sourceAndPrompt")}

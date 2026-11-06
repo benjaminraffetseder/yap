@@ -1,6 +1,7 @@
 import {
   AddVocabularyTerm,
   ApplyDictationProfile,
+  ApplyChatReply,
   BeginShortcutCapture,
   Cancel,
   CancelTextProcessing,
@@ -8,6 +9,7 @@ import {
   CheckForUpdates,
   ClearFinishedImports,
   ClearFinishedBulkTextJobs,
+  ClearSessionChat,
   CompleteSetup,
   CopyText,
   DeleteDictationProfile,
@@ -32,6 +34,7 @@ import {
   GetRevisions,
   GetSession,
   GetSessionOutputs,
+  GetSessionChat,
   GetSnapshot,
   GetTranscriptExportPreview,
   HomeResultAction,
@@ -62,15 +65,19 @@ import {
   SaveSettings,
   SaveTextProcessing,
   SaveTranscript,
+  SaveChatReply,
+  SendChatMessage,
   SaveVocabulary,
   SelectFile,
   SetSaveHistory,
   StartDiagnosticTest,
   StartMicrophoneTest,
   StartRecording,
+  StartChatVoice,
   StopDiagnosticTest,
   StopMicrophoneTest,
   StopRecording,
+  StopChatVoice,
   TestTextModel,
 } from "@bindings/yap/app";
 import type { Config } from "@bindings/yap/internal/inference/text/models";
@@ -231,7 +238,43 @@ export type TextStats = {
   reasoningTokens?: number | null;
   generationTokensPerSecond?: number | null;
 };
+export type ChatSource = { id: string; kind: "transcript" | "original"; text: string };
+export type ChatReference = { number: number; quote: string };
+export type ChatMessage = {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  sourceId: string;
+  selection?: string;
+  outputId?: string;
+  outputText?: string;
+  createdAt: string;
+  state: "complete" | "pending" | "failed" | "cancelled";
+  error?: string;
+  model?: string;
+  references: ChatReference[];
+};
+export type SessionChat = {
+  sessionId: string;
+  messages: ChatMessage[];
+  sources: ChatSource[];
+  summary: string;
+  compactedThrough: number;
+};
+export type ChatRequest = {
+  message: string;
+  source: "transcript" | "original";
+  selection: string;
+  outputId: string;
+  retry: boolean;
+};
+// The generated bridge models deliberately permit future enum strings. Validate
+// these strings where consumed; keep the application's chat contract narrow.
+function normalizeChat(value: Awaited<ReturnType<typeof GetSessionChat>>): SessionChat {
+  return { ...value, messages: value.messages ?? [], sources: value.sources ?? [] } as SessionChat;
+}
 export type GeneratedOutput = {
+  citations?: { source: string; references: ChatReference[] | null } | null;
   id: string;
   sessionId: string;
   createdAt: string;
@@ -339,6 +382,8 @@ export type Snapshot = {
   diagnostic: DiagnosticResult;
 };
 export type BackupSummary = {
+  chats?: number;
+  skippedChats?: number;
   sessions: number;
   duplicateSessions: number;
   outputs: number;
@@ -571,6 +616,18 @@ export const backend = {
   textProcessing: async (config: TextProcessing): Promise<TextProcessing> =>
     normalizeTextProcessing(await SaveTextProcessing({ ...config, chains: config.chains ?? [] })),
   processText: ProcessText,
+  startChatVoice: StartChatVoice,
+  stopChatVoice: StopChatVoice,
+  chat: async (sessionID: string): Promise<SessionChat> =>
+    normalizeChat(await GetSessionChat(sessionID)),
+  sendChat: async (
+    requestID: string,
+    sessionID: string,
+    request: ChatRequest,
+  ): Promise<SessionChat> => normalizeChat(await SendChatMessage(requestID, sessionID, request)),
+  clearChat: ClearSessionChat,
+  saveChatReply: SaveChatReply,
+  applyChatReply: ApplyChatReply,
   cancelTextProcessing: CancelTextProcessing,
   testTextModel: TestTextModel,
   refinePrompt: async (

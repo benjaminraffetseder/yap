@@ -248,6 +248,10 @@ func (a *App) processTextRequestLocked(requestID string, request textRequest) (s
 				return "", errors.New("could not load the saved output for regeneration")
 			}
 			input, prompt = prior.Input, prior.Prompt
+			if prior.Prompt.ID == "chat" {
+				a.mu.Unlock()
+				return "", errors.New("continue in chat to refine a saved chat output")
+			}
 		} else {
 			selected, recipeErr := config.Recipe(request.promptID)
 			if recipeErr != nil {
@@ -270,22 +274,7 @@ func (a *App) processTextRequestLocked(requestID string, request textRequest) (s
 			return "", err
 		}
 	}
-	parent := a.ctx
-	if parent == nil {
-		parent = context.Background()
-	}
-	ctx, cancel := context.WithCancel(parent)
-	a.textJobID, a.textCancel = requestID, cancel
-	previous := a.status
-	previousSavedText := ""
-	if previous.Phase == "done" && a.id != "" {
-		if entry, err := a.store.Session(a.id); err == nil {
-			previousSavedText = entry.FinalTranscript
-		}
-	}
-	a.status.Phase, a.status.Message = "text-processing", "Processing text…"
-	a.emit()
-	a.wg.Add(1)
+	ctx, cancel, previous, previousSavedText := a.beginTextJobLocked(requestID)
 	a.mu.Unlock()
 	defer a.wg.Done()
 	defer cancel()
@@ -300,21 +289,7 @@ func (a *App) processTextRequestLocked(requestID string, request textRequest) (s
 	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	a.textJobID, a.textCancel = "", nil
-	// Restore the dictation display, including any edited latest transcript.
-	a.status.Phase, a.status.Message = previous.Phase, previous.Message
-	a.status.Transcript = previous.Transcript
-	if previous.Phase == "done" && a.id != "" && !a.closing {
-		if entry, err := a.store.Session(a.id); err == nil {
-			if entry.FinalTranscript != previousSavedText {
-				a.status.Transcript = entry.FinalTranscript
-				a.status.Message = "Transcript updated in History"
-			}
-		} else {
-			a.status.Phase, a.status.Message, a.status.Transcript = "idle", "Ready", ""
-		}
-	}
-	a.emit()
+	a.finishTextJobLocked(previous, previousSavedText)
 	if a.closing || ctx.Err() != nil {
 		return "", context.Canceled
 	}
@@ -343,6 +318,40 @@ func (a *App) processTextRequestLocked(requestID string, request textRequest) (s
 		}
 	}
 	return output, err
+}
+
+func (a *App) beginTextJobLocked(requestID string) (context.Context, context.CancelFunc, Status, string) {
+	parent := a.ctx
+	if parent == nil {
+		parent = context.Background()
+	}
+	ctx, cancel := context.WithCancel(parent)
+	a.textJobID, a.textCancel = requestID, cancel
+	previous, savedText := a.status, ""
+	if previous.Phase == "done" && a.id != "" {
+		if entry, err := a.store.Session(a.id); err == nil {
+			savedText = entry.FinalTranscript
+		}
+	}
+	a.status.Phase, a.status.Message = "text-processing", "Processing text…"
+	a.wg.Add(1)
+	a.emit()
+	return ctx, cancel, previous, savedText
+}
+
+func (a *App) finishTextJobLocked(previous Status, savedText string) {
+	a.textJobID, a.textCancel = "", nil
+	a.status.Phase, a.status.Message, a.status.Transcript = previous.Phase, previous.Message, previous.Transcript
+	if previous.Phase == "done" && a.id != "" && !a.closing {
+		if entry, err := a.store.Session(a.id); err == nil {
+			if entry.FinalTranscript != savedText {
+				a.status.Transcript, a.status.Message = entry.FinalTranscript, "Transcript updated in History"
+			}
+		} else {
+			a.status.Phase, a.status.Message, a.status.Transcript = "idle", "Ready", ""
+		}
+	}
+	a.emit()
 }
 
 func (a *App) CancelTextProcessing(requestID string) {

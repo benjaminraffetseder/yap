@@ -23,6 +23,9 @@ Linux support is incomplete.
 - Choose profiles automatically per app, or cycle them with a global shortcut.
 - Transcribe audio files, including WAV, MP3, and M4A.
 - Use an optional local text model for cleanup, custom prompts, and title suggestions.
+- Chat beside a saved transcription to ask questions, highlight source passages,
+  and refine drafts. Conversations stay local, compact older context automatically,
+  and let you review rewrites or save replies as outputs.
 - Save prompt chains with a chosen input for each step and keep intermediate results.
 - Back up history, prompts, vocabulary, and saved recordings.
 - Use the interface in English or German.

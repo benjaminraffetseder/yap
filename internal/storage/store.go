@@ -117,6 +117,14 @@ func Open(dir string) (*Store, error) {
 		db.Close()
 		return nil, err
 	}
+	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS generated_output_citations (output_id TEXT PRIMARY KEY, value TEXT NOT NULL);
+	CREATE TRIGGER IF NOT EXISTS delete_output_citations AFTER DELETE ON generated_outputs BEGIN DELETE FROM generated_output_citations WHERE output_id=OLD.id; END;
+	CREATE TABLE IF NOT EXISTS recording_chats (recording_id TEXT PRIMARY KEY, value TEXT NOT NULL);
+	CREATE TRIGGER IF NOT EXISTS delete_recording_chat AFTER DELETE ON recordings BEGIN DELETE FROM recording_chats WHERE recording_id=OLD.id; END;`)
+	if err != nil {
+		db.Close()
+		return nil, err
+	}
 	return &Store{db: db, Dir: dir}, nil
 }
 func (s *Store) Close() error { return s.db.Close() }

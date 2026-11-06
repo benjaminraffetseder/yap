@@ -1,11 +1,11 @@
-import { Check, Copy, Loader2 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
-import { useTranslation } from "react-i18next";
-import { nativeText } from "@/i18n/native-text";
-import { backend, message } from "@/lib/backend";
 import { Button } from "@/components/ui/button";
 import { toastManager } from "@/components/ui/toast";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { nativeText } from "@/i18n/native-text";
+import { backend, message } from "@/lib/backend";
+import { Check, Copy, Loader2 } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 
 export function CopyButton({
   text,
@@ -13,12 +13,14 @@ export function CopyButton({
   disabled,
   compact = false,
   iconOnly = false,
+  variant = "default",
 }: {
   text: string;
   label: string;
   disabled?: boolean;
   compact?: boolean;
   iconOnly?: boolean;
+  variant?: "default" | "ghost";
 }) {
   const { t } = useTranslation();
   const [pending, setPending] = useState(false);
@@ -56,6 +58,7 @@ export function CopyButton({
   }
   const button = (
     <Button
+      variant={variant}
       size={iconOnly ? "icon-sm" : "sm"}
       pressFeedback={iconOnly}
       aria-label={label}

@@ -1,8 +1,4 @@
-import { nativeText } from "@/i18n/native-text";
-import i18n from "@/i18n";
-import { useTranslation } from "react-i18next";
-import { useEffect, useRef, useState } from "react";
-import { Download, Loader2, Upload } from "lucide-react";
+import { useDictation } from "@/components/dictation-provider";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -13,8 +9,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { useDictation } from "@/components/dictation-provider";
+import i18n from "@/i18n";
+import { nativeText } from "@/i18n/native-text";
 import { backend, message, type BackupPreview, type BackupSummary } from "@/lib/backend";
+import { Download, Loader2, Upload } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 
 function restoredMessage(summary: BackupSummary) {
   const skipped =
@@ -227,6 +227,11 @@ export function BackupPanel({ disabled, unsaved }: { disabled: boolean; unsaved:
                     t("generatedOutputs.generatedOutputs"),
                     preview.summary.outputs,
                     preview.summary.duplicateOutputs,
+                  ],
+                  [
+                    t("chat.conversations"),
+                    preview.summary.chats ?? 0,
+                    preview.summary.skippedChats ?? 0,
                   ],
                   ["Prompts", preview.summary.prompts, preview.summary.skippedPrompts],
                   [

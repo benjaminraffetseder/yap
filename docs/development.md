@@ -123,6 +123,12 @@ editing, and delayed clipboard replies. They do not prove native microphone,
 global-shortcut, paste, or live-model behavior. For animated UI assertions, poll
 the expected end state instead of assuming two animation frames finish a transition.
 
+For an optional chat smoke test against a running local model server, set
+`YAP_CHAT_ENDPOINT` to its loopback `/v1` URL and `YAP_CHAT_MODEL` to a loaded model
+ID, then run `go test . -run '^TestChatLiveLocalModel$' -v -count=1` from the repo
+root. It uses synthetic history in a temporary database to check source updates,
+passage references, and conversation compaction without changing app settings.
+
 Native and download tests are opt-in. Run them from the repo root on Windows:
 
 | Environment variable | Command | What it exercises |

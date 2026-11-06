@@ -48,6 +48,7 @@ type backupManifest struct {
 	Preferences BackupPreferences  `json:"preferences"`
 	Sessions    []Session          `json:"sessions"`
 	Outputs     []GeneratedOutput  `json:"outputs"`
+	Chats       []Chat             `json:"chats"`
 	Prompts     []textmodel.Prompt `json:"prompts"`
 	Chains      []textmodel.Chain  `json:"chains"`
 	Vocabulary  []vocabulary.Entry `json:"vocabulary"`
@@ -58,6 +59,8 @@ type BackupSummary struct {
 	DuplicateSessions int `json:"duplicateSessions"`
 	Outputs           int `json:"outputs"`
 	DuplicateOutputs  int `json:"duplicateOutputs"`
+	Chats             int `json:"chats"`
+	SkippedChats      int `json:"skippedChats"`
 	Prompts           int `json:"prompts"`
 	SkippedPrompts    int `json:"skippedPrompts"`
 	Chains            int `json:"chains"`
@@ -228,6 +231,41 @@ func backupSnapshotBounded(ctx context.Context, tx *sql.Tx, limit int64) (backup
 		err = rows.Err()
 	}
 	rows.Close()
+	if err != nil {
+		return m, err
+	}
+	rows, err = tx.QueryContext(ctx, "SELECT value FROM recording_chats WHERE NOT EXISTS (SELECT 1 FROM deleted_recordings d WHERE d.id=recording_chats.recording_id)")
+	if err != nil {
+		return m, err
+	}
+	for rows.Next() {
+		var data string
+		var chat Chat
+		if err = rows.Scan(&data); err != nil {
+			break
+		}
+		if err = json.Unmarshal([]byte(data), &chat); err != nil {
+			break
+		}
+		// Pending messages cannot be resumed on another installation.
+		for i := range chat.Messages {
+			if chat.Messages[i].State == "pending" {
+				chat.Messages[i].State, chat.Messages[i].Error = "failed", "The previous reply was interrupted; retry to continue."
+			}
+		}
+		if err = account(chat, len(m.Chats)); err != nil {
+			break
+		}
+		m.Chats = append(m.Chats, chat)
+		if len(m.Chats) > maxBackupEntries {
+			err = errors.New("too many conversations for one backup")
+			break
+		}
+	}
+	if err == nil {
+		err = rows.Err()
+	}
+	rows.Close()
 	return m, err
 }
 
@@ -370,6 +408,7 @@ func (s *Store) ExportBackup(ctx context.Context, path string, includeAudio bool
 	}
 	summary.Sessions, summary.Outputs, summary.Prompts, summary.Vocabulary = len(m.Sessions), len(m.Outputs), len(m.Prompts), len(m.Vocabulary)
 	summary.Chains = len(m.Chains)
+	summary.Chats = len(m.Chats)
 	return summary, nil
 }
 
@@ -390,7 +429,7 @@ func validateBackupManifest(m *backupManifest) error {
 	if !regexp.MustCompile(`^(auto|[a-z]{2,3})$`).MatchString(m.Preferences.Language) || (m.Preferences.Interaction != "hold" && m.Preferences.Interaction != "toggle") {
 		return errors.New("invalid backup preferences")
 	}
-	if len(m.Sessions) > maxBackupEntries || len(m.Outputs) > maxBackupEntries {
+	if len(m.Sessions) > maxBackupEntries || len(m.Outputs) > maxBackupEntries || len(m.Chats) > maxBackupEntries {
 		return errors.New("backup contains too many entries")
 	}
 	config := textmodel.Defaults()
@@ -440,10 +479,27 @@ func validateBackupManifest(m *backupManifest) error {
 		if err := validateOutputChain(v.Chain); err != nil {
 			return err
 		}
+		if err := validateOutputCitations(v); err != nil {
+			return err
+		}
 		if _, err := textmodel.Normalize(textmodel.Config{Enabled: true, Endpoint: v.Endpoint, Model: v.Model, Prompts: []textmodel.Prompt{v.Prompt}}); err != nil {
 			return err
 		}
 		outputs[v.ID] = true
+	}
+	chats := map[string]bool{}
+	for _, chat := range m.Chats {
+		if !ids[chat.SessionID] || chats[chat.SessionID] {
+			return errors.New("invalid chat reference in backup")
+		}
+		if err := validateChat(chat); err != nil {
+			return err
+		}
+		data, _ := json.Marshal(chat)
+		if len(data) > 8*1024*1024 {
+			return errors.New("conversation in backup is too large")
+		}
+		chats[chat.SessionID] = true
 	}
 	return nil
 }
@@ -548,6 +604,7 @@ type restorePlan struct {
 	summary    BackupSummary
 	sessions   []Session
 	outputs    []GeneratedOutput
+	chats      []Chat
 	settings   Settings
 	config     textmodel.Config
 	vocabulary []vocabulary.Entry
@@ -609,6 +666,17 @@ func planBackup(ctx context.Context, tx *sql.Tx, b *BackupArchive) (p restorePla
 		}
 		p.outputs = append(p.outputs, v)
 	}
+	for _, chat := range b.manifest.Chats {
+		var count int
+		if err = tx.QueryRowContext(ctx, "SELECT COUNT(*) FROM recording_chats WHERE recording_id=?", chat.SessionID).Scan(&count); err != nil {
+			return
+		}
+		if count == 0 && parents[chat.SessionID] {
+			p.chats = append(p.chats, chat)
+		} else {
+			p.summary.SkippedChats++
+		}
+	}
 	for _, v := range b.manifest.Prompts {
 		found := false
 		for _, existing := range p.config.Prompts {
@@ -656,6 +724,7 @@ func planBackup(ctx context.Context, tx *sql.Tx, b *BackupArchive) (p restorePla
 		p.summary.Vocabulary++
 	}
 	p.summary.Sessions, p.summary.Outputs = len(p.sessions), len(p.outputs)
+	p.summary.Chats = len(p.chats)
 	err = ctx.Err()
 	return p, err
 }
@@ -751,6 +820,16 @@ func (s *Store) RestoreBackup(ctx context.Context, b *BackupArchive, preferences
 	}
 	for _, v := range p.outputs {
 		if err = insertGeneratedOutput(tx, v); err != nil {
+			return RestoredBackup{}, err
+		}
+	}
+	for _, chat := range p.chats {
+		data, e := json.Marshal(chat)
+		if e != nil {
+			return RestoredBackup{}, e
+		}
+		// Existing local conversations win over backup copies.
+		if _, err = tx.Exec(`INSERT INTO recording_chats(recording_id,value) SELECT id,? FROM recordings WHERE id=? AND NOT EXISTS (SELECT 1 FROM deleted_recordings d WHERE d.id=recordings.id) ON CONFLICT(recording_id) DO NOTHING`, string(data), chat.SessionID); err != nil {
 			return RestoredBackup{}, err
 		}
 	}

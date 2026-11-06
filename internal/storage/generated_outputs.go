@@ -7,8 +7,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/google/uuid"
 	textmodel "yap/internal/inference/text"
+
+	"github.com/google/uuid"
 )
 
 // OutputChain describes the immutable inputs used by a step in one chain run.
@@ -23,6 +24,11 @@ type OutputChain struct {
 	SourceOutputID string `json:"sourceOutputId"`
 }
 
+type OutputCitations struct {
+	Source     string          `json:"source"`
+	References []ChatReference `json:"references"`
+}
+
 type GeneratedOutput struct {
 	ID        string           `json:"id"`
 	SessionID string           `json:"sessionId"`
@@ -34,6 +40,25 @@ type GeneratedOutput struct {
 	Text      string           `json:"text"`
 	Chain     OutputChain      `json:"chain"`
 	Stats     *textmodel.Stats `json:"stats,omitempty"`
+	Citations *OutputCitations `json:"citations,omitempty"`
+}
+
+func validateOutputCitations(v GeneratedOutput) error {
+	if v.Citations == nil {
+		return nil
+	}
+	if v.Citations.Source != "transcript" && v.Citations.Source != "original" {
+		return errors.New("invalid output source")
+	}
+	passages := ChatPassages(v.Input)
+	seen := map[int]bool{}
+	for _, ref := range v.Citations.References {
+		if ref.Number < 1 || ref.Number > len(passages) || ref.Quote != passages[ref.Number-1] || seen[ref.Number] {
+			return errors.New("invalid output citation")
+		}
+		seen[ref.Number] = true
+	}
+	return nil
 }
 
 func NewGeneratedOutput(sessionID, input, output string, config textmodel.Config, prompt textmodel.Prompt) GeneratedOutput {
@@ -90,6 +115,9 @@ func insertGeneratedOutput(tx *sql.Tx, v GeneratedOutput) error {
 	if err := validateOutputChain(v.Chain); err != nil {
 		return err
 	}
+	if err := validateOutputCitations(v); err != nil {
+		return err
+	}
 	if !v.Stats.Valid() {
 		return errors.New("invalid text inference stats")
 	}
@@ -111,6 +139,15 @@ func insertGeneratedOutput(tx *sql.Tx, v GeneratedOutput) error {
 	if err := insertInferenceStats(tx, "text", v.ID, v.Stats); err != nil {
 		return err
 	}
+	if v.Citations != nil {
+		data, err := json.Marshal(v.Citations)
+		if err != nil {
+			return err
+		}
+		if _, err = tx.Exec("INSERT INTO generated_output_citations(output_id,value) VALUES(?,?)", v.ID, string(data)); err != nil {
+			return err
+		}
+	}
 	if v.Chain.RunID == "" {
 		return nil
 	}
@@ -122,17 +159,31 @@ func insertGeneratedOutput(tx *sql.Tx, v GeneratedOutput) error {
 	return err
 }
 
-const generatedOutputColumns = "id,recording_id,created_at,prompt_id,prompt_name,instruction,model,endpoint,input,output,COALESCE((SELECT value FROM generated_output_chains WHERE output_id=generated_outputs.id),'{}')," + textStatsColumn
+const generatedOutputColumns = "id,recording_id,created_at,prompt_id,prompt_name,instruction,model,endpoint,input,output,COALESCE((SELECT value FROM generated_output_chains WHERE output_id=generated_outputs.id),'{}')," + textStatsColumn + ",COALESCE((SELECT value FROM generated_output_citations WHERE output_id=generated_outputs.id),'null')"
 
 func scanGeneratedOutput(row interface{ Scan(...any) error }, v *GeneratedOutput) error {
-	var chain, stats string
-	if err := row.Scan(&v.ID, &v.SessionID, &v.CreatedAt, &v.Prompt.ID, &v.Prompt.Name, &v.Prompt.Instruction, &v.Model, &v.Endpoint, &v.Input, &v.Text, &chain, &stats); err != nil {
+	var chain, stats, citations string
+	if err := row.Scan(&v.ID, &v.SessionID, &v.CreatedAt, &v.Prompt.ID, &v.Prompt.Name, &v.Prompt.Instruction, &v.Model, &v.Endpoint, &v.Input, &v.Text, &chain, &stats, &citations); err != nil {
 		return err
 	}
 	if err := json.Unmarshal([]byte(stats), &v.Stats); err != nil {
 		return err
 	}
-	return json.Unmarshal([]byte(chain), &v.Chain)
+	if err := json.Unmarshal([]byte(chain), &v.Chain); err != nil {
+		return err
+	}
+	if err := json.Unmarshal([]byte(citations), &v.Citations); err != nil {
+		return err
+	}
+	// Older chat outputs still have an immutable input snapshot. Recover their
+	// numbered references even when they predate explicit citation metadata.
+	if v.Citations == nil && v.Prompt.ID == "chat" {
+		refs := ChatReferences(v.Text, v.Input)
+		if len(refs) > 0 {
+			v.Citations = &OutputCitations{Source: "transcript", References: refs}
+		}
+	}
+	return nil
 }
 
 func (s *Store) GeneratedOutputs(sessionID string) ([]GeneratedOutput, error) {

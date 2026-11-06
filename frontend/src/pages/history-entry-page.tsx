@@ -7,7 +7,8 @@ import { AudioPlayer } from "@/components/audio-player";
 import { useDictation } from "@/components/dictation-provider";
 import { GeneratedOutputs } from "@/components/generated-outputs";
 import { InferenceStats } from "@/components/inference-stats";
-import { MarkdownContent } from "@/components/markdown-content";
+import { ChatSourceText } from "@/components/chat-source-text";
+import { TranscriptionChat, type ChatSelection } from "@/components/transcription-chat";
 import { TextPanel } from "@/components/text-panel";
 import { TranscriptDiff } from "@/components/transcript-diff";
 import { TranscriptEditor } from "@/components/transcript-editor";
@@ -15,8 +16,17 @@ import { TranscriptExportDialog } from "@/components/transcript-export-dialog";
 import { SessionTitleAction } from "@/components/session-title-action";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { backend, duration, isDesktop, message, type Session } from "@/lib/backend";
+import {
+  backend,
+  duration,
+  isDesktop,
+  message,
+  type Session,
+  type ChatReference,
+  type GeneratedOutput,
+} from "@/lib/backend";
 import { deleteTranscriptions } from "@/lib/delete-transcriptions";
+import { referenceRanges } from "@/lib/chat-references";
 import {
   ArrowLeft,
   AudioLines,
@@ -24,6 +34,7 @@ import {
   FileText,
   GitCompareArrows,
   Loader2,
+  MessageSquare,
   Pencil,
   Sparkles,
   Trash2,
@@ -38,7 +49,14 @@ export function HistoryEntryPage() {
 
 function EntryDetail({ id }: { id: string }) {
   const { t } = useTranslation();
-  const { snapshot, loading: connecting, run, refresh } = useDictation();
+  const {
+    snapshot,
+    loading: connecting,
+    run,
+    refresh,
+    processingPanelOpen,
+    setProcessingPanelOpen,
+  } = useDictation();
   const navigate = useNavigate();
   const location = useLocation();
   const back = `/history${location.search}`;
@@ -49,6 +67,33 @@ function EntryDetail({ id }: { id: string }) {
   const [reload, setReload] = useState(0);
   const [editing, setEditing] = useState<Session | null>(null);
   const [activeTab, setActiveTab] = useState("transcription");
+  const [chatOpen, setChatOpen] = useState(false);
+  const [referenceNotice, setReferenceNotice] = useState("");
+  useEffect(() => {
+    if (processingPanelOpen) setChatOpen(false);
+  }, [processingPanelOpen]);
+  const [chatInitialized, setChatInitialized] = useState(false);
+  const [chatSource, setChatSource] = useState<"transcript" | "original">("transcript");
+  const [chatSelection, setChatSelection] = useState<ChatSelection | null>(null);
+  const [readingSelection, setReadingSelection] = useState<ChatSelection | null>(null);
+  const [chatOutput, setChatOutput] = useState<GeneratedOutput | null>(null);
+  const [highlights, setHighlights] = useState<{
+    source: "transcript" | "original";
+    references: ChatReference[];
+  }>({ source: "transcript", references: [] });
+  const chatTrigger = useRef<HTMLButtonElement>(null);
+  function openChat() {
+    setProcessingPanelOpen(false);
+    setChatInitialized(true);
+    setChatOpen(true);
+  }
+  function askSelection() {
+    if (!readingSelection) return;
+    setChatSource(readingSelection.source);
+    setChatSelection(readingSelection);
+    setReadingSelection(null);
+    openChat();
+  }
   const editTrigger = useRef<HTMLButtonElement>(null);
   const title = useRef<HTMLHeadingElement>(null);
   const [deletingNow, setDeletingNow] = useState(false);
@@ -141,7 +186,10 @@ function EntryDetail({ id }: { id: string }) {
       ? `${(titlePrefix.replace(/\s+\S*$/, "").trimEnd() || titlePrefix).replace(/[\s,;:–—-]+$/, "")}…`
       : firstLine;
   return (
-    <div className="space-y-4" style={audio ? { paddingBottom: playerHeight } : undefined}>
+    <div
+      className="@container/chat-detail space-y-4"
+      style={audio ? { paddingBottom: playerHeight } : undefined}
+    >
       <header className="group @container/detail">
         <div className="flex min-w-0 items-start gap-[12px]">
           <Link
@@ -191,6 +239,21 @@ function EntryDetail({ id }: { id: string }) {
                   data-slot="detail-primary-actions"
                   className="flex max-w-full flex-wrap items-center gap-1.5 @min-[44rem]/detail:justify-end"
                 >
+                  <Button
+                    ref={chatTrigger}
+                    size="sm"
+                    variant={chatOpen ? "secondary" : "outline"}
+                    aria-expanded={chatOpen}
+                    aria-controls="transcription-chat"
+                    disabled={unavailable}
+                    onClick={() => {
+                      if (chatOpen) setChatOpen(false);
+                      else openChat();
+                    }}
+                  >
+                    <MessageSquare aria-hidden="true" className="size-3.5" />
+                    {t("chat.title")}
+                  </Button>
                   {activeTab !== "outputs" && (
                     <CopyButton
                       compact
@@ -331,119 +394,213 @@ function EntryDetail({ id }: { id: string }) {
           </p>
         </section>
       )}
-      {/* Keep output requests mounted while the inline editor is open. */}
-      {entry && (
-        <Tabs
-          hidden={!!editing}
-          value={activeTab}
-          onValueChange={(value) => setActiveTab(String(value))}
-          className="min-w-0 gap-4 sm:pl-11"
-          aria-busy={loading}
-        >
-          <div className="sticky top-0 z-10 overflow-x-auto border-b bg-background pb-1">
-            <TabsList
-              variant="line"
-              aria-label={t("historyEntryPage.dictationContents")}
-              className="group-data-[orientation=horizontal]/tabs:h-10"
-            >
-              <TabsTrigger
-                value="transcription"
-                className="px-2 text-xs data-active:text-primary after:bg-primary sm:px-3 sm:text-sm"
-              >
-                <FileText className="hidden size-4 sm:block" aria-hidden="true" />
-                {t("historyEntryPage.transcription")}
-              </TabsTrigger>
-              <TabsTrigger
-                value="original"
-                className="px-2 text-xs data-active:text-primary after:bg-primary sm:px-3 sm:text-sm"
-              >
-                <AudioLines className="hidden size-4 sm:block" aria-hidden="true" />
-                {t("historyEntryPage.original")}
-              </TabsTrigger>
-              <TabsTrigger
-                value="outputs"
-                className="px-2 text-xs data-active:text-primary after:bg-primary sm:px-3 sm:text-sm"
-              >
-                <Sparkles className="hidden size-4 sm:block" aria-hidden="true" />
-                {t("historyEntryPage.outputs")}
-              </TabsTrigger>
-              {changed && (
-                <TabsTrigger
-                  value="changes"
-                  className="px-2 text-xs data-active:text-primary after:bg-primary sm:px-3 sm:text-sm"
-                >
-                  <GitCompareArrows className="hidden size-4 sm:block" aria-hidden="true" />
-                  {t("historyEntryPage.changes")}
-                </TabsTrigger>
-              )}
-            </TabsList>
-          </div>
-          <TabsContent value="transcription" keepMounted>
-            <TextPanel
-              title={changed ? t("historyEntryPage.result") : t("historyEntryPage.transcription")}
-              variant="reading"
-              kind={changed ? "result" : "source"}
-              description={t("historyEntryPage.wordCount", {
-                count: text.trim().split(/\s+/).filter(Boolean).length,
-                type: changed
-                  ? t("historyEntryPage.editedOrProcessedText")
-                  : t("historyEntryPage.savedTranscription"),
-              })}
-            >
-              <MarkdownContent className="text-base leading-7">{text}</MarkdownContent>
-            </TextPanel>
-          </TabsContent>
-          <TabsContent value="original" keepMounted>
-            <TextPanel
-              title={t("historyEntryPage.originalTranscription")}
-              variant="reading"
-              kind="source"
-              description={t("historyEntryPage.fromTheRecordingReadOnly")}
-            >
-              <MarkdownContent className="text-base leading-7">
-                {entry.rawTranscript}
-              </MarkdownContent>
-            </TextPanel>
-          </TabsContent>
-          <TabsContent value="outputs" keepMounted>
-            <GeneratedOutputs sessionID={id} unavailable={unavailable} />
-          </TabsContent>
-          {changed && (
-            <TabsContent value="changes" keepMounted>
-              <TextPanel
-                title={t("historyEntryPage.changes")}
-                kind="result"
-                variant="reading"
-                description={t(
-                  "historyEntryPage.originalRecordingCurrentTranscriptionTextComparison",
-                )}
-              >
-                <TranscriptDiff before={entry.rawTranscript} after={text} />
-              </TextPanel>
-            </TabsContent>
+      {referenceNotice && (
+        <p role="status" className="text-xs text-muted-foreground sm:pl-11">
+          {referenceNotice}
+        </p>
+      )}
+      <div className="min-w-0">
+        <div className="min-w-0">
+          {readingSelection && !editing && (
+            <div className="mb-3 flex flex-wrap items-center gap-2 sm:pl-11">
+              <Button size="sm" variant="outline" onClick={askSelection}>
+                <MessageSquare aria-hidden="true" className="size-3.5" />
+                {t("chat.askSelection")}
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => setReadingSelection(null)}>
+                {t("common.cancel")}
+              </Button>
+            </div>
           )}
-        </Tabs>
-      )}
-      {exporting && (
-        <TranscriptExportDialog
-          returnFocus={actionsTrigger}
-          selection={{ sessionIds: [id], allMatching: false, query: "" }}
-          onClose={() => setExporting(false)}
-        />
-      )}
-      {editing && (
-        <div className="min-w-0 sm:pl-11">
-          <TranscriptEditor
-            session={editing}
-            returnFocus={editTrigger}
-            onClose={() => setEditing(null)}
-            onSaved={() => {
-              setReload((old) => old + 1);
-              void run(refresh, false);
-            }}
-          />
+          {highlights.references.length > 0 && (
+            <div className="mb-3 sm:pl-11">
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => setHighlights({ source: highlights.source, references: [] })}
+              >
+                {t("chat.clearHighlights")}
+              </Button>
+            </div>
+          )}
+          {/* Keep output requests mounted while the inline editor is open. */}
+          {entry && (
+            <Tabs
+              hidden={!!editing}
+              value={activeTab}
+              onValueChange={(value) => setActiveTab(String(value))}
+              className="min-w-0 gap-4 sm:pl-11"
+              aria-busy={loading}
+            >
+              <div className="sticky top-0 z-10 overflow-x-auto border-b bg-background pb-1">
+                <TabsList
+                  variant="line"
+                  aria-label={t("historyEntryPage.dictationContents")}
+                  className="group-data-[orientation=horizontal]/tabs:h-10"
+                >
+                  <TabsTrigger
+                    value="transcription"
+                    className="px-2 text-xs data-active:text-primary after:bg-primary sm:px-3 sm:text-sm"
+                  >
+                    <FileText className="hidden size-4 sm:block" aria-hidden="true" />
+                    {t("historyEntryPage.transcription")}
+                  </TabsTrigger>
+                  <TabsTrigger
+                    value="original"
+                    className="px-2 text-xs data-active:text-primary after:bg-primary sm:px-3 sm:text-sm"
+                  >
+                    <AudioLines className="hidden size-4 sm:block" aria-hidden="true" />
+                    {t("historyEntryPage.original")}
+                  </TabsTrigger>
+                  <TabsTrigger
+                    value="outputs"
+                    className="px-2 text-xs data-active:text-primary after:bg-primary sm:px-3 sm:text-sm"
+                  >
+                    <Sparkles className="hidden size-4 sm:block" aria-hidden="true" />
+                    {t("historyEntryPage.outputs")}
+                  </TabsTrigger>
+                  {changed && (
+                    <TabsTrigger
+                      value="changes"
+                      className="px-2 text-xs data-active:text-primary after:bg-primary sm:px-3 sm:text-sm"
+                    >
+                      <GitCompareArrows className="hidden size-4 sm:block" aria-hidden="true" />
+                      {t("historyEntryPage.changes")}
+                    </TabsTrigger>
+                  )}
+                </TabsList>
+              </div>
+              <TabsContent value="transcription" keepMounted>
+                <TextPanel
+                  title={
+                    changed ? t("historyEntryPage.result") : t("historyEntryPage.transcription")
+                  }
+                  variant="reading"
+                  kind={changed ? "result" : "source"}
+                  description={t("historyEntryPage.wordCount", {
+                    count: text.trim().split(/\s+/).filter(Boolean).length,
+                    type: changed
+                      ? t("historyEntryPage.editedOrProcessedText")
+                      : t("historyEntryPage.savedTranscription"),
+                  })}
+                >
+                  <ChatSourceText
+                    text={text}
+                    references={highlights.source === "transcript" ? highlights.references : []}
+                    onSelection={(text) => setReadingSelection({ text, source: "transcript" })}
+                  />
+                </TextPanel>
+              </TabsContent>
+              <TabsContent value="original" keepMounted>
+                <TextPanel
+                  title={t("historyEntryPage.originalTranscription")}
+                  variant="reading"
+                  kind="source"
+                  description={t("historyEntryPage.fromTheRecordingReadOnly")}
+                >
+                  <ChatSourceText
+                    text={entry.rawTranscript}
+                    references={highlights.source === "original" ? highlights.references : []}
+                    onSelection={(text) => setReadingSelection({ text, source: "original" })}
+                  />
+                </TextPanel>
+              </TabsContent>
+              <TabsContent value="outputs" keepMounted>
+                <GeneratedOutputs
+                  sessionID={id}
+                  unavailable={unavailable}
+                  onDiscuss={(output) => {
+                    setChatOutput(output);
+                    openChat();
+                  }}
+                  onReveal={(output, references) => {
+                    const source =
+                      output.citations?.source === "original" ||
+                      (output.input === entry.rawTranscript &&
+                        output.input !== entry.finalTranscript)
+                        ? "original"
+                        : "transcript";
+                    const current =
+                      source === "original" ? entry.rawTranscript : entry.finalTranscript;
+                    const valid = references.filter(
+                      (ref) => referenceRanges(current, [ref]).length > 0,
+                    );
+                    setHighlights({ source, references: valid });
+                    setReferenceNotice(
+                      valid.length < references.length ? t("chat.passageChanged") : "",
+                    );
+                    if (valid.length)
+                      setActiveTab(source === "original" ? "original" : "transcription");
+                  }}
+                />
+              </TabsContent>
+              {changed && (
+                <TabsContent value="changes" keepMounted>
+                  <TextPanel
+                    title={t("historyEntryPage.changes")}
+                    kind="result"
+                    variant="reading"
+                    description={t(
+                      "historyEntryPage.originalRecordingCurrentTranscriptionTextComparison",
+                    )}
+                  >
+                    <TranscriptDiff before={entry.rawTranscript} after={text} />
+                  </TextPanel>
+                </TabsContent>
+              )}
+            </Tabs>
+          )}
+          {exporting && (
+            <TranscriptExportDialog
+              returnFocus={actionsTrigger}
+              selection={{ sessionIds: [id], allMatching: false, query: "" }}
+              onClose={() => setExporting(false)}
+            />
+          )}
+          {editing && (
+            <div className="min-w-0 sm:pl-11">
+              <TranscriptEditor
+                session={editing}
+                returnFocus={editTrigger}
+                onClose={() => setEditing(null)}
+                onSaved={() => {
+                  setReload((old) => old + 1);
+                  void run(refresh, false);
+                }}
+              />
+            </div>
+          )}
         </div>
-      )}
+        {entry && chatInitialized && (
+          <div>
+            <TranscriptionChat
+              session={entry}
+              open={chatOpen}
+              editing={!!editing}
+              source={chatSource}
+              onSource={setChatSource}
+              selection={chatSelection}
+              onClearSelection={() => setChatSelection(null)}
+              output={chatOutput}
+              onClearOutput={() => setChatOutput(null)}
+              onHighlight={(source, references) => {
+                setHighlights({ source, references });
+                if (references.length) {
+                  setActiveTab(source === "original" ? "original" : "transcription");
+                }
+              }}
+              onClose={() => {
+                setChatOpen(false);
+                requestAnimationFrame(() => chatTrigger.current?.focus());
+              }}
+              onApplied={() => {
+                setReload((old) => old + 1);
+                void run(refresh, false);
+              }}
+            />
+          </div>
+        )}
+      </div>
       {audio && (
         <div
           ref={playerDock}
