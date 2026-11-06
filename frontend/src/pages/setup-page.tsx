@@ -167,17 +167,20 @@ export function SetupPage() {
           ? t("setupPage.applyYourShortcutThenPressItOnce")
           : t("setupPage.pressYourShortcutOnceToFinishSetup");
   return (
-    <div className="flex min-h-[calc(100dvh-2rem)] flex-col gap-8">
+    <div className="@container/setup flex min-h-[calc(100dvh-2rem)] flex-col gap-8">
       <header className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-semibold tracking-tight">{t("setupPage.setUpYap")}</h1>
         </div>
-        <ol aria-label={t("setupPage.setupSteps")} className="grid grid-cols-3 gap-2 sm:gap-3">
+        <ol
+          aria-label={t("setupPage.setupSteps")}
+          className="grid min-w-0 grid-cols-3 gap-2 @min-[40rem]/setup:gap-3"
+        >
           {steps.map(({ label, shortLabel, icon: Icon }, index) => (
             <li
               key={label}
               aria-current={index === step ? "step" : undefined}
-              className={cn("flex flex-col gap-3 p-2 sm:flex-row sm:items-center sm:p-3")}
+              className="flex min-w-0 flex-col gap-3 p-2 @min-[40rem]/setup:flex-row @min-[40rem]/setup:items-center @min-[40rem]/setup:p-3"
             >
               <span
                 className={cn(
@@ -196,14 +199,14 @@ export function SetupPage() {
               <div className="min-w-0">
                 <p
                   className={cn(
-                    "text-xs font-medium sm:text-sm",
+                    "text-xs font-medium @min-[40rem]/setup:text-sm",
                     index !== step && "text-muted-foreground",
                   )}
                 >
-                  <span className="hidden sm:inline">
+                  <span className="hidden @min-[40rem]/setup:inline">
                     <span className="mr-1 tabular-nums">{index + 1}.</span> {label}
                   </span>
-                  <span className="sm:hidden">{shortLabel}</span>
+                  <span className="@min-[40rem]/setup:hidden">{shortLabel}</span>
                   {index < step && completed[index] && (
                     <span className="sr-only">{t("setupPage.complete")}</span>
                   )}
@@ -229,7 +232,7 @@ export function SetupPage() {
           preset="setup"
           from={`translateX(${navigation.direction * 24}px)`}
           instant={!navigation.animate}
-          className="min-w-0"
+          className="min-w-0 pb-[calc(var(--setup-footer-height,5rem)+1rem)]"
         >
           {step === 0 && <ModelsPage embedded />}
           {step === 1 && (
@@ -309,7 +312,11 @@ export function SetupPage() {
                   ) : (
                     <Mic className="size-4" aria-hidden="true" />
                   )}
-                  {testing ? t("setupPage.stopTest") : t("setupPage.testMicrophone")}
+                  {testing
+                    ? t("setupPage.stopTest")
+                    : micPassed
+                      ? t("uiPolish.testAgain")
+                      : t("setupPage.testMicrophone")}
                 </Button>
                 <p className="text-xs leading-5 text-muted-foreground">
                   {t("setupPage.youCanAlsoTestTranscriptionIn")}{" "}
@@ -334,25 +341,23 @@ export function SetupPage() {
                     <Mic className="size-7" aria-hidden="true" />
                   )}
                 </span>
-                <div className="w-full max-w-xs">
-                  <div aria-hidden="true" className="flex h-12 items-end gap-1.5">
-                    {Array.from({ length: 24 }, (_, index) => (
-                      <span
-                        key={index}
-                        className={cn(
-                          "h-full min-w-0 flex-1 rounded-sm transition-colors motion-reduce:transition-none",
-                          testing && inputLevel * 24 > index ? "bg-primary" : "bg-muted",
-                        )}
-                      />
-                    ))}
-                  </div>
-                  <div className="mt-3 flex items-center justify-between text-xs text-muted-foreground">
-                    <span>{t("setupPage.inputLevel")}</span>
-                    <span className="tabular-nums">
-                      {testing ? `${Math.round(inputLevel * 100)}%` : "—"}
-                    </span>
-                  </div>
-                  {testing && (
+                {testing && (
+                  <div className="w-full max-w-xs">
+                    <div aria-hidden="true" className="flex h-12 items-end gap-1.5">
+                      {Array.from({ length: 24 }, (_, index) => (
+                        <span
+                          key={index}
+                          className={cn(
+                            "h-full min-w-0 flex-1 rounded-sm transition-colors motion-reduce:transition-none",
+                            inputLevel * 24 > index ? "bg-primary" : "bg-muted",
+                          )}
+                        />
+                      ))}
+                    </div>
+                    <div className="mt-3 flex items-center justify-between text-xs text-muted-foreground">
+                      <span>{t("setupPage.inputLevel")}</span>
+                      <span className="tabular-nums">{`${Math.round(inputLevel * 100)}%`}</span>
+                    </div>
                     <meter
                       aria-label={t("setupPage.microphoneLevel")}
                       className="sr-only"
@@ -360,8 +365,8 @@ export function SetupPage() {
                       max={1}
                       value={level}
                     />
-                  )}
-                </div>
+                  </div>
+                )}
                 <div className="text-center">
                   <p
                     role="status"
@@ -370,7 +375,7 @@ export function SetupPage() {
                     {testing
                       ? t("setupPage.listening")
                       : micPassed
-                        ? t("setupPage.microphoneTestPassed")
+                        ? t("uiPolish.lastMicrophoneTestPassed")
                         : t("setupPage.readyToTest")}
                   </p>
                   <p className="mt-2 text-xs leading-5 text-muted-foreground">
@@ -391,7 +396,7 @@ export function SetupPage() {
               aria-label={t("setupPage.shortcutSetup")}
               className="overflow-hidden rounded-2xl border bg-card"
             >
-              <div className="space-y-5 bg-muted/20 px-5 py-8 text-center sm:px-7">
+              <div className="space-y-3 bg-muted/20 px-5 py-5 text-center sm:px-7">
                 <span className="mx-auto flex size-12 items-center justify-center rounded-xl bg-primary/10 text-primary">
                   <Keyboard className="size-6" aria-hidden="true" />
                 </span>
@@ -443,15 +448,22 @@ export function SetupPage() {
                         onChange={setShortcut}
                       />
                     </div>
-                    <Button
-                      variant="outline"
-                      disabled={busy || pending || shortcut === snapshot.settings.shortcut}
-                      onClick={() =>
-                        void action(() => backend.settings({ ...snapshot.settings, shortcut }))
-                      }
-                    >
-                      {t("setupPage.applyShortcut")}
-                    </Button>
+                    {shortcut !== snapshot.settings.shortcut ? (
+                      <Button
+                        variant="outline"
+                        disabled={busy || pending || shortcut === snapshot.settings.shortcut}
+                        onClick={() =>
+                          void action(() => backend.settings({ ...snapshot.settings, shortcut }))
+                        }
+                      >
+                        {t("setupPage.applyShortcut")}
+                      </Button>
+                    ) : (
+                      <span className="inline-flex min-h-9 items-center gap-1.5 px-2 text-xs text-muted-foreground">
+                        <Check aria-hidden="true" className="size-3.5" />
+                        {t("uiPolish.saved")}
+                      </span>
+                    )}
                   </div>
                 </div>
                 <p className="text-xs text-muted-foreground">
@@ -498,6 +510,7 @@ export function SetupPage() {
           {step < 2 ? (
             <Button
               pressFeedback
+              className="disabled:bg-muted disabled:text-muted-foreground"
               disabled={busy || pending || (step === 0 ? !snapshot.ready : !micPassed)}
               onClick={(event) =>
                 setNavigation({ step: step + 1, direction: 1, animate: event.detail > 0 })
@@ -509,6 +522,7 @@ export function SetupPage() {
           ) : (
             <Button
               pressFeedback
+              className="disabled:bg-muted disabled:text-muted-foreground"
               disabled={busy || pending || !shortcutPassed}
               onClick={() => void action(() => backend.completeSetup(false))}
             >

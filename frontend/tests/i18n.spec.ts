@@ -27,7 +27,7 @@ test("language switches immediately, persists on reload, and syncs other windows
   await page.getByRole("option", { name: "Deutsch", exact: true }).click();
   await expect(page.locator("html")).toHaveAttribute("lang", "de");
   await expect(page.getByRole("heading", { name: "Einstellungen", exact: true })).toBeVisible();
-  await expect(page.getByRole("link", { name: "Diktieren", exact: true })).toBeVisible();
+  await expect(page.getByRole("dialog", { name: "Einstellungen", exact: true })).toBeVisible();
   await expect(otherWindow.locator("html")).toHaveAttribute("lang", "de");
   await expect(
     otherWindow.getByRole("heading", { name: "Sprachmodell installieren" }),

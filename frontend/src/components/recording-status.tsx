@@ -4,7 +4,7 @@ import { useDictation } from "@/components/dictation-provider";
 import { backend, duration } from "@/lib/backend";
 import { AudioLines, Loader2, Square, X } from "lucide-react";
 import { useEffect, useState } from "react";
-export function RecordingStatus() {
+export function RecordingStatus({ inline = false }: { inline?: boolean }) {
   const { t } = useTranslation();
   const {
     snapshot: { status, floatingIndicator, recordingSaveHistory },
@@ -25,17 +25,27 @@ export function RecordingStatus() {
   }, [capturing]);
   if (
     status.importId ||
-    (status.phase === "mic-test" && microphoneTestVisible) ||
-    (!testing && floatingIndicator) ||
+    (status.phase === "mic-test" && microphoneTestVisible && !inline) ||
+    (!testing && floatingIndicator && !inline) ||
     (!capturing && status.phase !== "transcribing" && status.phase !== "diagnostic-transcribing")
   )
     return null;
   return (
-    <div className="pointer-events-none fixed bottom-6 left-[var(--sidebar-width)] right-0 z-50 flex justify-center px-4 transition-[left] duration-200 motion-reduce:transition-none group-has-[[data-slot=history-selection-bar]]/layout:bottom-32">
+    <div
+      className={
+        inline
+          ? "shrink-0 border-b px-5 py-3 sm:px-7"
+          : "pointer-events-none fixed bottom-6 left-[var(--sidebar-width)] right-0 z-50 flex justify-center px-4 transition-[left] duration-200 motion-reduce:transition-none group-has-[[data-slot=history-selection-bar]]/layout:bottom-32"
+      }
+    >
       <div
         role="status"
         aria-live="polite"
-        className="pointer-events-auto flex max-w-full items-center gap-4 rounded-2xl border bg-card px-5 py-3 shadow-xl"
+        className={
+          inline
+            ? "flex max-w-full flex-wrap items-center gap-4 text-sm"
+            : "pointer-events-auto flex max-w-full items-center gap-4 rounded-2xl border bg-card px-5 py-3 shadow-xl"
+        }
       >
         {capturing ? (
           <AudioLines className="size-5 text-primary" style={{ opacity: 0.4 + level * 0.6 }} />

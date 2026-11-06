@@ -1,6 +1,269 @@
 import { expect, test, type Page } from "@playwright/test";
 import type { HomeResult, Snapshot } from "../src/lib/backend";
 
+test("Home recorder stays anchored when a result arrives", async ({ page }) => {
+  await scenario(page);
+  for (const viewport of [
+    { width: 1086, height: 722 },
+    { width: 760, height: 560 },
+  ]) {
+    await page.setViewportSize(viewport);
+    await page.evaluate(() => {
+      Reflect.set(window, "anchoredHomeResult", window.homeResultsTest.result);
+      window.homeResultsTest.result = null;
+      window.homeResultsTest.emit();
+    });
+    await expect(page.getByRole("heading", { name: "Ready to record", exact: true })).toBeVisible();
+    const record = page.getByRole("button", { name: "Start recording", exact: true });
+    const emptyPosition = (await record.boundingBox())!;
+    await page.evaluate(() => {
+      window.homeResultsTest.result = Reflect.get(window, "anchoredHomeResult");
+      window.homeResultsTest.emit();
+    });
+    await expect(page.getByRole("heading", { name: "Latest result", exact: true })).toBeVisible();
+    const resultPosition = (await record.boundingBox())!;
+    expect(Math.abs(resultPosition.x - emptyPosition.x)).toBeLessThan(1);
+    expect(Math.abs(resultPosition.y - emptyPosition.y)).toBeLessThan(1);
+  }
+});
+
+test("Home workspace keeps recording and document controls aligned while options float over full text", async ({
+  page,
+}) => {
+  await scenario(page);
+  const text = Array.from(
+    { length: 40 },
+    (_, i) =>
+      `Paragraph ${i + 1}: the complete saved text remains available for reading and copying without a shortened preview.`,
+  ).join("\n\n");
+  await page.evaluate((text) => {
+    const state = window.homeResultsTest;
+    state.result!.text = text;
+    state.result!.session.finalTranscript = text;
+    state.result!.revision = "long-workspace";
+    state.emit();
+  }, text);
+  const workspace = page.getByRole("region", { name: "Latest saved result", exact: true });
+  const content = workspace.getByLabel("Result text", { exact: true });
+  await expect(content).toHaveText(text);
+  const record = page.getByRole("button", { name: "Start recording", exact: true });
+  const before = await workspace.boundingBox();
+  const action = await record.boundingBox();
+  const reading = await content.boundingBox();
+  expect(reading && action && Math.abs(reading.x - action.x)).toBeLessThan(2);
+  await page.getByRole("button", { name: "Recording options", exact: true }).click();
+  const options = page.getByRole("dialog", { name: "Recording options", exact: true });
+  await expect(options).toBeVisible();
+  const after = await workspace.boundingBox();
+  expect(before && after && Math.abs(before.y - after.y)).toBeLessThan(1);
+  await page.keyboard.press("Escape");
+  await expect(options).toHaveCount(0);
+  const pane = workspace.getByRole("tabpanel", { name: "Transcript", exact: true });
+  expect(await pane.evaluate((node) => node.scrollHeight > node.clientHeight)).toBe(true);
+  await pane.evaluate((node) => {
+    node.scrollTop = node.scrollHeight;
+  });
+  expect(
+    await pane.evaluate((node) => node.scrollTop + node.clientHeight >= node.scrollHeight - 1),
+  ).toBe(true);
+  await expect(workspace.getByRole("button", { name: "Copy", exact: true })).toBeInViewport();
+  expect(await page.evaluate(() => document.documentElement.scrollHeight <= innerHeight)).toBe(
+    true,
+  );
+  await page.setViewportSize({ width: 760, height: 560 });
+  await page.evaluate(() => (document.documentElement.style.fontSize = "200%"));
+  const copy = workspace.getByRole("button", { name: "Copy", exact: true });
+  await copy.focus();
+  await expect(copy).toBeFocused();
+  await expect(copy).toBeInViewport();
+  const buttonBounds = await copy.boundingBox();
+  expect(buttonBounds!.y).toBeGreaterThanOrEqual(0);
+  expect(buttonBounds!.y + buttonBounds!.height).toBeLessThanOrEqual(560);
+  const readingSpace = await pane.evaluate((node) => {
+    const style = getComputedStyle(node);
+    const text = node.querySelector("#home-result-text")!;
+    return {
+      height: node.clientHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom),
+      lineHeight: parseFloat(getComputedStyle(text).lineHeight),
+    };
+  });
+  expect(readingSpace.height).toBeGreaterThanOrEqual(4 * readingSpace.lineHeight);
+  const rail = page.locator("#app-sidebar");
+  expect(await rail.evaluate((node) => node.scrollHeight <= node.clientHeight)).toBe(true);
+  for (const link of await rail.getByRole("link").all()) {
+    await expect(link).toBeInViewport();
+    const bounds = (await link.boundingBox())!;
+    expect(bounds.width).toBeGreaterThanOrEqual(44);
+    expect(bounds.height).toBeGreaterThanOrEqual(44);
+  }
+  await copy.click();
+  await expect.poll(() => page.evaluate(() => window.homeResultsTest.clipboard)).toBe(text);
+  expect(await page.evaluate(() => window.homeResultsTest.result!.session.rawTranscript)).toBe(
+    "Synthetic recognition: share the meeting notes tomorrow.",
+  );
+  const confirmedReadingSpace = await pane.evaluate((node) => {
+    const style = getComputedStyle(node);
+    return node.clientHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom);
+  });
+  expect(confirmedReadingSpace).toBeGreaterThanOrEqual(2 * readingSpace.lineHeight);
+  await pane.scrollIntoViewIfNeeded();
+  await expect(pane).toBeInViewport();
+  await pane.evaluate((node) => {
+    node.scrollTop = 0;
+  });
+  const tabs = workspace.getByRole("tablist", { name: "Result views", exact: true });
+  const tabsBounds = (await tabs.boundingBox())!;
+  expect(tabsBounds.y).toBeGreaterThanOrEqual(0);
+  expect(tabsBounds.y + tabsBounds.height).toBeLessThanOrEqual(560);
+  expect((await content.boundingBox())!.y).toBeGreaterThanOrEqual(
+    tabsBounds.y + tabsBounds.height - 1,
+  );
+  await pane.evaluate((node) => {
+    node.scrollTop = node.scrollHeight;
+  });
+  expect(
+    await pane.evaluate((node) => node.scrollTop + node.clientHeight >= node.scrollHeight - 1),
+  ).toBe(true);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(760);
+  const scroll = await page.locator('[data-slot="home-recorder"]').evaluate((node) => {
+    const root = node.parentElement!,
+      panel = root.querySelector('[data-slot="home-result-panel"]')!,
+      pane = panel.querySelector('[role="tabpanel"]')!;
+    return {
+      client: root.clientHeight,
+      total: root.scrollHeight,
+      root: root.getBoundingClientRect().toJSON(),
+      panel: panel.getBoundingClientRect().toJSON(),
+      pane: pane.getBoundingClientRect().toJSON(),
+      text: panel.textContent?.slice(-100),
+    };
+  });
+  expect(scroll.total <= scroll.client + 2, JSON.stringify(scroll)).toBe(true);
+});
+
+for (const language of ["en", "de"] as const) {
+  test(`Home extreme heading preserves its accessible name and reading space ${language}`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 360, height: 640 });
+    await scenario(page);
+    await page.evaluate((language) => localStorage.setItem("desktop-language", language), language);
+    await page.reload();
+    await page.evaluate(() => (document.documentElement.style.fontSize = "200%"));
+    const heading = page.getByRole("heading", {
+      name: language === "de" ? "Letztes Ergebnis" : "Latest result",
+      exact: true,
+    });
+    await expect(heading).toBeVisible();
+    const visibleText = heading.locator('[aria-hidden="true"]');
+    await expect(visibleText).toHaveText(language === "de" ? "Ergebnis" : "Result");
+    await expect(visibleText).toBeVisible();
+    const pane = page.locator('[data-slot="home-result-panel"] [role="tabpanel"]');
+    const text = page.locator("#home-result-text");
+    await expect(text).toHaveCSS("font-size", "32px");
+    await expect(text).toHaveCSS("line-height", "56px");
+    expect(await pane.evaluate((node) => node.clientHeight)).toBeGreaterThanOrEqual(240);
+    const named = "Meeting notes with a custom title that remains available in full";
+    await page.evaluate((named) => {
+      const state = window.homeResultsTest;
+      state.result!.session.title = named;
+      state.emit();
+    }, named);
+    await expect(page.getByRole("heading", { name: named, exact: true })).toHaveText(named);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+      true,
+    );
+  });
+}
+
+test("Home output tabs keep source-specific copy and return to the current result on request", async ({
+  page,
+}) => {
+  await scenario(page);
+  const outputText = "# Takeaway\n\n- Keep the original text.\n- Copy the selected output.";
+  await page.evaluate((text) => {
+    const state = window.homeResultsTest;
+    state.result!.outputs = [
+      {
+        id: "synthetic-output",
+        sessionId: state.result!.session.id,
+        createdAt: "2026-11-04T12:00:00Z",
+        model: "synthetic-model",
+        endpoint: "http://127.0.0.1:11434/v1",
+        prompt: { id: "summary", name: "Summary", instruction: "Summarize." },
+        input: state.result!.text,
+        text,
+      },
+    ];
+    state.emit();
+  }, outputText);
+  const workspace = page.getByRole("region", { name: "Latest saved result", exact: true });
+  const outputs = workspace.getByRole("tab", { name: /^Outputs/ });
+  await outputs.click();
+  await expect(workspace.getByRole("heading", { name: "Takeaway", exact: true })).toBeVisible();
+  await expect(workspace.getByRole("button", { name: "Copy", exact: true })).toHaveCount(0);
+  await workspace.getByRole("button", { name: "Copy output", exact: true }).click();
+  await expect.poll(() => page.evaluate(() => window.homeResultsTest.clipboard)).toBe(outputText);
+  await expect(outputs).toHaveAttribute("aria-selected", "true");
+  expect(await page.evaluate(() => window.homeResultsTest.result!.text)).toBe(
+    "Synthetic recognition: share the meeting notes tomorrow.",
+  );
+  expect(await page.evaluate(() => window.homeResultsTest.result!.outputs[0].text)).toBe(
+    outputText,
+  );
+  await page.evaluate(() => window.dispatchEvent(new Event("yap:show-result")));
+  await expect(workspace.getByRole("tab", { name: "Transcript", exact: true })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+  await outputs.click();
+  await page.setViewportSize({ width: 480, height: 760 });
+  await page.evaluate(() => {
+    document.documentElement.style.fontSize = "200%";
+  });
+  const compactView = workspace.getByRole("combobox", { name: "Result views", exact: true });
+  await expect(compactView).toBeVisible();
+  await compactView.click();
+  await page.getByRole("option", { name: "Transcript", exact: true }).click();
+  await expect(workspace.getByRole("button", { name: "Copy", exact: true })).toBeVisible();
+  await compactView.click();
+  await page.getByRole("option", { name: /^Outputs \(/ }).click();
+  await expect(compactView).toContainText("Outputs (1)");
+  expect(
+    await compactView.evaluate((node) => {
+      const value = node.querySelector('[data-slot="select-value"]')!;
+      const range = document.createRange();
+      range.selectNodeContents(value.firstChild!);
+      const text = range.getBoundingClientRect(),
+        box = value.getBoundingClientRect();
+      return text.left >= box.left - 1 && text.right <= box.right + 1;
+    }),
+  ).toBe(true);
+  await expect(workspace.getByRole("heading", { name: "Takeaway", exact: true })).toBeInViewport();
+  await expect(workspace.getByText("Keep the original text.", { exact: true })).toBeInViewport();
+  await page.evaluate(() => {
+    const state = window.homeResultsTest;
+    const previous = state.result!;
+    state.result = {
+      ...previous,
+      session: { ...previous.session, id: "replacement", finalTranscript: "Replacement result." },
+      text: "Replacement result.",
+      revision: "replacement-one",
+      outputs: [],
+    };
+    state.emit();
+  });
+  await expect(workspace.getByLabel("Result text", { exact: true })).toHaveText(
+    "Replacement result.",
+  );
+  await expect(outputs).toHaveCount(0);
+  await expect(compactView).toHaveCount(0);
+  await expect(workspace.getByRole("button", { name: "Copy", exact: true })).toBeVisible();
+  expect(await page.evaluate(() => window.homeResultsTest.calls)).toEqual([
+    "copy:synthetic-output",
+  ]);
+});
+
 declare global {
   interface Window {
     homeResultsTest: {
@@ -275,9 +538,32 @@ test("saved edits submit explicitly, cancel without writes, return focus and kee
   page,
 }) => {
   await scenario(page);
+  const readingMeasure = await page.getByLabel("Result text", { exact: true }).evaluate((node) => ({
+    width: node.getBoundingClientRect().width,
+    lineHeight: getComputedStyle(node).lineHeight,
+  }));
   const edit = page.getByRole("button", { name: "Edit result", exact: true });
   await edit.click();
-  const dialog = page.getByRole("dialog", { name: "Edit result" });
+  const dialog = page.getByRole("region", { name: "Edit result", exact: true });
+  await expect(dialog).toHaveAccessibleDescription("Apply saves to History · Original preserved.");
+  await expect(dialog.getByLabel("Your text")).toBeFocused();
+  const draftMeasure = await dialog.getByLabel("Your text").evaluate((node) => {
+    const style = getComputedStyle(node);
+    return {
+      contentWidth:
+        node.getBoundingClientRect().width -
+        parseFloat(style.paddingLeft) -
+        parseFloat(style.paddingRight) -
+        parseFloat(style.borderLeftWidth) -
+        parseFloat(style.borderRightWidth),
+      lineHeight: style.lineHeight,
+    };
+  });
+  expect(Math.abs(draftMeasure.contentWidth - readingMeasure.width)).toBeLessThan(1);
+  expect(draftMeasure.lineHeight).toBe(readingMeasure.lineHeight);
+  expect(
+    await dialog.getByLabel("Your text").evaluate((node) => node.clientHeight),
+  ).toBeGreaterThan(240);
   await dialog.getByLabel("Your text").fill("Synthetic discarded draft.");
   await page.waitForTimeout(1200);
   expect(await page.evaluate(() => window.homeResultsTest.calls)).toEqual([]);
@@ -296,7 +582,9 @@ test("saved edits submit explicitly, cancel without writes, return focus and kee
   expect(await page.evaluate(() => window.homeResultsTest.result!.session.rawTranscript)).toContain(
     "Synthetic recognition:",
   );
-  await expect(page.getByRole("status")).toContainText("Changes saved to History");
+  await expect(
+    page.getByRole("status").filter({ hasText: "Changes saved to History" }),
+  ).toBeVisible();
 });
 
 for (const saved of [true, false]) {
@@ -362,6 +650,8 @@ test("a genuine return-to-Home read failure stays recoverable without calling an
   await page.getByRole("link", { name: "Dictate", exact: true }).click();
   const unknown = page.getByRole("region", { name: "Latest result", exact: true });
   await expect(unknown.getByRole("button", { name: "Refresh result" })).toBeVisible();
+  await expect(unknown.getByRole("link", { name: "Open History", exact: true })).toBeVisible();
+  expect((await unknown.boundingBox())!.height).toBeLessThan(240);
   await expect(unknown).not.toContainText("Temporary");
   await page.evaluate(() => {
     window.homeResultsTest.failRead = false;
@@ -378,7 +668,7 @@ test("temporary edit is memory-only, IME cannot submit, busy keeps draft, failur
 }) => {
   await scenario(page, false);
   await page.getByRole("button", { name: "Edit result", exact: true }).click();
-  const dialog = page.getByRole("dialog");
+  const dialog = page.getByRole("region", { name: "Edit result", exact: true });
   const input = dialog.getByLabel("Your text");
   await input.fill("Synthetic 日本語 correction.");
   await input.dispatchEvent("compositionstart");
@@ -433,7 +723,7 @@ test("pending edits reject duplicate submit and dismissal; replacement/deletion 
 }) => {
   await scenario(page);
   await page.getByRole("button", { name: "Edit result", exact: true }).click();
-  const dialog = page.getByRole("dialog");
+  const dialog = page.getByRole("region", { name: "Edit result", exact: true });
   await dialog.getByLabel("Your text").fill("Synthetic pending edit.");
   await page.evaluate(() => {
     window.homeResultsTest.defer = true;
@@ -458,7 +748,7 @@ test("pending edits reject duplicate submit and dismissal; replacement/deletion 
   await expect(dialog.getByLabel("Your text")).toHaveValue("Synthetic stale draft to retain.");
   await expect(dialog.getByText("The result changed.", { exact: false })).toBeVisible();
   await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "Recent dictations", exact: true })).toBeFocused();
+  await expect(page.getByRole("button", { name: "Start recording", exact: true })).toBeFocused();
   expect(await page.evaluate(() => window.homeResultsTest.calls)).toEqual(["edit"]);
 });
 
@@ -481,7 +771,7 @@ test("copy revalidates the backend revision, failed copy retries explicitly, dis
     window.homeResultsTest.fail = "";
   });
   await page.getByRole("button", { name: "Copy", exact: true }).click();
-  await expect(page.getByRole("status")).toContainText("Paste manually");
+  await expect(page.getByRole("status").filter({ hasText: "Paste manually" })).toBeVisible();
   await page.getByRole("button", { name: "Dismiss", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Latest result", exact: true })).toHaveCount(0);
   expect(await page.evaluate(() => window.homeResultsTest.snapshot.history)).toEqual([]);
@@ -502,9 +792,7 @@ for (const saved of [true, false]) {
     await dismiss.click();
     await expect(page.getByRole("heading", { name: "Latest result", exact: true })).toHaveCount(0);
     await expect(page.getByText("Temporary result dismissed.", { exact: true })).toHaveCount(0);
-    await expect(
-      page.getByRole("heading", { name: "Recent dictations", exact: true }),
-    ).toBeFocused();
+    await expect(page.getByRole("button", { name: "Start recording", exact: true })).toBeFocused();
     expect(await page.evaluate(() => window.homeResultsTest.snapshot.history)).toEqual(history);
     await page.getByRole("link", { name: "History", exact: true }).click();
     if (saved)
@@ -512,9 +800,7 @@ for (const saved of [true, false]) {
         page.getByText("Synthetic recognition: share the meeting notes tomorrow."),
       ).toBeVisible();
     await page.getByRole("link", { name: "Dictate", exact: true }).click();
-    await expect(
-      page.getByRole("heading", { name: "Recent dictations", exact: true }),
-    ).toBeVisible();
+    await expect(page.getByRole("button", { name: "Start recording", exact: true })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Latest result", exact: true })).toHaveCount(0);
     await expect(page.getByText("Temporary result dismissed.", { exact: true })).toHaveCount(0);
     await page.screenshot({
@@ -544,7 +830,7 @@ test("a read failure inside the editor retains the draft through an explicit ref
 }) => {
   await scenario(page);
   await page.getByRole("button", { name: "Edit result", exact: true }).click();
-  const dialog = page.getByRole("dialog");
+  const dialog = page.getByRole("region", { name: "Edit result", exact: true });
   await dialog.getByLabel("Your text").fill("");
   await expect(dialog.getByRole("button", { name: "Apply changes" })).toBeDisabled();
   await dialog.getByLabel("Your text").fill("Synthetic draft retained during read failure.");
@@ -591,7 +877,7 @@ test("accepted capture/import expires temporary text despite cancel/read failure
   await expect(page.getByRole("button", { name: "Copy", exact: true })).toHaveCount(0);
   await scenario(page, false);
   await page.getByRole("button", { name: "Edit result", exact: true }).click();
-  const dialog = page.getByRole("dialog");
+  const dialog = page.getByRole("region", { name: "Edit result", exact: true });
   await dialog
     .getByLabel("Your text")
     .fill("Synthetic dirty draft retained after accepted import.");
@@ -674,13 +960,18 @@ for (const theme of ["light", "dark"] as const) {
     });
     await page.waitForTimeout(600);
     await region.getByRole("button", { name: "Edit result", exact: true }).click();
-    const dialog = page.getByRole("dialog");
+    const dialog = page.getByRole("region", { name: "Edit result", exact: true });
     await dialog
       .getByLabel("Your text")
       .fill("Synthetic demo · Share the revised notes tomorrow and confirm the next steps.");
     await expect(dialog.getByText("Apply changes in memory.", { exact: false })).toHaveCount(0);
     await expect(dialog.getByText("Submit with Apply changes", { exact: false })).toHaveCount(0);
-    await expect(dialog).not.toHaveAttribute("aria-describedby");
+    await expect(dialog).toHaveAccessibleDescription(
+      "Temporary result · Apply doesn’t save to History.",
+    );
+    await expect(dialog.getByLabel("Your text")).toHaveAccessibleDescription(
+      "Temporary result · Apply doesn’t save to History.",
+    );
     await page.screenshot({ path: info.outputPath(`synthetic-home-editor-${theme}-desktop.png`) });
     await page.waitForTimeout(600);
     await dialog.getByRole("button", { name: "Apply changes" }).click();
@@ -712,7 +1003,6 @@ for (const theme of ["light", "dark"] as const) {
     await page.keyboard.press("Enter");
     await expect(dialog).toHaveCount(0);
     await expect(region.getByRole("button", { name: "Edit result", exact: true })).toBeFocused();
-    await page.getByRole("button", { name: "Expand sidebar", exact: true }).click();
     await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth)).toBe(760);
     await expect.poll(() => region.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
     await region.getByRole("button", { name: "Save to History", exact: true }).focus();

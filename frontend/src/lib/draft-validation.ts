@@ -126,7 +126,10 @@ export function vocabularyPayload(
         .filter(Boolean),
     }));
 }
-export function validateVocabulary(entries: VocabularyEntry[]): Record<string, string> {
+export function validateVocabulary(
+  entries: VocabularyEntry[],
+  { conciseDuplicates = false }: { conciseDuplicates?: boolean } = {},
+): Record<string, string> {
   const errors: Record<string, string> = {};
   const phrases: { phrase: string; owner: string }[] = [];
   const ids = new Set<string>();
@@ -153,9 +156,12 @@ export function validateVocabulary(entries: VocabularyEntry[]): Record<string, s
         (previous) => previous.owner !== entry.id && pattern.test(previous.phrase),
       );
       if (duplicate) {
-        const reason = i18n.t("draftValidation.duplicateTerm", {
-          phrase: phrase.trim(),
-        });
+        const reason = i18n.t(
+          conciseDuplicates ? "uiPolish.duplicateTermShort" : "draftValidation.duplicateTerm",
+          {
+            phrase: phrase.trim(),
+          },
+        );
         errors[entry.id] = reason;
         errors[duplicate.owner] = reason;
       }

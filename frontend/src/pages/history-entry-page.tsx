@@ -1,6 +1,8 @@
 import { nativeText } from "@/i18n/native-text";
 import i18n from "@/i18n";
 import { useTranslation } from "react-i18next";
+import { CopyButton } from "@/components/copy-button";
+import { ActionMenu, ActionMenuItem } from "@/components/ui/action-menu";
 import { AudioPlayer } from "@/components/audio-player";
 import { useDictation } from "@/components/dictation-provider";
 import { GeneratedOutputs } from "@/components/generated-outputs";
@@ -9,6 +11,7 @@ import { MarkdownContent } from "@/components/markdown-content";
 import { TextPanel } from "@/components/text-panel";
 import { TranscriptDiff } from "@/components/transcript-diff";
 import { TranscriptEditor } from "@/components/transcript-editor";
+import { SessionTitleAction } from "@/components/session-title-action";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { backend, duration, isDesktop, message, type Session } from "@/lib/backend";
@@ -16,7 +19,6 @@ import { deleteTranscriptions } from "@/lib/delete-transcriptions";
 import {
   ArrowLeft,
   AudioLines,
-  Copy,
   Download,
   FileText,
   GitCompareArrows,
@@ -125,106 +127,178 @@ function EntryDetail({ id }: { id: string }) {
       setDeletingNow(false);
     }
   }
+  const firstLine = (entry?.finalTranscript ?? entry?.rawTranscript ?? "")
+    .trim()
+    .split(/\r?\n/)[0]
+    .replace(/\s+/g, " ");
+  const titleCharacters = Array.from(firstLine);
+  const titlePrefix = titleCharacters.slice(0, 60).join("");
+  const sessionTitle =
+    titleCharacters.length > 60
+      ? `${(titlePrefix.replace(/\s+\S*$/, "").trimEnd() || titlePrefix).replace(/[\s,;:–—-]+$/, "")}…`
+      : firstLine;
   return (
-    <div className="space-y-3" style={audio ? { paddingBottom: playerHeight } : undefined}>
-      <header className="space-y-3">
-        <div className="flex flex-wrap items-center justify-between gap-x-5 gap-y-3">
-          <div className="flex min-w-0 flex-[1_1_16rem] items-start gap-3">
-            <Link
-              to={back}
-              title={t("historyEntryPage.backToHistory")}
-              className="mt-0.5 inline-flex size-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+    <div className="space-y-4" style={audio ? { paddingBottom: playerHeight } : undefined}>
+      <header className="group @container/detail">
+        <div className="flex min-w-0 items-start gap-[12px]">
+          <Link
+            to={back}
+            title={t("historyEntryPage.backToHistory")}
+            className="mt-0.5 inline-flex size-[min(2rem,44px)] shrink-0 items-center justify-center rounded-lg text-muted-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <ArrowLeft aria-hidden="true" className="size-4" />
+            <span className="sr-only">{t("historyEntryPage.backToHistory")}</span>
+          </Link>
+          <div className="min-w-0 flex-1">
+            <div
+              className={
+                entry && !editing
+                  ? "grid items-start gap-x-3 gap-y-2 @min-[44rem]/detail:grid-cols-[minmax(0,1fr)_auto]"
+                  : "min-w-0"
+              }
             >
-              <ArrowLeft aria-hidden="true" className="size-4" />
-              <span className="sr-only">{t("historyEntryPage.backToHistory")}</span>
-            </Link>
-            <div className="min-w-0">
-              <h1
-                ref={title}
-                tabIndex={-1}
-                className="text-xl font-semibold tracking-tight outline-none"
+              <div
+                data-slot="dictation-title"
+                className="min-w-0 text-lg leading-7 text-balance break-words @min-[44rem]/detail:text-xl [&_[data-dictation-title-action]]:align-middle @max-[44rem]/detail:[&_[data-dictation-title-action]]:size-[44px]"
               >
-                {t("historyEntryPage.dictation")}
-              </h1>
-              {entry && (
-                <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-muted-foreground sm:text-xs">
-                  <span>{new Date(entry.createdAt).toLocaleString(i18n.resolvedLanguage)}</span>
-                  <span aria-hidden="true" className="text-border">
-                    ·
-                  </span>
-                  <span>{duration(entry.durationMs)}</span>
-                  <span aria-hidden="true" className="text-border">
-                    ·
-                  </span>
-                  <span className="max-w-48 truncate" title={entry.speechModel}>
-                    {entry.speechModel}
-                  </span>
-                  {entry.audioPath && !audio && (
-                    <Button
-                      ref={playTrigger}
-                      size="xs"
-                      variant="ghost"
-                      className="text-muted-foreground"
-                      disabled={unavailable || loadingAudio}
-                      onClick={() => void play()}
-                    >
-                      {loadingAudio ? (
-                        <Loader2 className="size-3 animate-spin motion-reduce:animate-none" />
-                      ) : (
-                        <AudioLines className="size-3" />
-                      )}
-                      {t("historyEntryPage.playRecording")}
-                    </Button>
+                <h1
+                  ref={title}
+                  tabIndex={-1}
+                  className="inline font-semibold tracking-tight outline-none"
+                >
+                  {entry?.title || sessionTitle || t("historyEntryPage.dictation")}
+                </h1>
+                {entry && !editing && (
+                  <>
+                    {" "}
+                    <SessionTitleAction
+                      contextual
+                      entry={entry}
+                      disabled={unavailable}
+                      onSaved={(value) => {
+                        setEntry((current) => (current ? { ...current, title: value } : current));
+                        void run(refresh, false);
+                      }}
+                    />
+                  </>
+                )}
+              </div>
+              {entry && !editing && (
+                <div
+                  data-slot="detail-primary-actions"
+                  className="flex max-w-full flex-wrap items-center gap-1.5 @min-[44rem]/detail:justify-end"
+                >
+                  {activeTab !== "outputs" && (
+                    <CopyButton
+                      compact
+                      text={activeTab === "original" ? entry.rawTranscript : text}
+                      label={
+                        activeTab === "original"
+                          ? t("historyEntryPage.copyOriginal")
+                          : changed
+                            ? t("historyEntryPage.copyResult")
+                            : t("historyEntryPage.copyTranscription")
+                      }
+                      disabled={unavailable}
+                    />
                   )}
+
+                  <Button
+                    ref={editTrigger}
+                    size="sm"
+                    variant="outline"
+                    className="h-auto min-h-8 max-w-full whitespace-normal @max-[44rem]/detail:px-[8px]"
+                    aria-label={
+                      activeTab === "original"
+                        ? t("uiPolish.editSavedTranscript")
+                        : t("historyEntryPage.editTranscript")
+                    }
+                    aria-description={
+                      activeTab === "original" ? t("uiPolish.originalPreserved") : undefined
+                    }
+                    disabled={unavailable}
+                    onClick={() => setEditing(entry)}
+                  >
+                    <Pencil className="size-3.5" />
+                    {activeTab === "original" ? (
+                      t("uiPolish.editSavedTranscript")
+                    ) : (
+                      <>
+                        <span className="sm:hidden">{t("common.edit")}</span>
+                        <span className="hidden sm:inline">
+                          {t("historyEntryPage.editTranscript")}
+                        </span>
+                      </>
+                    )}
+                  </Button>
+
+                  <ActionMenu disabled={unavailable} label={t("uiPolish.dictationActions")}>
+                    <ActionMenuItem
+                      disabled={unavailable}
+                      onClick={() => void run(() => backend.export(id), false)}
+                    >
+                      <Download aria-hidden="true" />
+                      {t("historyEntryPage.export")}
+                    </ActionMenuItem>
+                    <ActionMenuItem
+                      destructive
+                      disabled={unavailable}
+                      onClick={() => void remove()}
+                    >
+                      <Trash2 aria-hidden="true" />
+                      {t("historyEntryPage.deleteDictation")}
+                    </ActionMenuItem>
+                  </ActionMenu>
                 </div>
               )}
             </div>
+            {entry && (
+              <div
+                data-slot="detail-metadata"
+                className="mt-1 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground"
+              >
+                <time dateTime={entry.createdAt}>
+                  {new Date(entry.createdAt).toLocaleString(i18n.resolvedLanguage, {
+                    dateStyle: "medium",
+                    timeStyle: "short",
+                  })}
+                </time>
+                <span aria-hidden="true" className="text-border">
+                  ·
+                </span>
+                <span>{duration(entry.durationMs)}</span>
+                <span aria-hidden="true" className="text-border">
+                  ·
+                </span>
+                <span className="max-w-48 truncate" title={entry.speechModel}>
+                  {entry.speechModel}
+                </span>
+
+                {!editing && (
+                  <>
+                    <InferenceStats session={entry} />
+                    {entry.audioPath && !audio && (
+                      <Button
+                        ref={playTrigger}
+                        size="sm"
+                        variant="ghost"
+                        className="h-auto min-h-7 max-w-full px-1 text-left text-xs font-normal whitespace-normal text-muted-foreground hover:text-foreground"
+                        disabled={unavailable || loadingAudio}
+                        onClick={() => void play()}
+                      >
+                        {loadingAudio ? (
+                          <Loader2 className="size-3.5 animate-spin motion-reduce:animate-none" />
+                        ) : (
+                          <AudioLines className="size-3.5" />
+                        )}
+                        {t("historyEntryPage.playRecording")}
+                      </Button>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
           </div>
-          {entry && (
-            <div className="ml-auto flex shrink-0 items-center gap-1">
-              <InferenceStats session={entry} />
-              <Button
-                size="sm"
-                variant="outline"
-                aria-label={t("historyEntryPage.editTranscript")}
-                disabled={unavailable}
-                onClick={(event) => {
-                  editTrigger.current = event.currentTarget;
-                  setEditing(entry);
-                }}
-              >
-                <Pencil className="size-3.5" />
-                {t("common.edit")}
-                <span className="hidden sm:inline"> {t("historyEntryPage.transcript")}</span>
-              </Button>
-              <Button
-                size="sm"
-                variant="ghost"
-                className="text-muted-foreground"
-                aria-label={
-                  changed
-                    ? t("historyEntryPage.exportResult")
-                    : t("historyEntryPage.exportTranscription")
-                }
-                disabled={unavailable}
-                onClick={() => void run(() => backend.export(id), false)}
-              >
-                <Download className="size-3.5" />
-                {t("historyEntryPage.export")}
-              </Button>
-              <Button
-                size="icon-sm"
-                variant="ghost"
-                aria-label={t("common.delete")}
-                title={t("historyEntryPage.deleteDictation")}
-                disabled={unavailable}
-                className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-                onClick={() => void remove()}
-              >
-                <Trash2 className="size-3.5" />
-              </Button>
-            </div>
-          )}
         </div>
       </header>
       {deleteError && (
@@ -253,11 +327,11 @@ function EntryDetail({ id }: { id: string }) {
           </p>
         </section>
       )}
-      {entry && (
+      {entry && !editing && (
         <Tabs
           value={activeTab}
           onValueChange={(value) => setActiveTab(String(value))}
-          className="min-w-0 gap-6"
+          className="min-w-0 gap-4 sm:pl-11"
           aria-busy={loading}
         >
           <div className="sticky top-0 z-10 overflow-x-auto border-b bg-background pb-1">
@@ -309,21 +383,8 @@ function EntryDetail({ id }: { id: string }) {
                   ? t("historyEntryPage.editedOrProcessedText")
                   : t("historyEntryPage.savedTranscription"),
               })}
-              action={
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={unavailable}
-                  onClick={() => void run(() => backend.copy(text), false)}
-                >
-                  <Copy className="size-3.5" />
-                  {changed
-                    ? t("historyEntryPage.copyResult")
-                    : t("historyEntryPage.copyTranscription")}
-                </Button>
-              }
             >
-              <MarkdownContent className="text-base leading-8">{text}</MarkdownContent>
+              <MarkdownContent className="text-base leading-7">{text}</MarkdownContent>
             </TextPanel>
           </TabsContent>
           <TabsContent value="original" keepMounted>
@@ -332,19 +393,8 @@ function EntryDetail({ id }: { id: string }) {
               variant="reading"
               kind="source"
               description={t("historyEntryPage.fromTheRecordingReadOnly")}
-              action={
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={unavailable}
-                  onClick={() => void run(() => backend.copy(entry.rawTranscript), false)}
-                >
-                  <Copy className="size-3.5" />
-                  {t("historyEntryPage.copyOriginal")}
-                </Button>
-              }
             >
-              <MarkdownContent className="text-base leading-8">
+              <MarkdownContent className="text-base leading-7">
                 {entry.rawTranscript}
               </MarkdownContent>
             </TextPanel>
@@ -369,15 +419,17 @@ function EntryDetail({ id }: { id: string }) {
         </Tabs>
       )}
       {editing && (
-        <TranscriptEditor
-          session={editing}
-          returnFocus={editTrigger}
-          onClose={() => setEditing(null)}
-          onSaved={() => {
-            setReload((old) => old + 1);
-            void run(refresh, false);
-          }}
-        />
+        <div className="min-w-0 sm:pl-11">
+          <TranscriptEditor
+            session={editing}
+            returnFocus={editTrigger}
+            onClose={() => setEditing(null)}
+            onSaved={() => {
+              setReload((old) => old + 1);
+              void run(refresh, false);
+            }}
+          />
+        </div>
       )}
       {audio && (
         <div

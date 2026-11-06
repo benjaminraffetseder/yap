@@ -66,6 +66,9 @@ export function ProfileApps({
       aria-label={t("profileApps.appsFor", { name: profile.name })}
       className="flex basis-full flex-wrap items-center gap-1.5"
     >
+      {!assigned.length && (
+        <span className="mr-2 text-xs text-muted-foreground">{t("uiPolish.noAppAssignments")}</span>
+      )}
       {assigned.map((rule) => (
         <Badge
           key={rule.applicationId}
@@ -105,7 +108,7 @@ export function ProfileApps({
         <SelectTrigger
           size="sm"
           aria-label={t("profileApps.addAppTo", { name: profile.name })}
-          className="rounded-full border-dashed px-2 text-xs data-[size=sm]:h-6 data-placeholder:text-muted-foreground [&_svg:not([class*='size-'])]:size-3"
+          className="rounded-md border-input px-3 text-xs data-[size=sm]:h-8 data-placeholder:text-foreground [&_svg:not([class*='size-'])]:size-3.5"
         >
           <Plus aria-hidden="true" className="size-3" />
           <SelectValue placeholder={t("profileApps.addApp")} />

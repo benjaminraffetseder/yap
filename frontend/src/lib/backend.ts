@@ -19,6 +19,7 @@ import {
   ExportSession,
   ExportSessions,
   GenerateSessionOutput,
+  GenerateSessionTitle,
   GetAudio,
   GetAudioSupport,
   GetDiagnosticChecks,
@@ -57,6 +58,7 @@ import {
   SaveSettings,
   SaveTextProcessing,
   SaveTranscript,
+  RenameSession,
   SaveVocabulary,
   SelectFile,
   SetSaveHistory,
@@ -187,6 +189,7 @@ export type AudioSupport = {
 };
 export type Session = {
   id: string;
+  title?: string;
   createdAt: string;
   durationMs: number;
   rawTranscript: string;
@@ -462,6 +465,8 @@ export const backend = {
   audio: GetAudio,
   export: ExportSession,
   saveTranscript: SaveTranscript,
+  renameSession: RenameSession,
+  generateSessionTitle: GenerateSessionTitle,
   addVocabularyTerm: AddVocabularyTerm,
   history: async (query: string, page: number): Promise<HistoryPageResult> => {
     const result = await GetHistory(query, page);

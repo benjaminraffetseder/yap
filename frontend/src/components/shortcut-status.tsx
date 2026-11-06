@@ -14,7 +14,7 @@ export function ShortcutStatus({
 }: {
   disabled?: boolean;
   profile?: boolean;
-  variant?: "inline" | "banner";
+  variant?: "inline" | "banner" | "notice";
 }) {
   const { t } = useTranslation();
   const { snapshot, run } = useDictation();
@@ -38,7 +38,7 @@ export function ShortcutStatus({
       variant="outline"
       size="sm"
       className={
-        variant === "banner"
+        variant !== "inline"
           ? "h-auto min-h-8 max-w-full whitespace-normal py-1 [overflow-wrap:anywhere]"
           : undefined
       }
@@ -52,19 +52,29 @@ export function ShortcutStatus({
           : t("shortcutStatus.retryShortcut")}
     </Button>
   );
-  if (variant === "banner") {
+  if (variant !== "inline") {
     const permission = /accessibility|permission|input monitoring/i.test(error);
     return (
       <section
         aria-label={t("shortcutStatus.shortcutRecovery")}
-        className="@container/shortcut min-w-0 rounded-xl border border-amber-500/25 bg-amber-500/5 [overflow-wrap:anywhere]"
+        className={
+          variant === "notice"
+            ? "@container/shortcut min-w-0 [overflow-wrap:anywhere]"
+            : "@container/shortcut min-w-0 rounded-xl border border-amber-500/25 bg-amber-500/5 [overflow-wrap:anywhere]"
+        }
       >
-        <div className="flex min-w-0 gap-3 p-4 @max-[20rem]/shortcut:p-3">
+        <div
+          className={
+            variant === "notice"
+              ? "flex min-w-0 gap-3"
+              : "flex min-w-0 gap-3 p-4 @max-[20rem]/shortcut:p-3"
+          }
+        >
           <Keyboard
             aria-hidden="true"
             className="mt-0.5 size-4 shrink-0 text-amber-700 @max-[20rem]/shortcut:hidden dark:text-amber-400"
           />
-          <div className="min-w-0 flex-1 space-y-3">
+          <div className={`min-w-0 flex-1 ${variant === "notice" ? "space-y-2" : "space-y-3"}`}>
             <div role="alert" className="space-y-1">
               <p className="text-sm font-medium">
                 {profile

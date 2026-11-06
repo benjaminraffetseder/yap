@@ -13,8 +13,9 @@ export function SettingsSection({
   icon?: ReactNode;
   children: ReactNode;
 }) {
+  const sectionId = useId();
   return (
-    <section data-slot="settings-section" className="rounded-xl border bg-card">
+    <section id={sectionId} data-slot="settings-section" className="rounded-xl border bg-card">
       {action ? (
         <header
           data-slot="settings-section-heading"
@@ -55,8 +56,10 @@ export function SettingRow({
   indicator?: ReactNode;
   children: ReactNode;
 }) {
+  const rowId = useId();
   return (
     <div
+      id={htmlFor ? `${htmlFor}-row` : rowId}
       data-slot="setting-row"
       className="grid items-start gap-3 py-4 @xl:grid-cols-[minmax(0,1fr)_minmax(0,22rem)] @xl:gap-6"
     >
@@ -96,6 +99,8 @@ export function ToggleSetting({
   const id = useId();
   return (
     <div
+      id={`${id}-row`}
+      data-slot="toggle-setting"
       className={`flex items-start justify-between gap-6 py-4 ${disabled ? "opacity-60" : "cursor-pointer"}`}
     >
       <div className="min-w-0">

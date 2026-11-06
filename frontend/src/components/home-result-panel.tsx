@@ -2,17 +2,19 @@ import { nativeText } from "@/i18n/native-text";
 import { useTranslation } from "react-i18next";
 import i18n from "@/i18n";
 import { useDictation } from "@/components/dictation-provider";
+import { MarkdownContent } from "@/components/markdown-content";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { InferenceStats } from "@/components/inference-stats";
 import { Button } from "@/components/ui/button";
 import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { backend, isBusy, isDesktop, type HomeResult } from "@/lib/backend";
-import { Check, Copy, Loader2, Pencil } from "lucide-react";
+import { Check, Copy, Loader2, Pencil, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router";
 
@@ -35,8 +37,12 @@ function recoveryWarning(result: HomeResult) {
 
 export function HomeResultPanel({
   fallbackFocus,
+  onPresenceChange,
+  embedded = false,
 }: {
-  fallbackFocus: React.RefObject<HTMLHeadingElement | null>;
+  fallbackFocus: React.RefObject<HTMLElement | null>;
+  onPresenceChange?: (present: boolean) => void;
+  embedded?: boolean;
 }) {
   const { t } = useTranslation();
   const { snapshot, loading, refresh } = useDictation();
@@ -47,12 +53,22 @@ export function HomeResultPanel({
   const [pending, setPending] = useState(false);
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
+  const [view, setView] = useState("result");
+  const visibleView = view === "outputs" && result?.outputs.length ? "outputs" : "result";
   const request = useRef(0);
   const actionPending = useRef(false);
   const editTrigger = useRef<HTMLButtonElement>(null);
   const current = useRef(result);
   const busy = loading || isBusy(snapshot.status.phase);
   const latestBusy = useRef(busy);
+  const present = !!(result || fetchError || editing);
+  useEffect(() => onPresenceChange?.(present), [present, onPresenceChange]);
+  useEffect(() => setView("result"), [result?.session.id]);
+  useEffect(() => {
+    const showResult = () => setView("result");
+    window.addEventListener("yap:show-result", showResult);
+    return () => window.removeEventListener("yap:show-result", showResult);
+  }, []);
   useEffect(() => {
     current.current = result;
     latestBusy.current = busy;
@@ -158,6 +174,16 @@ export function HomeResultPanel({
     return true;
   }
 
+  function closeEditor() {
+    setEditing(null);
+    setError("");
+    requestAnimationFrame(() => {
+      const trigger = editTrigger.current;
+      if (trigger?.isConnected && !trigger.disabled) trigger.focus();
+      else fallbackFocus.current?.focus();
+    });
+  }
+
   if (!result && !fetchError && !editing)
     return notice ? (
       <p role="status" className="text-sm text-muted-foreground">
@@ -168,6 +194,8 @@ export function HomeResultPanel({
   const warning = result ? recoveryWarning(result) : "";
   return (
     <section
+      data-slot="home-result-panel"
+      data-home-document={!!(result || editing) || undefined}
       aria-label={
         result
           ? result.saved
@@ -175,169 +203,336 @@ export function HomeResultPanel({
             : t("homeResultPanel.temporaryLatestResult")
           : t("homeResultPanel.latestResult")
       }
-      className="@container/home-result min-w-0 overflow-hidden rounded-xl border bg-card/60 [overflow-wrap:anywhere] [&_button]:h-auto [&_button]:min-h-8 [&_button]:max-w-full [&_button]:whitespace-normal [&_button]:py-1"
+      className={`@container/home-result flex flex-col overflow-clip ${embedded ? "rounded-b-2xl bg-transparent" : "rounded-2xl border bg-card"} [overflow-wrap:anywhere] [&_[data-slot=button]]:h-auto [&_[data-slot=button]]:min-h-9 [&_[data-slot=button]]:max-w-full [&_[data-slot=button]]:whitespace-normal @max-[20rem]/home-result:[&_[data-slot=button]]:min-h-[44px] ${result || editing ? "min-h-min flex-1" : "shrink-0"}`}
     >
-      <header className="flex flex-wrap items-start justify-between gap-3 px-3 pt-5 @min-[28rem]/home-result:px-6">
-        <div className="min-w-0">
-          <h2 tabIndex={-1} className="text-sm font-semibold outline-none">
-            {t("homeResultPanel.latestResult")}
-          </h2>
-          {result && (
-            <p className="mt-1 text-xs leading-5 text-muted-foreground">
-              {result.saved
-                ? t("homeResultPanel.savedInHistoryEditsPreserveOriginalRecognition")
-                : t("homeResultPanel.temporaryKeptInMemoryUntilTheNext")}
-            </p>
-          )}
-        </div>
-        {result && (
-          <div className="flex shrink-0 items-center gap-2">
-            <InferenceStats session={result.session} outputs={result.outputs} />
-            {result.saved && (
-              <Link
-                to={`/history/${encodeURIComponent(result.session.id)}`}
-                className="text-xs leading-6 text-muted-foreground underline underline-offset-4"
-              >
-                {t("homeResultPanel.openInHistory")}
-              </Link>
+      {!editing && (
+        <header
+          data-slot="home-result-header"
+          className={`flex shrink-0 flex-wrap items-start justify-between gap-2 px-5 py-3 @max-[20rem]/home-result:gap-[8px] @max-[20rem]/home-result:px-[16px] @max-[20rem]/home-result:py-[12px] @max-[12rem]/home-result:gap-[6px] @max-[12rem]/home-result:py-[8px] @max-[280px]/home-result:grid @max-[280px]/home-result:grid-cols-1 sm:px-7 ${embedded ? "home-reading-inset" : ""}`}
+        >
+          <div className="flex min-w-0 flex-[1_1_14rem] flex-wrap items-baseline gap-x-3 gap-y-1 @max-[20rem]/home-result:flex-[1_1_6rem] @max-[20rem]/home-result:gap-x-[12px] @max-[12rem]/home-result:flex-[1_1_0] @max-[12rem]/home-result:gap-y-[4px]">
+            <h2
+              tabIndex={-1}
+              className="max-w-full text-lg font-semibold tracking-tight outline-none @min-[28rem]/home-result:text-xl @max-[12rem]/home-result:text-base"
+            >
+              {result?.session.title || (
+                <>
+                  <span className="@max-[12rem]/home-result:sr-only">
+                    {t("homeResultPanel.latestResult")}
+                  </span>
+                  <span aria-hidden="true" className="hidden @max-[12rem]/home-result:inline">
+                    {t("historyEntryPage.result")}
+                  </span>
+                </>
+              )}
+            </h2>
+            {result && (
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs leading-5 text-muted-foreground">
+                {result.saved ? (
+                  <Link
+                    to={`/history/${encodeURIComponent(result.session.id)}`}
+                    aria-description={t("homeResultPanel.openInHistory")}
+                    aria-label={t("uiPolish.savedInHistory")}
+                    title={t("homeResultPanel.openInHistory")}
+                    className="rounded underline underline-offset-4 outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+                  >
+                    <span className="@max-[12rem]/home-result:sr-only">
+                      {t("uiPolish.savedInHistory")}
+                    </span>
+                    <span className="hidden items-center gap-1 @max-[12rem]/home-result:inline-flex">
+                      <Check aria-hidden="true" className="size-3.5" />
+                      {t("common.history")}
+                    </span>
+                  </Link>
+                ) : (
+                  <span>{t("homeResultPanel.temporaryKeptInMemoryUntilTheNext")}</span>
+                )}
+                {visibleView === "result" && (
+                  <span className="sr-only @min-[40rem]/home-result:not-sr-only">
+                    {t("uiPolish.homeWordCount", {
+                      count: result.text.trim() ? result.text.trim().split(/\s+/u).length : 0,
+                    })}
+                  </span>
+                )}
+                <InferenceStats session={result.session} outputs={result.outputs} />
+              </div>
             )}
           </div>
-        )}
-      </header>
-      {result && (
-        <>
-          <div className="space-y-4 px-3 py-4 @min-[28rem]/home-result:px-6">
-            <p className="text-xs font-medium text-muted-foreground">
+          {result && (
+            <div
+              data-slot="home-result-actions"
+              className="flex max-w-full flex-wrap items-center gap-[6px]"
+            >
+              {visibleView === "result" && (
+                <>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    title={t("common.copy")}
+                    className="@max-[20rem]/home-result:w-[44px] @max-[20rem]/home-result:min-w-[44px] @max-[20rem]/home-result:px-0"
+                    disabled={unavailable}
+                    onClick={() => void act(result, "copy")}
+                  >
+                    <Copy aria-hidden="true" />
+                    <span className="@max-[20rem]/home-result:sr-only">{t("common.copy")}</span>
+                  </Button>
+                  <Button
+                    ref={editTrigger}
+                    size="sm"
+                    variant="ghost"
+                    title={t("homeResultPanel.editResult")}
+                    className="@max-[20rem]/home-result:w-[44px] @max-[20rem]/home-result:min-w-[44px] @max-[20rem]/home-result:px-0"
+                    disabled={unavailable}
+                    onClick={() => {
+                      setError("");
+                      setNotice("");
+                      setEditing(result);
+                    }}
+                  >
+                    <Pencil aria-hidden="true" />
+                    <span className="@max-[20rem]/home-result:sr-only">
+                      {t("homeResultPanel.editResult")}
+                    </span>
+                  </Button>
+                </>
+              )}
+              {!result.saved && (
+                <Button size="sm" disabled={unavailable} onClick={() => void act(result, "save")}>
+                  {t("homeResultPanel.saveToHistory")}
+                </Button>
+              )}
+              <Button
+                size="icon"
+                variant="ghost"
+                aria-label={t("homeResultPanel.dismiss")}
+                title={t("homeResultPanel.dismiss")}
+                className="@max-[20rem]/home-result:size-[44px]"
+                disabled={unavailable}
+                onClick={() => void act(result, "dismiss")}
+              >
+                <X aria-hidden="true" className="size-4" />
+              </Button>
+              {pending && (
+                <Loader2
+                  aria-label={t("homeResultPanel.resultActionInProgress")}
+                  className="size-4 animate-spin motion-reduce:animate-none"
+                />
+              )}
+              {busy && (
+                <span className="text-xs text-muted-foreground">
+                  {t("homeResultPanel.availableAfterTheCurrentOperation")}
+                </span>
+              )}
+            </div>
+          )}
+        </header>
+      )}
+      {warning && !editing && (
+        <p
+          role="alert"
+          className="mx-5 mb-4 shrink-0 text-xs leading-5 text-amber-700 sm:mx-7 dark:text-amber-400"
+        >
+          {warning}
+        </p>
+      )}
+      {result && !editing && (
+        <Tabs
+          value={visibleView}
+          onValueChange={(value) => setView(String(value))}
+          className="min-h-min flex-1 gap-0"
+        >
+          <div
+            data-slot="home-result-picker"
+            className="sticky top-0 z-20 hidden shrink-0 border-b bg-card px-4 py-1 @max-[12rem]/home-result:block @max-[12rem]/home-result:px-[16px]"
+          >
+            {result.outputs.length ? (
+              <Select
+                items={[
+                  {
+                    value: "result",
+                    label: result.outputId
+                      ? t("homeResultPanel.generatedResult")
+                      : t("homeResultPanel.transcript"),
+                  },
+                  {
+                    value: "outputs",
+                    label: `${t("uiPolish.homeOriginalOutputs")} (${result.outputs.length})`,
+                  },
+                ]}
+                value={visibleView}
+                onValueChange={(value) => {
+                  if (value) setView(value);
+                }}
+              >
+                <SelectTrigger
+                  aria-label={t("uiPolish.homeResultViews")}
+                  className="min-h-[44px] w-full py-[8px] data-[size=default]:h-auto @max-[280px]/home-result:gap-[8px] @max-[280px]/home-result:px-[8px] @max-[280px]/home-result:[&_svg]:size-[20px]"
+                >
+                  <SelectValue
+                    className="min-w-0"
+                    style={{ display: "block", whiteSpace: "normal" }}
+                  >
+                    {visibleView === "outputs" ? (
+                      <>
+                        {t("uiPolish.homeOriginalOutputs")}
+                        <span className="sr-only"> ({result.outputs.length})</span>
+                      </>
+                    ) : result.outputId ? (
+                      t("homeResultPanel.generatedResult")
+                    ) : (
+                      t("homeResultPanel.transcript")
+                    )}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent
+                  alignItemWithTrigger={false}
+                  align="start"
+                  style={{
+                    width: "max-content",
+                    minWidth: "var(--anchor-width)",
+                    maxWidth: "calc(100vw - 2rem)",
+                  }}
+                >
+                  <SelectItem
+                    value="result"
+                    className="[&>:first-child]:min-w-0 [&>:first-child]:shrink [&>:first-child]:whitespace-normal [&>:first-child]:[overflow-wrap:anywhere]"
+                  >
+                    {result.outputId
+                      ? t("homeResultPanel.generatedResult")
+                      : t("homeResultPanel.transcript")}
+                  </SelectItem>
+                  <SelectItem
+                    value="outputs"
+                    className="[&>:first-child]:min-w-0 [&>:first-child]:shrink [&>:first-child]:whitespace-normal [&>:first-child]:[overflow-wrap:anywhere]"
+                  >
+                    {t("uiPolish.homeOriginalOutputs")} ({result.outputs.length})
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            ) : (
+              <p className="flex min-h-9 items-center text-sm font-medium">
+                {result.outputId
+                  ? t("homeResultPanel.generatedResult")
+                  : t("homeResultPanel.transcript")}
+              </p>
+            )}
+          </div>
+          <TabsList
+            variant="line"
+            aria-label={t("uiPolish.homeResultViews")}
+            className="sticky top-0 z-20 grid w-full shrink-0 grid-cols-[repeat(auto-fit,minmax(min(100%,6rem),1fr))] justify-start gap-1 border-b bg-card px-5 group-data-[orientation=horizontal]/tabs:h-auto @max-[12rem]/home-result:hidden @max-[20rem]/home-result:px-4 @min-[28rem]/home-result:flex @min-[28rem]/home-result:gap-3 sm:px-7"
+          >
+            <TabsTrigger
+              value="result"
+              className="h-auto min-h-10 min-w-0 whitespace-normal text-left @max-[20rem]/home-result:min-h-[48px] @min-[28rem]/home-result:flex-none"
+            >
               {result.outputId
                 ? t("homeResultPanel.generatedResult")
                 : t("homeResultPanel.transcript")}
-            </p>
-            <p
+            </TabsTrigger>
+            {!!result.outputs.length && (
+              <TabsTrigger
+                value="outputs"
+                className="h-auto min-h-10 min-w-0 whitespace-normal text-left @max-[20rem]/home-result:min-h-[48px] @min-[28rem]/home-result:flex-none"
+              >
+                {t("uiPolish.homeOriginalOutputs")}{" "}
+                <span className="ml-1 font-normal text-muted-foreground">
+                  {result.outputs.length}
+                </span>
+              </TabsTrigger>
+            )}
+          </TabsList>
+          <TabsContent
+            value="result"
+            className="box-content min-h-[3.5rem] flex-1 scroll-mt-24 overflow-y-auto px-5 py-4 [contain:size] @max-[20rem]/home-result:px-4 @max-[20rem]/home-result:py-[12px] @max-[12rem]/home-result:px-[16px] sm:px-7"
+          >
+            <div
+              id="home-result-text"
               tabIndex={0}
               aria-label={t("homeResultPanel.resultText")}
-              className="max-h-64 overflow-auto whitespace-pre-wrap break-words text-sm leading-6 outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="max-w-[72ch] rounded-sm text-base leading-7 outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
-              {result.text}
-            </p>
-            {warning && (
-              <p role="alert" className="text-xs leading-5 text-amber-700 dark:text-amber-400">
-                {warning}
-              </p>
-            )}
-            {!!result.outputs.length && (
-              <details className="text-xs leading-6 text-muted-foreground">
-                <summary className="cursor-pointer font-medium text-foreground">
-                  {t("homeResultPanel.originalGeneratedOutputs")}
-                  {result.outputs.length})
-                </summary>
-                {result.outputs.map((output) => (
-                  <div key={output.id} className="mt-3 min-w-0 space-y-2 border-l pl-3">
-                    <p className="break-words font-medium">
-                      {output.chain?.step
-                        ? t("homeResultPanel.step", { step: output.chain.step })
-                        : ""}
-                      {output.prompt.name}
-                    </p>
-                    <p
-                      tabIndex={0}
-                      className="max-h-40 overflow-auto whitespace-pre-wrap break-words"
-                    >
-                      {output.text}
-                    </p>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      disabled={unavailable}
-                      onClick={() => void act(result, `copy:${output.id}`)}
-                    >
-                      {t("generatedOutputs.copyOutput")}
-                    </Button>
-                  </div>
-                ))}
-              </details>
-            )}
-          </div>
-          <footer className="flex flex-wrap items-center gap-2 border-t px-3 py-3 @min-[28rem]/home-result:px-6">
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={unavailable}
-              onClick={() => void act(result, "copy")}
-            >
-              <Copy aria-hidden="true" />
-              {t("common.copy")}
-            </Button>
-            <Button
-              ref={editTrigger}
-              size="sm"
-              variant="outline"
-              disabled={unavailable}
-              onClick={() => {
-                setError("");
-                setNotice("");
-                setEditing(result);
-              }}
-            >
-              <Pencil aria-hidden="true" />
-              {t("homeResultPanel.editResult")}
-            </Button>
-            {!result.saved && (
-              <Button size="sm" disabled={unavailable} onClick={() => void act(result, "save")}>
-                {t("homeResultPanel.saveToHistory")}
-              </Button>
-            )}
-            <Button
-              size="sm"
-              variant="ghost"
-              disabled={unavailable}
-              onClick={() => void act(result, "dismiss")}
-            >
-              {t("homeResultPanel.dismiss")}
-            </Button>
-            {pending && (
-              <Loader2
-                aria-label={t("homeResultPanel.resultActionInProgress")}
-                className="size-4 animate-spin motion-reduce:animate-none"
-              />
-            )}
-            {busy && (
-              <span className="text-xs text-muted-foreground">
-                {t("homeResultPanel.availableAfterTheCurrentOperation")}
-              </span>
-            )}
-          </footer>
-        </>
-      )}
-      {notice && (
-        <p
-          role="status"
-          className="px-3 pb-4 text-xs leading-5 text-muted-foreground @min-[28rem]/home-result:px-6"
-        >
-          {notice}
-        </p>
-      )}
-      {error && !editing && (
-        <p
-          role="alert"
-          className="px-3 pb-4 text-sm text-destructive @min-[28rem]/home-result:px-6"
-        >
-          {nativeText(error)}
-        </p>
-      )}
-      {fetchError && (
-        <div
-          role="alert"
-          className="flex flex-wrap items-center gap-2 px-3 pb-4 text-sm @min-[28rem]/home-result:px-6"
-        >
-          {t("homeResultPanel.couldnTRefreshTheResultAnyCompleted")}
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={busy || pending}
-            onClick={() => setReload((value) => value + 1)}
+              {result.outputId ? (
+                <MarkdownContent className="text-base leading-7">{result.text}</MarkdownContent>
+              ) : (
+                <p className="whitespace-pre-wrap break-words">{result.text}</p>
+              )}
+            </div>
+          </TabsContent>
+          <TabsContent
+            value="outputs"
+            className="box-content min-h-[3.5rem] flex-1 scroll-mt-24 space-y-7 overflow-y-auto px-5 py-4 [contain:size] @max-[20rem]/home-result:px-4 @max-[20rem]/home-result:py-[12px] @max-[12rem]/home-result:px-[16px] sm:px-7"
           >
-            {t("homeResultPanel.refreshResult")}
-          </Button>
+            {result.outputs.map((output) => (
+              <article
+                key={output.id}
+                aria-label={t("generatedOutputs.output", { name: output.prompt.name })}
+                className="space-y-3"
+              >
+                <header className="flex flex-wrap items-center justify-between gap-3">
+                  <h3 className="text-sm font-semibold">
+                    {output.chain?.step
+                      ? t("homeResultPanel.step", { step: output.chain.step })
+                      : ""}
+                    {output.prompt.name}
+                  </h3>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    aria-label={t("generatedOutputs.copyOutput")}
+                    title={t("generatedOutputs.copyOutput")}
+                    className="@max-[20rem]/home-result:w-[44px] @max-[20rem]/home-result:min-w-[44px] @max-[20rem]/home-result:px-0"
+                    disabled={unavailable}
+                    onClick={() => void act(result, `copy:${output.id}`)}
+                  >
+                    <Copy aria-hidden="true" />
+                    <span className="@max-[20rem]/home-result:sr-only">
+                      {t("generatedOutputs.copyOutput")}
+                    </span>
+                  </Button>
+                </header>
+                <MarkdownContent className="max-w-[72ch] text-base leading-7">
+                  {output.text}
+                </MarkdownContent>
+              </article>
+            ))}
+            <p className="text-xs leading-5 text-muted-foreground">
+              {t("uiPolish.homeOutputsPreserved")}
+            </p>
+          </TabsContent>
+        </Tabs>
+      )}
+      {!editing && (notice || error || fetchError) && (
+        <div className="shrink-0 space-y-2 border-t px-5 py-3 @max-[20rem]/home-result:py-[8px] sm:px-7">
+          {notice && (
+            <p role="status" className="text-xs leading-5 text-muted-foreground">
+              {notice}
+            </p>
+          )}
+          {error && !editing && (
+            <p role="alert" className="text-sm text-destructive">
+              {nativeText(error)}
+            </p>
+          )}
+          {fetchError && (
+            <div role="alert" className="flex flex-wrap items-center gap-2 text-sm">
+              {t("homeResultPanel.couldnTRefreshTheResultAnyCompleted")}
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={busy || pending}
+                onClick={() => setReload((value) => value + 1)}
+              >
+                {t("homeResultPanel.refreshResult")}
+              </Button>
+              <Link
+                to="/history"
+                className="rounded underline underline-offset-4 outline-none hover:text-primary focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                {t("homeResultPanel.openHistory")}
+              </Link>
+            </div>
+          )}
         </div>
       )}
       {editing && (
@@ -349,14 +544,9 @@ export function HomeResultPanel({
           onRefresh={() => setReload((value) => value + 1)}
           error={error}
           stale={!result || result.revision !== editing.revision}
-          returnFocus={editTrigger}
-          fallbackFocus={fallbackFocus}
-          onCancel={() => {
-            setEditing(null);
-            setError("");
-          }}
+          onCancel={closeEditor}
           onSubmit={async (text) => {
-            if (await act(editing, "edit", text)) setEditing(null);
+            if (await act(editing, "edit", text)) closeEditor();
           }}
         />
       )}
@@ -372,8 +562,6 @@ function HomeResultEditor({
   onRefresh,
   error,
   stale,
-  returnFocus,
-  fallbackFocus,
   onCancel,
   onSubmit,
 }: {
@@ -384,8 +572,6 @@ function HomeResultEditor({
   onRefresh: () => void;
   error: string;
   stale: boolean;
-  returnFocus: React.RefObject<HTMLButtonElement | null>;
-  fallbackFocus: React.RefObject<HTMLHeadingElement | null>;
   onCancel: () => void;
   onSubmit: (text: string) => Promise<void>;
 }) {
@@ -396,35 +582,67 @@ function HomeResultEditor({
   const invalid = !text.trim() || text.includes("\0") || Array.from(text).length > 100000;
   const describedBy =
     [
+      "home-result-edit-scope",
       stale || readFailed || busy ? "home-result-edit-state" : "",
       invalid ? "home-result-edit-validation" : "",
       error ? "home-result-edit-error" : "",
     ]
       .filter(Boolean)
       .join(" ") || undefined;
+  useEffect(() => {
+    input.current?.focus();
+  }, []);
   return (
-    <Dialog
-      open
-      disablePointerDismissal
-      onOpenChange={(open) => {
-        if (!open && !pending) onCancel();
+    <section
+      aria-labelledby="home-result-editor-title"
+      aria-describedby={describedBy}
+      className="flex min-h-min flex-1 flex-col"
+      onKeyDown={(event) => {
+        if (
+          event.key === "Escape" &&
+          !pending &&
+          !composing.current &&
+          !event.nativeEvent.isComposing
+        ) {
+          event.preventDefault();
+          event.stopPropagation();
+          onCancel();
+        }
       }}
     >
-      <DialogContent
-        showCloseButton={false}
-        aria-describedby={describedBy}
-        initialFocus={input}
-        finalFocus={() =>
-          returnFocus.current?.isConnected && !returnFocus.current.disabled
-            ? returnFocus.current
-            : fallbackFocus.current
-        }
-        className="flex max-h-[calc(100dvh-2rem)] flex-col overflow-y-auto sm:max-w-2xl"
-      >
-        <DialogHeader className="text-left">
-          <DialogTitle>{t("homeResultPanel.editResult")}</DialogTitle>
-        </DialogHeader>
-        <label htmlFor="home-result-draft" className="text-sm font-medium">
+      <header className="flex shrink-0 flex-wrap items-start justify-between gap-3 border-b px-5 py-3 sm:px-7">
+        <div>
+          <h2 id="home-result-editor-title" className="text-xl font-semibold tracking-tight">
+            {t("homeResultPanel.editResult")}
+          </h2>
+          <p id="home-result-edit-scope" className="mt-1.5 text-xs leading-5 text-muted-foreground">
+            {t(
+              result.saved ? "uiPolish.homeSavedEditorScope" : "uiPolish.homeTemporaryEditorScope",
+            )}
+          </p>
+        </div>
+        <div className="flex max-w-full flex-wrap items-center gap-2">
+          <Button variant="outline" size="sm" disabled={pending} onClick={onCancel}>
+            {t("common.cancel")}
+          </Button>
+          <Button
+            size="sm"
+            disabled={busy || invalid || stale || text === result.text}
+            onClick={() => {
+              if (!composing.current) void onSubmit(text);
+            }}
+          >
+            {pending ? (
+              <Loader2 aria-hidden="true" className="animate-spin motion-reduce:animate-none" />
+            ) : (
+              <Check aria-hidden="true" />
+            )}
+            {t("homeResultPanel.applyChanges")}
+          </Button>
+        </div>
+      </header>
+      <div className="flex min-h-[8rem] flex-1 flex-col gap-3 overflow-y-auto px-5 py-4 [contain:size] sm:px-7">
+        <label htmlFor="home-result-draft" className="sr-only">
           {t("homeResultPanel.yourText")}
         </label>
         <textarea
@@ -434,7 +652,7 @@ function HomeResultEditor({
           rows={7}
           disabled={pending}
           aria-describedby={describedBy}
-          className="min-h-28 w-full shrink-0 resize-y rounded-lg border bg-card px-3 py-2 text-sm leading-6 outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60"
+          className="min-h-[3.5rem] w-full max-w-[calc(72ch+2rem+2px)] flex-1 resize-none rounded-lg border bg-transparent px-4 py-3 text-base leading-7 outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60"
           onChange={(event) => setText(event.target.value)}
           onCompositionStart={() => {
             composing.current = true;
@@ -456,7 +674,10 @@ function HomeResultEditor({
           }}
         />
         {(stale || readFailed || busy) && (
-          <p id="home-result-edit-state" className="text-xs leading-5 text-muted-foreground">
+          <p
+            id="home-result-edit-state"
+            className="shrink-0 text-xs leading-5 text-muted-foreground"
+          >
             {stale
               ? t("homeResultPanel.theResultChangedYourDraftIsKept")
               : readFailed
@@ -467,39 +688,31 @@ function HomeResultEditor({
           </p>
         )}
         {readFailed && (
-          <Button variant="outline" size="sm" disabled={pending} onClick={onRefresh}>
+          <Button
+            className="shrink-0 self-start"
+            variant="outline"
+            size="sm"
+            disabled={pending}
+            onClick={onRefresh}
+          >
             {t("homeResultPanel.refreshResult")}
           </Button>
         )}
         {invalid && (
-          <p id="home-result-edit-validation" role="alert" className="text-xs text-destructive">
+          <p
+            id="home-result-edit-validation"
+            role="alert"
+            className="shrink-0 text-xs text-destructive"
+          >
             {t("homeResultPanel.enter1100000CharactersWithoutNull")}
           </p>
         )}
         {error && (
-          <p id="home-result-edit-error" role="alert" className="text-sm text-destructive">
+          <p id="home-result-edit-error" role="alert" className="shrink-0 text-sm text-destructive">
             {nativeText(error)}
           </p>
         )}
-        <DialogFooter className="shrink-0">
-          <Button variant="outline" disabled={pending} onClick={onCancel}>
-            {t("common.cancel")}
-          </Button>
-          <Button
-            disabled={busy || invalid || stale || text === result.text}
-            onClick={() => {
-              if (!composing.current) void onSubmit(text);
-            }}
-          >
-            {pending ? (
-              <Loader2 aria-hidden="true" className="animate-spin motion-reduce:animate-none" />
-            ) : (
-              <Check aria-hidden="true" />
-            )}
-            {t("homeResultPanel.applyChanges")}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+      </div>
+    </section>
   );
 }

@@ -5,14 +5,16 @@ import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { backend, isDesktop } from "@/lib/backend";
 import { Upload } from "lucide-react";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 
 export function AudioImportButton({
   showDownloadProgress = true,
   quiet = false,
+  label,
 }: {
   showDownloadProgress?: boolean;
   quiet?: boolean;
+  label?: ReactNode;
 }) {
   const { t } = useTranslation();
   const { snapshot, loading, run } = useDictation();
@@ -31,12 +33,13 @@ export function AudioImportButton({
         pressFeedback
         variant={quiet ? "ghost" : "outline"}
         className={quiet ? "max-w-full whitespace-normal text-muted-foreground" : undefined}
+        aria-label={t("audioImportButton.importAudio")}
         title={t("audioImportButton.wAVMP3M4AAACFLACOGGOpus")}
         disabled={!isDesktop || loading || !snapshot.ready || pending}
         onClick={() => void importAudio()}
       >
-        <Upload className="size-4" />
-        {t("audioImportButton.importAudio")}
+        <Upload aria-hidden="true" className="size-4" />
+        {label ?? t("audioImportButton.importAudio")}
       </Button>
       {showDownloadProgress &&
         snapshot.status.phase === "downloading" &&

@@ -132,7 +132,7 @@ async function scenario(page: Page, theme = "dark", collapsed = true, long = fal
     { wav: silentWav(), theme, collapsed, long },
   );
   await page.goto("/#/history/recording");
-  await expect(page.getByRole("heading", { name: "Dictation", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 1, name: /^Synthetic/ })).toBeVisible();
 }
 
 const player = (page: Page) => page.getByRole("region", { name: "Recording player" });
@@ -430,7 +430,7 @@ for (const theme of ["light", "dark"]) {
       expect(
         await player(page).evaluate((element) => element.scrollWidth <= element.clientWidth + 1),
       ).toBe(true);
-      await page.getByRole("heading", { name: "Dictation", exact: true }).click();
+      await page.getByRole("heading", { level: 1, name: /^Synthetic/ }).click();
       await page.screenshot({
         path: testInfo.outputPath(`audio-player-${theme}-${width}-${font}.png`),
         animations: "disabled",
@@ -458,7 +458,7 @@ test("synthetic audio player interaction walkthrough", async ({ page }, testInfo
   await player(page).getByRole("button", { name: "Play recording", exact: true }).click();
   await page.waitForTimeout(900);
   await player(page).getByRole("button", { name: "Pause recording" }).click();
-  await page.getByRole("heading", { name: "Dictation", exact: true }).click();
+  await page.getByRole("heading", { level: 1, name: /^Synthetic/ }).click();
   await page.screenshot({
     path: testInfo.outputPath("audio-player-desktop.png"),
     animations: "disabled",

@@ -21,8 +21,6 @@ import {
   Mic,
   Monitor,
   Moon,
-  PanelLeftClose,
-  PanelLeftOpen,
   RefreshCw,
   Save,
   Search,
@@ -52,13 +50,9 @@ type RunAction = (action: () => Promise<unknown>, reload?: boolean) => Promise<v
 export function CommandMenu({
   open,
   onOpenChange,
-  collapsed,
-  toggleSidebar,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  collapsed: boolean;
-  toggleSidebar: () => void;
 }) {
   const { t } = useTranslation();
   const { run } = useDictation();
@@ -108,8 +102,6 @@ export function CommandMenu({
       <CommandMenuContent
         open={open}
         close={() => onOpenChange(false)}
-        collapsed={collapsed}
-        toggleSidebar={toggleSidebar}
         pending={pending}
         runAction={runAction}
       />
@@ -120,15 +112,11 @@ export function CommandMenu({
 function CommandMenuContent({
   open,
   close,
-  collapsed,
-  toggleSidebar,
   pending,
   runAction,
 }: {
   open: boolean;
   close: () => void;
-  collapsed: boolean;
-  toggleSidebar: () => void;
   pending: boolean;
   runAction: RunAction;
 }) {
@@ -366,12 +354,6 @@ function CommandMenuContent({
           checked: theme === value,
           action: () => setTheme(value),
         })),
-        {
-          label: collapsed ? t("appLayout.expandSidebar") : t("appLayout.collapseSidebar"),
-          icon: collapsed ? PanelLeftOpen : PanelLeftClose,
-          keywords: ["sidebar", "navigation", "appearance"],
-          action: toggleSidebar,
-        },
       ],
     },
     {

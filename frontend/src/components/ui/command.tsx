@@ -43,6 +43,7 @@ function CommandDialog({
   return (
     <Dialog {...props}>
       <DialogContent
+        instant
         className={cn("overflow-hidden rounded-xl! p-0", className)}
         showCloseButton={showCloseButton}
       >

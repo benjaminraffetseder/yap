@@ -40,7 +40,7 @@ import { useEffect, useRef, useState } from "react";
 
 const emptyChains: PromptChain[] = [];
 const menuClass =
-  "min-w-48 origin-(--transform-origin) rounded-lg bg-popover p-1 text-popover-foreground shadow-md ring-1 ring-foreground/10 motion-popup";
+  "min-w-[min(12rem,calc(100vw-2rem))] max-w-[calc(100vw-2rem)] max-h-[calc(100dvh-2rem)] overflow-y-auto origin-(--transform-origin) rounded-lg bg-popover p-1 text-popover-foreground shadow-md ring-1 ring-foreground/10 motion-popup";
 const menuItemClass =
   "flex items-center gap-2 rounded-md px-3 py-2 text-sm outline-none data-highlighted:bg-accent data-disabled:text-muted-foreground/50";
 
@@ -73,6 +73,7 @@ export function PromptChainsEditor({
   const [history, setHistory] = useState<PromptChain | null>(null);
   const nameInput = useRef<HTMLInputElement>(null);
   const focusNewName = useRef(false);
+  const lastAddedStep = useRef<string | null>(null);
   const chain = chains.find((item) => item.id === selected);
   const automatic = config.autoPromptId === chain?.id;
   const automaticName = [...config.prompts, ...chains].find(
@@ -114,11 +115,10 @@ export function PromptChainsEditor({
   }
   function addStep(promptId: string) {
     if (!chain || disabled || chain.steps.length >= 10) return;
+    const id = crypto.randomUUID();
+    lastAddedStep.current = id;
     update({
-      steps: [
-        ...chain.steps,
-        { id: crypto.randomUUID(), promptId, input: `step:${chain.steps.at(-1)!.id}` },
-      ],
+      steps: [...chain.steps, { id, promptId, input: `step:${chain.steps.at(-1)!.id}` }],
     });
   }
   function move(index: number, offset: number) {
@@ -136,17 +136,59 @@ export function PromptChainsEditor({
     label: prompt.name || t("promptsPage.untitledPrompt"),
   }));
 
+  const addStepMenu = (
+    <Menu.Root
+      onOpenChange={(open) => {
+        if (open) lastAddedStep.current = null;
+      }}
+    >
+      <Menu.Trigger
+        disabled={disabled || !chain || chain.steps.length >= 10 || !config.prompts.length}
+        render={<Button variant="outline" size="sm" />}
+      >
+        <Plus aria-hidden="true" className="size-4" />
+        {t("promptChainsEditor.addStep")}
+      </Menu.Trigger>
+      <Menu.Portal>
+        <Menu.Positioner align="start" sideOffset={4} className="z-50">
+          <Menu.Popup
+            finalFocus={() =>
+              lastAddedStep.current
+                ? (document.getElementById(`chain-prompt-${lastAddedStep.current}`) ?? true)
+                : true
+            }
+            className={`${menuClass} max-h-80 w-72 max-w-[calc(100vw-2rem)] overflow-y-auto`}
+          >
+            <p className="px-3 py-2 text-xs text-muted-foreground">
+              {t("promptChainsEditor.chooseAPromptToAdd")}
+            </p>
+            {promptOptions.map((prompt) => (
+              <Menu.Item
+                key={prompt.value}
+                onClick={() => addStep(prompt.value)}
+                className={menuItemClass}
+              >
+                <Sparkles aria-hidden="true" className="size-3.5 shrink-0 text-muted-foreground" />
+                <span className="min-w-0 truncate">{prompt.label}</span>
+              </Menu.Item>
+            ))}
+          </Menu.Popup>
+        </Menu.Positioner>
+      </Menu.Portal>
+    </Menu.Root>
+  );
+
   return (
     <section
       aria-label={t("promptChainsEditor.promptChains")}
-      className="@container min-w-0 space-y-5"
+      className="@container min-w-0 space-y-3"
     >
       <p className="text-sm leading-6 text-muted-foreground">
         {t("promptChainsEditor.turnADictationIntoAFinishedResult")}
       </p>
-      <fieldset disabled={disabled} className="min-w-0 space-y-5 disabled:opacity-60">
+      <fieldset disabled={disabled} className="min-w-0 space-y-4 disabled:opacity-60">
         <div className="flex flex-wrap items-center gap-3">
-          <div className="min-w-48 flex-1">
+          <div className="min-w-0 max-w-full shrink-0">
             <Label htmlFor="saved-chain" className="sr-only">
               {t("promptChainsEditor.savedChain")}
             </Label>
@@ -160,11 +202,14 @@ export function PromptChainsEditor({
             >
               <SelectTrigger
                 id="saved-chain"
-                className="data-[size=default]:h-9 w-full @xl:max-w-sm"
+                className="data-[size=default]:h-9 max-w-full border-transparent bg-transparent text-muted-foreground hover:bg-accent hover:text-foreground dark:bg-transparent"
               >
                 <Workflow aria-hidden="true" className="size-4 text-muted-foreground" />
+                <span>
+                  {chain ? t("uiPolish.switchChain") : t("promptChainsEditor.noSavedChains")}
+                </span>
                 <SelectValue
-                  className="min-w-0 truncate"
+                  className="sr-only"
                   placeholder={t("promptChainsEditor.noSavedChains")}
                 />
               </SelectTrigger>
@@ -181,6 +226,21 @@ export function PromptChainsEditor({
               </SelectContent>
             </Select>
           </div>
+          {chain && (
+            <div className="flex min-w-[min(100%,14rem)] flex-[1_1_18rem] items-center gap-2">
+              <Label htmlFor="chain-name" className="shrink-0 text-xs text-muted-foreground">
+                {t("promptChainsEditor.chainName")}
+              </Label>
+              <Input
+                ref={nameInput}
+                id="chain-name"
+                maxLength={80}
+                value={chain.name}
+                onChange={(event) => update({ name: event.target.value })}
+                className="h-9 border-input px-3 text-base font-medium"
+              />
+            </div>
+          )}
           <Button
             variant="outline"
             disabled={disabled || chains.length >= 30 || !config.prompts.length}
@@ -189,6 +249,17 @@ export function PromptChainsEditor({
             <Plus aria-hidden="true" className="size-4" />
             {t("promptChainsEditor.addChain")}
           </Button>
+          {chain && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+              onClick={() => setDeleting(true)}
+            >
+              <Trash2 aria-hidden="true" className="size-3.5" />
+              {t("promptChainsEditor.deleteChain")}
+            </Button>
+          )}
         </div>
 
         {!chain && (
@@ -210,20 +281,7 @@ export function PromptChainsEditor({
         {chain && (
           <>
             <div className="overflow-hidden rounded-xl border bg-card">
-              <div className="space-y-1 px-4 pt-4 pb-3">
-                <Label htmlFor="chain-name" className="text-xs text-muted-foreground">
-                  {t("promptChainsEditor.chainName")}
-                </Label>
-                <Input
-                  ref={nameInput}
-                  id="chain-name"
-                  maxLength={80}
-                  value={chain.name}
-                  onChange={(event) => update({ name: event.target.value })}
-                  className="h-9 border-transparent bg-transparent px-2 text-base font-medium shadow-none dark:bg-transparent"
-                />
-              </div>
-              <div className="flex items-center justify-between gap-4 border-t bg-muted/15 px-4 py-3">
+              <div className="flex items-center justify-between gap-4 bg-muted/15 px-4 py-2.5">
                 <div className="min-w-0 space-y-1">
                   <Label htmlFor="chain-automatic" className="text-sm">
                     {t("promptChainsEditor.runChainAfterDictation")}
@@ -266,11 +324,24 @@ export function PromptChainsEditor({
             </div>
 
             <div className="space-y-3">
-              <div className="flex items-center justify-between gap-3">
+              <div className="flex flex-wrap items-center gap-3">
                 <h2 className="text-sm font-medium">{t("promptChainsEditor.steps")}</h2>
-                <span className="text-xs tabular-nums text-muted-foreground">
+                <span className="ml-auto text-xs tabular-nums text-muted-foreground">
                   {chain.steps.length} / 10
                 </span>
+                {addStepMenu}
+                <Button variant="ghost" size="sm" onClick={() => setHistory(chain)}>
+                  <History aria-hidden="true" className="size-3.5" />
+                  {t("promptsPage.versionHistory")}
+                </Button>
+              </div>
+              <div
+                aria-hidden="true"
+                className="hidden grid-cols-[1.75rem_minmax(0,1fr)_minmax(0,1fr)_2rem] gap-x-3 px-3 text-xs text-muted-foreground @xl:grid"
+              >
+                <span />
+                <span>{t("promptChainsEditor.prompt")}</span>
+                <span>{t("promptChainsEditor.useTextFrom")}</span>
               </div>
               <ol className="divide-y overflow-hidden rounded-xl border bg-card">
                 {chain.steps.map((step, index) => {
@@ -297,6 +368,18 @@ export function PromptChainsEditor({
                     })),
                   ];
                   const referenced = chain.steps.some((other) => other.input === `step:${step.id}`);
+                  const upReason =
+                    index === 0
+                      ? t("promptChainsEditor.alreadyFirst")
+                      : !validOrder(move(index, -1))
+                        ? t("promptChainsEditor.keepAfterInput")
+                        : "";
+                  const downReason =
+                    index === chain.steps.length - 1
+                      ? t("promptChainsEditor.alreadyLast")
+                      : !validOrder(move(index, 1))
+                        ? t("promptChainsEditor.keepBeforeDependents")
+                        : "";
                   const InputIcon =
                     step.input === "original"
                       ? FileAudio
@@ -307,28 +390,21 @@ export function PromptChainsEditor({
                     <li
                       key={step.id}
                       aria-label={t("promptChainsEditor.step2", { index: index + 1 })}
-                      className="grid grid-cols-[1.75rem_minmax(0,1fr)_2rem] items-start gap-x-3 gap-y-3 p-4 @xl:grid-cols-[1.75rem_minmax(0,1fr)_minmax(0,1fr)_2rem]"
+                      className="relative grid grid-cols-[1.75rem_minmax(0,1fr)_2rem] items-start gap-x-3 gap-y-3 p-3 before:pointer-events-none before:absolute before:top-16 before:bottom-[-2.25rem] before:left-[1.625rem] before:w-px before:bg-border last:before:hidden @xl:grid-cols-[1.75rem_minmax(0,1fr)_minmax(0,1fr)_2rem] @xl:before:top-11 @xl:before:bottom-[-1rem]"
                     >
                       <span
                         aria-hidden="true"
-                        className="col-start-1 row-start-1 mt-6 flex size-7 items-center justify-center rounded-full border bg-muted/25 text-xs font-medium tabular-nums text-muted-foreground"
+                        className="relative z-10 col-start-1 row-start-1 mt-6 flex size-7 items-center justify-center rounded-full border bg-card text-xs font-medium tabular-nums text-muted-foreground @xl:mt-1"
                       >
                         {index + 1}
                       </span>
                       <div className="col-start-2 row-start-1 flex min-w-0 flex-col gap-2">
-                        <div className="flex min-w-0 items-center justify-between gap-2">
-                          <Label
-                            htmlFor={`chain-prompt-${step.id}`}
-                            className="text-xs text-muted-foreground"
-                          >
-                            {t("promptChainsEditor.prompt")}
-                          </Label>
-                          {index === chain.steps.length - 1 && (
-                            <span className="shrink-0 text-[11px] text-muted-foreground">
-                              {t("promptChainsEditor.finalOutput")}
-                            </span>
-                          )}
-                        </div>
+                        <Label
+                          htmlFor={`chain-prompt-${step.id}`}
+                          className="text-xs text-muted-foreground @xl:sr-only"
+                        >
+                          {t("promptChainsEditor.prompt")}
+                        </Label>
                         <Select
                           items={promptOptions}
                           value={step.promptId || null}
@@ -368,7 +444,7 @@ export function PromptChainsEditor({
                       <div className="col-start-2 row-start-2 flex min-w-0 flex-col gap-2 @xl:col-start-3 @xl:row-start-1">
                         <Label
                           htmlFor={`chain-input-${step.id}`}
-                          className="text-xs text-muted-foreground"
+                          className="text-xs text-muted-foreground @xl:sr-only"
                         >
                           {t("promptChainsEditor.useTextFrom")}
                         </Label>
@@ -420,7 +496,12 @@ export function PromptChainsEditor({
                           </SelectContent>
                         </Select>
                       </div>
-                      <div className="col-start-3 row-start-1 mt-6 @xl:col-start-4">
+                      {index === chain.steps.length - 1 && (
+                        <span className="col-start-2 row-start-3 w-fit rounded bg-primary/10 px-1.5 py-0.5 text-xs text-primary @xl:row-start-2">
+                          {t("promptChainsEditor.finalOutput")}
+                        </span>
+                      )}
+                      <div className="col-start-3 row-start-1 mt-6 @xl:col-start-4 @xl:mt-0">
                         <Menu.Root>
                           <Menu.Trigger
                             disabled={disabled}
@@ -442,28 +523,34 @@ export function PromptChainsEditor({
                                   aria-label={t("promptChainsEditor.moveStepUp", {
                                     index: index + 1,
                                   })}
-                                  disabled={disabled || index === 0 || !validOrder(move(index, -1))}
+                                  disabled={disabled || !!upReason}
                                   onClick={() => update({ steps: move(index, -1) })}
                                   className={menuItemClass}
                                 >
                                   <ArrowUp aria-hidden="true" className="size-4" />
                                   {t("promptChainsEditor.moveUp")}
                                 </Menu.Item>
+                                {upReason && (
+                                  <p className="max-w-56 px-3 pb-2 text-xs leading-5 text-muted-foreground">
+                                    {upReason}
+                                  </p>
+                                )}
                                 <Menu.Item
                                   aria-label={t("promptChainsEditor.moveStepDown", {
                                     index: index + 1,
                                   })}
-                                  disabled={
-                                    disabled ||
-                                    index === chain.steps.length - 1 ||
-                                    !validOrder(move(index, 1))
-                                  }
+                                  disabled={disabled || !!downReason}
                                   onClick={() => update({ steps: move(index, 1) })}
                                   className={menuItemClass}
                                 >
                                   <ArrowDown aria-hidden="true" className="size-4" />
                                   {t("promptChainsEditor.moveDown")}
                                 </Menu.Item>
+                                {downReason && (
+                                  <p className="max-w-56 px-3 pb-2 text-xs leading-5 text-muted-foreground">
+                                    {downReason}
+                                  </p>
+                                )}
                                 <Menu.Item
                                   aria-label={t("promptChainsEditor.removeStep", {
                                     index: index + 1,
@@ -493,61 +580,11 @@ export function PromptChainsEditor({
                   );
                 })}
               </ol>
-              <Menu.Root>
-                <Menu.Trigger
-                  disabled={disabled || chain.steps.length >= 10 || !config.prompts.length}
-                  render={
-                    <Button
-                      variant="outline"
-                      className="w-full border-dashed text-muted-foreground hover:text-foreground"
-                    />
-                  }
-                >
-                  <Plus aria-hidden="true" className="size-4" />
-                  {t("promptChainsEditor.addStep")}
-                </Menu.Trigger>
-                <Menu.Portal>
-                  <Menu.Positioner align="start" sideOffset={4} className="z-50">
-                    <Menu.Popup
-                      className={`${menuClass} max-h-80 w-72 max-w-[calc(100vw-2rem)] overflow-y-auto`}
-                    >
-                      <p className="px-3 py-2 text-xs text-muted-foreground">
-                        {t("promptChainsEditor.chooseAPromptToAdd")}
-                      </p>
-                      {promptOptions.map((prompt) => (
-                        <Menu.Item
-                          key={prompt.value}
-                          onClick={() => addStep(prompt.value)}
-                          className={menuItemClass}
-                        >
-                          <Sparkles
-                            aria-hidden="true"
-                            className="size-3.5 shrink-0 text-muted-foreground"
-                          />
-                          <span className="min-w-0 truncate">{prompt.label}</span>
-                        </Menu.Item>
-                      ))}
-                    </Menu.Popup>
-                  </Menu.Positioner>
-                </Menu.Portal>
-              </Menu.Root>
+
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <p className="text-xs leading-5 text-muted-foreground">
                   {t("promptChainsEditor.stepsRunInOrderEveryCompletedResult")}
                 </p>
-                <Button variant="ghost" size="sm" onClick={() => setHistory(chain)}>
-                  <History aria-hidden="true" className="size-3.5" />
-                  {t("promptsPage.versionHistory")}
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="text-muted-foreground hover:text-destructive"
-                  onClick={() => setDeleting(true)}
-                >
-                  <Trash2 aria-hidden="true" className="size-3.5" />
-                  {t("promptChainsEditor.deleteChain")}
-                </Button>
               </div>
             </div>
           </>

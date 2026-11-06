@@ -4,6 +4,7 @@ import i18n from "@/i18n";
 import { AudioImportButton } from "@/components/audio-import-button";
 import { useDictation } from "@/components/dictation-provider";
 import { DictationRow } from "@/components/dictation-row";
+import { SessionTitleAction } from "@/components/session-title-action";
 import { PageHeading } from "@/components/page-heading";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -13,7 +14,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { backend, isDesktop, message, type HistoryPageResult, type Session } from "@/lib/backend";
 import { deleteTranscriptions } from "@/lib/delete-transcriptions";
 import { Download, History, RotateCcw, Search, Trash2, X } from "lucide-react";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { useSearchParams } from "react-router";
 
 function historyGroups(entries: Session[], deleted: boolean) {
@@ -66,8 +67,8 @@ export function HistoryPage() {
             render={
               <Button
                 ref={toggle}
-                size="icon"
-                variant="ghost"
+                size="sm"
+                variant="outline"
                 aria-label={toggleLabel}
                 aria-pressed={deleted}
                 className="text-muted-foreground"
@@ -79,6 +80,7 @@ export function HistoryPage() {
             }
           >
             {deleted ? <History aria-hidden="true" /> : <Trash2 aria-hidden="true" />}
+            {deleted ? t("historyPage.showAllDictations") : t("historyPage.recentlyDeleted")}
           </TooltipTrigger>
           <TooltipContent side="bottom" align="end">
             {toggleLabel}
@@ -122,8 +124,27 @@ function HistoryList({ viewToggle }: { viewToggle: ReactNode }) {
   const [loading, setLoading] = useState(isDesktop);
   const [error, setError] = useState("");
   const request = useRef(0);
+  const searchInput = useRef<HTMLInputElement>(null);
+  const renamed = useRef<string | null>(null);
   const selectPage = useRef<HTMLElement>(null);
   const [selected, setSelected] = useState<string[]>([]);
+  const selectionBar = useRef<HTMLElement>(null);
+  useLayoutEffect(() => {
+    const node = selectionBar.current;
+    if (!node) return;
+    const update = () =>
+      document.documentElement.style.setProperty(
+        "--history-selection-height",
+        `${node.getBoundingClientRect().height}px`,
+      );
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(node);
+    return () => {
+      observer.disconnect();
+      document.documentElement.style.removeProperty("--history-selection-height");
+    };
+  }, [selected.length]);
   const [deletingNow, setDeletingNow] = useState(false);
   const [deleteError, setDeleteError] = useState("");
   const [exporting, setExporting] = useState(false);
@@ -161,6 +182,18 @@ function HistoryList({ viewToggle }: { viewToggle: ReactNode }) {
   }, [query, page, deleted, reload, snapshot.history]);
 
   const { entries, total, pageSize } = result;
+  useEffect(() => {
+    if (loading || !renamed.current) return;
+    const id = renamed.current;
+    renamed.current = null;
+    const active = document.activeElement;
+    if (active && active !== document.body && !active.hasAttribute("data-dictation-title-action"))
+      return;
+    const trigger = [
+      ...document.querySelectorAll<HTMLElement>("[data-dictation-title-action]"),
+    ].find((node) => node.dataset.dictationTitleAction === id);
+    (trigger ?? searchInput.current)?.focus({ preventScroll: true });
+  }, [entries, loading]);
   const pages = Math.max(1, Math.ceil(total / pageSize));
   const unavailable = !isDesktop || loading || !!error || deletingNow || exporting;
   function changePage(next: number) {
@@ -252,6 +285,7 @@ function HistoryList({ viewToggle }: { viewToggle: ReactNode }) {
                 className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"
               />
               <Input
+                ref={searchInput}
                 aria-label={t("historyPage.searchTranscripts")}
                 maxLength={250}
                 className="h-9 rounded-lg bg-card pl-10 text-sm"
@@ -270,7 +304,7 @@ function HistoryList({ viewToggle }: { viewToggle: ReactNode }) {
                 }}
               />
             </div>
-            <AudioImportButton />
+            {!deleted && <AudioImportButton />}
             {viewToggle}
           </div>
         </PageHeading>
@@ -349,6 +383,24 @@ function HistoryList({ viewToggle }: { viewToggle: ReactNode }) {
                     key={entry.id}
                     entry={entry}
                     disabled={unavailable}
+                    action={
+                      !deleted && (
+                        <SessionTitleAction
+                          contextual
+                          entry={entry}
+                          context={
+                            entry.title ||
+                            (entry.finalTranscript ?? entry.rawTranscript).slice(0, 80)
+                          }
+                          disabled={unavailable}
+                          onSaved={() => {
+                            renamed.current = entry.id;
+                            setReload((value) => value + 1);
+                            void run(refresh, false);
+                          }}
+                        />
+                      )
+                    }
                     selection={{
                       label: t("historyPage.selectDictation", {
                         index: page * pageSize + index + 1,
@@ -403,6 +455,7 @@ function HistoryList({ viewToggle }: { viewToggle: ReactNode }) {
           <section
             aria-label={t("historyPage.selectionActions")}
             data-slot="history-selection-bar"
+            ref={selectionBar}
             className="pointer-events-auto grid max-w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 gap-y-1 rounded-xl border bg-card/95 p-2 shadow-lg backdrop-blur-sm sm:flex"
           >
             <p

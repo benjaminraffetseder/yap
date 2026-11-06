@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 import type { Settings, Snapshot } from "../src/lib/backend";
 
 // Synthetic catalog state, using the shipping catalog's actual IDs and byte sizes.
@@ -155,6 +155,26 @@ test.beforeEach(async ({ page }) => {
   }, catalog);
 });
 
+async function expectActiveModel(row: Locator) {
+  await expect(row).toHaveAttribute("aria-current", "true");
+  await expect(row.getByText("Active", { exact: true })).toBeVisible();
+  await expect(
+    row.getByRole("button", { name: /^(Use model|Download & use|Repair & use)$/ }),
+  ).toHaveCount(0);
+}
+
+function currentSpeechModel(page: Page) {
+  return page
+    .locator('section[aria-current="true"]')
+    .or(page.getByRole("region", { name: "Current speech model", exact: true }));
+}
+async function modelMenu(page: Page, name: string) {
+  await page.keyboard.press("Escape");
+  await card(page, name)
+    .getByRole("button", { name: /^More actions/ })
+    .click();
+  return page.getByRole("menu");
+}
 const guide = (page: Page) => page.getByRole("region", { name: "Find a starting point" });
 
 test("German guidance keeps model IDs and spoken language independent from the interface", async ({
@@ -192,10 +212,11 @@ async function choose(page: Page, label: string, option: string) {
   await guide(page).getByRole("combobox", { name: label }).click();
   await page.getByRole("option", { name: option, exact: true }).click();
 }
-async function openModels(page: Page, showGuidance = true) {
+async function openModels(page: Page, showGuidance = true, browseCatalog = true) {
   await page.goto("/#/models");
   await expect(help(page)).toHaveAttribute("aria-expanded", "false");
   await expect(guide(page)).toBeHidden();
+  if (browseCatalog) await page.getByRole("button", { name: "All models", exact: true }).click();
   if (showGuidance) {
     await revealGuidance(page);
     await expect(guide(page).getByRole("status")).toContainText("Whisper Small");
@@ -205,8 +226,16 @@ async function openModels(page: Page, showGuidance = true) {
 test("Models starts with its current model and usable catalog, with optional help beside the heading", async ({
   page,
 }) => {
-  await openModels(page, false);
-  await expect(page.getByRole("region", { name: "Current speech model" })).toBeInViewport();
+  await openModels(page, false, false);
+  const catalog = page.getByRole("button", { name: "All models", exact: true });
+  await expect(catalog).toContainText("10");
+  await expect(catalog).toHaveAttribute("aria-description", "10 models in the full catalog");
+  await expect(page.getByRole("button", { name: "Downloaded", exact: true })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  await expect(page.locator('[data-slot="model-row"]')).toHaveCount(2);
+  await expect(currentSpeechModel(page)).toBeInViewport();
   await expect(card(page, "Whisper Tiny").getByRole("heading")).toBeInViewport();
   await expect(
     card(page, "Whisper Base").getByRole("button", { name: "Use model", exact: true }),
@@ -219,6 +248,13 @@ test("Models starts with its current model and usable catalog, with optional hel
   expect(Math.abs(heading!.y - control!.y)).toBeLessThan(12);
   expect(await help(page).getAttribute("aria-controls")).toBeTruthy();
   expect(await page.evaluate(() => window.modelGuidanceTest.calls)).toEqual([]);
+  await page.getByRole("button", { name: "All models", exact: true }).click();
+  await expect(page.locator('[data-slot="model-row"]')).toHaveCount(10);
+  await page
+    .getByRole("textbox", { name: "Search speech models", exact: true })
+    .fill("Whisper Tiny");
+  await expect(page.locator('[data-slot="model-row"]')).toHaveCount(1);
+  await expect(catalog).toContainText("10");
 });
 
 test("keyboard disclosure preserves choices across closing, reopening and Show model focus", async ({
@@ -255,6 +291,34 @@ test("keyboard disclosure preserves choices across closing, reopening and Show m
   expect(await page.evaluate(() => window.modelGuidanceTest.calls)).toEqual([]);
 });
 
+test("guidance directly uses the shared download, cancel and installed-selection flow", async ({
+  page,
+}) => {
+  await openModels(page);
+  await guide(page).getByRole("button", { name: "Download & use", exact: true }).click();
+  const suggested = card(page, "Whisper Small");
+  await expect(guide(page)).toBeHidden();
+  await expect(suggested.getByRole("heading")).toBeFocused();
+  await expect(suggested.getByRole("progressbar")).toHaveAttribute("aria-valuenow", "42");
+  await help(page).click();
+  await expect(
+    guide(page).getByRole("button", { name: "Download & use", exact: true }),
+  ).toBeDisabled();
+  expect(await page.evaluate(() => window.modelGuidanceTest.calls)).toEqual(["install:small"]);
+  await suggested.getByRole("button", { name: "Cancel download" }).click();
+  await choose(page, "What will you dictate?", "Quick notes / small download");
+  await guide(page).getByRole("button", { name: "Use model", exact: true }).click();
+  await expect(card(page, "Whisper Base").getByRole("heading")).toBeFocused();
+  await expectActiveModel(card(page, "Whisper Base"));
+  expect(await page.evaluate(() => window.modelGuidanceTest.calls)).toEqual([
+    "install:small",
+    "cancel",
+    "use:/base",
+  ]);
+  await help(page).click();
+  await expect(guide(page).getByRole("button", { name: "Active", exact: true })).toBeDisabled();
+});
+
 test("language and task guidance uses catalog coverage without mutating model or settings", async ({
   page,
 }) => {
@@ -283,8 +347,12 @@ test("language and task guidance uses catalog coverage without mutating model or
     })),
   ).toEqual({ path: "/tiny", language: "auto" });
   await page.getByRole("link", { name: "Settings", exact: true }).click();
+  await page
+    .getByRole("dialog", { name: "Settings", exact: true })
+    .getByRole("button", { name: "Close", exact: true })
+    .click();
   await page.getByRole("link", { name: "Models", exact: true }).click();
-  await expect(guide(page)).toBeHidden();
+  await expect(guide(page)).toBeVisible();
   await revealGuidance(page);
   await expect(guide(page).getByRole("combobox", { name: "Language for guidance" })).toContainText(
     "Not sure / multiple languages",
@@ -320,10 +388,7 @@ test("Show model reveals its family and focuses its heading; explicit download c
   const moonshine = card(page, "Moonshine V2 Small");
   await expect(moonshine.getByRole("heading")).toBeFocused();
   await expect(guide(page)).toBeHidden();
-  await expect(page.getByRole("button", { name: "Moonshine models", exact: true })).toHaveAttribute(
-    "aria-expanded",
-    "true",
-  );
+  await expect(card(page, "Moonshine V2 Small")).toBeVisible();
   expect(await page.evaluate(() => window.modelGuidanceTest.calls)).toEqual([]);
   const action = moonshine.getByRole("button", { name: "Download & use", exact: true });
   await action.click();
@@ -333,9 +398,7 @@ test("Show model reveals its family and focuses its heading; explicit download c
   ).toBeDisabled();
   await choose(page, "Language for guidance", "Japanese");
   await expect(moonshine.getByRole("button", { name: "Cancel download" })).toBeEnabled();
-  await expect(page.getByRole("region", { name: "Current speech model" })).toContainText(
-    "Whisper Tiny",
-  );
+  await expect(currentSpeechModel(page)).toContainText("Whisper Tiny");
   await moonshine.getByRole("button", { name: "Cancel download" }).click();
   await expect(action).toBeEnabled();
   await page.evaluate(() => {
@@ -358,10 +421,8 @@ test("Show model reveals its family and focuses its heading; explicit download c
     state.status("idle", "Model installed. Ready to dictate.");
     state.callbacks["dictation:history"]();
   });
-  await expect(moonshine.getByRole("button", { name: "Active", exact: true })).toBeDisabled();
-  await expect(page.getByRole("region", { name: "Current speech model" })).toContainText(
-    "Moonshine V2 Small",
-  );
+  await expectActiveModel(moonshine);
+  await expect(currentSpeechModel(page)).toContainText("Moonshine V2 Small");
 });
 
 test("unknown language, custom models and unavailable catalog suggestions stay safe", async ({
@@ -373,14 +434,11 @@ test("unknown language, custom models and unavailable catalog suggestions stay s
     s.settings.modelPath = "/local/custom.bin";
   });
   await openModels(page);
-  await expect(page.getByRole("region", { name: "Current speech model" })).toContainText(
-    "Custom model",
-  );
+  await expect(currentSpeechModel(page)).toContainText("Custom model");
   await expect(guide(page).getByRole("combobox", { name: "Language for guidance" })).toContainText(
     "Not sure / multiple languages",
   );
-  for (const name of ["Whisper models", "NVIDIA Parakeet models", "Moonshine models"])
-    await expect(page.getByRole("button", { name, exact: true })).toBeVisible();
+  await expect(page.locator('[data-slot="model-row"]')).toHaveCount(10);
   await expect(page.getByRole("link", { name: "Open Settings" })).toBeVisible();
   await page.evaluate(() => {
     window.modelGuidanceTest.snapshot.models = window.modelGuidanceTest.snapshot.models.filter(
@@ -394,7 +452,7 @@ test("unknown language, custom models and unavailable catalog suggestions stay s
   expect(await page.evaluate(() => window.modelGuidanceTest.calls)).toEqual([]);
 });
 
-test("keyboard language details retain priority when scrolling moves another badge under the pointer", async ({
+test("language coverage filters explicitly and keeps keyboard focus while the pointer crosses background rows", async ({
   page,
 }) => {
   await openModels(page);
@@ -402,21 +460,126 @@ test("keyboard language details retain priority when scrolling moves another bad
   await guide(page).getByRole("button", { name: "Show model" }).focus();
   await page.keyboard.press("Enter");
   const focusedBadge = page.getByRole("button", {
-    name: "Supported languages for NVIDIA Parakeet TDT v3",
-    exact: true,
+    name: /^Supported languages for NVIDIA Parakeet TDT v3/,
   });
   await expect(card(page, "NVIDIA Parakeet TDT v3").getByRole("heading")).toBeFocused();
   await page.keyboard.press("Tab");
   await expect(focusedBadge).toBeFocused();
-  const tooltip = page.locator('[data-slot="tooltip-content"][data-open]');
-  await expect(tooltip).toContainText("25 languages");
-  await page
-    .getByRole("button", { name: "Supported languages for Whisper Tiny", exact: true })
-    .hover();
-  await expect(focusedBadge).toBeFocused();
-  await expect(tooltip).toContainText("25 languages");
+  await page.keyboard.press("Enter");
+  const languages = page.getByRole("dialog", {
+    name: "Supported languages for NVIDIA Parakeet TDT v3",
+    exact: true,
+  });
+  const search = languages.getByRole("textbox", {
+    name: "Search supported languages",
+    exact: true,
+  });
+  await expect(search).toBeFocused();
+  await expect(languages).toContainText("25 languages");
+  await expect
+    .poll(() =>
+      languages.evaluate((node) =>
+        node.getAnimations().every((animation) => animation.playState !== "running"),
+      ),
+    )
+    .toBe(true);
+  const initialSearch = await search.boundingBox();
+  const initialDialog = await languages.boundingBox();
+  const expectStableSearch = async () => {
+    await expect
+      .poll(async () => Math.abs((await search.boundingBox())!.y - initialSearch!.y))
+      .toBeLessThan(1);
+    expect(Math.abs((await languages.boundingBox())!.height - initialDialog!.height)).toBeLessThan(
+      1,
+    );
+    await expect(search).toBeFocused();
+  };
+  await search.fill("German");
+  await expect(languages.getByRole("listitem")).toHaveCount(1);
+  await expectStableSearch();
+  await expect(languages.getByRole("listitem")).toContainText("German");
+  await expect(languages.locator('[lang="de"]')).toContainText("Deutsch");
+  await search.fill("deutsch");
+  await expect(languages.getByRole("listitem")).toHaveCount(1);
+  await expect(languages.getByRole("listitem")).toContainText("German");
+  const otherRow = await page.locator('[data-model-language="tiny"]').boundingBox();
+  await page.mouse.move(otherRow!.x + otherRow!.width / 2, otherRow!.y + otherRow!.height / 2);
+  await expect(search).toBeFocused();
+  await expect(languages).toContainText("1 of 25 languages");
+  await search.fill("Japanese");
+  await expect(
+    languages.getByText("No supported languages match your search.", { exact: true }),
+  ).toBeVisible();
+  await expectStableSearch();
+  await search.fill("");
+  await expect(languages.getByRole("listitem")).toHaveCount(25);
+  await expectStableSearch();
   await page.keyboard.press("Escape");
-  await expect(tooltip).toHaveCount(0);
+  await expect(languages).toHaveCount(0);
+  await expect(focusedBadge).toBeFocused();
+});
+
+test("language coverage remains searchable and dismissible at narrow enlarged text", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 480, height: 600 });
+  await openModels(page, false);
+  await page.evaluate(() => {
+    document.documentElement.style.fontSize = "200%";
+  });
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () => document.documentElement.scrollWidth <= document.documentElement.clientWidth,
+      ),
+    )
+    .toBe(true);
+  const trigger = card(page, "Whisper Tiny").getByRole("button", {
+    name: /^Supported languages for Whisper Tiny/,
+  });
+  await trigger.click();
+  const dialog = page.getByRole("dialog", {
+    name: "Supported languages for Whisper Tiny",
+    exact: true,
+  });
+  const search = dialog.getByRole("textbox", { name: "Search supported languages", exact: true });
+  await expect(search).toBeInViewport();
+  await expect(dialog.getByRole("button", { name: "Close", exact: true })).toBeInViewport();
+  const bounds = () =>
+    dialog.evaluate((node) => {
+      const box = node.getBoundingClientRect();
+      return {
+        left: box.left,
+        top: box.top,
+        right: box.right,
+        bottom: box.bottom,
+        width: innerWidth,
+        height: innerHeight,
+        contained:
+          box.left >= -1 &&
+          box.right <= innerWidth + 1 &&
+          box.top >= -1 &&
+          box.bottom <= innerHeight + 1,
+      };
+    });
+  await expect.poll(bounds).toMatchObject({ contained: true });
+  await search.fill("Japanese");
+  await expect(dialog.getByRole("listitem")).toContainText("Japanese");
+  await search.fill("日本語");
+  await expect(dialog.getByRole("listitem")).toHaveCount(1);
+  await expect(dialog.locator('[lang="ja"]')).toContainText("日本語");
+  expect(
+    await dialog.locator('[lang="ja"]').evaluate((node) => {
+      const range = document.createRange();
+      range.selectNodeContents(node);
+      return range.getClientRects().length;
+    }),
+  ).toBe(1);
+  await expect.poll(bounds).toMatchObject({ contained: true });
+  await page.keyboard.press("Escape");
+  await expect(dialog).toHaveCount(0);
+  await expect(trigger).toBeFocused();
+  expect(await page.evaluate(() => window.modelGuidanceTest.calls)).toEqual([]);
 });
 
 test("explicit installed selection, repair, busy and pending removal retain lifecycle guards", async ({
@@ -433,20 +596,20 @@ test("explicit installed selection, repair, busy and pending removal retain life
   await expect(
     page.locator('[data-slot="toast"]').filter({ hasText: "Synthetic model switch failure" }),
   ).toBeVisible();
-  await expect(page.getByRole("region", { name: "Current speech model" })).toContainText(
-    "Whisper Tiny",
-  );
+  await expect(currentSpeechModel(page)).toContainText("Whisper Tiny");
   await page.evaluate(() => {
     window.modelGuidanceTest.failSave = false;
   });
   await base.getByRole("button", { name: "Use model", exact: true }).click();
-  await expect(base.getByRole("button", { name: "Active", exact: true })).toBeDisabled();
+  await expectActiveModel(base);
   await revealGuidance(page);
-  await expect(guide(page)).toContainText("already active");
+  await expect(guide(page).getByRole("button", { name: "Active", exact: true })).toBeDisabled();
   await page.evaluate(() => {
     window.modelGuidanceTest.status("recording");
   });
-  await expect(page.getByRole("button", { name: "Check & repair runtime" })).toBeDisabled();
+  await expect(
+    currentSpeechModel(page).getByRole("button", { name: /^More actions/ }),
+  ).toBeDisabled();
   await expect(
     card(page, "Whisper Small").getByRole("button", { name: "Download & use", exact: true }),
   ).toBeDisabled();
@@ -455,8 +618,10 @@ test("explicit installed selection, repair, busy and pending removal retain life
     window.modelGuidanceTest.deferRemoval = true;
     window.modelGuidanceTest.failRemove = true;
   });
-  await card(page, "Whisper Tiny")
-    .getByRole("button", { name: "Remove Whisper Tiny", exact: true })
+  await (
+    await modelMenu(page, "Whisper Tiny")
+  )
+    .getByRole("menuitem", { name: "Remove model", exact: true })
     .click();
   const dialog = page.getByRole("dialog");
   await dialog.getByRole("button", { name: "Remove model", exact: true }).click();
@@ -474,7 +639,9 @@ test("explicit installed selection, repair, busy and pending removal retain life
     s.callbacks["dictation:history"]();
   });
   await choose(page, "What will you dictate?", "Emails & everyday dictation");
-  await expect(guide(page)).toContainText("Choose Repair & use");
+  await expect(
+    guide(page).getByRole("button", { name: "Repair & use", exact: true }),
+  ).toBeEnabled();
   await guide(page).getByRole("button", { name: "Show model" }).click();
   await card(page, "Whisper Small")
     .getByRole("button", { name: "Repair & use", exact: true })

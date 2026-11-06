@@ -70,6 +70,19 @@ func (a *App) GetSession(id string) (*storage.Session, error) {
 	return &entry, nil
 }
 
+func (a *App) RenameSession(id, title string) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if err := a.historyAvailableLocked(); err != nil {
+		return err
+	}
+	if err := a.store.SaveSessionTitle(id, title); err != nil {
+		return err
+	}
+	a.event("dictation:history")
+	return nil
+}
+
 func (a *App) DeleteSessions(ids []string) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -110,6 +123,9 @@ func (a *App) scheduleHistoryCleanupLocked() {
 func formatHistoryExport(entries []storage.Session) string {
 	var text strings.Builder
 	for _, entry := range entries {
+		if entry.Title != "" {
+			fmt.Fprintf(&text, "%s\n", entry.Title)
+		}
 		fmt.Fprintf(&text, "%s · %s · %s\n%s\n\n", entry.CreatedAt, entry.SpeechModel, entry.Language, entry.FinalTranscript)
 	}
 	return text.String()

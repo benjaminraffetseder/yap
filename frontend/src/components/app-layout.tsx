@@ -18,32 +18,25 @@ import {
   HardDriveDownload,
   History,
   Mic,
-  PanelLeftClose,
-  PanelLeftOpen,
   Settings2,
   Sparkles,
 } from "lucide-react";
-import { useEffect, useState, type CSSProperties } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type Ref } from "react";
 import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router";
 
-const sidebarKey = "yap-sidebar-collapsed";
-
-function readCollapsed() {
-  try {
-    return localStorage.getItem(sidebarKey) === "true";
-  } catch {
-    return false;
-  }
-}
-
-export function AppLayout() {
+export function AppLayout({ saveNoticeRef }: { saveNoticeRef?: Ref<HTMLDivElement> }) {
   const { t } = useTranslation();
   const navigation = [
     { to: "/", label: t("appLayout.dictate"), icon: Mic },
     { to: "/history", label: t("common.history"), icon: History },
     { to: "/models", label: t("modelsPage.models"), icon: HardDriveDownload },
     { to: "/vocabulary", label: t("common.vocabulary"), icon: BookOpen },
-    { to: "/prompts", label: t("promptsPage.promptsChains"), icon: Sparkles },
+    {
+      to: "/prompts",
+      label: t("promptsPage.promptsChains"),
+      shortLabel: t("promptsPage.prompts"),
+      icon: Sparkles,
+    },
     { to: "/settings", label: t("common.settings"), icon: Settings2 },
   ];
 
@@ -51,10 +44,22 @@ export function AppLayout() {
   const location = useLocation();
   const navigate = useNavigate();
   const [dismissedUpdate, setDismissedUpdate] = useState("");
-  const [collapsed, setCollapsed] = useState(readCollapsed);
-  const sidebarWidth = collapsed ? "4.5rem" : "13.75rem";
+  const sidebarWidth = "clamp(56px, 10vw, 5.75rem)";
+  const sidebar = useRef<HTMLElement>(null);
+  const [compactNavigation, setCompactNavigation] = useState(false);
+  useLayoutEffect(() => {
+    const rail = sidebar.current;
+    if (!rail) return;
+    const measure = () => {
+      const fullWidth = parseFloat(getComputedStyle(document.documentElement).fontSize) * 5.75;
+      setCompactNavigation(rail.getBoundingClientRect().width < fullWidth - 1);
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(rail);
+    return () => observer.disconnect();
+  }, []);
   const [commandOpen, setCommandOpen] = useState(false);
-  const toggleLabel = collapsed ? t("appLayout.expandSidebar") : t("appLayout.collapseSidebar");
   const connectionFailure = !!error && (loading || error === backendVersionMismatchMessage);
   const homeSurface =
     location.pathname === "/" &&
@@ -98,20 +103,10 @@ export function AppLayout() {
     clearError();
   }, [error, connectionFailure, clearError]);
 
-  function toggleSidebar() {
-    const next = !collapsed;
-    setCollapsed(next);
-    try {
-      localStorage.setItem(sidebarKey, String(next));
-    } catch {
-      /* Use the current session preference. */
-    }
-  }
-
   return (
     <TooltipProvider delay={250}>
       <div
-        className="group/layout flex min-h-screen"
+        className={cn("group/layout flex", homeSurface ? "h-dvh overflow-hidden" : "min-h-screen")}
         style={
           {
             "--sidebar-width": sidebarWidth,
@@ -119,61 +114,84 @@ export function AppLayout() {
         }
       >
         <aside
+          ref={sidebar}
           id="app-sidebar"
-          className="sticky top-0 flex h-screen w-[var(--sidebar-width)] shrink-0 flex-col border-r bg-sidebar px-3 py-4 transition-[width] duration-200 ease-out motion-reduce:transition-none"
+          data-compact-navigation={compactNavigation || undefined}
+          className={cn(
+            "sticky top-0 flex h-screen w-[var(--sidebar-width)] shrink-0 flex-col overflow-y-auto border-r bg-sidebar",
+            compactNavigation ? "px-[4px] py-[12px]" : "px-2 py-4",
+          )}
         >
-          <div className="mb-6 flex h-11 items-center justify-between">
-            {!collapsed && (
-              <NavLink
-                to="/"
-                className="flex items-center gap-2.5 pl-3"
-                aria-label={t("appLayout.yapHome")}
-              >
-                <AudioLines className="size-5 text-primary" aria-hidden="true" />
-                <span className="text-xl font-semibold tracking-tight">yap.</span>
-              </NavLink>
+          <div
+            className={cn(
+              "flex shrink-0 items-center justify-center",
+              compactNavigation ? "mb-[12px] h-[44px]" : "mb-4 h-11",
             )}
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <Button variant="ghost" size="icon" className="size-11 shrink-0 rounded-lg" />
-                }
-                onClick={toggleSidebar}
-                aria-label={toggleLabel}
-                aria-expanded={!collapsed}
-                aria-controls="app-sidebar"
-              >
-                {collapsed ? (
-                  <PanelLeftOpen aria-hidden="true" />
-                ) : (
-                  <PanelLeftClose aria-hidden="true" />
-                )}
-              </TooltipTrigger>
-              <TooltipContent side="right">{toggleLabel}</TooltipContent>
-            </Tooltip>
+          >
+            <Link
+              to="/"
+              className={cn(
+                "flex items-center justify-center rounded-lg outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring",
+                compactNavigation ? "size-[44px]" : "size-11",
+              )}
+              aria-label={t("appLayout.yapHome")}
+            >
+              <AudioLines className="size-5 text-primary" aria-hidden="true" />
+            </Link>
           </div>
           <nav aria-label={t("appLayout.mainNavigation")} className="flex flex-1 flex-col gap-1">
-            {navigation.map(({ to, label, icon: Icon }) => (
-              <Tooltip key={`${to}-${collapsed}`} disabled={!collapsed}>
+            {navigation.map(({ to, label, shortLabel, icon: Icon }) => (
+              <Tooltip key={to} disabled={!compactNavigation}>
                 <TooltipTrigger
-                  render={<NavLink to={to} end={to !== "/history"} />}
-                  className={cn(
-                    "flex h-11 shrink-0 items-center gap-3 rounded-lg px-3 text-sm text-muted-foreground outline-none transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring aria-[current=page]:bg-primary/10 aria-[current=page]:font-medium aria-[current=page]:text-primary",
-                    to === "/settings" && "mt-auto",
-                  )}
+                  render={
+                    <NavLink
+                      to={to}
+                      end={to !== "/history"}
+                      aria-label={label}
+                      className={cn(
+                        "flex shrink-0 flex-col items-center justify-center gap-1 rounded-lg text-sm text-muted-foreground outline-none transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring aria-[current=page]:bg-primary/10 aria-[current=page]:font-medium aria-[current=page]:text-primary",
+                        compactNavigation ? "h-[44px] px-0" : "h-14 px-1",
+                        to === "/settings" && "mt-auto",
+                      )}
+                    />
+                  }
                 >
                   <Icon className="size-5 shrink-0" aria-hidden="true" />
-                  <span className={collapsed ? "sr-only" : "truncate"}>{label}</span>
+                  <span
+                    className={cn("max-w-full text-xs leading-5", compactNavigation && "sr-only")}
+                  >
+                    {shortLabel ?? label}
+                  </span>
                 </TooltipTrigger>
                 <TooltipContent side="right">{label}</TooltipContent>
               </Tooltip>
             ))}
           </nav>
         </aside>
-        <main id="main-content" className="min-w-0 flex-1">
-          <div className={homeSurface ? undefined : "mx-auto max-w-5xl px-6 py-8 lg:px-10"}>
+        <main
+          id="main-content"
+          className={cn("min-w-0 flex-1", homeSurface && "flex min-h-0 flex-col")}
+        >
+          <div
+            className={
+              homeSurface
+                ? "flex min-h-0 flex-1 flex-col"
+                : "mx-auto max-w-5xl px-[clamp(1rem,4vw,1.5rem)] py-8 lg:px-[clamp(1rem,4vw,2.5rem)]"
+            }
+          >
+            <div
+              ref={saveNoticeRef}
+              data-slot="app-save-notice-host"
+              className="shrink-0 empty:hidden"
+            />
             {showNotices && (
-              <div className={homeSurface ? "mx-auto max-w-5xl px-6 pt-6 lg:px-10" : undefined}>
+              <div
+                className={
+                  homeSurface
+                    ? "mx-auto max-h-[40vh] w-full max-w-5xl shrink-0 overflow-y-auto px-6 pt-4 lg:px-10"
+                    : undefined
+                }
+              >
                 {!isDesktop && (
                   <div className="mb-6 rounded-lg border bg-muted/50 px-4 py-3 text-sm text-muted-foreground">
                     {t("appLayout.browserPreviewNativeFeaturesRequireTheDesktop")}
@@ -249,12 +267,7 @@ export function AppLayout() {
         </main>
         <RecordingStatus />
         <ImportQueue sidebarWidth={sidebarWidth} />
-        <CommandMenu
-          open={commandOpen}
-          onOpenChange={setCommandOpen}
-          collapsed={collapsed}
-          toggleSidebar={toggleSidebar}
-        />
+        <CommandMenu open={commandOpen} onOpenChange={setCommandOpen} />
         <AudioDropImport />
       </div>
     </TooltipProvider>

@@ -160,31 +160,27 @@ test.beforeEach(async ({ page }) => {
   await expect(page.getByRole("button", { name: "Import audio", exact: true })).toBeEnabled();
 });
 
-test("centers the drawer within the content frame at desktop and narrow widths with either sidebar state", async ({
+test("centers the drawer within the content frame at desktop and narrow widths with fixed navigation", async ({
   page,
 }, testInfo) => {
   await queue(page, [job("interview", "transcribing", 42), job("notes")]);
   const drawer = page.getByRole("dialog", { name: /Imports/ });
   for (const width of [1086, 480]) {
     await page.setViewportSize({ width, height: 754 });
-    for (const collapsed of [false, true]) {
-      await expect
-        .poll(async () => {
-          const bounds = await drawer.boundingBox();
-          const content = await page.getByRole("main").boundingBox();
-          return bounds && content
-            ? Math.abs(bounds.x + bounds.width / 2 - (content.x + content.width / 2))
-            : Infinity;
-        })
-        .toBeLessThan(1);
-      const bounds = (await drawer.boundingBox())!;
-      const content = (await page.getByRole("main").boundingBox())!;
-      expect(bounds.x).toBeGreaterThanOrEqual(content.x + 16);
-      expect(bounds.x + bounds.width).toBeLessThanOrEqual(content.x + content.width - 16);
-      if (!collapsed) await page.getByRole("button", { name: "Collapse sidebar" }).click();
-    }
+    await expect
+      .poll(async () => {
+        const bounds = await drawer.boundingBox();
+        const content = await page.getByRole("main").boundingBox();
+        return bounds && content
+          ? Math.abs(bounds.x + bounds.width / 2 - (content.x + content.width / 2))
+          : Infinity;
+      })
+      .toBeLessThan(1);
+    const bounds = (await drawer.boundingBox())!;
+    const content = (await page.getByRole("main").boundingBox())!;
+    expect(bounds.x).toBeGreaterThanOrEqual(content.x + 16);
+    expect(bounds.x + bounds.width).toBeLessThanOrEqual(content.x + content.width - 16);
     await page.screenshot({ path: testInfo.outputPath(`centered-drawer-${width}.png`) });
-    await page.getByRole("button", { name: "Expand sidebar" }).click();
   }
 });
 

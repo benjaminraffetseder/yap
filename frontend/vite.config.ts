@@ -7,6 +7,9 @@ export default defineConfig(({ mode }) => ({
   base: "./",
   // Keep UI tests and the desktop development server in separate caches.
   cacheDir: mode === "ui-test" ? "node_modules/.vite-ui-test" : "node_modules/.vite",
+  // The isolated motion fixture imports this outside the app's entry graph.
+  // Discover it up front so a cold test cache cannot reload a mounted fixture.
+  optimizeDeps: mode === "ui-test" ? { include: ["@base-ui/react/accordion"] } : undefined,
   plugins: [
     react(),
     tailwindcss(),

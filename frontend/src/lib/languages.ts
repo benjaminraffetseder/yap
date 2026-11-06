@@ -138,3 +138,18 @@ export function languageName(value: string) {
     new Intl.DisplayNames([i18n.resolvedLanguage ?? "en"], { type: "language" }).of(code) ?? value
   );
 }
+
+const nativeNames = new Map<string, { code: string; label: string }>();
+
+export function languageAutonym(value: string) {
+  const code = languageCodes[value] ?? (/^[a-z]{2,3}$/i.test(value) ? value : undefined);
+  if (!code) return undefined;
+  const cached = nativeNames.get(code);
+  if (cached) return cached;
+  if (!Intl.DisplayNames.supportedLocalesOf([code]).length) return undefined;
+  const label = new Intl.DisplayNames([code], { type: "language" }).of(code);
+  if (!label) return undefined;
+  const result = { code, label };
+  nativeNames.set(code, result);
+  return result;
+}

@@ -54,21 +54,28 @@ export function DiagnosticsPanel({ disabled = false }: { disabled?: boolean }) {
     setPending(false);
   }
   return (
-    <section className="settings-section space-y-5" aria-labelledby="diagnostics-title">
+    <section
+      data-slot="settings-section"
+      className="space-y-5 rounded-xl border bg-card p-6"
+      aria-labelledby="diagnostics-title"
+    >
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 id="diagnostics-title" className="font-semibold">
           {t("diagnosticsPanel.dictationDiagnostics")}
         </h2>
         <Button
           variant="outline"
-          size="icon"
+          size="sm"
           aria-label={t("diagnosticsPanel.refreshDiagnostics")}
+          aria-busy={checking}
           disabled={!isDesktop || checking || busy || pending}
           onClick={() => void refreshChecks()}
         >
           <RefreshCw
+            aria-hidden="true"
             className={`size-4 ${checking ? "animate-spin motion-reduce:animate-none" : ""}`}
           />
+          {t("diagnosticsPanel.refreshDiagnostics")}
         </Button>
       </div>
       {checks.length > 0 && (

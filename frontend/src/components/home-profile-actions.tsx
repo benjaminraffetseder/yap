@@ -12,7 +12,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Menu } from "@base-ui/react/menu";
+import { Collapsible } from "@base-ui/react/collapsible";
 import { Check, ChevronDown, Plus, RotateCcw } from "lucide-react";
 import {
   backend,
@@ -66,17 +66,24 @@ export function HomeProfileActions({
   onPendingChange,
   selectorRef,
   showModified = true,
+  onReviewOpen,
+  reviewReturnFocusRef,
+  onReceipt,
 }: {
   profile: DictationProfile;
   disabled?: boolean;
   onPendingChange?: (pending: boolean) => void;
   selectorRef: RefObject<HTMLButtonElement | null>;
   showModified?: boolean;
+  onReviewOpen?: () => void;
+  reviewReturnFocusRef?: RefObject<HTMLButtonElement | null>;
+  onReceipt?: (receipt: string) => void;
 }) {
   const languages = useLanguages();
   const { t } = useTranslation();
   const { snapshot, loading, refresh } = useDictation();
   const [review, setReview] = useState<Review | null>(null);
+  const [expanded, setExpanded] = useState(false);
   const [name, setName] = useState("");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
@@ -85,7 +92,6 @@ export function HomeProfileActions({
   const running = useRef(false);
   const group = useRef<HTMLDivElement>(null);
   const opener = useRef<HTMLButtonElement>(null);
-  const openingReview = useRef(false);
   const nameID = useId();
   const modified =
     showModified && !!snapshot.profileModified && snapshot.activeProfileId === profile.id;
@@ -116,9 +122,20 @@ export function HomeProfileActions({
                   ? t("homeProfileActions.enableTheSharedTextModelInPromptsFirst")
                   : "";
 
+  function focusTarget() {
+    return (
+      [opener.current, selectorRef.current, reviewReturnFocusRef?.current].find(
+        (element) =>
+          element?.isConnected &&
+          !element.matches(":disabled") &&
+          element.getClientRects().length > 0,
+      ) ?? null
+    );
+  }
+
   function open(kind: Review["kind"]) {
     if (blocked || running.current || refreshFailed) return;
-    openingReview.current = true;
+    setExpanded(false);
     setName("");
     setError("");
     setCompleted("");
@@ -127,6 +144,7 @@ export function HomeProfileActions({
       baseline: reviewKey(snapshot, profile.id),
       choices: currentChoices(snapshot, profile),
     });
+    onReviewOpen?.();
   }
 
   async function mutate(kind: "restore" | "update" | "new") {
@@ -138,6 +156,7 @@ export function HomeProfileActions({
     )
       return;
     running.current = true;
+    onReceipt?.("");
     setPending(true);
     onPendingChange?.(true);
     setError("");
@@ -170,11 +189,12 @@ export function HomeProfileActions({
                 activeProfile: profile.name,
               });
       setCompleted(receipt);
+      onReceipt?.(receipt);
       // The write is complete even if fetching the resulting snapshot fails.
       try {
         await refresh();
         setReview(null);
-        if (kind === "restore") requestAnimationFrame(() => selectorRef.current?.focus());
+        if (kind === "restore") requestAnimationFrame(() => focusTarget()?.focus());
       } catch (cause) {
         setRefreshFailed(true);
         setError(
@@ -200,7 +220,7 @@ export function HomeProfileActions({
       setRefreshFailed(false);
       setError("");
       setReview(null);
-      requestAnimationFrame(() => selectorRef.current?.focus());
+      requestAnimationFrame(() => focusTarget()?.focus());
     } catch (cause) {
       setError(
         t("homeProfileActions.changesSavedCouldNotRefreshTheCurrent", { cause: message(cause) }),
@@ -220,83 +240,87 @@ export function HomeProfileActions({
       role="group"
       aria-busy={pending}
       aria-label={t("homeProfileActions.changesTo", { name: profile.name })}
-      className="min-w-0 max-w-full rounded-md outline-none [overflow-wrap:anywhere] focus-visible:ring-2 focus-visible:ring-ring"
+      className={`${expanded ? "basis-full" : ""} min-w-0 max-w-full rounded-md outline-none [overflow-wrap:anywhere] focus-visible:ring-2 focus-visible:ring-ring`}
     >
       {(modified || refreshFailed) && (
-        <Menu.Root
-          onOpenChange={(open) => {
-            if (open) openingReview.current = false;
-          }}
-        >
-          <Menu.Trigger
+        <Collapsible.Root open={expanded} onOpenChange={setExpanded}>
+          <Collapsible.Trigger
             ref={opener}
             disabled={blocked}
-            render={<Button variant="outline" size="sm" />}
-            className="h-auto min-h-8 max-w-full border-primary/25 bg-transparent whitespace-normal text-xs text-primary"
+            render={<Button variant="ghost" size="sm" />}
+            className="h-auto min-h-7 max-w-full gap-1 px-1 py-1 whitespace-normal text-xs text-primary"
             aria-label={
               modified ? t("dictationProfiles.modified") : t("homeProfileActions.profileChanges")
             }
           >
             {modified ? t("dictationProfiles.modified") : t("homeProfileActions.profileChanges")}
-            <ChevronDown aria-hidden="true" className="size-3.5" />
-          </Menu.Trigger>
-          <Menu.Portal>
-            <Menu.Positioner align="start" sideOffset={8} className="z-50">
-              <Menu.Popup
-                finalFocus={() => (openingReview.current ? false : true)}
-                className="w-64 max-w-[calc(100vw-2rem)] origin-(--transform-origin) rounded-xl border bg-popover p-2 text-popover-foreground shadow-lg motion-popup [overflow-wrap:anywhere]"
+            <ChevronDown
+              aria-hidden="true"
+              className={`size-3.5 ${expanded ? "rotate-180" : ""}`}
+            />
+          </Collapsible.Trigger>
+          <Collapsible.Panel
+            role="region"
+            aria-label={t("homeProfileActions.profileChanges")}
+            className="mt-2 space-y-1 border-y py-2"
+          >
+            <p className="px-2 pb-2 text-xs leading-5 text-muted-foreground">
+              {refreshFailed
+                ? t("homeProfileActions.changesAreSavedRefreshTheViewBefore")
+                : t("homeProfileActions.currentChoicesDifferFromYourSavedProfile", {
+                    name: profile.name,
+                  })}
+            </p>
+            {refreshFailed ? (
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={blocked}
+                onClick={() => void retryRefresh()}
               >
-                <p className="px-2 py-2 text-xs leading-5 text-muted-foreground">
-                  {refreshFailed
-                    ? t("homeProfileActions.changesAreSavedRefreshTheViewBefore")
-                    : t("homeProfileActions.currentChoicesDifferFromYourSavedProfile", {
-                        name: profile.name,
-                      })}
-                </p>
-                {refreshFailed ? (
-                  <Menu.Item
-                    onClick={() => void retryRefresh()}
-                    className="rounded-md px-2 py-2 text-sm outline-none data-highlighted:bg-accent"
-                  >
-                    {t("homeProfileActions.refreshSavedChanges")}
-                  </Menu.Item>
-                ) : (
-                  <>
-                    <Menu.Item
-                      disabled={blocked}
-                      onClick={() => void mutate("restore")}
-                      className="flex items-center gap-2 rounded-md px-2 py-2 text-sm outline-none data-highlighted:bg-accent data-disabled:opacity-50"
-                    >
-                      <RotateCcw aria-hidden="true" className="size-4 shrink-0" />
-                      {t("homeProfileActions.restoreSavedChoices")}
-                    </Menu.Item>
-                    <Menu.Item
-                      disabled={blocked}
-                      onClick={() => open("update")}
-                      className="flex items-center gap-2 rounded-md px-2 py-2 text-sm outline-none data-highlighted:bg-accent data-disabled:opacity-50"
-                    >
-                      <Check aria-hidden="true" className="size-4 shrink-0" />
-                      {t("homeProfileActions.updateProfile")}
-                    </Menu.Item>
-                    <Menu.Item
-                      disabled={blocked || full || !snapshot.settings.modelPath}
-                      onClick={() => open("new")}
-                      className="flex items-center gap-2 rounded-md px-2 py-2 text-sm outline-none data-highlighted:bg-accent data-disabled:opacity-50"
-                    >
-                      <Plus aria-hidden="true" className="size-4 shrink-0" />
-                      {t("homeProfileActions.saveAsNew")}
-                    </Menu.Item>
-                    {full && (
-                      <p className="px-2 py-2 text-xs text-muted-foreground">
-                        {t("homeProfileActions.youCanSaveUpTo20Additional")}
-                      </p>
-                    )}
-                  </>
+                {t("homeProfileActions.refreshSavedChanges")}
+              </Button>
+            ) : (
+              <>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={blocked}
+                  onClick={() => void mutate("restore")}
+                  className="h-auto min-h-8 w-full justify-start py-1 whitespace-normal"
+                >
+                  <RotateCcw aria-hidden="true" className="size-4 shrink-0" />
+                  {t("homeProfileActions.restoreSavedChoices")}
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={blocked}
+                  onClick={() => open("update")}
+                  className="h-auto min-h-8 w-full justify-start py-1 whitespace-normal"
+                >
+                  <Check aria-hidden="true" className="size-4 shrink-0" />
+                  {t("homeProfileActions.updateProfile")}
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={blocked || full || !snapshot.settings.modelPath}
+                  onClick={() => open("new")}
+                  className="h-auto min-h-8 w-full justify-start py-1 whitespace-normal"
+                >
+                  <Plus aria-hidden="true" className="size-4 shrink-0" />
+                  {t("homeProfileActions.saveAsNew")}
+                </Button>
+                {full && (
+                  <p className="px-2 text-xs text-muted-foreground">
+                    {t("homeProfileActions.youCanSaveUpTo20Additional")}
+                  </p>
                 )}
-              </Menu.Popup>
-            </Menu.Positioner>
-          </Menu.Portal>
-        </Menu.Root>
+              </>
+            )}
+          </Collapsible.Panel>
+        </Collapsible.Root>
       )}
       {!review && completed && (
         <p role="status" className="sr-only">
@@ -318,18 +342,13 @@ export function HomeProfileActions({
         disablePointerDismissal
         onOpenChange={(open) => {
           if (!open && !running.current) {
-            openingReview.current = false;
             setReview(null);
           }
         }}
       >
         <DialogContent
           showCloseButton={false}
-          finalFocus={() =>
-            opener.current?.isConnected && !opener.current.matches(":disabled")
-              ? opener.current
-              : selectorRef.current
-          }
+          finalFocus={() => focusTarget()}
           className="@container/review max-h-[calc(100dvh-2rem)] overflow-y-auto [overflow-wrap:anywhere]"
         >
           <DialogHeader>
@@ -415,7 +434,6 @@ export function HomeProfileActions({
               variant="outline"
               disabled={pending}
               onClick={() => {
-                openingReview.current = false;
                 setReview(null);
               }}
             >

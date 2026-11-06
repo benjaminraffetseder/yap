@@ -40,6 +40,7 @@ func Defaults() Settings {
 
 type Session struct {
 	ID              string       `json:"id"`
+	Title           string       `json:"title,omitempty"`
 	CreatedAt       string       `json:"createdAt"`
 	DurationMS      int64        `json:"durationMs"`
 	RawTranscript   string       `json:"rawTranscript"`
@@ -79,6 +80,7 @@ func Open(dir string) (*Store, error) {
 	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS vocabulary (id INTEGER PRIMARY KEY CHECK(id=1), value TEXT NOT NULL);
 	CREATE TABLE IF NOT EXISTS dictation_profiles (id INTEGER PRIMARY KEY CHECK(id=1), value TEXT NOT NULL);
 	CREATE TABLE IF NOT EXISTS recording_outputs (id TEXT PRIMARY KEY, transcript TEXT NOT NULL);
+	CREATE TABLE IF NOT EXISTS recording_titles (id TEXT PRIMARY KEY, title TEXT NOT NULL);
 	CREATE TABLE IF NOT EXISTS text_processing (id INTEGER PRIMARY KEY CHECK(id=1), value TEXT NOT NULL);
 	CREATE TABLE IF NOT EXISTS pending_audio_deletions (id TEXT PRIMARY KEY, original TEXT NOT NULL, staged TEXT NOT NULL);
 	CREATE TABLE IF NOT EXISTS discarded_audio (path TEXT PRIMARY KEY);
@@ -87,7 +89,8 @@ func Open(dir string) (*Store, error) {
 	CREATE INDEX IF NOT EXISTS revisions_item ON revisions(kind,item_id,id);
 	CREATE TRIGGER IF NOT EXISTS delete_recording_revisions AFTER DELETE ON recordings BEGIN DELETE FROM revisions WHERE kind='transcript' AND item_id=OLD.id; END;
 	CREATE TRIGGER IF NOT EXISTS delete_recording_tombstone AFTER DELETE ON recordings BEGIN DELETE FROM deleted_recordings WHERE id=OLD.id; END;
-	CREATE TRIGGER IF NOT EXISTS delete_recording_output AFTER DELETE ON recordings BEGIN DELETE FROM recording_outputs WHERE id=OLD.id; END;`)
+	CREATE TRIGGER IF NOT EXISTS delete_recording_output AFTER DELETE ON recordings BEGIN DELETE FROM recording_outputs WHERE id=OLD.id; END;
+	CREATE TRIGGER IF NOT EXISTS delete_recording_title AFTER DELETE ON recordings BEGIN DELETE FROM recording_titles WHERE id=OLD.id; END;`)
 	if err != nil {
 		db.Close()
 		return nil, err
@@ -169,6 +172,9 @@ func (s *Store) AddWithOutputs(v Session, outputs []GeneratedOutput) error {
 			return err
 		}
 	}
+	if err := insertSessionTitle(tx, v.ID, v.Title); err != nil {
+		return err
+	}
 	if err := insertInferenceStats(tx, "speech", v.ID, v.Stats); err != nil {
 		return err
 	}
@@ -183,7 +189,7 @@ func (s *Store) AddWithOutputs(v Session, outputs []GeneratedOutput) error {
 	return tx.Commit()
 }
 func (s *Store) History() ([]Session, error) {
-	rows, err := s.db.Query("SELECT r.id,r.created_at,r.duration_ms,r.transcript,r.model,r.language,r.audio_path,COALESCE(o.transcript,r.transcript)," + speechStatsColumn + " FROM recordings r LEFT JOIN recording_outputs o ON r.id=o.id WHERE NOT EXISTS (SELECT 1 FROM deleted_recordings d WHERE d.id=r.id) ORDER BY r.created_at COLLATE yap_datetime DESC,r.id DESC LIMIT 500")
+	rows, err := s.db.Query("SELECT r.id,r.created_at,r.duration_ms,r.transcript,r.model,r.language,r.audio_path,COALESCE(o.transcript,r.transcript)," + sessionTitleColumn + "," + speechStatsColumn + " FROM recordings r LEFT JOIN recording_outputs o ON r.id=o.id WHERE NOT EXISTS (SELECT 1 FROM deleted_recordings d WHERE d.id=r.id) ORDER BY r.created_at COLLATE yap_datetime DESC,r.id DESC LIMIT 500")
 	if err != nil {
 		return nil, err
 	}
@@ -208,7 +214,7 @@ func (s *Store) Session(id string) (Session, error) {
 
 func (s *Store) sessionIncludingDeleted(id string) (Session, error) {
 	var v Session
-	err := scanSession(s.db.QueryRow("SELECT r.id,r.created_at,r.duration_ms,r.transcript,r.model,r.language,r.audio_path,COALESCE(o.transcript,r.transcript),COALESCE(d.deleted_at,''),"+speechStatsColumn+" FROM recordings r LEFT JOIN recording_outputs o ON r.id=o.id LEFT JOIN deleted_recordings d ON d.id=r.id WHERE r.id=?", id), &v, true)
+	err := scanSession(s.db.QueryRow("SELECT r.id,r.created_at,r.duration_ms,r.transcript,r.model,r.language,r.audio_path,COALESCE(o.transcript,r.transcript),COALESCE(d.deleted_at,''),"+sessionTitleColumn+","+speechStatsColumn+" FROM recordings r LEFT JOIN recording_outputs o ON r.id=o.id LEFT JOIN deleted_recordings d ON d.id=r.id WHERE r.id=?", id), &v, true)
 	return v, err
 }
 

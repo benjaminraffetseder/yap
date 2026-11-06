@@ -1,4 +1,5 @@
 import i18n from "@/i18n";
+import { nativeText } from "@/i18n/native-text";
 import { useTranslation } from "react-i18next";
 import { AutoSaveStatus } from "@/components/auto-save-status";
 import { useDictation } from "@/components/dictation-provider";
@@ -6,7 +7,7 @@ import { ProfileSettingIndicator } from "@/components/profile-setting-indicator"
 import { PromptChainsEditor } from "@/components/prompt-chains-editor";
 import { RevisionHistory } from "@/components/revision-history";
 import { SectionTabs } from "@/components/section-tabs";
-import { SettingRow, SettingsSection, ToggleSetting } from "@/components/settings-section";
+import { SettingRow, ToggleSetting } from "@/components/settings-section";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -28,6 +29,7 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent } from "@/components/ui/tabs";
 import { toastManager } from "@/components/ui/toast";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   backend,
   defaultTextProcessing,
@@ -44,8 +46,8 @@ import { useModelDiscovery } from "@/lib/use-model-discovery";
 import { useSavedDraft } from "@/lib/use-saved-draft";
 import { useTextRequest } from "@/lib/use-text-request";
 import { Menu } from "@base-ui/react/menu";
-import { Ellipsis, History, Plus, RefreshCw, Sparkles, Trash2 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { Ellipsis, History, Info, Plus, RefreshCw, Sparkles, Trash2 } from "lucide-react";
+import { useEffect, useId, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
 
 const localServers = [
@@ -61,6 +63,29 @@ const localServers = [
     endpoint: "http://127.0.0.1:8080/v1",
   },
 ];
+
+function AutomationHelp({ active }: { active: boolean }) {
+  const { t } = useTranslation();
+  const [open, setOpen] = useState(false);
+  const id = useId();
+  return (
+    <Tooltip open={open} onOpenChange={setOpen} triggerId={id}>
+      <TooltipTrigger
+        id={id}
+        closeOnClick={false}
+        render={<Button type="button" variant="ghost" size="icon-sm" />}
+        aria-label={t("uiPolish.promptAutomationInfo")}
+        className="text-muted-foreground"
+        onClick={() => setOpen(true)}
+      >
+        <Info aria-hidden="true" className="size-3.5" />
+      </TooltipTrigger>
+      <TooltipContent role="tooltip" side="bottom" className="leading-5">
+        {t(active ? "uiPolish.automaticPromptHelp" : "uiPolish.promptAutomationOff")}
+      </TooltipContent>
+    </Tooltip>
+  );
+}
 
 export function PromptsPage() {
   const { t } = useTranslation();
@@ -258,7 +283,7 @@ export function PromptsPage() {
       >
         <header
           aria-label={t("promptsPage.promptsChains")}
-          className="space-y-3 bg-background pt-1 pb-2 @min-[42rem]/prompts:sticky @min-[42rem]/prompts:top-0 @min-[42rem]/prompts:z-20"
+          className="sticky top-0 z-20 space-y-3 bg-background pt-1"
         >
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div className="min-w-0">
@@ -290,10 +315,24 @@ export function PromptsPage() {
           </p>
         )}
         <TabsContent value="models" keepMounted>
-          <SettingsSection title={t("promptsPage.textModel")}>
+          <p className="mb-4 max-w-2xl text-sm leading-6 text-muted-foreground">
+            {t("uiPolish.textModelIntro")}
+          </p>
+          <details className="mb-4 text-sm text-muted-foreground">
+            <summary className="cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-ring">
+              {t("uiPolish.localTextSetup")}
+            </summary>
+            <p className="mt-2 max-w-2xl leading-6">{t("uiPolish.localTextSetupHelp")}</p>
+          </details>
+          <section aria-label={t("promptsPage.textModel")} className="max-w-3xl divide-y">
             <fieldset disabled={controlsDisabled} className="divide-y disabled:opacity-60">
               <ToggleSetting
-                title={t("promptsPage.enableLLMProcessing")}
+                title={t("uiPolish.enableTextProcessing")}
+                description={
+                  !draft.enabled
+                    ? t("uiPolish.textProcessingOff")
+                    : t("uiPolish.processingEnabledHelp")
+                }
                 checked={draft.enabled}
                 disabled={controlsDisabled}
                 onCheckedChange={(checked) =>
@@ -336,24 +375,39 @@ export function PromptsPage() {
                   </SelectContent>
                 </Select>
               </SettingRow>
-              <SettingRow title={t("promptsPage.localServerURL")} htmlFor="llm-endpoint">
-                <Input
-                  id="llm-endpoint"
-                  value={draft.endpoint}
-                  placeholder="http://127.0.0.1:1234/v1"
-                  aria-describedby="llm-endpoint-help"
-                  onChange={(event) => update({ endpoint: event.target.value })}
-                />
-                <p id="llm-endpoint-help" className="mt-2 text-xs text-muted-foreground">
-                  {t("promptsPage.useTheLocalV1BaseURLWithout")}
-                </p>
-              </SettingRow>
-              <SettingRow
-                title={t("common.model")}
-                htmlFor="llm-picker"
-                description={t("promptsPage.modelsAreListedForTheSelectedServer")}
+              <details
+                open={server === "custom" || undefined}
+                className="py-3 text-xs text-muted-foreground"
               >
-                <div className="space-y-3">
+                <summary
+                  className={
+                    server === "custom"
+                      ? "hidden"
+                      : "cursor-pointer rounded outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  }
+                >
+                  {t("uiPolish.serverAddress")}
+                </summary>
+                <SettingRow title={t("promptsPage.localServerURL")} htmlFor="llm-endpoint">
+                  <Input
+                    id="llm-endpoint"
+                    value={draft.endpoint}
+                    placeholder="http://127.0.0.1:1234/v1"
+                    aria-describedby="llm-endpoint-help"
+                    onChange={(event) => update({ endpoint: event.target.value })}
+                  />
+                  <p id="llm-endpoint-help" className="mt-2 text-xs text-muted-foreground">
+                    {t("promptsPage.useTheLocalV1BaseURLWithout")}
+                  </p>
+                  <p className="mt-2 text-xs leading-5 text-muted-foreground">
+                    {t("promptsPage.modelsAreListedForTheSelectedServer")}
+                  </p>
+                </SettingRow>
+              </details>
+            </fieldset>
+            <SettingRow title={t("common.model")} htmlFor="llm-picker">
+              <div className="space-y-3">
+                <fieldset disabled={controlsDisabled} className="space-y-3 disabled:opacity-60">
                   <Select
                     items={modelOptions}
                     value={manual ? "manual" : `model:${draft.model}`}
@@ -398,66 +452,78 @@ export function PromptsPage() {
                       />
                     </div>
                   )}
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={discovery.phase === "checking"}
-                    onClick={() => void discovery.refresh()}
-                  >
-                    <RefreshCw
-                      className={`size-3.5 ${discovery.phase === "checking" ? "animate-spin motion-reduce:animate-none" : ""}`}
-                    />
-                    {t("promptsPage.refreshModels")}
-                  </Button>
+                </fieldset>
+                <div
+                  role="group"
+                  aria-label={t("promptsPage.connectionTest")}
+                  className="space-y-2"
+                >
+                  <div className="flex flex-wrap items-center gap-2">
+                    {modelTest.pending ? (
+                      <div className="flex flex-wrap items-center gap-3" role="status">
+                        <span className="text-sm">{t("promptsPage.testingModel")}</span>
+                        <Button variant="outline" size="sm" onClick={() => void modelTest.cancel()}>
+                          {t("promptsPage.cancelTest")}
+                        </Button>
+                      </div>
+                    ) : (
+                      <div className="flex flex-wrap items-center gap-3">
+                        <Button
+                          size="sm"
+                          disabled={controlsDisabled || dirty || !saved.enabled}
+                          onClick={() => void modelTest.request(backend.testTextModel)}
+                        >
+                          {t("promptsPage.testModel")}
+                        </Button>
+                        {dirty && (
+                          <span className="text-xs text-muted-foreground">
+                            {t("promptsPage.waitUntilSavedBeforeTesting")}
+                          </span>
+                        )}
+                      </div>
+                    )}
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={controlsDisabled || discovery.phase === "checking"}
+                      onClick={() => void discovery.refresh()}
+                    >
+                      <RefreshCw
+                        className={`size-3.5 ${discovery.phase === "checking" ? "animate-spin motion-reduce:animate-none" : ""}`}
+                      />
+                      {t("promptsPage.refreshModels")}
+                    </Button>
+                  </div>
                   <p
                     id="llm-discovery-status"
-                    role={discovery.phase === "error" ? "alert" : "status"}
-                    className={`text-xs ${discovery.phase === "error" ? "text-destructive" : "text-muted-foreground"}`}
+                    hidden={modelTest.pending}
+                    role={
+                      modelTest.error ? undefined : discovery.phase === "error" ? "alert" : "status"
+                    }
+                    className={`text-xs leading-5 ${modelTest.error || discovery.phase === "error" ? "text-destructive" : "text-muted-foreground"}`}
                   >
-                    {discovery.phase === "checking"
-                      ? t("promptsPage.checkingServer")
-                      : discovery.phase === "error"
-                        ? discovery.error
-                        : discovery.phase === "ready"
-                          ? discovery.models.length === 0
-                            ? t("promptsPage.serverRespondedNoModelsListedDownloadOr")
-                            : draft.model && !listed
-                              ? t("promptsPage.serverRespondedThisModelIsNotListed")
-                              : t("promptsPage.serverRespondedAvailable", {
-                                  length: discovery.models.length,
-                                  models: discovery.models.length === 1 ? "model" : "models",
-                                })
-                          : t("promptsPage.checkingAvailableModels")}
+                    {modelTest.error
+                      ? nativeText(modelTest.error)
+                      : modelTest.result
+                        ? t("promptsPage.modelRespondedSuccessfully")
+                        : discovery.phase === "checking"
+                          ? t("promptsPage.checkingServer")
+                          : discovery.phase === "error"
+                            ? discovery.error
+                            : discovery.phase === "ready"
+                              ? discovery.models.length === 0
+                                ? t("promptsPage.serverRespondedNoModelsListedDownloadOr")
+                                : draft.model && !listed
+                                  ? t("promptsPage.serverRespondedThisModelIsNotListed")
+                                  : t("promptsPage.serverRespondedAvailable", {
+                                      count: discovery.models.length,
+                                    })
+                              : t("promptsPage.checkingAvailableModels")}
                   </p>
                 </div>
-              </SettingRow>
-            </fieldset>
-            <SettingRow title={t("promptsPage.connectionTest")}>
-              {modelTest.pending ? (
-                <div className="flex flex-wrap items-center gap-3" role="status">
-                  <span className="text-sm">{t("promptsPage.testingModel")}</span>
-                  <Button variant="outline" size="sm" onClick={() => void modelTest.cancel()}>
-                    {t("promptsPage.cancelTest")}
-                  </Button>
-                </div>
-              ) : (
-                <div className="flex flex-wrap items-center gap-3">
-                  <Button
-                    variant="outline"
-                    disabled={controlsDisabled || dirty || !saved.enabled}
-                    onClick={() => void modelTest.request(backend.testTextModel)}
-                  >
-                    {t("promptsPage.testModel")}
-                  </Button>
-                  {dirty && (
-                    <span className="text-xs text-muted-foreground">
-                      {t("promptsPage.waitUntilSavedBeforeTesting")}
-                    </span>
-                  )}
-                </div>
-              )}
+              </div>
             </SettingRow>
-          </SettingsSection>
+          </section>
         </TabsContent>
         <TabsContent value="chains" keepMounted>
           <PromptChainsEditor
@@ -525,21 +591,23 @@ export function PromptsPage() {
                 aria-labelledby="prompt-library-title"
                 className="hidden min-w-0 @3xl:sticky @3xl:top-36 @3xl:block @3xl:border-r @3xl:border-border/50 @3xl:pr-5"
               >
-                <header className="mb-3 flex items-center justify-between gap-2 pl-3">
+                <header className="mb-3 space-y-3">
                   <h2
                     id="prompt-library-title"
-                    className="text-xs font-medium text-muted-foreground"
+                    className="px-3 text-sm font-medium text-muted-foreground"
                   >
                     {t("promptsPage.savedPrompts")}
                   </h2>
                   <Button
-                    variant="ghost"
-                    size="icon-sm"
+                    variant="outline"
+                    size="sm"
+                    className="w-full justify-start"
                     aria-label={t("promptsPage.addPrompt")}
                     disabled={controlsDisabled || draft.prompts.length >= 30}
                     onClick={addPrompt}
                   >
                     <Plus aria-hidden="true" className="size-4 text-muted-foreground" />
+                    {t("promptsPage.addPrompt")}
                   </Button>
                 </header>
                 <nav
@@ -593,38 +661,9 @@ export function PromptsPage() {
                           placeholder={t("promptsPage.promptName")}
                           maxLength={80}
                           onChange={(event) => updatePrompt({ name: event.target.value })}
-                          className="-ml-2 h-12 min-w-40 flex-1 rounded-md border border-transparent bg-transparent px-2 text-2xl font-medium tracking-tight outline-none placeholder:text-muted-foreground hover:border-input focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30"
+                          className="h-11 min-w-0 flex-1 rounded-lg border border-input bg-card px-3 text-xl font-medium tracking-tight outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30"
                         />
                         <div className="flex items-center gap-3">
-                          <div className="flex min-h-8 items-center gap-1.5">
-                            <Label
-                              htmlFor="auto-prompt"
-                              className="text-xs font-normal text-muted-foreground"
-                            >
-                              {t("promptsPage.runAfterDictation")}
-                            </Label>
-                            <ProfileSettingIndicator
-                              field="autoPromptId"
-                              value={draft.autoPromptId}
-                              currentLabel={
-                                draft.autoPromptId
-                                  ? automaticPrompt
-                                    ? automaticPrompt.name || t("promptsPage.untitledPrompt")
-                                    : t("promptsPage.promptUnavailable")
-                                  : t("common.noAutomaticProcessing")
-                              }
-                            />
-                            <Switch
-                              id="auto-prompt"
-                              className="ml-1.5"
-                              checked={draft.autoPromptId === prompt.id}
-                              disabled={controlsDisabled || !draft.enabled}
-                              aria-describedby="auto-prompt-help"
-                              onCheckedChange={(checked) =>
-                                update({ autoPromptId: checked ? prompt.id : "" })
-                              }
-                            />
-                          </div>
                           <Menu.Root>
                             <Menu.Trigger
                               ref={deleteButton}
@@ -672,10 +711,46 @@ export function PromptsPage() {
                           </Menu.Root>
                         </div>
                       </div>
+                      <div className="flex min-h-10 items-center justify-between gap-3 rounded-lg bg-muted/30 px-3 py-2">
+                        <div className="flex min-w-0 flex-1 items-center gap-1">
+                          <Label htmlFor="auto-prompt" className="text-sm font-medium">
+                            {t("promptsPage.runAfterDictation")}
+                          </Label>
+                          <AutomationHelp
+                            key={prompt.id}
+                            active={draft.autoPromptId === prompt.id}
+                          />
+                        </div>
+                        <ProfileSettingIndicator
+                          field="autoPromptId"
+                          value={draft.autoPromptId}
+                          currentLabel={
+                            draft.autoPromptId
+                              ? automaticPrompt
+                                ? automaticPrompt.name || t("promptsPage.untitledPrompt")
+                                : t("promptsPage.promptUnavailable")
+                              : t("common.noAutomaticProcessing")
+                          }
+                        />
+                        <Switch
+                          id="auto-prompt"
+                          className="ml-1.5"
+                          checked={draft.autoPromptId === prompt.id}
+                          disabled={controlsDisabled || !draft.enabled}
+                          aria-describedby="auto-prompt-help"
+                          onCheckedChange={(checked) =>
+                            update({ autoPromptId: checked ? prompt.id : "" })
+                          }
+                        />
+                      </div>
                       <p
                         id="auto-prompt-help"
                         role="status"
-                        className={`text-xs leading-5 text-muted-foreground [overflow-wrap:anywhere] ${draft.enabled && (!automaticPrompt || draft.autoPromptId === prompt.id) ? "sr-only" : ""}`}
+                        className={
+                          draft.enabled && (draft.autoPromptId === prompt.id || !automaticPrompt)
+                            ? "sr-only"
+                            : "text-xs leading-5 text-muted-foreground [overflow-wrap:anywhere]"
+                        }
                       >
                         {!draft.enabled ? (
                           <>
@@ -690,38 +765,39 @@ export function PromptsPage() {
                             {t("promptsPage.toRunPromptsAutomatically")}
                           </>
                         ) : draft.autoPromptId === prompt.id ? (
-                          t("promptsPage.runsAutomaticallyAfterEveryDictation")
+                          t("uiPolish.automaticPromptHelp")
                         ) : automaticPrompt ? (
                           t("promptsPage.turnOnToReplaceAfterDictation", {
                             prompt: automaticPrompt.name || t("promptsPage.untitledPrompt"),
                           })
                         ) : (
-                          t("promptsPage.automaticProcessingIsOff")
+                          t("uiPolish.promptAutomationOff")
                         )}
                       </p>
                     </header>
                     <div className="flex min-h-0 flex-1 flex-col gap-2">
-                      <Label htmlFor="prompt-instruction" className="sr-only">
-                        {t("promptsPage.instructions")}
-                      </Label>
-                      <p id="prompt-instruction-help" className="sr-only">
+                      <Label htmlFor="prompt-instruction">{t("promptsPage.instructions")}</Label>
+                      <p
+                        id="prompt-instruction-help"
+                        className="text-sm leading-6 text-muted-foreground"
+                      >
                         {t("promptsPage.describeTheResultYouWantYourTranscript")}
                       </p>
                       <textarea
                         id="prompt-instruction"
-                        rows={9}
+                        rows={6}
                         maxLength={8000}
                         value={prompt.instruction}
                         aria-describedby="prompt-instruction-help"
                         onChange={(event) => updatePrompt({ instruction: event.target.value })}
-                        className="h-[clamp(18rem,calc(100dvh-18rem),32rem)] min-h-64 w-full resize-y rounded-md border-0 bg-transparent px-0 py-3 text-[15px] leading-7 text-foreground/90 outline-none focus-visible:outline-1 focus-visible:outline-offset-4 focus-visible:outline-ring/50"
+                        className="max-h-96 min-h-36 w-full resize-y rounded-lg border border-input bg-card px-4 py-3 text-[15px] leading-7 text-foreground outline-none [field-sizing:content] focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30"
                       />
                       <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
                         <Button
                           ref={refineButton}
                           variant="ghost"
                           size="sm"
-                          className="-ml-2 h-7 px-2 text-xs font-normal text-muted-foreground hover:text-primary"
+                          className="text-muted-foreground hover:text-foreground"
                           disabled={
                             controlsDisabled || !draft.model.trim() || !prompt.instruction.trim()
                           }
@@ -738,6 +814,7 @@ export function PromptsPage() {
                         </span>
                       </div>
                     </div>
+                    <p className="text-xs text-muted-foreground">{t("uiPolish.refineHelp")}</p>
                     {refinementNotice && (
                       <p role="status" className="text-xs text-primary">
                         {refinementNotice}

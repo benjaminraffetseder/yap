@@ -1,5 +1,19 @@
 export type ModelRating = { label: string; score: number };
 
+// Compact task cues for the library; full guidance remains in the profiles.
+export const modelUseCases: Record<string, string> = {
+  "parakeet-tdt-0.6b-v3": "Everyday dictation · European languages",
+  tiny: "Quick notes · smaller download",
+  base: "Everyday notes · compact",
+  small: "Everyday dictation · multilingual",
+  medium: "Difficult audio · higher accuracy",
+  "large-v3": "Quality first · larger download",
+  "moonshine-base": "Everyday English notes",
+  "moonshine-v2-tiny": "Quick English notes",
+  "moonshine-v2-small": "English emails and dictation",
+  "moonshine-v2-medium": "English dictation · higher accuracy",
+};
+
 export type ModelProfile = {
   tagline: string;
   accuracy: ModelRating;
@@ -162,7 +176,7 @@ export const modelProfiles: Record<string, ModelProfile> = {
   },
   medium: {
     tagline: "More accurate dictation for accents and background noise.",
-    accuracy: { label: "Better", score: 4 },
+    accuracy: { label: "High", score: 4 },
     speed: { label: "Moderate", score: 2 },
     languages: whisperLanguages,
   },
@@ -180,7 +194,7 @@ export const modelProfiles: Record<string, ModelProfile> = {
   },
   "moonshine-v2-tiny": {
     tagline: "Quick English notes and short messages with minimal overhead.",
-    accuracy: { label: "Lower", score: 1 },
+    accuracy: { label: "Basic", score: 1 },
     speed: { label: "Fastest", score: 5 },
     languages: ["English"],
   },
@@ -198,7 +212,7 @@ export const modelProfiles: Record<string, ModelProfile> = {
   },
   "moonshine-v2-medium": {
     tagline: "More accurate English dictation for longer notes and drafts.",
-    accuracy: { label: "Better", score: 4 },
+    accuracy: { label: "High", score: 4 },
     speed: { label: "Fast", score: 3 },
     languages: ["English"],
   },

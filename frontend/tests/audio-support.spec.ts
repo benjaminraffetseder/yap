@@ -142,31 +142,24 @@ test("audio support download progress and cancel survive navigation", async ({
   await expect(page.getByRole("button", { name: "Import audio", exact: true })).toBeEnabled();
   await page.screenshot({ path: testInfo.outputPath("audio-support-progress.png") });
   await page.getByRole("link", { name: "Dictate", exact: true }).click();
-  await expect(page.getByRole("button", { name: "Start recording", exact: true })).toBeDisabled();
-  const ring = page.getByRole("progressbar", { name: "Download progress" });
-  await expect(ring).toHaveAttribute("data-slot", "circular-progress");
-  await expect(ring).toHaveAttribute("aria-valuenow", "42");
-  await expect(ring.locator("circle").last()).toHaveAttribute("stroke-dashoffset", "58");
-  const buttonBounds = await page
-    .getByRole("button", { name: "Start recording", exact: true })
-    .boundingBox();
-  const ringBounds = await ring.boundingBox();
-  expect(ringBounds!.x).toBeLessThan(buttonBounds!.x);
-  expect(ringBounds!.y).toBeLessThan(buttonBounds!.y);
-  expect(ringBounds!.x + ringBounds!.width).toBeGreaterThan(buttonBounds!.x + buttonBounds!.width);
-  expect(ringBounds!.y + ringBounds!.height).toBeGreaterThan(
-    buttonBounds!.y + buttonBounds!.height,
+  await expect(page.getByRole("button", { name: "Downloading", exact: true })).toBeDisabled();
+  const progress = page.getByRole("progressbar", { name: "Download progress" });
+  await expect(progress).toHaveAttribute("aria-valuenow", "42");
+  await expect(progress.locator('[data-slot="progress-indicator"]')).toHaveCSS(
+    "transform",
+    "matrix(0.42, 0, 0, 1, 0, 0)",
   );
-  await expect(
-    page
-      .getByRole("heading", { name: "Dictate", exact: true })
-      .locator("..")
-      .getByRole("progressbar"),
-  ).toHaveCount(0);
+  const recorder = page.getByRole("region", { name: "Dictation recorder", exact: true });
+  const bounds = await recorder.boundingBox();
+  const progressBounds = await progress.boundingBox();
+  expect(progressBounds!.x).toBeGreaterThanOrEqual(bounds!.x);
+  expect(progressBounds!.x + progressBounds!.width).toBeLessThanOrEqual(bounds!.x + bounds!.width);
+  await expect(progress).toBeInViewport();
+  await expect(page.getByRole("progressbar")).toHaveCount(1);
   await expect(page.getByRole("button", { name: "Cancel download", exact: true })).toBeVisible();
-  await page.screenshot({ path: testInfo.outputPath("home-radial-progress.png") });
+  await page.screenshot({ path: testInfo.outputPath("home-download-progress.png") });
   await page.getByRole("button", { name: "Cancel download", exact: true }).click();
-  await expect(ring).toBeHidden();
+  await expect(progress).toBeHidden();
   await page.getByRole("link", { name: "History", exact: true }).click();
   await expect(page.getByRole("progressbar", { name: "Download progress" })).toBeHidden();
   await expect(page.getByRole("button", { name: "Import audio", exact: true })).toBeEnabled();
@@ -197,7 +190,17 @@ test("FFmpeg settings show status, confirmation cancellation, progress, and inst
   await expect(panel.getByRole("progressbar")).toHaveAttribute("aria-valuenow", "42");
   await expect(download).toBeDisabled();
   await page.getByRole("tab", { name: "Dictation", exact: true }).click();
+  await expect(page).toHaveURL(/section=dictation/);
+  await expect(page.getByRole("tab", { name: "Dictation", exact: true })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
   await page.getByRole("tab", { name: "Advanced", exact: true }).click();
+  await expect(page.getByRole("tab", { name: "Advanced", exact: true })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+  await expect(page).toHaveURL(/section=advanced/);
   await panel.getByRole("button", { name: "Cancel download", exact: true }).click();
   await expect(download).toBeEnabled();
   await download.click();
@@ -205,6 +208,7 @@ test("FFmpeg settings show status, confirmation cancellation, progress, and inst
     Reflect.get(window, "audioSupportTest").complete();
   });
   await expect(panel.getByText("Installed by Yap", { exact: true })).toBeVisible();
+  await panel.getByText("Technical details", { exact: true }).click();
   await expect(
     panel.getByText("C:\\Yap\\runtime\\ffmpeg\\bin\\ffmpeg.exe", { exact: true }),
   ).toBeVisible();

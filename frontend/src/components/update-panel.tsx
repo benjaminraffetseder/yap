@@ -9,13 +9,22 @@ export function UpdatePanel() {
   const { t } = useTranslation();
   const { update, checkingUpdates, updateError, checkUpdates, run } = useDictation();
   return (
-    <SettingsSection title={t("updatePanel.appUpdates")}>
-      <div className="space-y-3 py-4">
-        {update && (
-          <p className="text-sm">
-            {t("updatePanel.installedVersion")} {update.currentVersion}
-          </p>
-        )}
+    <SettingsSection
+      title={t("updatePanel.appUpdates")}
+      action={
+        isDesktop && update?.supported !== false && update?.configured !== false ? (
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={checkingUpdates}
+            onClick={() => void checkUpdates()}
+          >
+            {t("commandMenu.checkForUpdates")}
+          </Button>
+        ) : undefined
+      }
+    >
+      <div className="space-y-3 py-3">
         {!isDesktop ? (
           <p className="text-sm text-muted-foreground">
             {t("updatePanel.openYapOnYourDesktopToCheck")}
@@ -62,21 +71,28 @@ export function UpdatePanel() {
                 {update.message || t("updatePanel.youReUpToDate")}
               </p>
             ) : null}
-            {update?.checkedAt && (
-              <p className="text-xs text-muted-foreground">
-                {t("updatePanel.lastChecked")}{" "}
-                {new Date(update.checkedAt).toLocaleString(i18n.resolvedLanguage)}
-              </p>
-            )}
-            <Button
-              variant="outline"
-              disabled={checkingUpdates}
-              onClick={() => void checkUpdates()}
-            >
-              {t("commandMenu.checkForUpdates")}
-            </Button>
-            <p className="text-xs text-muted-foreground">{t("updatePanel.privacy")}</p>
           </>
+        )}
+        {isDesktop && (
+          <details className="text-xs leading-5 text-muted-foreground">
+            <summary className="cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-ring">
+              {t("uiPolish.technicalDetails")}
+            </summary>
+            <div className="mt-3 space-y-2">
+              {update && (
+                <p>
+                  {t("updatePanel.installedVersion")} {update.currentVersion}
+                </p>
+              )}
+              {update?.checkedAt && (
+                <p>
+                  {t("updatePanel.lastChecked")}{" "}
+                  {new Date(update.checkedAt).toLocaleString(i18n.resolvedLanguage)}
+                </p>
+              )}
+              <p>{t("updatePanel.privacy")}</p>
+            </div>
+          </details>
         )}
       </div>
     </SettingsSection>

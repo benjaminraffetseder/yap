@@ -46,6 +46,7 @@ export function VocabularyPage() {
   }, [pages]);
   const payload = vocabularyPayload(draft, snapshot.vocabulary);
   const errors = validateVocabulary(payload);
+  const fieldErrors = validateVocabulary(payload, { conciseDuplicates: true });
   const reason = Object.values(errors)[0];
   const disabled = !isDesktop || busy || loading;
   const pageEntries = draft.slice(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE);
@@ -149,12 +150,15 @@ export function VocabularyPage() {
             </div>
           ) : (
             <div className="space-y-4">
-              <div className="overflow-hidden rounded-2xl border bg-card">
-                <Table>
-                  <TableHeader>
+              <div className="@container/vocabulary overflow-hidden rounded-2xl border bg-card">
+                <p className="border-b px-4 py-3 text-xs text-muted-foreground">
+                  {t("uiPolish.aliasesHelp")}
+                </p>
+                <Table className="@max-[34rem]/vocabulary:block">
+                  <TableHeader className="@max-[34rem]/vocabulary:sr-only">
                     <TableRow className="hover:bg-transparent">
-                      <TableHead className="w-10">
-                        <span className="sr-only">{t("vocabularyPage.enabled")}</span>
+                      <TableHead className="w-20 text-center">
+                        {t("vocabularyPage.enabled")}
                       </TableHead>
                       <TableHead>{t("vocabularyPage.preferredSpelling")}</TableHead>
                       <TableHead>{t("vocabularyPage.aliases")}</TableHead>
@@ -163,12 +167,16 @@ export function VocabularyPage() {
                       </TableHead>
                     </TableRow>
                   </TableHeader>
-                  <TableBody>
+                  <TableBody className="@max-[34rem]/vocabulary:block">
                     {pageEntries.map((entry) => (
-                      <TableRow key={entry.id} className="hover:bg-transparent">
-                        <TableCell>
-                          <div className="flex items-center justify-center">
+                      <TableRow
+                        key={entry.id}
+                        className="group/vocabulary hover:bg-transparent @max-[34rem]/vocabulary:grid @max-[34rem]/vocabulary:grid-cols-[minmax(0,1fr)_auto] @max-[34rem]/vocabulary:gap-x-3 @max-[34rem]/vocabulary:gap-y-2.5 @max-[34rem]/vocabulary:p-4"
+                      >
+                        <TableCell className="whitespace-normal @max-[34rem]/vocabulary:col-start-1 @max-[34rem]/vocabulary:row-start-1 @max-[34rem]/vocabulary:self-center @max-[34rem]/vocabulary:p-0">
+                          <div className="flex items-center justify-center gap-2 @max-[34rem]/vocabulary:justify-start">
                             <Checkbox
+                              id={`enabled-${entry.id}`}
                               aria-label={t("vocabularyPage.enabled")}
                               disabled={disabled}
                               checked={entry.enabled}
@@ -176,23 +184,33 @@ export function VocabularyPage() {
                                 update(entry.id, { enabled: checked === true })
                               }
                             />
+                            <Label
+                              htmlFor={`enabled-${entry.id}`}
+                              className="sr-only @max-[34rem]/vocabulary:not-sr-only @max-[34rem]/vocabulary:text-xs"
+                            >
+                              {t("vocabularyPage.enabled")}
+                            </Label>
                           </div>
                           {errors[entry.id] && (
                             <p
                               id={`error-${entry.id}`}
                               role="alert"
-                              className="mt-2 text-xs text-destructive"
+                              className="mt-2 text-xs text-destructive [overflow-wrap:anywhere]"
                             >
-                              {errors[entry.id]}
+                              {fieldErrors[entry.id]}
                             </p>
                           )}
                         </TableCell>
-                        <TableCell className="whitespace-normal">
-                          <Label htmlFor={`term-${entry.id}`} className="sr-only">
+                        <TableCell className="whitespace-normal @max-[34rem]/vocabulary:col-span-2 @max-[34rem]/vocabulary:min-w-0 @max-[34rem]/vocabulary:p-0">
+                          <Label
+                            htmlFor={`term-${entry.id}`}
+                            className="sr-only @max-[34rem]/vocabulary:not-sr-only @max-[34rem]/vocabulary:mb-2 @max-[34rem]/vocabulary:block @max-[34rem]/vocabulary:text-xs @max-[34rem]/vocabulary:text-muted-foreground"
+                          >
                             {t("vocabularyPage.preferredSpelling")}
                           </Label>
                           <Input
                             id={`term-${entry.id}`}
+                            className="bg-background/40"
                             aria-invalid={!!errors[entry.id]}
                             aria-describedby={errors[entry.id] ? `error-${entry.id}` : undefined}
                             maxLength={80}
@@ -203,22 +221,26 @@ export function VocabularyPage() {
                             }
                           />
                         </TableCell>
-                        <TableCell className="whitespace-normal">
-                          <Label htmlFor={`aliases-${entry.id}`} className="sr-only">
+                        <TableCell className="whitespace-normal @max-[34rem]/vocabulary:col-span-2 @max-[34rem]/vocabulary:min-w-0 @max-[34rem]/vocabulary:p-0">
+                          <Label
+                            htmlFor={`aliases-${entry.id}`}
+                            className="sr-only @max-[34rem]/vocabulary:not-sr-only @max-[34rem]/vocabulary:mb-2 @max-[34rem]/vocabulary:block @max-[34rem]/vocabulary:text-xs @max-[34rem]/vocabulary:text-muted-foreground"
+                          >
                             {t("vocabularyPage.aliasesCommaSeparated")}
                           </Label>
                           <Input
                             id={`aliases-${entry.id}`}
+                            className="bg-background/40"
                             placeholder={t("vocabularyPage.eGPostgresPostGreSQL")}
                             value={entry.aliases}
                             onChange={(event) => update(entry.id, { aliases: event.target.value })}
                           />
                         </TableCell>
-                        <TableCell>
+                        <TableCell className="@max-[34rem]/vocabulary:col-start-2 @max-[34rem]/vocabulary:row-start-1 @max-[34rem]/vocabulary:p-0">
                           <Button
                             variant="ghost"
-                            size="icon-sm"
-                            className="text-muted-foreground hover:text-destructive"
+                            size="sm"
+                            className="h-auto min-h-[44px] w-auto px-2 text-muted-foreground hover:text-destructive"
                             aria-label={t("vocabularyPage.remove", {
                               term: entry.canonical || "term",
                             })}
@@ -227,6 +249,7 @@ export function VocabularyPage() {
                             }
                           >
                             <Trash2 className="size-3.5" />
+                            <span>{t("common.remove")}</span>
                           </Button>
                         </TableCell>
                       </TableRow>

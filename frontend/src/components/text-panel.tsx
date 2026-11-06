@@ -22,20 +22,27 @@ export function TextPanel({
     <section
       aria-label={title}
       className={cn(
-        "min-w-0 rounded-xl border",
+        "min-w-0",
         variant === "reading"
-          ? "bg-card p-5 sm:p-7"
-          : cn("p-4", kind === "result" ? "border-primary/25 bg-primary/5" : "bg-muted/20"),
+          ? "py-2"
+          : cn(
+              "rounded-xl border p-4",
+              kind === "result" ? "border-primary/25 bg-primary/5" : "bg-muted/20",
+            ),
       )}
     >
       <div
         className={cn(
           "flex flex-wrap items-start justify-between gap-3",
-          variant === "reading" ? "mb-7 border-b pb-5" : "mb-3",
+          variant === "reading" ? "mb-5 max-w-[72ch] items-center text-base" : "mb-3",
         )}
       >
         <div className="min-w-0">
-          <h3 className="flex items-center gap-2 text-sm font-semibold">
+          <h3
+            className={
+              variant === "reading" ? "sr-only" : "flex items-center gap-2 text-sm font-semibold"
+            }
+          >
             <Icon
               aria-hidden="true"
               className={cn(
@@ -52,7 +59,7 @@ export function TextPanel({
         {action}
       </div>
       {variant === "reading" ? (
-        <div className="mx-auto max-w-[72ch] py-1 sm:py-3">{children}</div>
+        <div className="max-w-[72ch] py-1 text-base">{children}</div>
       ) : (
         children
       )}

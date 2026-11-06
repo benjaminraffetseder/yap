@@ -33,6 +33,70 @@ test("Ctrl/Cmd+K toggles the palette, Escape closes it, and prevented events are
   await expect(dialog).toBeHidden();
 });
 
+for (const reducedMotion of ["no-preference", "reduce"] as const) {
+  test(`command palette keyboard opening is immediate with ready search ${reducedMotion}`, async ({
+    page,
+  }) => {
+    await page.emulateMedia({ reducedMotion });
+    await page.goto("/");
+    await page.evaluate(() => {
+      Reflect.set(window, "paletteOpeningFrames", []);
+      window.addEventListener(
+        "keydown",
+        (event) => {
+          if (event.key.toLowerCase() !== "k" || !event.ctrlKey) return;
+          let count = 0;
+          function sample() {
+            const popup = document.querySelector('[data-slot="dialog-content"]:has([cmdk-input])');
+            if (popup) {
+              const style = getComputedStyle(popup);
+              const backdrop = document.querySelector('[data-slot="dialog-overlay"]');
+              Reflect.get(window, "paletteOpeningFrames").push({
+                focused: document.activeElement?.hasAttribute("cmdk-input"),
+                opacity: style.opacity,
+                moving: popup
+                  .getAnimations()
+                  .some((animation) => animation.playState === "running"),
+                backdropMoving: backdrop
+                  ?.getAnimations()
+                  .some((animation) => animation.playState === "running"),
+              });
+            }
+            if (++count < 10) requestAnimationFrame(sample);
+          }
+          requestAnimationFrame(sample);
+        },
+        { capture: true },
+      );
+    });
+    const dialog = await openMenu(page);
+    await expect
+      .poll(() => page.evaluate(() => Reflect.get(window, "paletteOpeningFrames").length))
+      .toBeGreaterThanOrEqual(6);
+    const frames = await page.evaluate(
+      () =>
+        Reflect.get(window, "paletteOpeningFrames") as {
+          focused: boolean;
+          opacity: string;
+          moving: boolean;
+          backdropMoving: boolean;
+        }[],
+    );
+    expect(
+      frames.every(
+        (frame) => frame.focused && frame.opacity === "1" && !frame.moving && !frame.backdropMoving,
+      ),
+    ).toBe(true);
+    await dialog.getByRole("combobox").fill("Models");
+    await expect(dialog.getByRole("option", { name: "Models", exact: true })).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(dialog).toHaveCount(0);
+    await openMenu(page);
+    await page.keyboard.press("Escape");
+    await expect(dialog).toHaveCount(0);
+  });
+}
+
 test("keywords filter commands and Settings: Advanced opens its tab", async ({ page }) => {
   await page.goto("/");
   const dialog = await openMenu(page, "diagnostics");
@@ -64,14 +128,47 @@ test("theme commands update the dark class and mark the selected theme", async (
   await expect(page.locator("html")).not.toHaveClass(/dark/);
 });
 
-test("the palette toggles the sidebar and opens by hotkey while collapsed", async ({ page }) => {
+test("fixed navigation uses labels on wide windows and accessible compact links on narrow windows", async ({
+  page,
+}) => {
   await page.goto("/");
+  const nav = page.getByRole("navigation", { name: "Main navigation" });
+  await expect(nav.getByRole("link", { name: "History", exact: true })).toContainText("History");
+  await nav.getByRole("link", { name: "History", exact: true }).hover();
+  await expect(page.locator('[data-slot="tooltip-content"]')).toHaveCount(0);
+  await expect(page.locator("#app-sidebar")).toHaveCSS("width", "92px");
+  await expect(page.getByRole("button", { name: /Expand sidebar|Collapse sidebar/ })).toHaveCount(
+    0,
+  );
   const dialog = await openMenu(page);
-  await dialog.getByRole("option", { name: "Collapse sidebar", exact: true }).click();
-  await expect(page.getByRole("button", { name: "Expand sidebar", exact: true })).toBeVisible();
-  await openMenu(page);
-  await dialog.getByRole("option", { name: "Expand sidebar", exact: true }).click();
-  await expect(page.getByRole("button", { name: "Collapse sidebar", exact: true })).toBeVisible();
+  await expect(dialog.getByRole("option", { name: /Expand sidebar|Collapse sidebar/ })).toHaveCount(
+    0,
+  );
+  await dialog.getByRole("option", { name: "History", exact: true }).click();
+  await expect(page).toHaveURL(/#\/history$/);
+  await page.setViewportSize({ width: 480, height: 760 });
+  const rail = page.locator("#app-sidebar");
+  await expect(rail).toHaveAttribute("data-compact-navigation", "true");
+  const dictate = nav.getByRole("link", { name: "Dictate", exact: true });
+  await expect(dictate.locator("span")).toHaveClass(/sr-only/);
+  await dictate.hover();
+  await expect(page.locator('[data-slot="tooltip-content"]')).toHaveText("Dictate");
+  await dictate.focus();
+  await page.keyboard.press("Enter");
+  await expect(page).toHaveURL(/#\/$/);
+  await page.setViewportSize({ width: 760, height: 560 });
+  await page.evaluate(() => (document.documentElement.style.fontSize = "200%"));
+  await expect(rail).toHaveAttribute("data-compact-navigation", "true");
+  expect((await rail.boundingBox())!.width).toBeLessThan(144);
+  await nav.getByRole("link", { name: "History", exact: true }).focus();
+  await page.keyboard.press("Enter");
+  await expect(page).toHaveURL(/#\/history$/);
+  await page.evaluate(() => (document.documentElement.style.fontSize = "100%"));
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await expect(rail).not.toHaveAttribute("data-compact-navigation", "true");
+  await expect(dictate.locator("span")).not.toHaveClass(/sr-only/);
+  await nav.getByRole("link", { name: "History", exact: true }).hover();
+  await expect(page.locator('[data-slot="tooltip-content"]')).toHaveCount(0);
 });
 
 test("browser preview enables navigation and appearance but disables native actions", async ({
@@ -326,9 +423,10 @@ test.describe("desktop commands and history", () => {
   test("history search debounces, uses the first page, and keeps backend matches regardless of their label", async ({
     page,
   }) => {
-    await page.clock.install();
+    await page.clock.install({ time: new Date("2026-11-04T12:00:00Z") });
     const dialog = await openMenu(page);
     const input = dialog.getByRole("combobox");
+    await page.clock.pauseAt(new Date("2026-11-04T12:01:00Z"));
     await input.fill("n");
     await page.clock.fastForward(250);
     expect(await page.evaluate(() => window.commandTest.searches)).toEqual([]);

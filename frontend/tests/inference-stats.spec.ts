@@ -181,7 +181,7 @@ test("Stats for Nerds defaults hidden and the advanced toggle persists and hides
   const dialog = page.getByRole("dialog", { name: "Stats for Nerds", exact: true });
   await expect(statsButton).toHaveCount(0);
   await page.goto("/#/settings?section=advanced");
-  const toggle = page.getByRole("switch", { name: "Stats for Nerds", exact: true });
+  const toggle = page.getByRole("switch", { name: "Performance statistics", exact: true });
   await expect(toggle).not.toBeChecked();
   await toggle.check();
   await expect
@@ -229,6 +229,7 @@ test("History and individual outputs show stats and distinguish missing metadata
   await expect(statsButton).toBeFocused();
   await page.getByRole("tab", { name: "Outputs", exact: true }).click();
   const article = page.getByRole("article", { name: "Summary output" });
+  await article.getByText("Source & prompt", { exact: true }).click();
   await article.getByRole("button", { name: "Stats for Nerds", exact: true }).click();
   await expect(dialog.getByText("25 tokens/s", { exact: true })).toBeVisible();
   await expect(dialog.getByText("Speech model", { exact: true })).toHaveCount(0);

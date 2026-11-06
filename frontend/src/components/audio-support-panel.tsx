@@ -67,7 +67,7 @@ export function AudioSupportPanel({
         </h2>
         <Button
           variant="outline"
-          size="icon"
+          size="sm"
           aria-label={t("audioSupportPanel.refreshAudioSupport")}
           disabled={!isDesktop || checking || busy || pending}
           onClick={() => void refresh()}
@@ -76,12 +76,11 @@ export function AudioSupportPanel({
             aria-hidden="true"
             className={`size-4 ${checking ? "animate-spin motion-reduce:animate-none" : ""}`}
           />
+          {t("uiPolish.refresh")}
         </Button>
       </div>
       <div className="space-y-4 px-5 py-4">
-        <p className="text-xs leading-5 text-muted-foreground">
-          {t("audioSupportPanel.fFmpegEnablesMP3M4AAACFLACOGG")}
-        </p>
+        <p className="text-xs leading-5 text-muted-foreground">{t("uiPolish.audioFormatsHelp")}</p>
         {!isDesktop ? (
           <p className="text-sm text-muted-foreground">
             {t("audioSupportPanel.openYapOnYourDesktopToManage")}
@@ -98,11 +97,6 @@ export function AudioSupportPanel({
                 <p role="status" className="text-sm">
                   {nativeText(support.message)}
                 </p>
-                {support.path && (
-                  <p className="break-all font-mono text-xs text-muted-foreground">
-                    {support.path}
-                  </p>
-                )}
               </div>
             )}
             {error && (
@@ -160,17 +154,26 @@ export function AudioSupportPanel({
             )}
           </>
         )}
-        <p className="text-xs leading-5 text-muted-foreground">
-          {t("audioSupportPanel.licenseDetails")}{" "}
-          <a
-            className="text-primary underline underline-offset-4"
-            href="https://ffmpeg.org/legal.html"
-            target="_blank"
-            rel="noreferrer"
-          >
-            {t("audioSupportPanel.fFmpegLicensing")}
-          </a>
-        </p>
+        <details className="text-xs leading-5 text-muted-foreground">
+          <summary className="cursor-pointer font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring">
+            {t("uiPolish.technicalDetails")}
+          </summary>
+          <div className="mt-3 space-y-3 border-t pt-3">
+            <p>{t("audioSupportPanel.fFmpegEnablesMP3M4AAACFLACOGG")}</p>
+            {support?.path && <p className="break-all font-mono">{support.path}</p>}
+            <p>
+              {t("audioSupportPanel.licenseDetails")}{" "}
+              <a
+                className="text-primary underline underline-offset-4"
+                href="https://ffmpeg.org/legal.html"
+                target="_blank"
+                rel="noreferrer"
+              >
+                {t("audioSupportPanel.fFmpegLicensing")}
+              </a>
+            </p>
+          </div>
+        </details>
       </div>
     </section>
   );

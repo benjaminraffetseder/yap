@@ -39,16 +39,21 @@ function DialogContent({
   className,
   children,
   showCloseButton = true,
+  instant = false,
+  backdropClassName,
   ...props
 }: DialogPrimitive.Popup.Props & {
   showCloseButton?: boolean;
+  instant?: boolean;
+  backdropClassName?: string;
 }) {
   const { t } = useTranslation();
   return (
     <DialogPortal>
-      <DialogOverlay />
+      <DialogOverlay className={backdropClassName} data-instant={instant ? "" : undefined} />
       <DialogPrimitive.Popup
         data-slot="dialog-content"
+        data-instant={instant ? "" : undefined}
         className={cn(
           "fixed top-1/2 left-1/2 z-50 grid w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-4 rounded-lg border bg-background p-6 shadow-lg outline-none sm:max-w-lg motion-popup",
           className,

@@ -44,15 +44,21 @@ import { useLanguages } from "@/lib/languages";
 import { useAutoSave } from "@/lib/use-auto-save";
 import { useSavedDraft } from "@/lib/use-saved-draft";
 import { Pencil, Plus, Settings2, Trash2, Workflow } from "lucide-react";
-import { useRef, useState } from "react";
+import { useRef, useState, type RefObject } from "react";
 import { Link } from "react-router";
 
 export function ProfileSelector({
   disabled = false,
   onPendingChange,
+  onReviewOpen,
+  reviewReturnFocusRef,
+  onReceipt,
 }: {
   disabled?: boolean;
   onPendingChange?: (pending: boolean) => void;
+  onReviewOpen?: () => void;
+  reviewReturnFocusRef?: RefObject<HTMLButtonElement | null>;
+  onReceipt?: (receipt: string) => void;
 }) {
   const { t } = useTranslation();
   const { snapshot, loading, refresh, run } = useDictation();
@@ -89,9 +95,7 @@ export function ProfileSelector({
   }
   return (
     <div className="flex min-w-0 max-w-full flex-wrap items-center gap-2">
-      <span className="text-xs text-muted-foreground @max-[38rem]/home:sr-only">
-        {t("dictationProfiles.profile")}
-      </span>
+      <span className="text-xs text-muted-foreground">{t("dictationProfiles.profile")}</span>
       <Select
         items={options}
         value={selected}
@@ -138,6 +142,9 @@ export function ProfileSelector({
           disabled={disabled || pending}
           selectorRef={selectorRef}
           showModified={selectedID === snapshot.activeProfileId}
+          onReviewOpen={onReviewOpen}
+          reviewReturnFocusRef={reviewReturnFocusRef}
+          onReceipt={onReceipt}
           onPendingChange={(value) => {
             setActionPending(value);
             onPendingChange?.(value);
@@ -147,10 +154,10 @@ export function ProfileSelector({
       <Link
         to="/settings?section=profiles"
         aria-label={t("settingsPage.manageDictationProfiles")}
-        title={t("settingsPage.manageDictationProfiles")}
-        className="rounded-md p-2 text-muted-foreground outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring"
+        className="inline-flex min-h-8 items-center gap-2 rounded-md px-2 text-xs text-muted-foreground outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring"
       >
         <Settings2 className="size-4" aria-hidden="true" />
+        {t("settingsPage.manageDictationProfiles")}
       </Link>
     </div>
   );
@@ -245,7 +252,7 @@ export function ProfilesPanel({ disabled }: { disabled: boolean }) {
             <div
               key={profile.id}
               data-slot="profile-card"
-              className="min-w-0 space-y-4 rounded-xl border bg-card p-5 [overflow-wrap:anywhere] @max-[24rem]/settings:p-3"
+              className="min-w-0 space-y-3 rounded-xl border bg-card p-4 [overflow-wrap:anywhere] @max-[24rem]/settings:p-3"
             >
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="min-w-0">
@@ -283,27 +290,30 @@ export function ProfilesPanel({ disabled }: { disabled: boolean }) {
                   data-slot="profile-actions"
                   className="flex min-w-0 max-w-full shrink-0 flex-wrap items-center gap-1"
                 >
+                  {!(snapshot.activeProfileId === profile.id && !snapshot.profileModified) && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      aria-label={t("uiPolish.makeProfileActive", { name: profile.name })}
+                      disabled={
+                        disabled ||
+                        pending ||
+                        (snapshot.activeProfileId === profile.id && !snapshot.profileModified)
+                      }
+                      onClick={() => void apply(profile.id)}
+                    >
+                      {t("uiPolish.makeActive")}
+                    </Button>
+                  )}
                   <Button
                     size="sm"
-                    variant="outline"
-                    aria-label={t("dictationProfiles.use", { name: profile.name })}
-                    disabled={
-                      disabled ||
-                      pending ||
-                      (snapshot.activeProfileId === profile.id && !snapshot.profileModified)
-                    }
-                    onClick={() => void apply(profile.id)}
-                  >
-                    {t("common.use")}
-                  </Button>
-                  <Button
-                    size="icon-sm"
                     variant="ghost"
                     aria-label={t("dictationProfiles.edit", { name: profile.name })}
                     disabled={disabled || pending}
                     onClick={() => setEditing(profile)}
                   >
                     <Pencil aria-hidden="true" />
+                    {t("common.edit")}
                   </Button>
                   {profile.id !== snapshot.defaultProfileId && (
                     <Button
@@ -321,7 +331,7 @@ export function ProfilesPanel({ disabled }: { disabled: boolean }) {
                   )}
                 </div>
               </div>
-              <dl className="grid min-w-0 grid-cols-1 gap-x-6 gap-y-4 text-sm @min-[26rem]/settings:grid-cols-2">
+              <dl className="grid min-w-0 grid-cols-1 gap-x-5 gap-y-3 text-sm @min-[26rem]/settings:grid-cols-2 @min-[38rem]/settings:grid-cols-4">
                 <div className="min-w-0">
                   <dt className="text-xs text-muted-foreground">{t("common.speechModel")}</dt>
                   <dd className="mt-1">
@@ -357,7 +367,7 @@ export function ProfilesPanel({ disabled }: { disabled: boolean }) {
                   </dd>
                 </div>
               </dl>
-              <div className="border-t pt-4">
+              <div className="border-t pt-3">
                 <ProfileApps
                   profile={profile}
                   profiles={profiles}

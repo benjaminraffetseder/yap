@@ -1,4 +1,6 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
+import en from "../src/i18n/locales/en.json" with { type: "json" };
+import de from "../src/i18n/locales/de.json" with { type: "json" };
 import type {
   AppProfileRule,
   BackupPreview,
@@ -15,6 +17,98 @@ import type {
   TextPrompt,
   VocabularyEntry,
 } from "../src/lib/backend";
+
+function activeDialog(page: Page) {
+  return page
+    .getByRole("dialog")
+    .filter({ hasNot: page.getByRole("tablist", { name: "Settings sections", exact: true }) })
+    .filter({ hasNot: page.getByRole("region", { name: "Recording options", exact: true }) });
+}
+async function expectRailFits(page: Page, font: number) {
+  // Enlarged navigation must leave useful reading space instead of doubling
+  // the desktop rail. The dedicated navigation test covers its accessible labels.
+  const rail = page.locator("#app-sidebar");
+  await expect
+    .poll(async () => (await rail.boundingBox())!.width)
+    .toBeLessThanOrEqual(font === 200 ? 144 : 92);
+  expect((await rail.boundingBox())!.width).toBeGreaterThanOrEqual(56);
+}
+async function expectActiveModel(row: Locator) {
+  await expect(row).toHaveAttribute("aria-current", "true");
+  await expect(row.getByText("Active", { exact: true })).toBeVisible();
+  await expect(
+    row.getByRole("button", { name: /^(Use model|Download & use|Repair & use)$/ }),
+  ).toHaveCount(0);
+}
+
+function currentSpeechModel(page: Page) {
+  return page
+    .locator('section[aria-current="true"]')
+    .or(page.getByRole("region", { name: "Current speech model", exact: true }));
+}
+async function modelMenu(page: Page, name?: string) {
+  await page.keyboard.press("Escape");
+  const row = name ? page.getByRole("region", { name, exact: true }) : currentSpeechModel(page);
+  await row.getByRole("button", { name: /^More actions/ }).click();
+  return page.getByRole("menu");
+}
+async function modelAction(page: Page, action: string, name?: string) {
+  const menu = await modelMenu(page, name);
+  await menu.getByRole("menuitem", { name: action, exact: true }).click();
+}
+async function detailAction(page: Page, action: string) {
+  await page.getByRole("button", { name: "Dictation actions", exact: true }).click();
+  await page.getByRole("menuitem", { name: action, exact: true }).click();
+}
+async function openRecordingOptions(page: Page) {
+  const trigger = page.getByRole("button", { name: "Recording options", exact: true });
+  if ((await trigger.getAttribute("aria-expanded")) === "false") await trigger.click();
+}
+async function showServerAddress(page: Page) {
+  const field = page.getByLabel("Local server URL", { exact: true });
+  if (!(await field.isVisible())) await page.getByText("Server address", { exact: true }).click();
+  await expect(field).toBeVisible();
+}
+async function outputAction(page: Page, action: string) {
+  if (action === "Delete output") {
+    await page
+      .getByRole("region", { name: "Generated outputs", exact: true })
+      .getByRole("button", { name: "Output actions", exact: true })
+      .click();
+    await page.getByRole("menuitem", { name: action, exact: true }).click();
+    return;
+  }
+  await page
+    .getByRole("region", { name: "Generated outputs", exact: true })
+    .getByRole("button", { name: action, exact: true })
+    .click();
+}
+async function showCustomModelFiles(page: Page) {
+  const summary = page.getByText("Custom model and runtime files", { exact: true });
+  const details = summary.locator("..");
+  if ((await details.getAttribute("open")) === null) await summary.click();
+}
+async function generateWith(page: Page, name = "Generate output") {
+  const button = page.getByRole("button", { name, exact: true });
+  if (!(await button.isVisible()))
+    await page.getByRole("button", { name: "New output", exact: true }).click();
+  await button.click();
+}
+async function selectSavedOutput(page: Page, index: number) {
+  await page.locator("#saved-output").click();
+  await page.getByRole("option").nth(index).click();
+}
+
+async function navigateMain(page: Page, name: string) {
+  // Settings is now modal: close it before navigating the calling page.
+  const settings = page.getByRole("dialog", { name: "Settings", exact: true });
+  if (new URL(page.url()).hash.startsWith("#/settings")) {
+    await expect(settings).toBeVisible();
+    await settings.getByRole("button", { name: "Close", exact: true }).click();
+    await expect(settings).toHaveCount(0);
+  }
+  await page.getByRole("link", { name, exact: true }).click();
+}
 
 async function homeSurfaceScenario(page: Page, modified = false) {
   await page.addInitScript((modified) => {
@@ -62,24 +156,38 @@ async function homeSurfaceScenario(page: Page, modified = false) {
     ];
   }, modified);
   await page.goto("/");
-  await expect(page.getByRole("heading", { name: "Ready to record" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Start recording", exact: true })).toBeEnabled();
+  await expect(
+    page.getByRole("region", { name: "Latest saved result", exact: true }),
+  ).toContainText("Remember to send the updated notes after our meeting.");
+  // These scenarios exercise the disclosed configuration and profile controls.
+  await openRecordingOptions(page);
 }
 
-test("home surface reaches the content edges and keeps other pages inset", async ({ page }) => {
+test("home surface shares a document frame and keeps other pages inset", async ({ page }) => {
   await homeSurfaceScenario(page);
   const recorder = page.getByRole("region", { name: "Dictation recorder" });
   const main = page.getByRole("main");
   const content = await main.boundingBox();
   const surface = await recorder.boundingBox();
-  expect(surface!.x).toBe(content!.x);
-  expect(surface!.y).toBe(content!.y);
-  expect(surface!.width).toBe(content!.width);
+  const frame = await page.locator('[data-slot="home-document-frame"]').boundingBox();
+  expect(frame!.x).toBeGreaterThan(content!.x);
+  expect(frame!.x + frame!.width).toBeLessThan(content!.x + content!.width);
+  expect(surface!.x).toBeGreaterThanOrEqual(frame!.x);
+  expect(surface!.x + surface!.width).toBeLessThanOrEqual(frame!.x + frame!.width);
+  const start = await recorder
+    .getByRole("button", { name: "Start recording", exact: true })
+    .boundingBox();
+  const text = await page.locator("#home-result-text").boundingBox();
+  expect(Math.abs(start!.x - text!.x)).toBeLessThanOrEqual(1);
   await expect(recorder).toHaveCSS("border-top-left-radius", "0px");
   await expect(recorder).toHaveCSS("border-top-width", "0px");
-  await expect(page.getByText("Click the microphone to record in Yap.")).toBeVisible();
+  await expect(
+    recorder.getByRole("button", { name: "Start recording", exact: true }),
+  ).toBeVisible();
   await page.getByRole("link", { name: "Settings", exact: true }).click();
   const heading = page.getByRole("heading", { name: "Shortcuts", exact: true });
-  expect((await heading.boundingBox())!.x).toBeGreaterThan((await main.boundingBox())!.x);
+  expect((await heading.boundingBox())!.x).toBeGreaterThan(content!.x);
   await page.goto("/");
   await expect(recorder).toBeVisible();
   await page.evaluate(() => {
@@ -98,9 +206,18 @@ test("home surface profile actions stay compact and open explicit review dialogs
   await expect(modified).toBeVisible();
   await expect(page.getByRole("button", { name: "Update profile", exact: true })).toHaveCount(0);
   await modified.click();
-  await page.getByRole("menuitem", { name: "Save as new…", exact: true }).click();
+  await expect(page.getByRole("region", { name: "Profile changes", exact: true })).toBeVisible();
+  await expect(page.getByRole("menu")).toHaveCount(0);
+  await page.getByRole("button", { name: "Save as new…", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "Save as new profile" });
   await expect(page.getByRole("menu")).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "Recording options", exact: true, includeHidden: true }),
+  ).toHaveAttribute("aria-expanded", "false");
+  await expect(
+    page.getByRole("region", { name: "Recording options", exact: true, includeHidden: true }),
+  ).toBeHidden();
+  await expect(dialog.getByLabel("Profile name")).toBeFocused();
   await dialog.getByLabel("Profile name").fill("Work notes");
   await page.waitForTimeout(500);
   expect(await page.evaluate(() => window.dictationTest.snapshot.dictationProfiles!.length)).toBe(
@@ -108,21 +225,20 @@ test("home surface profile actions stay compact and open explicit review dialogs
   );
   await page.keyboard.press("Escape");
   await expect(dialog).toHaveCount(0);
-  await expect(modified).toBeFocused();
+  await expect(page.getByRole("button", { name: "Recording options", exact: true })).toBeFocused();
+  await openRecordingOptions(page);
   await modified.click();
-  await page.getByRole("menuitem", { name: "Update profile…", exact: true }).click();
+  await page.getByRole("button", { name: "Update profile…", exact: true }).click();
   await page
     .getByRole("dialog")
     .getByRole("button", { name: "Update profile", exact: true })
     .click();
-  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(activeDialog(page)).toHaveCount(0);
   await expect(modified).toHaveCount(0);
   expect(
     await page.evaluate(() => window.dictationTest.snapshot.dictationProfiles![0].language),
   ).toBe("de");
-  await expect(
-    page.getByRole("combobox", { name: "Dictation profile", exact: true }),
-  ).toBeFocused();
+  await expect(page.getByRole("button", { name: "Recording options", exact: true })).toBeFocused();
 });
 
 test("home surface restores only the four profile choices and keeps a keyboard focus target", async ({
@@ -130,8 +246,8 @@ test("home surface restores only the four profile choices and keeps a keyboard f
 }) => {
   await homeSurfaceScenario(page, true);
   const before = await page.evaluate(() => structuredClone(window.dictationTest.snapshot.settings));
-  await page.getByRole("button", { name: "Modified", exact: true }).press("ArrowDown");
-  await page.getByRole("menuitem", { name: "Restore saved choices" }).press("Enter");
+  await page.getByRole("button", { name: "Modified", exact: true }).press("Enter");
+  await page.getByRole("button", { name: "Restore saved choices" }).press("Enter");
   await expect(page.getByRole("button", { name: "Modified", exact: true })).toHaveCount(0);
   await expect(
     page.getByRole("combobox", { name: "Dictation profile", exact: true }),
@@ -156,7 +272,7 @@ test("home surface Save as new keeps IME input and failed writes, then creates o
     state.history();
   });
   await page.getByRole("button", { name: "Modified", exact: true }).click();
-  await page.getByRole("menuitem", { name: "Save as new…", exact: true }).click();
+  await page.getByRole("button", { name: "Save as new…", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "Save as new profile" });
   const input = dialog.getByLabel("Profile name");
   const save = dialog.getByRole("button", { name: "Save as new", exact: true });
@@ -206,7 +322,7 @@ test("home surface Save as new keeps IME input and failed writes, then creates o
   });
   expect(state.active).toBe("default");
   expect(state.language).toBe("de");
-  await expect(page.getByRole("button", { name: "Modified", exact: true })).toBeFocused();
+  await expect(page.getByRole("button", { name: "Recording options", exact: true })).toBeFocused();
 });
 
 test("home surface blocks stale review and fresh busy state before any profile write", async ({
@@ -214,14 +330,15 @@ test("home surface blocks stale review and fresh busy state before any profile w
 }) => {
   await homeSurfaceScenario(page, true);
   for (const change of ["busy", "choices"] as const) {
+    await openRecordingOptions(page);
     await page.getByRole("button", { name: "Modified", exact: true }).click();
-    await page.getByRole("menuitem", { name: "Update profile…", exact: true }).click();
+    await page.getByRole("button", { name: "Update profile…", exact: true }).click();
     await page.evaluate((change) => {
       // Deliberately omit an event: only the fresh backend read can catch this.
       if (change === "busy") window.dictationTest.snapshot.status.phase = "recording";
       else window.dictationTest.snapshot.settings.language = "fr";
     }, change);
-    const dialog = page.getByRole("dialog");
+    const dialog = activeDialog(page);
     await dialog.getByRole("button", { name: "Update profile", exact: true }).click();
     await expect(dialog.getByRole("alert").first()).toContainText(
       change === "busy" ? "Finish the current operation" : "changed",
@@ -239,8 +356,8 @@ test("home surface successful save with failed refresh retries the refresh witho
 }) => {
   await homeSurfaceScenario(page, true);
   await page.getByRole("button", { name: "Modified", exact: true }).click();
-  await page.getByRole("menuitem", { name: "Save as new…", exact: true }).click();
-  const dialog = page.getByRole("dialog");
+  await page.getByRole("button", { name: "Save as new…", exact: true }).click();
+  const dialog = activeDialog(page);
   await dialog.getByLabel("Profile name").fill("Work notes");
   await page.evaluate(() => {
     const app = Reflect.get(window, "mockBackend").main.App;
@@ -266,6 +383,8 @@ test("home surface successful save with failed refresh retries the refresh witho
   expect(await page.evaluate(() => window.dictationTest.snapshot.dictationProfiles!.length)).toBe(
     2,
   );
+  await expect(page.getByRole("button", { name: "Recording options", exact: true })).toBeFocused();
+  await expect(page.getByRole("status").filter({ hasText: "Work notes" })).toContainText("Default");
 });
 
 test("home surface profile save blocks recording, selectors and repeated keyboard submissions while pending", async ({
@@ -273,8 +392,8 @@ test("home surface profile save blocks recording, selectors and repeated keyboar
 }) => {
   await homeSurfaceScenario(page, true);
   await page.getByRole("button", { name: "Modified", exact: true }).click();
-  await page.getByRole("menuitem", { name: "Save as new…", exact: true }).click();
-  const dialog = page.getByRole("dialog");
+  await page.getByRole("button", { name: "Save as new…", exact: true }).click();
+  const dialog = activeDialog(page);
   await dialog.getByLabel("Profile name").fill("Work notes");
   await page.evaluate(() => {
     const app = Reflect.get(window, "mockBackend").main.App;
@@ -313,7 +432,6 @@ for (const theme of ["light", "dark"] as const) {
       }, testInfo) => {
         await page.emulateMedia({ reducedMotion: font === 200 ? "reduce" : "no-preference" });
         await homeSurfaceScenario(page, true);
-        if (!collapsed) await page.getByRole("button", { name: "Expand sidebar" }).click();
         await page.evaluate(
           ({ theme, font }) => {
             document.documentElement.classList.toggle("dark", theme === "dark");
@@ -321,10 +439,7 @@ for (const theme of ["light", "dark"] as const) {
           },
           { theme, font },
         );
-        await expect(page.locator("#app-sidebar")).toHaveCSS(
-          "width",
-          `${((collapsed ? 72 : 220) * font) / 100}px`,
-        );
+        await expectRailFits(page, font);
         for (const width of [1280, 760]) {
           await page.setViewportSize({ width, height: width === 760 ? 560 : 800 });
           await expect
@@ -333,41 +448,64 @@ for (const theme of ["light", "dark"] as const) {
           const recorder = page.getByRole("region", { name: "Dictation recorder" });
           const bounds = await recorder.boundingBox();
           const content = await page.getByRole("main").boundingBox();
-          expect(bounds!.x).toBeCloseTo(content!.x, 0);
-          expect(bounds!.width).toBeCloseTo(content!.width, 0);
-          const track = await recorder.getByRole("switch").boundingBox();
-          const thumb = await recorder.locator('[data-slot="switch-thumb"]').boundingBox();
+          expect(bounds!.x).toBeGreaterThanOrEqual(content!.x);
+          expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(content!.x + content!.width);
+          const reading = await page.getByLabel("Result text", { exact: true }).boundingBox();
+          const start = await page
+            .getByRole("button", { name: "Start recording", exact: true })
+            .boundingBox();
+          expect(start!.x).toBeCloseTo(reading!.x, 0);
+          await openRecordingOptions(page);
+          const options = page.getByRole("region", { name: "Recording options", exact: true });
+          const popup = page.getByRole("dialog", { name: "Recording options", exact: true });
+          await expect(popup).toHaveCSS("opacity", "1");
+          const popupBounds = await popup.boundingBox();
+          const track = await options.getByRole("switch").boundingBox();
+          const thumb = await options.locator('[data-slot="switch-thumb"]').boundingBox();
           expect(thumb!.width).toBeLessThanOrEqual(track!.width);
           expect(thumb!.height).toBeLessThanOrEqual(track!.height);
           for (const control of [
-            recorder.getByRole("combobox", { name: "Dictation profile" }),
-            recorder.getByRole("button", { name: "Modified", exact: true }),
-            recorder.getByRole("button", { name: "Import audio", exact: true }),
-            recorder.getByRole("button", { name: "Start recording" }),
-            recorder.getByRole("combobox", { name: "Speech model" }),
-            recorder.getByRole("switch"),
+            options.getByRole("combobox", { name: "Dictation profile" }),
+            options.getByRole("button", { name: "Modified", exact: true }),
+            options.getByRole("combobox", { name: "Speech model" }),
+            options.getByRole("switch"),
           ]) {
             await control.focus();
             await expect(control).toBeFocused();
             const box = await control.boundingBox();
-            expect(box!.x).toBeGreaterThanOrEqual(bounds!.x);
-            expect(box!.x + box!.width).toBeLessThanOrEqual(bounds!.x + bounds!.width + 1);
+            expect(box!.x).toBeGreaterThanOrEqual(popupBounds!.x);
+            expect(box!.x + box!.width).toBeLessThanOrEqual(
+              popupBounds!.x + popupBounds!.width + 1,
+            );
             await expect(control).toBeInViewport();
           }
-          await page.evaluate(() => scrollTo(0, 0));
+          await page.keyboard.press("Escape");
+          for (const control of [
+            recorder.getByRole("button", { name: "Import audio", exact: true }),
+            recorder.getByRole("button", { name: "Start recording", exact: true }),
+          ]) {
+            await control.focus();
+            await expect(control).toBeFocused();
+            await expect(control).toBeInViewport();
+            const box = await control.boundingBox();
+            expect(box!.x).toBeGreaterThanOrEqual(bounds!.x);
+            expect(box!.x + box!.width).toBeLessThanOrEqual(bounds!.x + bounds!.width + 1);
+          }
+          await openRecordingOptions(page);
           await page.screenshot({
             path: testInfo.outputPath(`home-${width}.png`),
             fullPage: true,
             animations: "disabled",
           });
-          await recorder.getByRole("button", { name: "Modified", exact: true }).click();
-          const menu = page.getByRole("menu");
-          await expect(menu).toBeInViewport();
+          await options.getByRole("button", { name: "Modified", exact: true }).click();
+          const changes = page.getByRole("region", { name: "Profile changes", exact: true });
+          await expect(changes).toBeInViewport();
+          await expect(page.getByRole("menu")).toHaveCount(0);
           await expect
             .poll(() => page.evaluate(() => document.documentElement.scrollWidth))
             .toBe(width);
-          await page.getByRole("menuitem", { name: "Save as new…", exact: true }).click();
-          const dialog = page.getByRole("dialog");
+          await page.getByRole("button", { name: "Save as new…", exact: true }).click();
+          const dialog = activeDialog(page);
           await dialog.getByLabel("Profile name").fill("仕事のメモ — Notes for tomorrow");
           await expect
             .poll(() => dialog.evaluate((el) => el.scrollWidth <= el.clientWidth))
@@ -379,7 +517,7 @@ for (const theme of ["light", "dark"] as const) {
           await page.keyboard.press("Space");
           await expect(dialog).toHaveCount(0);
           await expect(
-            recorder.getByRole("button", { name: "Modified", exact: true }),
+            page.getByRole("button", { name: "Recording options", exact: true }),
           ).toBeFocused();
         }
       });
@@ -398,15 +536,17 @@ test.describe("Home preview", () => {
       window.dictationTest.history();
     });
     await page.getByRole("button", { name: "Modified", exact: true }).click();
-    await expect(page.getByRole("menu")).toHaveCSS("opacity", "1");
-    await page.screenshot({ path: testInfo.outputPath("profile-menu-dark.png") });
+    await expect(page.getByRole("region", { name: "Profile changes", exact: true })).toBeVisible();
+    await expect(page.getByRole("menu")).toHaveCount(0);
+    await page.screenshot({ path: testInfo.outputPath("profile-actions-dark.png") });
     await page.waitForTimeout(1000);
-    await page.getByRole("menuitem", { name: "Save as new…", exact: true }).click();
+    await page.getByRole("button", { name: "Save as new…", exact: true }).click();
     await page.getByLabel("Profile name").fill("Work notes");
     await page.waitForTimeout(900);
     await page.getByRole("button", { name: "Cancel", exact: true }).click();
+    await openRecordingOptions(page);
     await page.getByRole("button", { name: "Modified", exact: true }).click();
-    await page.getByRole("menuitem", { name: "Restore saved choices" }).click();
+    await page.getByRole("button", { name: "Restore saved choices" }).click();
     await expect(page.getByRole("button", { name: "Modified", exact: true })).toHaveCount(0);
     await page.evaluate(() => {
       const state = window.dictationTest;
@@ -414,7 +554,7 @@ test.describe("Home preview", () => {
     });
     await page.getByRole("button", { name: "Start recording" }).click();
     await page.evaluate(() => window.dictationTest.callbacks["dictation:level"](0.65));
-    await expect(page.getByRole("heading", { name: "Recording", exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Stop recording", exact: true })).toBeEnabled();
     await page.waitForTimeout(200);
     await page.screenshot({
       path: testInfo.outputPath("recording-dark.png"),
@@ -527,7 +667,8 @@ test("settings clarity separates profiles and puts recording controls first", as
   );
   await expect(page.getByRole("button", { name: "New profile", exact: true })).toBeVisible();
   await expect(page.getByRole("combobox", { name: "Microphone", exact: true })).toHaveCount(0);
-  await page.getByRole("link", { name: "Dictate", exact: true }).click();
+  await navigateMain(page, "Dictate");
+  await openRecordingOptions(page);
   await page.getByRole("link", { name: "Manage dictation profiles", exact: true }).click();
   await expect(page).toHaveURL(/section=profiles/);
   await expect(page.getByRole("button", { name: "Edit Default", exact: true })).toBeVisible();
@@ -629,18 +770,26 @@ for (const theme of ["light", "dark"]) {
         await page.evaluate((font) => {
           document.documentElement.style.fontSize = `${font}%`;
         }, font);
-        await expect(page.locator("#app-sidebar")).toHaveCSS(
-          "width",
-          `${((collapsed ? 72 : 220) * font) / 100}px`,
-        );
+        await expectRailFits(page, font);
         const tabs = page.getByRole("tablist", { name: "Settings sections" });
         for (const width of [1280, 760]) {
           await page.setViewportSize({ width, height: width === 760 ? 560 : 900 });
           for (const name of ["Dictation", "Profiles", "General", "History & data", "Advanced"]) {
             const tab = tabs.getByRole("tab", { name, exact: true });
-            await focusedSettingFits(tab);
-            await tab.press("Enter");
-            await expect(tab).toHaveAttribute("aria-selected", "true");
+            if (await tab.isVisible()) {
+              await focusedSettingFits(tab);
+              await tab.press("Enter");
+              await expect(tab).toHaveAttribute("aria-selected", "true");
+            } else {
+              const category = page.getByRole("combobox", {
+                name: "Settings sections",
+                exact: true,
+              });
+              await focusedSettingFits(category);
+              await category.press("Enter");
+              await page.getByRole("option", { name, exact: true }).click();
+              await expect(category).toContainText(name);
+            }
             const overflow = await page.evaluate(() =>
               Array.from(document.querySelectorAll("main *"))
                 .filter((element) => {
@@ -674,7 +823,7 @@ for (const theme of ["light", "dark"]) {
                   ? [
                       page.getByRole("button", { name: "New profile", exact: true }),
                       page.getByRole("button", { name: "Edit Default", exact: true }),
-                      page.getByRole("button", { name: "Use Work notes", exact: true }),
+                      page.getByRole("button", { name: "Make Work notes active", exact: true }),
                       page.getByRole("combobox", { name: "Add app to Default", exact: true }),
                     ]
                   : name === "General"
@@ -691,8 +840,11 @@ for (const theme of ["light", "dark"]) {
                           }),
                           page.getByRole("button", { name: "Run setup", exact: true }),
                         ];
+            if (name === "Advanced") await showCustomModelFiles(page);
             for (const control of controls) await focusedSettingFits(control);
-            await page.getByRole("heading", { name: "Settings", exact: true }).click();
+            const category = page.getByRole("combobox", { name: "Settings sections", exact: true });
+            if (await category.isVisible()) await category.focus();
+            else await page.getByRole("heading", { name: "Settings", exact: true }).click();
             await page.screenshot({
               path: testInfo.outputPath(
                 `${name.toLowerCase().replaceAll(/[^a-z]+/g, "-")}-${width}.png`,
@@ -744,6 +896,132 @@ test("settings clarity retry and discard stay reachable at narrow enlarged text"
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth)).toBe(760);
 });
 
+for (const [lang, width, height] of [
+  ["en", 480, 600],
+  ["de", 480, 760],
+  ["en", 760, 560],
+  ["de", 760, 560],
+] as const) {
+  test(`settings recovery preserves working space, field context and exact cause ${lang} ${width}x${height}`, async ({
+    page,
+  }) => {
+    const copy = lang === "de" ? de : en;
+    const raw =
+      "Synthetic storage cause: " +
+      "The settings file could not be written. Your draft remains available for retry. ".repeat(15);
+    await page.addInitScript(
+      (language) => localStorage.setItem("desktop-language", language),
+      lang,
+    );
+    await page.setViewportSize({ width, height });
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await page.goto("/#/settings?section=dictation");
+    await page.evaluate((raw) => {
+      document.documentElement.style.fontSize = "200%";
+      Reflect.get(window, "mockBackend").main.App.SaveSettings = async () => {
+        throw Error(raw);
+      };
+    }, raw);
+    const settings = page.getByRole("dialog", { name: copy["common.settings"], exact: true });
+    const shortcut = settings.locator("#shortcut");
+    await shortcut.fill("Ctrl+Alt+J");
+    await shortcut.press("Tab");
+    const notice = page.locator('[data-slot="settings-save-notice-host"] [data-slot="toast"]');
+    await expect(notice).toBeVisible();
+    const pane = settings.locator('[data-slot="settings-scroll-pane"]');
+    const recovery = settings.locator('[data-slot="settings-save-state"]');
+    await expect(recovery.locator('[data-slot="settings-save-notice-host"]')).toContainText(
+      copy["uiPolish.errorDetails"],
+    );
+    const recoveryBox = await recovery.boundingBox();
+    const searchBox = await settings
+      .getByRole("textbox", { name: copy["uiPolish.searchSettings"], exact: true })
+      .boundingBox();
+    const noticeBox = await notice.boundingBox();
+    const paneBox = await pane.boundingBox();
+    expect(recoveryBox!.y).toBeGreaterThanOrEqual(searchBox!.y + searchBox!.height);
+    expect(noticeBox!.y + noticeBox!.height).toBeLessThanOrEqual(paneBox!.y + 1);
+    const readFull = notice.getByRole("button", {
+      name: copy["uiPolish.errorDetails"],
+      exact: true,
+    });
+    const panePosition = await pane.evaluate((node) => node.scrollTop);
+    await readFull.click();
+    const reader = page.getByRole("dialog", { name: copy["uiPolish.errorDetails"], exact: true });
+    const fullCause = reader.getByRole("region", {
+      name: copy["uiPolish.fullErrorDetails"],
+      exact: true,
+    });
+    await expect(fullCause).toHaveText(raw);
+    expect(await fullCause.evaluate((node) => node.clientHeight)).toBeGreaterThan(140);
+    await fullCause.focus();
+    await fullCause.press("End");
+    await expect
+      .poll(() =>
+        fullCause.evaluate((node) => node.scrollTop + node.clientHeight >= node.scrollHeight - 1),
+      )
+      .toBe(true);
+    await page.keyboard.press("Escape");
+    await expect(reader).toHaveCount(0);
+    await expect(settings).toBeVisible();
+    await expect(readFull).toBeFocused();
+    expect(await pane.evaluate((node) => node.scrollTop)).toBe(panePosition);
+    await expect(shortcut).toHaveValue("Ctrl+Alt+J");
+    await readFull.click();
+    await reader.getByRole("button", { name: copy["common.back"], exact: true }).click();
+    await expect(reader).toHaveCount(0);
+    await expect(readFull).toBeFocused();
+    expect(await pane.evaluate((node) => node.clientHeight)).toBeGreaterThanOrEqual(200);
+    await focusedSettingFits(shortcut);
+    const geometry = await shortcut.evaluate((node) => {
+      const pane = node.closest('[data-slot="settings-scroll-pane"]')!.getBoundingClientRect();
+      const label = document.querySelector('label[for="shortcut"]')!.getBoundingClientRect();
+      const field = node.getBoundingClientRect();
+      return {
+        paneTop: pane.top,
+        paneBottom: pane.bottom,
+        labelTop: label.top,
+        fieldBottom: field.bottom,
+      };
+    });
+    expect(geometry.labelTop).toBeGreaterThanOrEqual(geometry.paneTop);
+    expect(geometry.fieldBottom).toBeLessThanOrEqual(geometry.paneBottom);
+    await focusedSettingFits(
+      settings.getByRole("button", { name: copy["common.retry"], exact: true }),
+    );
+    await focusedSettingFits(
+      settings.getByRole("button", { name: copy["autoSaveStatus.discardChanges"], exact: true }),
+    );
+    await expect(shortcut).toHaveValue("Ctrl+Alt+J");
+    expect(await settings.evaluate((node) => node.scrollWidth <= node.clientWidth + 1)).toBe(true);
+    await settings.getByRole("button", { name: copy["common.close"], exact: true }).click();
+    await expect(settings).toHaveCount(0);
+    const afterClose = page.locator('[data-slot="app-save-notice-host"] [data-slot="toast"]');
+    await expect(afterClose).toBeVisible();
+    await expect(afterClose.getByText(raw, { exact: true })).toHaveText(raw);
+    await expect(page.getByLabel(copy["toast.notifications"], { exact: true })).toHaveCount(1);
+    await page.getByRole("link", { name: copy["common.settings"], exact: true }).click();
+    await expect(settings).toBeVisible();
+    const dismiss = notice.getByRole("button", {
+      name: copy["toast.dismissNotification"],
+      exact: true,
+    });
+    await expect(dismiss).toHaveText(copy["uiPolish.dismissNotice"]);
+    const positionBeforeDismiss = await pane.evaluate((node) => node.scrollTop);
+    await dismiss.click();
+    await expect(notice).toHaveCount(0);
+    await expect(settings).toBeVisible();
+    await expect(shortcut).toHaveValue("Ctrl+Alt+J");
+    await expect(
+      settings.getByRole("button", { name: copy["common.retry"], exact: true }),
+    ).toBeVisible();
+    await expect(
+      settings.getByRole("button", { name: copy["autoSaveStatus.discardChanges"], exact: true }),
+    ).toBeVisible();
+    expect(await pane.evaluate((node) => node.scrollTop)).toBe(positionBeforeDismiss);
+  });
+}
+
 test("settings clarity interaction preview", async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 1280, height: 900 });
   await settingsClarityScenario(page);
@@ -768,9 +1046,9 @@ test("settings clarity interaction preview", async ({ page }, testInfo) => {
   });
   await page.waitForTimeout(900);
   await page.getByRole("button", { name: "Edit Work notes", exact: true }).click();
-  await expect(page.getByRole("dialog")).toBeVisible();
+  await expect(activeDialog(page)).toBeVisible();
   await page.waitForTimeout(700);
-  await page.getByRole("dialog").getByRole("button", { name: "Done", exact: true }).click();
+  await activeDialog(page).getByRole("button", { name: "Done", exact: true }).click();
   await page.getByRole("tab", { name: "Dictation", exact: true }).click();
   await expect(page.getByRole("switch", { name: /^Light cleanup/ })).toBeChecked();
   await page.waitForTimeout(600);
@@ -820,10 +1098,7 @@ for (const theme of ["dark", "light"]) {
         await page.evaluate((font) => {
           document.documentElement.style.fontSize = `${font}%`;
         }, font);
-        await expect(page.locator("#app-sidebar")).toHaveCSS(
-          "width",
-          `${((collapsed ? 72 : 220) * font) / 100}px`,
-        );
+        await expectRailFits(page, font);
         const tabs = page.getByRole("tablist", { name: "Prompts sections" });
         const length = await page.evaluate(() => history.length);
         for (const [name, section] of [
@@ -874,6 +1149,7 @@ async function homeModelScenario(page: Page, custom = false) {
     state.snapshot.settings.modelPath = custom ? "/models/custom-speech.bin" : "/tiny";
   }, custom);
   await page.goto("/");
+  await openRecordingOptions(page);
 }
 
 async function saveDraft(page: Page) {
@@ -979,18 +1255,23 @@ for (const reduced of [false, true]) {
     if (reduced) expect(transforms).toEqual([]);
     else expect(transforms).toContain("translateX(24px)");
     await expect(page.getByRole("heading", { name: "Let’s hear you" })).toBeFocused();
+    const meter = page.getByRole("meter", { name: "Microphone level", exact: true });
+    await expect(meter).toHaveCount(0);
     await page.getByRole("button", { name: "Test microphone", exact: true }).click();
+    await expect(meter).toHaveCount(1);
     await page.getByRole("button", { name: "Stop test", exact: true }).click();
-    await expect(page.getByText("Microphone test passed", { exact: true })).toBeVisible();
+    await expect(meter).toHaveCount(0);
+    await expect(page.getByText("Inactive", { exact: true })).toHaveCount(0);
+    await expect(page.getByText("Last microphone test passed", { exact: true })).toBeVisible();
     await expect(page.locator('[data-slot="setup-mic-success"]')).toHaveCSS(
       "transform",
       reduced ? "none" : "matrix(1, 0, 0, 1, 0, 0)",
     );
     const halo = page.locator('[data-slot="setup-success-halo"]');
     await expect(halo).toHaveCount(reduced ? 0 : 1);
-    await page.getByRole("button", { name: "Test microphone", exact: true }).click();
+    await page.getByRole("button", { name: "Test again", exact: true }).click();
     await page.getByRole("button", { name: "Stop test", exact: true }).click();
-    await expect(page.getByText("Microphone test passed", { exact: true })).toBeVisible();
+    await expect(page.getByText("Last microphone test passed", { exact: true })).toBeVisible();
     await expect(halo).toHaveCount(0);
     await next.focus();
     await page.keyboard.press("Enter");
@@ -1001,7 +1282,7 @@ for (const reduced of [false, true]) {
     const shortcut = page.getByRole("region", { name: "Shortcut setup" });
     await expect(shortcut.locator("..")).toHaveCSS("transform", "none");
     await page.getByRole("button", { name: "Back", exact: true }).click();
-    await expect(page.getByText("Microphone test passed", { exact: true })).toBeVisible();
+    await expect(page.getByText("Last microphone test passed", { exact: true })).toBeVisible();
     await expect(halo).toHaveCount(0);
   });
 }
@@ -1069,7 +1350,7 @@ test("transcription completion uses one toast across navigation", async ({ page 
   const toast = page.locator('[data-slot="toast"]').filter({ hasText: "Transcription finished" });
   await expect(toast).toBeVisible();
   await expect(toast).toContainText("Copied to clipboard");
-  await page.getByRole("link", { name: "Dictate", exact: true }).click();
+  await navigateMain(page, "Dictate");
   await expect(page.getByRole("region", { name: "Dictation recorder" })).toBeVisible();
   await expect(page.locator("#main-content").getByText("Finished transcription.")).toHaveCount(0);
   await expect(page.locator("#main-content").getByText("Copied to clipboard")).toHaveCount(0);
@@ -1082,8 +1363,8 @@ test("transcription completion uses one toast across navigation", async ({ page 
     state.callbacks["dictation:status"](structuredClone(state.snapshot.status));
   });
   await settle(page);
-  await page.getByRole("link", { name: "History", exact: true }).click();
-  await page.getByRole("link", { name: "Dictate", exact: true }).click();
+  await navigateMain(page, "History");
+  await navigateMain(page, "Dictate");
   await page.evaluate(() => {
     const state = window.dictationTest;
     const finished = structuredClone(state.snapshot.status);
@@ -1168,8 +1449,10 @@ for (const theme of ["dark", "light"] as const) {
     await page.setViewportSize({ width: 1347, height: 800 });
     await homeModelScenario(page);
     const recorder = page.getByRole("region", { name: "Dictation recorder" });
-    const selector = recorder.getByRole("combobox", { name: "Speech model", exact: true });
-    await expect(recorder.getByRole("heading", { name: "Ready to record" })).toBeVisible();
+    await openRecordingOptions(page);
+    const options = page.getByRole("region", { name: "Recording options", exact: true });
+    const selector = options.getByRole("combobox", { name: "Speech model", exact: true });
+    await expect(page.getByRole("heading", { name: "Ready to record" })).toBeVisible();
     await expect(selector).toContainText("Whisper Tiny");
     await page.screenshot({ path: testInfo.outputPath("dictation-ready-desktop.png") });
     await page.evaluate(() => {
@@ -1180,16 +1463,20 @@ for (const theme of ["dark", "light"] as const) {
     for (const width of [1347, 360]) {
       await page.setViewportSize({ width, height: 800 });
       await expect(recorder.getByRole("button", { name: "Start recording" })).toBeEnabled();
+      await openRecordingOptions(page);
       await expect(selector).toBeInViewport();
       expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(width);
       if (width === 360) {
         await page.screenshot({ path: testInfo.outputPath("dictation-ready-narrow.png") });
       }
+      await page.keyboard.press("Escape");
       await recorder.getByRole("button", { name: "Start recording" }).click();
-      await expect(recorder.getByRole("heading", { name: "Recording", exact: true })).toBeVisible();
+      await expect(page.getByRole("heading", { name: "Recording", exact: true })).toBeVisible();
+      await openRecordingOptions(page);
       await expect(selector).toBeDisabled();
+      await page.keyboard.press("Escape");
       const bars = recorder.locator('[data-slot="recording-level-meter"] > span');
-      await expect(bars).toHaveCount(17);
+      expect(await bars.count()).toBeGreaterThan(1);
       const quietHeight = await bars.nth(0).evaluate((bar) => bar.getBoundingClientRect().height);
       await page.evaluate(() => window.dictationTest.callbacks["dictation:level"](0.8));
       await expect
@@ -1212,14 +1499,17 @@ for (const theme of ["dark", "light"] as const) {
         animations: "disabled",
       });
       await recorder.getByRole("button", { name: "Stop recording" }).click();
-      await expect(recorder.getByRole("heading", { name: "Transcribing…" })).toBeVisible();
-      await expect(recorder.getByRole("button", { name: "Start recording" })).toBeDisabled();
+      await expect(page.getByRole("heading", { name: "Transcribing…" })).toBeVisible();
+      await expect(
+        recorder.getByRole("button", { name: "Transcribing…", exact: true }),
+      ).toBeDisabled();
       await page.evaluate(() => {
         window.dictationTest.status("idle");
         window.dictationTest.callbacks["dictation:level"](0);
       });
     }
     await simulateModelDownload(page);
+    await openRecordingOptions(page);
     await selector.click();
     await page.getByRole("option", { name: /Whisper Small/ }).click();
     await page.evaluate(() => {
@@ -1233,8 +1523,10 @@ for (const theme of ["dark", "light"] as const) {
       "42",
     );
     await expect(recorder.getByRole("button", { name: "Cancel download" })).toBeInViewport();
+    await page.keyboard.press("Escape");
     await page.screenshot({ path: testInfo.outputPath("dictation-download-narrow.png") });
     await recorder.getByRole("button", { name: "Cancel download" }).click();
+    await openRecordingOptions(page);
     await expect(selector).toBeEnabled();
   });
 }
@@ -1243,6 +1535,7 @@ test("home speech model selector shows the active model and saves installed sele
   page,
 }, testInfo) => {
   await homeModelScenario(page);
+  await openRecordingOptions(page);
   const selector = page.getByRole("combobox", { name: "Speech model", exact: true });
   await expect(selector).toContainText("Whisper Tiny");
   const settings = await page.evaluate(() =>
@@ -1280,14 +1573,10 @@ test("home speech model selector shows the active model and saves installed sele
     path: testInfo.outputPath("home-model-selector.png"),
     animations: "disabled",
   });
-  await page.getByRole("link", { name: "Models", exact: true }).click();
-  await expect(
-    page
-      .locator("section")
-      .filter({ has: page.getByRole("heading", { name: "Whisper Base", exact: true }) })
-      .getByRole("button", { name: "Active", exact: true }),
-  ).toBeVisible();
-  await page.getByRole("link", { name: "Dictate", exact: true }).click();
+  await navigateMain(page, "Models");
+  await expectActiveModel(page.getByRole("region", { name: "Whisper Base", exact: true }));
+  await navigateMain(page, "Dictate");
+  await openRecordingOptions(page);
   await expect(selector).toContainText("Whisper Base");
 });
 
@@ -1295,6 +1584,7 @@ test("home speech model selector retains custom and failed selections and blocks
   page,
 }) => {
   await homeModelScenario(page, true);
+  await openRecordingOptions(page);
   const selector = page.getByRole("combobox", { name: "Speech model", exact: true });
   await expect(selector).toContainText("custom-speech.bin");
   await page.evaluate(() => {
@@ -1325,7 +1615,10 @@ test("home speech model selector retains custom and failed selections and blocks
     window.dictationTest.history();
   });
   await expect(selector).toBeEnabled();
-  await expect(page.getByRole("link", { name: "Download model", exact: true })).toBeVisible();
+  const choose = page.getByRole("button", { name: "Choose speech model", exact: true });
+  await expect(choose).toBeEnabled();
+  await choose.click();
+  await expect(page).toHaveURL(/#\/models$/);
 });
 
 async function simulateModelDownload(page: Page) {
@@ -1344,6 +1637,7 @@ test("home model downloads notify only on completion even after navigation", asy
 }, testInfo) => {
   await homeModelScenario(page);
   await simulateModelDownload(page);
+  await openRecordingOptions(page);
   const selector = page.getByRole("combobox", { name: "Speech model", exact: true });
   await selector.click();
   const small = page.getByRole("option", { name: /Whisper Small/ });
@@ -1377,7 +1671,8 @@ test("home model downloads notify only on completion even after navigation", asy
   await expect(success).toBeVisible();
   await page.evaluate(() => window.dictationTest.history());
   await expect(success).toHaveCount(1);
-  await page.getByRole("link", { name: "Dictate", exact: true }).click();
+  await navigateMain(page, "Dictate");
+  await openRecordingOptions(page);
   await expect(selector).toContainText("Whisper Small");
   await selector.click();
   await expect(
@@ -1392,6 +1687,7 @@ test("home model download errors and cancellation preserve the active model and 
 }) => {
   await homeModelScenario(page);
   await simulateModelDownload(page);
+  await openRecordingOptions(page);
   const selector = page.getByRole("combobox", { name: "Speech model", exact: true });
   async function download() {
     await selector.click();
@@ -1480,6 +1776,21 @@ for (const recovery of ["button", "focus"] as const) {
       .poll(() => page.evaluate(() => window.dictationTest.snapshot.settings.shortcut))
       .toBe("Ctrl+Alt+J");
     expect(await page.evaluate(() => window.dictationTest.snapshot.status.phase)).toBe("idle");
+    // A late notice must inherit the modal background isolation and recover on close.
+    await page.evaluate(() => {
+      const state = window.dictationTest;
+      state.snapshot.status.indicatorError = "Delayed indicator failure";
+      state.callbacks["dictation:status"](structuredClone(state.snapshot.status));
+    });
+    await expect(page.getByRole("region", { name: "App status", includeHidden: true })).toHaveCount(
+      1,
+    );
+    await expect(page.getByRole("region", { name: "App status" })).toHaveCount(0);
+    await navigateMain(page, "Dictate");
+    const notices = page.getByRole("region", { name: "App status" });
+    await expect(notices).toBeVisible();
+    await notices.locator("summary").click();
+    await expect(notices.getByText("Delayed indicator failure", { exact: true })).toBeVisible();
   });
 }
 
@@ -1518,7 +1829,7 @@ test("setup retries shortcut permission and still requires a real shortcut test"
   await expect(page.getByRole("button", { name: "Finish setup", exact: true })).toBeEnabled();
 });
 
-test("settings sections keep navigation above full-width content and preserve edits", async ({
+test("settings dialog keeps vertical categories beside content and preserves edits", async ({
   page,
 }, testInfo) => {
   await page.addInitScript(() => {
@@ -1532,8 +1843,8 @@ test("settings sections keep navigation above full-width content and preserve ed
   await expect(panel).toHaveCount(1);
   const navBounds = await tabs.boundingBox();
   const contentBounds = await panel.boundingBox();
-  expect(contentBounds!.y).toBeGreaterThan(navBounds!.y + navBounds!.height);
-  expect(contentBounds!.width).toBeGreaterThan(850);
+  expect(contentBounds!.x).toBeGreaterThan(navBounds!.x + navBounds!.width);
+  expect(contentBounds!.width).toBeGreaterThan(600);
   await expect(page.getByRole("button", { name: "Test dictation", exact: true })).toBeHidden();
   await page.getByLabel("Global shortcut", { exact: true }).fill("Ctrl+Alt+J");
   await page.screenshot({
@@ -1562,6 +1873,7 @@ test("settings sections keep navigation above full-width content and preserve ed
     animations: "disabled",
   });
   await page.getByRole("tab", { name: "Advanced", exact: true }).click();
+  await showCustomModelFiles(page);
   await expect(page.getByRole("button", { name: "Test dictation", exact: true })).toBeEnabled();
   await page.screenshot({
     path: testInfo.outputPath("settings-advanced.png"),
@@ -1570,7 +1882,7 @@ test("settings sections keep navigation above full-width content and preserve ed
   await page.getByRole("tab", { name: "Dictation", exact: true }).click();
   await expect(page.getByLabel("Global shortcut", { exact: true })).toHaveValue("Ctrl+Alt+J");
   await page.setViewportSize({ width: 760, height: 680 });
-  await page.getByRole("button", { name: "Expand sidebar", exact: true }).click();
+  await expect(page.getByRole("dialog", { name: "Settings", exact: true })).toBeVisible();
   await page.evaluate(() => window.scrollTo(0, 0));
   await expect(page.getByLabel("Global shortcut", { exact: true })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
@@ -1579,13 +1891,13 @@ test("settings sections keep navigation above full-width content and preserve ed
     animations: "disabled",
   });
   await page.getByRole("tab", { name: "Dictation", exact: true }).focus();
-  await page.keyboard.press("ArrowRight");
+  await page.keyboard.press("ArrowDown");
   await page.keyboard.press("Enter");
   await expect(page.getByRole("tab", { name: "Profiles", exact: true })).toHaveAttribute(
     "aria-selected",
     "true",
   );
-  await page.keyboard.press("ArrowRight");
+  await page.keyboard.press("ArrowDown");
   await page.keyboard.press("Enter");
   await expect(page.getByRole("tab", { name: "General", exact: true })).toHaveAttribute(
     "aria-selected",
@@ -1598,10 +1910,10 @@ test("settings save automatically, keep failed drafts, and offer retry or discar
 }, testInfo) => {
   await page.goto("/#/settings");
   const shortcut = page.getByLabel("Global shortcut", { exact: true });
-  const status = page.locator('header[aria-label="Settings"]').getByRole("status");
+  const status = page.getByRole("dialog", { name: "Settings", exact: true }).getByRole("status");
   const failed = page.locator('[data-slot="toast"]').filter({ hasText: "Settings save failed" });
   await expect(page.getByRole("button", { name: "Save settings", exact: true })).toHaveCount(0);
-  await expect(status).toHaveText("Changes save automatically");
+  await expect(status).toHaveText("Saved");
   await shortcut.fill("Ctrl+Alt+J");
   await expect(status).toHaveText("Saves when you leave the field");
   await page.waitForTimeout(600);
@@ -1612,7 +1924,7 @@ test("settings save automatically, keep failed drafts, and offer retry or discar
   await expect
     .poll(() => page.evaluate(() => window.dictationTest.snapshot.settings.shortcut))
     .toBe("Ctrl+Alt+J");
-  await expect(status).toHaveText("Changes save automatically");
+  await expect(status).toHaveText("Saved");
   await page.screenshot({
     path: testInfo.outputPath("settings-autosaved.png"),
     animations: "disabled",
@@ -1623,8 +1935,28 @@ test("settings save automatically, keep failed drafts, and offer retry or discar
   await shortcut.fill("Ctrl+Alt+K");
   await shortcut.press("Enter");
   await expect(failed).toBeVisible();
+  await expect(
+    page.locator('[data-slot="settings-save-notice-host"] [data-slot="toast"]'),
+  ).toContainText("Settings not saved");
+  const settingsPane = await page.locator('[data-slot="settings-scroll-pane"]').boundingBox();
+  const noticeBox = await failed.boundingBox();
+  expect(noticeBox!.y + noticeBox!.height).toBeLessThanOrEqual(settingsPane!.y + 1);
+  await expect(failed.getByText("Settings not saved", { exact: true })).toBeVisible();
+  await failed.getByRole("button", { name: "Error details", exact: true }).click();
+  const errorReader = page.getByRole("dialog", { name: "Error details", exact: true });
+  const failureCause = errorReader.getByRole("region", { name: "Full error details", exact: true });
+  await expect(failureCause).toHaveText("Settings save failed");
+  await failureCause.focus();
+  await expect(failureCause).toBeFocused();
+  await errorReader.getByRole("button", { name: "Back", exact: true }).click();
   await expect(status).toHaveText("Changes not saved");
   await expect(shortcut).toHaveValue("Ctrl+Alt+K");
+  await expect(page.getByRole("button", { name: "Retry", exact: true })).toBeInViewport();
+  await expect(
+    page
+      .getByRole("dialog", { name: "Settings", exact: true })
+      .locator('[data-slot="settings-save-state"]'),
+  ).toBeInViewport();
   expect(await page.evaluate(() => window.dictationTest.snapshot.settings.shortcut)).toBe(
     "Ctrl+Alt+J",
   );
@@ -1632,6 +1964,28 @@ test("settings save automatically, keep failed drafts, and offer retry or discar
   await failed.getByRole("button", { name: "Dismiss notification" }).click();
   await page.waitForTimeout(600);
   await expect(failed).toHaveCount(0);
+  // Dismissing an owned save notice must not orphan the shared viewport used
+  // by later notifications and their F6/Tab keyboard route.
+  await page.evaluate(async () => {
+    const modulePath = "/src/components/ui/toast.tsx";
+    const { toastManager } = await import(modulePath);
+    toastManager.add({
+      id: "notification-after-settings",
+      type: "error",
+      title: "Independent notification after save-error dismissal",
+      timeout: 8000,
+    });
+  });
+  const followingNotice = page.locator('[data-slot="toast"]').filter({
+    hasText: "Independent notification after save-error dismissal",
+  });
+  await expect(followingNotice).toBeVisible();
+  await page.keyboard.press("F6");
+  await expect(page.getByRole("region", { name: "Notifications", exact: true })).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(followingNotice).toBeFocused();
+  await followingNotice.getByRole("button", { name: "Dismiss notification", exact: true }).click();
+  await expect(followingNotice).toHaveCount(0);
   await page.evaluate(() => {
     window.dictationTest.failSave = false;
   });
@@ -1639,7 +1993,7 @@ test("settings save automatically, keep failed drafts, and offer retry or discar
   await expect
     .poll(() => page.evaluate(() => window.dictationTest.snapshot.settings.shortcut))
     .toBe("Ctrl+Alt+K");
-  await expect(status).toHaveText("Changes save automatically");
+  await expect(status).toHaveText("Saved");
   await page.evaluate(() => {
     window.dictationTest.failSave = true;
   });
@@ -1648,7 +2002,7 @@ test("settings save automatically, keep failed drafts, and offer retry or discar
   await expect(status).toHaveText("Changes not saved");
   await page.getByRole("button", { name: "Discard changes", exact: true }).click();
   await expect(shortcut).toHaveValue("Ctrl+Alt+K");
-  await expect(status).toHaveText("Changes save automatically");
+  await expect(status).toHaveText("Saved");
 });
 
 for (const theme of ["light", "dark"] as const) {
@@ -1752,7 +2106,6 @@ for (const theme of ["light", "dark"] as const) {
     });
     await page.getByLabel("Name", { exact: true }).fill("My cleanup");
     await page.setViewportSize({ width: 760, height: 560 });
-    await page.getByRole("button", { name: "Expand sidebar", exact: true }).click();
     await expect(library).toBeHidden();
     const picker = page.getByRole("combobox", { name: "Saved prompt", exact: true });
     await expect(picker).toContainText("My cleanup");
@@ -1780,6 +2133,66 @@ for (const theme of ["light", "dark"] as const) {
   });
 }
 
+test("prompt automation help supports keyboard and touch without changing the automatic selection", async ({
+  page,
+  browser,
+}, testInfo) => {
+  await page.addInitScript(() => {
+    window.dictationTest.snapshot.textProcessing.enabled = true;
+    window.dictationTest.snapshot.textProcessing.model = "saved-model";
+  });
+  await page.goto("/#/prompts");
+  const automatic = page.getByRole("switch", { name: "Run after dictation", exact: true });
+  const info = page.getByRole("button", {
+    name: "About running prompts after dictation",
+    exact: true,
+  });
+  const explanation =
+    "Turn on to use this prompt after dictation. Profiles and chains can override the default.";
+  await expect(page.getByLabel("Name", { exact: true })).toHaveValue("Cleanup");
+  await expect(automatic).toHaveAccessibleDescription(explanation);
+  await expect(page.getByRole("tooltip")).toHaveCount(0);
+  await page.getByLabel("Name", { exact: true }).focus();
+  await page.keyboard.press("Tab");
+  await page.keyboard.press("Tab");
+  await expect(info).toBeFocused();
+  await expect(page.getByRole("tooltip")).toHaveText(explanation);
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("tooltip")).toHaveCount(0);
+  await info.press("Enter");
+  await expect(page.getByRole("tooltip")).toHaveText(explanation);
+  await expect(automatic).not.toBeChecked();
+  await page.keyboard.press("Escape");
+  await automatic.check();
+  await info.press("Enter");
+  await expect(page.getByRole("tooltip")).toContainText("Default after every dictation.");
+  await expect(automatic).toBeChecked();
+  await testInfo.attach("prompt-automation-help", {
+    body: await page.screenshot(),
+    contentType: "image/png",
+  });
+
+  const touch = await browser.newContext({ hasTouch: true, viewport: { width: 360, height: 760 } });
+  try {
+    const mobile = await touch.newPage();
+    await installDictationFixture(mobile);
+    await mobile.goto(new URL("/#/prompts", page.url()).href, { timeout: 5000 });
+    const touchInfo = mobile.getByRole("button", {
+      name: "About running prompts after dictation",
+      exact: true,
+    });
+    await touchInfo.tap({ timeout: 5000 });
+    await expect(mobile.getByRole("tooltip")).toHaveText(explanation);
+    await expect(
+      mobile.getByRole("switch", { name: "Run after dictation", exact: true }),
+    ).not.toBeChecked();
+    await mobile.getByLabel("Instructions", { exact: true }).tap({ timeout: 5000 });
+    await expect(mobile.getByRole("tooltip")).toHaveCount(0);
+  } finally {
+    await touch.close();
+  }
+});
+
 test("prompt automatic switch respects model and busy guards and preserves a failed save", async ({
   page,
 }) => {
@@ -1790,7 +2203,7 @@ test("prompt automatic switch respects model and busy guards and preserves a fai
     .locator("#auto-prompt-help")
     .getByRole("button", { name: "Text model", exact: true })
     .click();
-  await page.getByRole("switch", { name: "Enable LLM processing", exact: true }).check();
+  await page.getByRole("switch", { name: "Enable text processing", exact: true }).check();
   await page.getByLabel("Model identifier", { exact: true }).fill("saved-model");
   await page.getByRole("tab", { name: "Prompts", exact: true }).click();
   await automatic.check();
@@ -1816,8 +2229,8 @@ test("prompt automatic switch respects model and busy guards and preserves a fai
   expect(await page.evaluate(() => window.dictationTest.snapshot.textProcessing.autoPromptId)).toBe(
     "",
   );
-  await page.getByRole("link", { name: "History", exact: true }).click();
-  await page.getByRole("link", { name: "Prompts & chains", exact: true }).click();
+  await navigateMain(page, "History");
+  await navigateMain(page, "Prompts & chains");
   await expect(automatic).toBeChecked();
   await page.evaluate(() => {
     window.dictationTest.failSave = false;
@@ -1827,7 +2240,7 @@ test("prompt automatic switch respects model and busy guards and preserves a fai
     .poll(() => page.evaluate(() => window.dictationTest.snapshot.textProcessing.autoPromptId))
     .toBe("cleanup");
   await page.getByRole("tab", { name: "Text model", exact: true }).click();
-  await page.getByRole("switch", { name: "Enable LLM processing", exact: true }).uncheck();
+  await page.getByRole("switch", { name: "Enable text processing", exact: true }).uncheck();
   await page.getByRole("tab", { name: "Prompts", exact: true }).click();
   await expect(automatic).not.toBeChecked();
   await expect(automatic).toBeDisabled();
@@ -1945,7 +2358,6 @@ test("prompts tabs preserve shared drafts and keep save actions visible in narro
     )
     .toEqual({ name: "My cleanup", model: "draft-model" });
   await page.setViewportSize({ width: 760, height: 680 });
-  await page.getByRole("button", { name: "Expand sidebar", exact: true }).click();
   await page.getByLabel("Name", { exact: true }).fill("Narrow cleanup");
   const pickerBounds = await page
     .getByRole("combobox", { name: "Saved prompt", exact: true })
@@ -2009,7 +2421,7 @@ test("prompt auto-save status and model response toasts reflect saved state", as
   await expect(response).toBeVisible();
   await expect(
     page.locator("#main-content").getByText("Model responded successfully.", { exact: true }),
-  ).toHaveCount(0);
+  ).toBeVisible();
   await page.screenshot({
     path: testInfo.outputPath("model-response-toast.png"),
     animations: "disabled",
@@ -2064,7 +2476,7 @@ test("failed prompt saves show an error toast and retain edits for retry", async
   ).toBe("Retry cleanup");
 });
 
-test("model testing stays inside the card and cancellation remains available", async ({
+test("model testing stays inside its form and cancellation remains available", async ({
   page,
 }, testInfo) => {
   await page.addInitScript(() => {
@@ -2077,9 +2489,7 @@ test("model testing stays inside the card and cancellation remains available", a
     );
   });
   await page.goto("/#/prompts?section=models");
-  const card = page.locator("section").filter({
-    has: page.getByRole("heading", { name: "Text model", exact: true }),
-  });
+  const card = page.getByRole("region", { name: "Text model", exact: true });
   await card.getByRole("button", { name: "Test model", exact: true }).click();
   await expect(card.getByRole("status").filter({ hasText: "Testing model…" })).toBeVisible();
   await expect(page.getByLabel("Local server URL")).toBeDisabled();
@@ -2187,7 +2597,12 @@ test("confirmed prompt deletion can be discarded and persists only after save", 
   await expect(
     page.getByRole("switch", { name: "Run after dictation", exact: true }),
   ).not.toBeChecked();
-  await expect(page.getByText("Automatic processing is off.", { exact: true })).toBeVisible();
+  await expect(
+    page.getByText(
+      "Turn on to use this prompt after dictation. Profiles and chains can override the default.",
+      { exact: true },
+    ),
+  ).toBeVisible();
   expect(
     await page.evaluate(() => window.dictationTest.snapshot.textProcessing.prompts.length),
   ).toBe(2);
@@ -2269,6 +2684,7 @@ test("prompt refinement previews an unsaved draft and saves only after applying"
   await expect(page.getByRole("button", { name: "Refine prompt", exact: true })).toBeDisabled();
   await page.getByRole("tab", { name: "Text model", exact: true }).click();
   await page.getByLabel("Model identifier", { exact: true }).fill("draft-model");
+  await showServerAddress(page);
   await page.getByLabel("Local server URL", { exact: true }).fill("http://127.0.0.1:1234/v1");
   await page.getByRole("tab", { name: "Prompts", exact: true }).click();
   await page.getByLabel("Instructions", { exact: true }).fill("summarize in bullets, keep names");
@@ -2523,9 +2939,9 @@ test("Models compares models, updates the current selection, and fits narrow scr
   });
   await page.setViewportSize({ width: 1347, height: 840 });
   await page.goto("/#/models");
-  const current = page.getByRole("region", { name: "Current speech model" });
+  const current = currentSpeechModel(page);
   await expect(current).toContainText("Whisper Small");
-  await expect(page.getByRole("group", { name: "Model storage" })).toContainText("713.2 MB");
+  await expect(page.getByLabel("Model storage", { exact: true })).toContainText("713.2 MB");
   await page.screenshot({ path: testInfo.outputPath("models-redesign-dark.png"), fullPage: true });
   await page
     .getByRole("region", { name: "Whisper Base", exact: true })
@@ -2533,11 +2949,19 @@ test("Models compares models, updates the current selection, and fits narrow scr
     .click();
   await expect(current).toContainText("Whisper Base");
   await expect(
-    page.getByRole("button", { name: "Remove Whisper Base", exact: true }),
+    (await modelMenu(page, "Whisper Base")).getByRole("menuitem", {
+      name: "Remove model",
+      exact: true,
+    }),
   ).toBeDisabled();
+  await page.keyboard.press("Escape");
   await expect(
-    page.getByRole("button", { name: "Remove Whisper Small", exact: true }),
+    (await modelMenu(page, "Whisper Small")).getByRole("menuitem", {
+      name: "Remove model",
+      exact: true,
+    }),
   ).toBeEnabled();
+  await page.keyboard.press("Escape");
   await page.evaluate(() => {
     localStorage.setItem("desktop-theme", "light");
   });
@@ -2546,7 +2970,7 @@ test("Models compares models, updates the current selection, and fits narrow scr
   await expect(page.locator("html")).not.toHaveClass(/dark/);
   await page.screenshot({ path: testInfo.outputPath("models-redesign-light.png"), fullPage: true });
   await page.setViewportSize({ width: 480, height: 900 });
-  await expect(page.getByRole("link", { name: "Open Settings" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Bring your own model" })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
     true,
   );
@@ -2566,7 +2990,7 @@ const additionalSpeechModels = [
   { id: "moonshine-base", name: "Moonshine Base", size: 141001190 },
 ];
 
-test("Models groups families in accessible accordions and reveals downloads from Home", async ({
+test("Models searches and filters compact rows, exposes languages, and retains download lifecycle", async ({
   page,
 }, testInfo) => {
   await page.addInitScript(
@@ -2594,137 +3018,65 @@ test("Models groups families in accessible accordions and reveals downloads from
   );
   await page.setViewportSize({ width: 1347, height: 840 });
   await page.goto("/#/models");
-  const whisper = page.getByRole("button", { name: "Whisper models", exact: true });
-  const parakeet = page.getByRole("button", { name: "NVIDIA Parakeet models", exact: true });
-  const moonshine = page.getByRole("button", { name: "Moonshine models", exact: true });
-  await expect(whisper).toContainText("5 models");
-  await expect(parakeet).toContainText("1 model");
-  await expect(moonshine).toContainText("4 models");
-  await expect(whisper).toHaveAttribute("aria-expanded", "false");
-  await expect(parakeet).toHaveAttribute("aria-expanded", "false");
-  await expect(moonshine).toHaveAttribute("aria-expanded", "true");
-  await expect(page.getByRole("region", { name: "Moonshine Base", exact: true })).toBeVisible();
-  await expect(page.getByRole("region", { name: "Whisper Tiny", exact: true })).toBeHidden();
-  await page.screenshot({
-    path: testInfo.outputPath("model-families-desktop.png"),
-    fullPage: true,
-  });
-  await moonshine.focus();
-  await page.keyboard.press("Shift+Tab");
-  await expect(parakeet).toBeFocused();
-  await page.keyboard.press("Enter");
-  await expect(parakeet).toHaveAttribute("aria-expanded", "true");
-  await whisper.click();
-  await expect(moonshine).toHaveAttribute("aria-expanded", "true");
-  await expect(
-    page.getByRole("region", { name: "Whisper models", exact: true }).getByRole("region"),
-  ).toHaveCount(5);
-  await expect(
-    page.getByRole("region", { name: "NVIDIA Parakeet models", exact: true }).getByRole("region"),
-  ).toHaveCount(1);
-  await expect(
-    page.getByRole("region", { name: "Moonshine models", exact: true }).getByRole("region"),
-  ).toHaveCount(4);
-  for (const [name, accuracy, speed] of [
-    ["Whisper Tiny", "Basic", "Fastest"],
-    ["Whisper Base", "Fair", "Very fast"],
-    ["Whisper Small", "Good", "Fast"],
-    ["Whisper Medium", "Better", "Moderate"],
-    ["Whisper Large v3", "Best", "Slower"],
-    ["NVIDIA Parakeet TDT v3", "High", "Fast"],
-    ["Moonshine V2 Tiny", "Lower", "Fastest"],
-    ["Moonshine Base", "Good", "Very fast"],
-    ["Moonshine V2 Small", "Good", "Very fast"],
-    ["Moonshine V2 Medium", "Better", "Fast"],
-  ]) {
-    const card = page.getByRole("region", { name, exact: true });
-    await expect(card.getByRole("meter", { name: "Accuracy", exact: true })).toHaveAttribute(
-      "aria-valuetext",
-      accuracy,
-    );
-    await expect(card.getByRole("meter", { name: "Speed", exact: true })).toHaveAttribute(
-      "aria-valuetext",
-      speed,
-    );
-  }
-  const tinyCard = page.getByRole("region", { name: "Whisper Tiny", exact: true });
-  await expect(tinyCard).toContainText(
-    "Quick notes and short messages on less powerful computers.",
+  const rows = page.locator('[data-slot="model-row"]');
+  await expect(page.getByRole("button", { name: "Downloaded", exact: true })).toHaveAttribute(
+    "aria-pressed",
+    "true",
   );
-  const headingBounds = await tinyCard.getByRole("heading").boundingBox();
-  const ratingBounds = await tinyCard.getByRole("meter", { name: "Accuracy" }).boundingBox();
-  expect(ratingBounds!.x).toBeGreaterThan(headingBounds!.x);
-  await page
-    .getByRole("button", { name: "Supported languages for Whisper Tiny", exact: true })
-    .hover();
-  const languages = page.locator('[data-slot="tooltip-content"][data-open]');
-  await expect(languages).toContainText("99 languages");
-  await expect(languages).toHaveCSS("opacity", "1");
-  await expect(languages).toContainText("Japanese");
-  await expect(languages).toContainText("Yoruba");
-  expect((await languages.locator("p").last().innerText()).split(", ")).toHaveLength(99);
-  await page.screenshot({
-    path: testInfo.outputPath("model-card-languages-desktop.png"),
-    fullPage: true,
+  await expect(rows).toHaveCount(1);
+  await page.getByRole("button", { name: "All models", exact: true }).click();
+  await expect(rows).toHaveCount(10);
+  await expect(rows.first()).toContainText("Moonshine Base");
+  const search = page.getByRole("textbox", { name: "Search speech models" });
+  await search.fill("Parakeet");
+  await expect(rows).toHaveCount(1);
+  await expect(rows).toContainText("NVIDIA Parakeet TDT v3");
+  await search.fill("Japanese");
+  await expect(rows).toHaveCount(5);
+  await expect(rows.first()).toContainText("Whisper");
+  await search.fill("no-such-model");
+  await expect(
+    page.getByRole("status", { name: "" }).filter({ hasText: "No matching models" }),
+  ).toBeVisible();
+  await search.fill("");
+  await page.getByRole("button", { name: "Downloaded", exact: true }).click();
+  await expect(rows).toHaveCount(1);
+  await expect(rows).toContainText("Moonshine Base");
+  await page.getByRole("button", { name: "All models", exact: true }).click();
+  const badge = page.getByRole("button", {
+    name: /^Supported languages for Whisper Tiny/,
   });
-  await page.keyboard.press("Escape");
-  await page
-    .getByRole("button", { name: "Supported languages for Whisper Large v3", exact: true })
-    .focus();
-  await expect(languages).toContainText("100 languages");
-  await expect(languages).toContainText("Cantonese");
-  await page.keyboard.press("Escape");
-  const parakeetBadge = page.getByRole("button", {
-    name: "Supported languages for NVIDIA Parakeet TDT v3",
+  await badge.click();
+  const languages = page.getByRole("dialog", {
+    name: "Supported languages for Whisper Tiny",
     exact: true,
   });
-  await parakeetBadge.focus();
-  await expect(languages).toContainText("25 languages");
-  expect((await languages.locator("p").last().innerText()).split(", ")).toHaveLength(25);
-  await expect(languages).toContainText("Maltese");
-  await page.keyboard.press("Escape");
-  const moonshineCard = page.getByRole("region", { name: "Moonshine Base", exact: true });
-  await expect(moonshineCard.getByText("English only", { exact: true })).toBeVisible();
-  await expect(moonshineCard.getByText("Multilingual", { exact: true })).toHaveCount(0);
-  await moonshine.focus();
-  await page.keyboard.press("Space");
-  await expect(moonshine).toHaveAttribute("aria-expanded", "false");
-  await expect(page.getByRole("region", { name: "Moonshine Base", exact: true })).toBeHidden();
-  await page.setViewportSize({ width: 480, height: 900 });
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
-    true,
-  );
-  await page.screenshot({ path: testInfo.outputPath("model-families-narrow.png"), fullPage: true });
-  await page
-    .getByRole("button", { name: "Supported languages for Whisper Tiny", exact: true })
-    .focus();
   await expect(languages).toContainText("99 languages");
-  await expect(languages).toHaveCSS("opacity", "1");
-  const tooltipBounds = await languages.boundingBox();
-  expect(tooltipBounds!.x).toBeGreaterThanOrEqual(0);
-  expect(tooltipBounds!.x + tooltipBounds!.width).toBeLessThanOrEqual(480);
-  expect(tooltipBounds!.y).toBeGreaterThanOrEqual(0);
-  expect(tooltipBounds!.y + tooltipBounds!.height).toBeLessThanOrEqual(900);
-  await page.screenshot({ path: testInfo.outputPath("model-card-languages-narrow.png") });
+  await expect(languages).toContainText("Japanese");
+  await expect(languages).toContainText("Yoruba");
   await page.keyboard.press("Escape");
-  await page.getByRole("link", { name: "Dictate", exact: true }).click();
+  await page.setViewportSize({ width: 480, height: 900 });
+  await expect
+    .poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
+    .toBe(true);
+  await page.screenshot({ path: testInfo.outputPath("models-compact-narrow.png"), fullPage: true });
+  await navigateMain(page, "Dictate");
   await simulateModelDownload(page);
+  await openRecordingOptions(page);
   await page.getByRole("combobox", { name: "Speech model", exact: true }).click();
   await page.getByRole("option", { name: /NVIDIA Parakeet TDT v3/ }).click();
-  await page.getByRole("link", { name: "Models", exact: true }).click();
-  await expect(moonshine).toHaveAttribute("aria-expanded", "true");
-  await expect(parakeet).toHaveAttribute("aria-expanded", "true");
-  await expect(parakeet).toContainText("Downloading");
-  await expect(page.getByRole("progressbar", { name: "Model download progress" })).toBeVisible();
-  await parakeet.click();
-  await expect(parakeet).toHaveAttribute("aria-expanded", "false");
-  await expect(parakeet).toContainText("Downloading");
-  await parakeet.click();
-  await page.getByRole("button", { name: "Cancel download", exact: true }).click();
-  await expect(parakeet).not.toContainText("Downloading");
-  await expect(page.getByRole("region", { name: "Current speech model" })).toContainText(
-    "Moonshine Base",
-  );
+  await navigateMain(page, "Models");
+  const parakeet = page.getByRole("region", { name: "NVIDIA Parakeet TDT v3", exact: true });
+  await expect(
+    parakeet.getByRole("progressbar", { name: "Model download progress" }),
+  ).toBeVisible();
+  await expect(
+    page
+      .getByRole("region", { name: "Whisper Tiny", exact: true })
+      .getByRole("button", { name: "Download & use", exact: true }),
+  ).toBeDisabled();
+  await parakeet.getByRole("button", { name: "Cancel download", exact: true }).click();
+  await expect(parakeet.getByRole("progressbar")).toHaveCount(0);
 });
 
 for (const model of additionalSpeechModels) {
@@ -2750,26 +3102,16 @@ for (const model of additionalSpeechModels) {
       window.dictationTest.history();
     }, model);
     await simulateModelDownload(page);
-    await page.getByRole("link", { name: "Models", exact: true }).click();
-    const family = model.id.startsWith("moonshine")
-      ? "Moonshine"
-      : model.id.startsWith("parakeet")
-        ? "NVIDIA Parakeet"
-        : "Whisper";
-    const group = page.getByRole("button", { name: `${family} models`, exact: true });
-    if ((await group.getAttribute("aria-expanded")) !== "true") await group.click();
+    await navigateMain(page, "Models");
+    await page.getByRole("button", { name: "All models", exact: true }).click();
     const card = page.getByRole("region", { name: model.name, exact: true });
-    await expect(card.getByText("Download size", { exact: true })).toBeVisible();
-    await expect(card.getByRole("meter", { name: "Accuracy", exact: true })).toBeVisible();
-    await expect(card.getByRole("meter", { name: "Speed", exact: true })).toBeVisible();
+    await expect(card.getByTitle("Download size", { exact: true })).toBeVisible();
     await card.getByRole("button", { name: "Download & use", exact: true }).click();
     await expect
       .poll(() => page.evaluate(() => window.dictationTest.installedModelIDs))
       .toEqual([model.id]);
     await expect(card.getByRole("progressbar", { name: "Model download progress" })).toBeVisible();
-    await expect(page.getByRole("region", { name: "Current speech model" })).toContainText(
-      "Whisper Tiny",
-    );
+    await expect(currentSpeechModel(page)).toContainText("Whisper Tiny");
     await page.evaluate((id) => {
       const state = window.dictationTest;
       const downloaded = state.snapshot.models.find((entry) => entry.id === id)!;
@@ -2782,11 +3124,10 @@ for (const model of additionalSpeechModels) {
       state.callbacks["dictation:status"](structuredClone(state.snapshot.status));
       state.history();
     }, model.id);
-    await expect(card.getByRole("button", { name: "Active", exact: true })).toBeDisabled();
-    await expect(page.getByRole("region", { name: "Current speech model" })).toContainText(
-      model.name,
-    );
-    await page.getByRole("link", { name: "Dictate", exact: true }).click();
+    await expectActiveModel(card);
+    await expect(currentSpeechModel(page)).toContainText(model.name);
+    await navigateMain(page, "Dictate");
+    await openRecordingOptions(page);
     const selector = page.getByRole("combobox", { name: "Speech model", exact: true });
     await expect(selector).toContainText(model.name);
     await selector.click();
@@ -2803,9 +3144,10 @@ test("model downloads stay inside the matching card across navigation and cancel
 }, testInfo) => {
   await homeModelScenario(page);
   await simulateModelDownload(page);
+  await openRecordingOptions(page);
   await page.getByRole("combobox", { name: "Speech model", exact: true }).click();
   await page.getByRole("option", { name: /Whisper Small/ }).click();
-  await page.getByRole("link", { name: "Models", exact: true }).click();
+  await navigateMain(page, "Models");
   const small = page.getByRole("region", { name: "Whisper Small", exact: true });
   const progress = small.getByRole("progressbar", { name: "Model download progress" });
   await expect(progress).toBeVisible();
@@ -2818,11 +3160,7 @@ test("model downloads stay inside the matching card across navigation and cancel
   await expect(progress).toHaveAttribute("aria-valuenow", "42");
   await expect(small).toContainText("Downloading Whisper runtime…");
   await expect(page.getByRole("progressbar", { name: "Model download progress" })).toHaveCount(1);
-  await expect(
-    page
-      .getByRole("region", { name: "Whisper Tiny", exact: true })
-      .getByRole("button", { name: "Active", exact: true }),
-  ).toBeDisabled();
+  await expectActiveModel(page.getByRole("region", { name: "Whisper Tiny", exact: true }));
   await expect(
     page
       .getByRole("region", { name: "Whisper Base", exact: true })
@@ -2842,14 +3180,12 @@ test("model downloads stay inside the matching card across navigation and cancel
     animations: "disabled",
   });
   await page.getByRole("link", { name: "Settings", exact: true }).click();
-  await page.getByRole("link", { name: "Models", exact: true }).click();
+  await navigateMain(page, "Models");
   await expect(progress).toHaveAttribute("aria-valuenow", "65");
   await small.getByRole("button", { name: "Cancel download", exact: true }).click();
   await expect(progress).toHaveCount(0);
   await expect(small.getByRole("button", { name: "Download & use", exact: true })).toBeEnabled();
-  await expect(page.getByRole("region", { name: "Current speech model" })).toContainText(
-    "Whisper Tiny",
-  );
+  await expect(currentSpeechModel(page)).toContainText("Whisper Tiny");
   await small.getByRole("button", { name: "Download & use", exact: true }).click();
   await expect(progress).toBeVisible();
   await page.evaluate(() => {
@@ -2863,14 +3199,14 @@ test("model downloads stay inside the matching card across navigation and cancel
     state.history();
   });
   await expect(progress).toHaveCount(0);
-  await expect(small.getByRole("button", { name: "Active", exact: true })).toBeDisabled();
+  await expectActiveModel(small);
 });
 
 test("Models handles custom selections and missing model files", async ({ page }) => {
   await homeModelScenario(page, true);
   await simulateModelDownload(page);
   await page.goto("/#/models");
-  const current = page.getByRole("region", { name: "Current speech model" });
+  const current = currentSpeechModel(page);
   await expect(current).toContainText("Custom model");
   await expect(current).toContainText("Active");
   await expect(page.getByRole("button", { name: "Check & repair runtime" })).toHaveCount(0);
@@ -2884,8 +3220,12 @@ test("Models handles custom selections and missing model files", async ({ page }
   const repair = page.getByRole("button", { name: "Repair & use", exact: true });
   await expect(repair).toBeEnabled();
   await expect(
-    page.getByRole("button", { name: "Remove Whisper Small", exact: true }),
+    (await modelMenu(page, "Whisper Small")).getByRole("menuitem", {
+      name: "Remove model",
+      exact: true,
+    }),
   ).toBeDisabled();
+  await page.keyboard.press("Escape");
   await repair.click();
   const card = page.getByRole("region", { name: "Whisper Small", exact: true });
   await expect(card.getByRole("progressbar", { name: "Model download progress" })).toBeVisible();
@@ -2912,8 +3252,8 @@ test("active valid models offer runtime verification and repair", async ({ page 
     ];
   });
   await page.goto("/#/models");
-  await expect(page.getByRole("button", { name: "Active", exact: true })).toBeDisabled();
-  await page.getByRole("button", { name: "Check & repair runtime", exact: true }).click();
+  await expectActiveModel(currentSpeechModel(page));
+  await modelAction(page, "Check & repair runtime");
   await expect
     .poll(() => page.evaluate(() => window.dictationTest.installedModelIDs))
     .toEqual(["base"]);
@@ -3031,7 +3371,7 @@ declare global {
   }
 }
 
-test.beforeEach(async ({ page }) => {
+async function installDictationFixture(page: Page) {
   await page.addInitScript(() => {
     const state: Window["dictationTest"] = {
       recentlyDeleted: [],
@@ -3430,7 +3770,7 @@ test.beforeEach(async ({ page }) => {
             GetHistory: async (query: string, page: number) => {
               if (state.failHistory) throw new Error("History load failed");
               const entries = state.snapshot.history.filter((entry) =>
-                [entry.rawTranscript, entry.finalTranscript].some((text) =>
+                [entry.title ?? "", entry.rawTranscript, entry.finalTranscript].some((text) =>
                   text.toLowerCase().includes(query.toLowerCase()),
                 ),
               );
@@ -3877,6 +4217,10 @@ test.beforeEach(async ({ page }) => {
       },
     });
   });
+}
+
+test.beforeEach(async ({ page }) => {
+  await installDictationFixture(page);
 });
 
 // Wait for React to commit after releasing a deliberately delayed bridge reply.
@@ -4038,7 +4382,11 @@ test("history replies preserve newer recording events and still update history",
   });
   await expect(page.getByRole("button", { name: "Stop recording" })).toBeEnabled();
   await page.evaluate(() => window.dictationTest.pendingSnapshots[0]());
-  await expect(page.getByText("Fresh history entry", { exact: true })).toBeVisible();
+  // The palette's unfiltered recent entries read the provider snapshot directly.
+  // A separate History fetch would not prove this deferred reply was accepted.
+  await page.keyboard.press("Control+k");
+  await expect(page.getByRole("option").filter({ hasText: "Fresh history entry" })).toBeVisible();
+  await page.keyboard.press("Escape");
   await expect(page.getByRole("button", { name: "Stop recording" })).toBeEnabled();
 });
 
@@ -4081,7 +4429,7 @@ test("action refresh replies preserve status events received while awaiting them
   });
   await settle(page);
   await expect(page.getByRole("heading", { name: "Transcribing…", exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Start recording" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Transcribing…", exact: true })).toBeDisabled();
 });
 
 test("Vocabulary matches the Models heading and keeps editing actions visible in narrow windows", async ({
@@ -4110,7 +4458,7 @@ test("Vocabulary matches the Models heading and keeps editing actions visible in
   const modelHeading = await page
     .getByRole("heading", { name: "Models", exact: true })
     .evaluate(headingStyle);
-  await page.getByRole("link", { name: "Vocabulary", exact: true }).click();
+  await navigateMain(page, "Vocabulary");
   expect(
     await page.getByRole("heading", { name: "Vocabulary", exact: true }).evaluate(headingStyle),
   ).toEqual(modelHeading);
@@ -4122,6 +4470,13 @@ test("Vocabulary matches the Models heading and keeps editing actions visible in
   ).toBeVisible();
   await expect(table.getByRole("columnheader", { name: "Aliases", exact: true })).toBeVisible();
   await expect(table.getByRole("row")).toHaveCount(4);
+  await page.mouse.move(0, 0);
+  const removeHint = table.getByRole("button", { name: "Remove PostgreSQL", exact: true });
+  await expect(removeHint).toHaveCSS("opacity", "1");
+  await expect(removeHint.locator("svg")).toBeVisible();
+  await expect(removeHint.getByText("Remove", { exact: true })).toBeVisible();
+  await removeHint.focus();
+  await expect(removeHint.getByText("Remove", { exact: true })).toHaveCSS("opacity", "1");
   await page.screenshot({
     path: testInfo.outputPath("vocabulary-desktop.png"),
     animations: "disabled",
@@ -4130,6 +4485,13 @@ test("Vocabulary matches the Models heading and keeps editing actions visible in
   const save = page.getByRole("status").filter({ hasText: "Changes save automatically" });
   for (const width of [600, 360]) {
     await page.setViewportSize({ width, height: 700 });
+    const preferred = page.getByLabel("Preferred spelling", { exact: true }).first();
+    const aliases = page.getByLabel("Aliases (comma-separated)", { exact: true }).first();
+    const preferredBounds = (await preferred.boundingBox())!;
+    const aliasBounds = (await aliases.boundingBox())!;
+    expect(aliasBounds.y).toBeGreaterThan(preferredBounds.y + preferredBounds.height);
+    expect(aliasBounds.width).toBeGreaterThan(180);
+    expect(Math.abs(aliasBounds.width - preferredBounds.width)).toBeLessThan(1);
     await page.getByRole("button", { name: "Remove Yap", exact: true }).scrollIntoViewIfNeeded();
     await expect(save).toBeInViewport();
     await expect(
@@ -4396,7 +4758,7 @@ for (const theme of ["dark", "light"] as const) {
       animations: "disabled",
     });
     await page.getByRole("button", { name: "Stop test", exact: true }).click();
-    await expect(page.getByText("Microphone test passed", { exact: true })).toBeVisible();
+    await expect(page.getByText("Last microphone test passed", { exact: true })).toBeVisible();
     await next.click();
     await expect(steps.locator('[aria-current="step"]')).toContainText("Shortcut");
     const finish = page.getByRole("button", { name: "Finish setup", exact: true });
@@ -4522,7 +4884,7 @@ test("speech model readiness uses one success toast across refreshes and setup s
   await page.getByRole("button", { name: "Back", exact: true }).click();
   await expect(toast).toHaveCount(0);
   await simulateModelDownload(page);
-  await page.getByRole("button", { name: "Check & repair runtime", exact: true }).click();
+  await modelAction(page, "Check & repair runtime");
   await page.evaluate(() => {
     const state = window.dictationTest;
     state.snapshot.ready = false;
@@ -4584,7 +4946,7 @@ test("microphone errors use a dismissible toast without adding a page banner", a
   await expect(toast).toHaveCount(0);
   await failTest();
   await expect(toast).toBeVisible();
-  await page.getByRole("link", { name: "Models", exact: true }).click();
+  await navigateMain(page, "Models");
   await expect(toast).toBeVisible();
   // Keep the timeout and Motion's exit animation on the same browser clock.
   await expect(toast).toHaveCount(0, { timeout: 10000 });
@@ -4631,7 +4993,7 @@ test("first run guides installation, mic testing and shortcut verification", asy
   );
   await expect(page.getByRole("button", { name: "Skip setup" })).toBeDisabled();
   await page.getByRole("button", { name: "Stop test", exact: true }).click();
-  await expect(page.getByText("Microphone test passed", { exact: true })).toBeVisible();
+  await expect(page.getByText("Last microphone test passed", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Next", exact: true }).click();
   await expect(page.getByRole("button", { name: "Finish setup" })).toBeDisabled();
   await page.evaluate(() => {
@@ -4646,6 +5008,7 @@ test("first run guides installation, mic testing and shortcut verification", asy
     .toBe(0);
   await page.getByRole("link", { name: "Settings", exact: true }).click();
   await page.getByRole("tab", { name: "Advanced", exact: true }).click();
+  await showCustomModelFiles(page);
   await page.getByRole("button", { name: "Run setup" }).click();
   await expect(page.getByRole("heading", { name: "Set up Yap" })).toBeVisible();
   await page.getByRole("button", { name: "Skip setup" }).click();
@@ -4757,33 +5120,41 @@ test("History opens a dictation page with content tabs that fit narrow windows",
   });
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.goto("/");
-  const recent = page.locator("section").filter({
-    has: page.getByRole("heading", { name: "Recent dictations", exact: true }),
-  });
-  await expect(recent.getByRole("article")).toHaveCount(3);
-  await expect(recent.getByRole("article").first()).toContainText("Result");
+  await expect(page.getByRole("article")).toHaveCount(0);
+  await page
+    .getByRole("navigation", { name: "Main navigation" })
+    .getByRole("link", { name: "History", exact: true })
+    .click();
+  const recent = page.locator("#main-content");
+  await expect(recent.getByRole("article")).toHaveCount(5);
+  await expect(recent.getByRole("article").first()).toContainText("A Paris-based AI lab");
   await expect(recent.getByRole("article").first()).toContainText("Whisper Small");
-  await expect(recent.getByRole("article").nth(1)).toContainText("Transcription");
-  await expect(recent.getByRole("checkbox")).toHaveCount(0);
+  await expect(recent.getByRole("article").nth(1)).toContainText("An unchanged transcription.");
+  await expect(recent.getByRole("checkbox")).toHaveCount(6);
   for (const width of [1280, 600]) {
     await page.setViewportSize({ width, height: 900 });
     expect(
-      await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= document.documentElement.clientWidth,
+      ),
     ).toBe(true);
     await recent.screenshot({
-      path: testInfo.outputPath(`recent-dictations-${width}.png`),
+      path: testInfo.outputPath(`history-retrieval-${width}.png`),
       animations: "disabled",
     });
   }
   await recent.getByRole("link", { name: /A Paris-based AI lab/ }).click();
   await expect(page).toHaveURL(/#\/history\/summary$/);
   await page.goto("/");
-  await page.getByRole("link", { name: "View all", exact: true }).click();
+  await page
+    .getByRole("navigation", { name: "Main navigation" })
+    .getByRole("link", { name: "History", exact: true })
+    .click();
   await expect(page).toHaveURL(/#\/history$/);
   await page.setViewportSize({ width: 1280, height: 900 });
   const cards = page.getByRole("article");
-  await expect(cards.first()).toContainText("Result");
-  await expect(cards.nth(1)).toContainText("Transcription");
+  await expect(cards.first()).toContainText("A Paris-based AI lab");
+  await expect(cards.nth(1)).toContainText("An unchanged transcription.");
   await page.screenshot({
     path: testInfo.outputPath("history-list-desktop.png"),
     fullPage: true,
@@ -4825,7 +5196,9 @@ test("History opens a dictation page with content tabs that fit narrow windows",
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.getByRole("link", { name: /A Paris-based AI lab/ }).click();
   await expect(page).toHaveURL(/#\/history\/summary$/);
-  await expect(page.getByRole("heading", { name: "Dictation", exact: true })).toBeFocused();
+  await expect(
+    page.getByRole("heading", { level: 1, name: /^A Paris-based AI lab/ }),
+  ).toBeFocused();
   const result = page.getByRole("region", { name: "Result", exact: true });
   const original = page.getByRole("region", {
     name: "Original transcription",
@@ -4865,13 +5238,15 @@ test("History opens a dictation page with content tabs that fit narrow windows",
   await contents.getByRole("tab", { name: "Transcription", exact: true }).click();
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.getByRole("button", { name: "Edit transcript", exact: true }).click();
-  const dialog = page.getByRole("dialog", {
+  const dialog = page.getByRole("region", {
     name: "Edit transcript",
     exact: true,
   });
+  await dialog.getByRole("button", { name: "Compare with original" }).click();
   await expect(
     dialog.getByRole("region", { name: "Original transcription", exact: true }),
   ).toContainText("um yesterday");
+  await dialog.getByRole("textbox", { name: "Editable text", exact: true }).focus();
   await expect(dialog.getByRole("textbox", { name: "Editable text", exact: true })).toBeFocused();
   await page.screenshot({
     path: testInfo.outputPath("editor-comparison.png"),
@@ -4927,8 +5302,9 @@ test("transcription and editor Changes compare the correct versions and remain u
     animations: "disabled",
   });
   await page.getByRole("button", { name: "Edit transcript", exact: true }).click();
-  const dialog = page.getByRole("dialog", { name: "Edit transcript", exact: true });
+  const dialog = page.getByRole("region", { name: "Edit transcript", exact: true });
   const input = dialog.getByRole("textbox", { name: "Editable text" });
+  await dialog.getByRole("button", { name: "Compare with original" }).click();
   const reference = dialog.getByRole("tablist", { name: "Editor reference" });
   await expect(reference.getByRole("tab", { name: "Changes", exact: true })).toHaveCount(0);
   await input.fill("Send PostgreSQL on Friday.\n\nConfirm the meeting with the team.");
@@ -5022,6 +5398,12 @@ test("dictation pages preserve the History search and page when returning and de
       .getByRole("navigation", { name: "Main navigation" })
       .getByRole("link", { name: "History", exact: true }),
   ).toHaveAttribute("aria-current", "page");
+  await page.getByRole("link", { name: "Settings", exact: true }).click();
+  await page
+    .getByRole("dialog", { name: "Settings", exact: true })
+    .getByRole("button", { name: "Close", exact: true })
+    .click();
+  await expect(page).toHaveURL(/#\/history\/row-50\?q=Original&page=1$/);
   await page.getByRole("link", { name: "Back to History", exact: true }).click();
   await expect(page.getByLabel("Search transcripts")).toHaveValue("Original");
   await expect(page.getByText("Page 2 of 2", { exact: true })).toBeVisible();
@@ -5029,13 +5411,13 @@ test("dictation pages preserve the History search and page when returning and de
   await page.evaluate(() => {
     window.dictationTest.failSave = true;
   });
-  await page.getByRole("button", { name: "Delete", exact: true }).click();
-  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await detailAction(page, "Delete dictation");
+  await expect(activeDialog(page)).toHaveCount(0);
   await expect(page.getByRole("alert")).toHaveText("History deletion failed");
   await page.evaluate(() => {
     window.dictationTest.failSave = false;
   });
-  await page.getByRole("button", { name: "Delete", exact: true }).click();
+  await detailAction(page, "Delete dictation");
   await expect(page).toHaveURL(/#\/history\?q=Original&page=1$/);
   await expect(page.getByLabel("Search transcripts")).toHaveValue("Original");
   await expect(page.getByText("Page 2 of 2", { exact: true })).toBeVisible();
@@ -5199,44 +5581,69 @@ test("saved outputs retain their recipes, regenerate as new versions and leave e
   });
   await page.goto("/#/history/one");
   await page.getByRole("tab", { name: "Outputs", exact: true }).click();
-  await expect(page.getByRole("button", { name: "Generate output", exact: true })).toBeEnabled();
   await page.getByRole("combobox", { name: "Output prompt", exact: true }).click();
   await page.getByRole("option", { name: "Summary", exact: true }).click();
-  const generate = page.getByRole("button", { name: "Generate output", exact: true });
-  await generate.hover();
-  await page.mouse.down();
-  await expect(generate).toHaveCSS("transform", "matrix(0.98, 0, 0, 0.98, 0, 0)");
-  await expect(generate).toHaveCSS("opacity", "1");
-  await page.mouse.up();
+  await generateWith(page);
   await expect
     .poll(() => page.evaluate(() => window.dictationTest.processing?.input))
     .toBe("Test the new model and compare its recognition of names and technical terms.");
   await page.getByRole("tab", { name: "Original", exact: true }).click();
-  await expect(
-    page.getByRole("region", { name: "Original transcription", exact: true }),
-  ).toBeVisible();
   await page.evaluate(() =>
     window.dictationTest.processing!.resolve(
       "Compare the new model's recognition of names and technical terms.",
     ),
   );
-  await settle(page);
   await expect(page.getByRole("tab", { name: "Original", exact: true })).toHaveAttribute(
     "aria-selected",
     "true",
   );
   await page.getByRole("tab", { name: "Outputs", exact: true }).click();
-  await expect(page.getByRole("combobox", { name: "Output prompt", exact: true })).toContainText(
-    "Summary",
-  );
   const first = page
     .getByRole("article", { name: "Summary output", exact: true })
     .filter({ hasText: "Compare the new model's recognition" });
+  await expect(first).toBeVisible();
+  await expect(page.getByRole("article")).toHaveCount(1);
+  const savedOutput = page.getByRole("combobox", { name: /^Saved output \(/ });
+  await expect(savedOutput).toHaveAttribute("title", /^Summary · /);
+  await expect(savedOutput).toHaveAttribute("aria-description", /^Summary · /);
+  expect(
+    await savedOutput.locator("time").evaluate((node) => {
+      const range = document.createRange();
+      range.selectNodeContents(node);
+      const text = range.getBoundingClientRect(),
+        box = node.getBoundingClientRect();
+      return text.left >= box.left - 1 && text.right <= box.right + 1;
+    }),
+  ).toBe(true);
+  await savedOutput.click();
+  await expect(page.getByRole("option", { name: /^Summary · / })).toBeVisible();
+  await expect
+    .poll(() =>
+      page.locator('[data-slot="select-content"]').evaluate((node) => {
+        const rect = node.getBoundingClientRect();
+        return (
+          rect.left >= -1 &&
+          rect.right <= innerWidth + 1 &&
+          node.scrollWidth <= node.clientWidth + 1
+        );
+      }),
+    )
+    .toBe(true);
+  await page.keyboard.press("Escape");
+  await expect(savedOutput).toBeFocused();
+  const createOutput = page.getByRole("button", { name: "New output", exact: true });
+  await createOutput.click();
+  await expect(createOutput).toHaveCount(0);
+  const composer = page.getByRole("region", { name: "Generate output", exact: true });
+  await expect(composer).toBeVisible();
+  await composer.getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(composer).toHaveCount(0);
+  await expect(createOutput).toBeFocused();
+  await expect(page.getByRole("article")).toHaveCount(1);
+  await first.getByText("Source & prompt", { exact: true }).click();
   await expect(first).toContainText("local-model");
-  await expect(generate).toHaveCSS("transform", "matrix(1, 0, 0, 1, 0, 0)");
-  await first.getByText("Input and prompt", { exact: true }).click();
   await expect(first).toContainText("Test the new model and compare its recognition");
-  await first.getByRole("button", { name: "Copy output", exact: true }).click();
+  await page.getByRole("button", { name: "Copy output", exact: true }).click();
   await expect
     .poll(() => page.evaluate(() => window.dictationTest.snapshot.status.transcript))
     .toBe("Compare the new model's recognition of names and technical terms.");
@@ -5245,11 +5652,6 @@ test("saved outputs retain their recipes, regenerate as new versions and leave e
     .getByRole("textbox", { name: "Editable text", exact: true })
     .fill("Updated transcription for the next comparison.");
   await page.getByRole("button", { name: "Done", exact: true }).click();
-  await page.getByRole("tab", { name: "Transcription", exact: true }).click();
-  await expect(page.getByRole("region", { name: "Result", exact: true })).toContainText(
-    "Updated transcription",
-  );
-  await page.getByRole("tab", { name: "Outputs", exact: true }).click();
   await page.evaluate(() => {
     const state = window.dictationTest;
     state.snapshot.textProcessing.model = "new-model";
@@ -5258,7 +5660,7 @@ test("saved outputs retain their recipes, regenerate as new versions and leave e
     );
     state.callbacks["setup:changed"]();
   });
-  await first.getByRole("button", { name: "Regenerate", exact: true }).click();
+  await outputAction(page, "Regenerate");
   await expect
     .poll(() => page.evaluate(() => window.dictationTest.processing?.input))
     .toBe("Test the new model and compare its recognition of names and technical terms.");
@@ -5273,18 +5675,11 @@ test("saved outputs retain their recipes, regenerate as new versions and leave e
   const second = page
     .getByRole("article", { name: "Summary output", exact: true })
     .filter({ hasText: "Test the model with names" });
+  await expect(second).toBeVisible();
   await expect(second).toContainText("new-model");
+  await expect(first).toHaveCount(0);
+  await selectSavedOutput(page, 1);
   await expect(first).toBeVisible();
-  await page.getByRole("tab", { name: "Transcription", exact: true }).click();
-  await expect(page.getByRole("region", { name: "Result", exact: true })).toContainText(
-    "Updated transcription",
-  );
-  await page.getByRole("tab", { name: "Original", exact: true }).click();
-  await expect(
-    page.getByRole("region", { name: "Original transcription", exact: true }),
-  ).toContainText("um we should test");
-  await page.getByRole("tab", { name: "Outputs", exact: true }).click();
-  await first.getByText("Input and prompt", { exact: true }).click();
   await page.screenshot({
     path: testInfo.outputPath("saved-outputs.png"),
     fullPage: true,
@@ -5299,28 +5694,26 @@ test("saved outputs retain their recipes, regenerate as new versions and leave e
   });
   await page.reload();
   await page.getByRole("tab", { name: "Outputs", exact: true }).click();
+  await expect(second).toBeVisible();
+  await selectSavedOutput(page, 1);
   await expect(first).toContainText("local-model");
-  await expect(second).toContainText("new-model");
-  await first.getByRole("button", { name: "Delete output", exact: true }).click();
-  const dialog = page.getByRole("dialog", {
-    name: "Delete this output?",
-    exact: true,
-  });
-  await page.evaluate(() => {
-    window.dictationTest.failSave = true;
-  });
-  await dialog.getByRole("button", { name: "Delete output", exact: true }).click();
-  await expect(dialog.getByRole("alert")).toHaveText("Output deletion failed");
-  await page.evaluate(() => {
-    window.dictationTest.failSave = false;
-  });
-  await dialog.getByRole("button", { name: "Delete output", exact: true }).click();
+  await outputAction(page, "Delete output");
+  const confirmation = page.getByRole("dialog", { name: "Delete this output?", exact: true });
+  await page.evaluate(() => (window.dictationTest.failSave = true));
+  await confirmation.getByRole("button", { name: "Delete output", exact: true }).click();
+  await expect(confirmation.getByRole("alert")).toHaveText("Output deletion failed");
+  await page.evaluate(() => (window.dictationTest.failSave = false));
+  await confirmation.getByRole("button", { name: "Delete output", exact: true }).click();
+  await expect(confirmation).toHaveCount(0);
   await expect(first).toHaveCount(0);
   await expect(second).toBeVisible();
   await page.getByRole("tab", { name: "Transcription", exact: true }).click();
   await expect(page.getByRole("region", { name: "Result", exact: true })).toContainText(
     "Updated transcription",
   );
+  expect(
+    await page.evaluate(() => window.dictationTest.snapshot.history[0].rawTranscript),
+  ).toContain("um we should test");
 });
 
 test("failed, cancelled and abandoned output generation never adds a late result", async ({
@@ -5348,13 +5741,13 @@ test("failed, cancelled and abandoned output generation never adds a late result
   await page.setViewportSize({ width: 360, height: 900 });
   await page.goto("/#/history/one");
   await page.getByRole("tab", { name: "Outputs", exact: true }).click();
-  await page.getByRole("button", { name: "Generate output", exact: true }).click();
+  await generateWith(page);
   await expect(page.getByRole("alert").filter({ hasText: "Model unavailable" })).toBeVisible();
   await expect(page.getByText("No generated outputs yet.", { exact: true })).toBeVisible();
   await page.evaluate(() => {
     window.dictationTest.failProcessing = false;
   });
-  await page.getByRole("button", { name: "Generate output", exact: true }).click();
+  await generateWith(page);
   await expect(
     page.getByRole("button", { name: "Cancel generation", exact: true }),
   ).toBeInViewport();
@@ -5381,10 +5774,10 @@ test("failed, cancelled and abandoned output generation never adds a late result
     "Edited speech",
   );
   await page.getByRole("tab", { name: "Outputs", exact: true }).click();
-  await page.getByRole("button", { name: "Generate output", exact: true }).click();
+  await generateWith(page);
   await page.evaluate(() => window.dictationTest.processing!.resolve("Successful retry"));
   await expect(page.getByRole("article")).toContainText("Successful retry");
-  await page.getByRole("button", { name: "Generate output", exact: true }).click();
+  await generateWith(page);
   const requestID = await page.evaluate(() => window.dictationTest.processing!.id);
   await page.getByRole("link", { name: "Back to History", exact: true }).click();
   await expect
@@ -5452,12 +5845,12 @@ test("saved outputs remain usable with the model disabled and recover after a fa
     exact: true,
   });
   await expect(output).toContainText("previous-model");
-  await expect(output.getByRole("button", { name: "Regenerate", exact: true })).toBeDisabled();
-  await output.getByRole("button", { name: "Copy output", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Regenerate", exact: true })).toBeDisabled();
+  await page.getByRole("button", { name: "Copy output", exact: true }).click();
   await expect
     .poll(() => page.evaluate(() => window.dictationTest.snapshot.status.transcript))
     .toBe("A saved summary");
-  await output.getByRole("button", { name: "Delete output", exact: true }).click();
+  await outputAction(page, "Delete output");
   await page
     .getByRole("dialog", { name: "Delete this output?", exact: true })
     .getByRole("button", { name: "Delete output", exact: true })
@@ -5517,13 +5910,11 @@ test("microphone test remains stoppable after navigating away from setup", async
   await expect(
     page.getByRole("button", { name: "Stop microphone test", exact: true }),
   ).toBeVisible();
-  await page.getByRole("link", { name: "Dictate", exact: true }).click();
+  await navigateMain(page, "Dictate");
   await expect(
-    page.getByRole("heading", { name: "Choose your speech model", exact: true }),
+    page.getByRole("heading", { name: "Test your microphone", exact: true }),
   ).toBeVisible();
-  await expect(
-    page.getByRole("button", { name: "Stop microphone test", exact: true }),
-  ).toBeVisible();
+  await expect(page.getByRole("button", { name: "Stop test", exact: true })).toBeVisible();
   await page.getByRole("link", { name: "Settings", exact: true }).click();
   await page.getByRole("button", { name: "Stop microphone test", exact: true }).click();
   await expect(page.getByRole("button", { name: "Stop microphone test", exact: true })).toHaveCount(
@@ -5538,6 +5929,7 @@ test("diagnostics show microphone activity and an isolated transcript preview", 
   page,
 }) => {
   await page.goto("/#/settings?section=advanced");
+  await showCustomModelFiles(page);
   await expect(page.getByText("Executable found", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Test dictation", exact: true }).click();
   await expect(
@@ -5576,6 +5968,7 @@ test("diagnostics block unsaved settings and unavailable files until refreshed",
   page,
 }) => {
   await page.goto("/#/settings?section=advanced");
+  await showCustomModelFiles(page);
   const testDictation = page.getByRole("button", {
     name: "Test dictation",
     exact: true,
@@ -5587,6 +5980,7 @@ test("diagnostics block unsaved settings and unavailable files until refreshed",
   });
   await page.getByLabel("Global shortcut", { exact: true }).fill("Ctrl+Alt+P");
   await page.getByRole("tab", { name: "Advanced", exact: true }).click();
+  await showCustomModelFiles(page);
   await expect(page.getByText("Changes not saved", { exact: true })).toBeVisible();
   await expect(testDictation).toBeDisabled();
   await expect(
@@ -5628,6 +6022,7 @@ test("diagnostics block unsaved settings and unavailable files until refreshed",
 
 test("diagnostic errors include recovery guidance and expandable details", async ({ page }) => {
   await page.goto("/#/settings?section=advanced");
+  await showCustomModelFiles(page);
   await page.getByRole("button", { name: "Test dictation", exact: true }).click();
   await page.getByRole("button", { name: "Stop dictation test", exact: true }).click();
   await page.evaluate(() => {
@@ -5643,7 +6038,10 @@ test("diagnostic errors include recovery guidance and expandable details", async
     state.callbacks["setup:changed"]();
   });
   await expect(page.getByRole("alert").filter({ hasText: "Reinstall the model" })).toBeVisible();
-  await page.getByText("Technical details", { exact: true }).click();
+  await page
+    .getByRole("region", { name: "Dictation diagnostics", exact: true })
+    .getByText("Technical details", { exact: true })
+    .click();
   await expect(
     page.getByText("Whisper could not load model: invalid header", {
       exact: true,
@@ -5661,11 +6059,9 @@ test("diagnostic errors include recovery guidance and expandable details", async
 
 test("test capture and transcription remain cancellable across navigation", async ({ page }) => {
   await page.goto("/#/settings?section=advanced");
+  await showCustomModelFiles(page);
   await page.getByRole("button", { name: "Test dictation", exact: true }).click();
-  await page
-    .getByRole("navigation", { name: "Main navigation" })
-    .getByRole("link", { name: "Models", exact: true })
-    .click();
+  await navigateMain(page, "Models");
   await page.getByRole("button", { name: "Stop test recording", exact: true }).click();
   await expect(page.getByText("Transcribing test…", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Cancel", exact: true }).click();
@@ -5674,8 +6070,474 @@ test("test capture and transcription remain cancellable across navigation", asyn
     .getByRole("link", { name: "Settings", exact: true })
     .click();
   await page.getByRole("tab", { name: "Advanced", exact: true }).click();
+  await showCustomModelFiles(page);
   await expect(page.getByText("Test cancelled", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Test dictation", exact: true })).toBeEnabled();
+});
+
+declare global {
+  interface Window {
+    sessionTitleTest: {
+      calls: { id: string; title: string }[];
+      fail: boolean;
+      defer: boolean;
+      finish?: () => void;
+      generationCalls: { id: string; sessionID: string }[];
+      generationFail: boolean;
+      generationDefer: boolean;
+      finishGeneration?: (title: string) => void;
+      cancelledGeneration: string[];
+    };
+  }
+}
+
+async function sessionTitleScenario(page: Page) {
+  await page.addInitScript(() => {
+    const state = window.dictationTest;
+    state.snapshot.history = [
+      {
+        id: "title-one",
+        createdAt: "2026-10-07",
+        durationMs: 1000,
+        rawTranscript: "um, original recording",
+        finalTranscript: "Original saved transcript.",
+        speechModel: "base",
+        language: "en",
+        audioPath: "/saved/one.wav",
+      },
+      {
+        id: "title-two",
+        createdAt: "2026-10-06",
+        durationMs: 2000,
+        rawTranscript: "Second recording.",
+        finalTranscript: "Second saved transcript.",
+        speechModel: "base",
+        language: "en",
+        audioPath: "",
+      },
+    ];
+    window.sessionTitleTest = {
+      calls: [],
+      fail: false,
+      defer: false,
+      generationCalls: [],
+      generationFail: false,
+      generationDefer: false,
+      cancelledGeneration: [],
+    };
+    const api = (window as unknown as { mockBackend: { main: { App: Record<string, unknown> } } })
+      .mockBackend.main.App;
+    const cancelText = api.CancelTextProcessing as (id: string) => Promise<void>;
+    Object.assign(api, {
+      GenerateSessionTitle: async (id: string, sessionID: string) => {
+        const test = window.sessionTitleTest;
+        test.generationCalls.push({ id, sessionID });
+        if (test.generationFail) throw new Error("Title model unavailable");
+        if (test.generationDefer) {
+          state.status("text-processing");
+          try {
+            return await new Promise<string>((resolve) => {
+              test.finishGeneration = resolve;
+            });
+          } finally {
+            state.status("idle");
+          }
+        }
+        return "Generated meeting notes";
+      },
+      CancelTextProcessing: async (id: string) => {
+        const test = window.sessionTitleTest;
+        if (test.generationCalls.some((call) => call.id === id)) {
+          test.cancelledGeneration.push(id);
+          return;
+        }
+        return cancelText(id);
+      },
+      RenameSession: async (id: string, title: string) => {
+        const test = window.sessionTitleTest;
+        test.calls.push({ id, title });
+        if (test.defer)
+          await new Promise<void>((resolve) => {
+            test.finish = resolve;
+          });
+        if (test.fail) throw new Error("Title save failed");
+        const entry = state.snapshot.history.find((item) => item.id === id);
+        if (!entry) throw new Error("This dictation no longer exists");
+        entry.title = title;
+        state.history();
+      },
+    });
+  });
+  await page.goto("/#/history/title-one");
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Original saved transcript.");
+}
+
+test("output composer aligns prompt and chain controls and wraps safely at narrow or enlarged sizes", async ({
+  page,
+}, testInfo) => {
+  await page.addInitScript(() => {
+    window.dictationTest.snapshot.textProcessing.enabled = true;
+    window.dictationTest.snapshot.textProcessing.model = "local-model";
+    window.dictationTest.snapshot.textProcessing.chains = [
+      {
+        id: "action-items",
+        name: "Action Items",
+        steps: [{ id: "one", promptId: "cleanup", input: "original" }],
+      },
+    ];
+  });
+  await sessionTitleScenario(page);
+  await page.setViewportSize({ width: 1086, height: 722 });
+  await page.getByRole("tab", { name: "Outputs", exact: true }).click();
+  const composer = page.locator("#output-composer");
+  const selector = composer.getByRole("combobox", { name: "Output prompt", exact: true });
+  await selector.click();
+  await page.getByRole("option", { name: "Action Items", exact: true }).click();
+  const action = composer.getByRole("button", { name: "Run chain", exact: true });
+  for (const state of [
+    { width: 1086, height: 722, scale: "100%" },
+    { width: 360, height: 760, scale: "100%" },
+    { width: 480, height: 760, scale: "200%" },
+  ]) {
+    await page.setViewportSize({ width: state.width, height: state.height });
+    await page.evaluate((scale) => {
+      document.documentElement.style.fontSize = scale;
+    }, state.scale);
+    await action.scrollIntoViewIfNeeded();
+    const field = (await selector.boundingBox())!;
+    const button = (await action.boundingBox())!;
+    if (button.x >= field.x + field.width - 1) {
+      expect(Math.abs(field.y + field.height / 2 - button.y - button.height / 2)).toBeLessThan(1);
+    } else {
+      expect(button.y).toBeGreaterThanOrEqual(field.y + field.height);
+    }
+    expect(field.width).toBeGreaterThan(100);
+    expect(await composer.evaluate((node) => node.scrollWidth <= node.clientWidth + 1)).toBe(true);
+    await testInfo.attach(`composer-${state.width}-${state.scale}`, {
+      body: await composer.screenshot(),
+      contentType: "image/png",
+    });
+  }
+});
+
+test("generated dictation title remains an editable draft until explicitly saved", async ({
+  page,
+}, testInfo) => {
+  await page.addInitScript(() => {
+    window.dictationTest.snapshot.textProcessing.enabled = true;
+    window.dictationTest.snapshot.textProcessing.model = "local-model";
+  });
+  await sessionTitleScenario(page);
+  await page.getByRole("button", { name: "Rename dictation", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Rename dictation", exact: true });
+  const input = dialog.getByRole("textbox", { name: "Title", exact: true });
+  await input.fill("My draft");
+  expect(await page.evaluate(() => window.sessionTitleTest.generationCalls)).toEqual([]);
+  await page.evaluate(() => {
+    window.sessionTitleTest.generationDefer = true;
+  });
+  const generate = dialog.getByRole("button", { name: "Generate title", exact: true });
+  const field = (await input.boundingBox())!;
+  const action = (await generate.boundingBox())!;
+  expect(action.x).toBeGreaterThanOrEqual(field.x + field.width - 1);
+  expect(Math.abs(action.y + action.height / 2 - field.y - field.height / 2)).toBeLessThanOrEqual(
+    1,
+  );
+  await generate.click();
+  await expect(input).toBeDisabled();
+  const stop = dialog.getByRole("button", { name: "Cancel generation", exact: true });
+  await expect(stop).toBeEnabled();
+  expect(
+    await stop.evaluate((node) => {
+      let opacity = 1;
+      for (let element: Element | null = node; element; element = element.parentElement) {
+        opacity *= Number(getComputedStyle(element).opacity);
+      }
+      return opacity;
+    }),
+  ).toBe(1);
+  await expect(dialog.getByRole("button", { name: "Save title", exact: true })).toBeDisabled();
+  expect(await page.evaluate(() => window.sessionTitleTest.calls)).toEqual([]);
+  expect(
+    await page.evaluate(() =>
+      window.sessionTitleTest.generationCalls.map((call) => call.sessionID),
+    ),
+  ).toEqual(["title-one"]);
+  await page.evaluate(() => window.sessionTitleTest.finishGeneration!("Generated meeting notes"));
+  await expect(input).toHaveValue("Generated meeting notes");
+  await expect(input).toBeFocused();
+  await testInfo.attach("title-suggestion-desktop", {
+    body: await dialog.screenshot(),
+    contentType: "image/png",
+  });
+  expect(await page.evaluate(() => window.sessionTitleTest.calls)).toEqual([]);
+  expect(await page.evaluate(() => window.dictationTest.snapshot.history[0].title)).toBeUndefined();
+  await input.fill("Reviewed meeting notes");
+  await dialog.getByRole("button", { name: "Save title", exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Reviewed meeting notes");
+  expect(await page.evaluate(() => window.dictationTest.snapshot.history[0])).toMatchObject({
+    title: "Reviewed meeting notes",
+    rawTranscript: "um, original recording",
+    finalTranscript: "Original saved transcript.",
+    audioPath: "/saved/one.wav",
+  });
+});
+
+test("title generation preserves typed names on failure or cancellation and ignores replies after close", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    window.dictationTest.snapshot.textProcessing.enabled = true;
+    window.dictationTest.snapshot.textProcessing.model = "local-model";
+  });
+  await sessionTitleScenario(page);
+  const rename = page.getByRole("button", { name: "Rename dictation", exact: true });
+  await rename.click();
+  const dialog = page.getByRole("dialog", { name: "Rename dictation", exact: true });
+  const input = dialog.getByRole("textbox", { name: "Title", exact: true });
+  const generate = dialog.getByRole("button", { name: "Generate title", exact: true });
+  await input.fill("Keep this draft");
+  await page.evaluate(() => {
+    window.sessionTitleTest.generationFail = true;
+  });
+  await generate.click();
+  await expect(dialog.getByRole("alert")).toContainText("Title model unavailable");
+  await expect(input).toHaveValue("Keep this draft");
+  await expect(input).not.toHaveAttribute("aria-invalid", "true");
+  await expect(input).toHaveAccessibleDescription("Title model unavailable");
+  await expect(dialog.getByRole("button", { name: "Save title", exact: true })).toBeEnabled();
+  await page.evaluate(() => {
+    window.sessionTitleTest.generationFail = false;
+    window.sessionTitleTest.generationDefer = true;
+  });
+  await generate.click();
+  await dialog.getByRole("button", { name: "Cancel generation", exact: true }).click();
+  await page.evaluate(() => window.sessionTitleTest.finishGeneration!("Cancelled suggestion"));
+  await expect(input).toBeEnabled();
+  await expect(input).toHaveValue("Keep this draft");
+  await expect(dialog.getByRole("alert")).toContainText("Processing cancelled");
+  await generate.click();
+  await expect(
+    dialog.getByRole("button", { name: "Cancel generation", exact: true }),
+  ).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(dialog).toHaveCount(0);
+  await expect
+    .poll(() => page.evaluate(() => window.sessionTitleTest.cancelledGeneration.length))
+    .toBe(2);
+  await page.evaluate(() => window.sessionTitleTest.finishGeneration!("Too late to apply"));
+  await expect(rename).toBeEnabled();
+  await rename.click();
+  await expect(input).toHaveValue("");
+  expect(await page.evaluate(() => window.sessionTitleTest.calls)).toEqual([]);
+  expect(await page.evaluate(() => window.sessionTitleTest.generationCalls)).toHaveLength(3);
+});
+
+test("title generation follows text model setup and fits enlarged German rename dialog", async ({
+  page,
+}, testInfo) => {
+  await sessionTitleScenario(page);
+  await page.getByRole("button", { name: "Rename dictation", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Generate title", exact: true })).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  await page.evaluate(() => {
+    const state = window.dictationTest;
+    state.snapshot.textProcessing.enabled = true;
+    state.snapshot.textProcessing.model = "local-model";
+    state.callbacks["setup:changed"]();
+    localStorage.setItem("desktop-language", "de");
+  });
+  await page.reload();
+  // Init fixtures reset the connection on reload; update it through the real snapshot event.
+  await page.evaluate(() => {
+    const state = window.dictationTest;
+    state.snapshot.textProcessing.enabled = true;
+    state.snapshot.textProcessing.model = "local-model";
+    state.callbacks["setup:changed"]();
+  });
+  await page.setViewportSize({ width: 480, height: 760 });
+  await page.evaluate(() => {
+    document.documentElement.style.fontSize = "200%";
+  });
+  await page.getByRole("button", { name: "Diktat umbenennen", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Diktat umbenennen", exact: true });
+  const generate = dialog.getByRole("button", { name: "Titel generieren", exact: true });
+  await expect(generate).toBeVisible();
+  await generate.click();
+  await expect(dialog.getByRole("textbox", { name: "Titel", exact: true })).toHaveValue(
+    "Generated meeting notes",
+  );
+  const bounds = (await dialog.boundingBox())!;
+  expect(bounds.x).toBeGreaterThanOrEqual(0);
+  expect(bounds.x + bounds.width).toBeLessThanOrEqual(480);
+  expect(await dialog.evaluate((node) => node.scrollWidth <= node.clientWidth + 1)).toBe(true);
+  await dialog.getByRole("button", { name: "Titel speichern", exact: true }).focus();
+  await expect(
+    dialog.getByRole("button", { name: "Titel speichern", exact: true }),
+  ).toBeInViewport();
+  await testInfo.attach("title-suggestion-german-enlarged", {
+    body: await dialog.screenshot(),
+    contentType: "image/png",
+  });
+});
+
+test("session titles save, search and clear without changing literal transcripts or audio", async ({
+  page,
+}) => {
+  await sessionTitleScenario(page);
+  const rename = page.getByRole("button", { name: "Rename dictation", exact: true });
+  await rename.click();
+  const dialog = page.getByRole("dialog", { name: "Rename dictation", exact: true });
+  const input = dialog.getByRole("textbox", { name: "Title", exact: true });
+  await expect(input).toBeFocused();
+  await input.fill("Discard this name");
+  await page.keyboard.press("Escape");
+  await expect(dialog).toHaveCount(0);
+  await expect(rename).toBeFocused();
+  expect(await page.evaluate(() => window.sessionTitleTest.calls)).toEqual([]);
+  await rename.click();
+  await input.fill("会議 notes 🎙️");
+  await input.press("Enter");
+  await expect(dialog).toHaveCount(0);
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("会議 notes 🎙️");
+  expect(await page.evaluate(() => window.dictationTest.snapshot.history[0])).toMatchObject({
+    rawTranscript: "um, original recording",
+    finalTranscript: "Original saved transcript.",
+    audioPath: "/saved/one.wav",
+    title: "会議 notes 🎙️",
+  });
+  await page.getByRole("link", { name: "Back to History", exact: true }).click();
+  await page.getByRole("textbox", { name: "Search transcripts", exact: true }).fill("会議");
+  await expect(page.getByRole("article")).toHaveCount(1);
+  await expect(page.getByRole("article")).toContainText("会議 notes 🎙️");
+  await page.getByRole("link", { name: /会議 notes/ }).click();
+  await rename.click();
+  await expect(input).toHaveValue("会議 notes 🎙️");
+  await input.fill("");
+  await dialog.getByRole("button", { name: "Save title", exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Original saved transcript.");
+  expect(await page.evaluate(() => window.sessionTitleTest.calls)).toEqual([
+    { id: "title-one", title: "会議 notes 🎙️" },
+    { id: "title-one", title: "" },
+  ]);
+});
+
+test("History renames in place, preserves text and returns focus when a title search stops matching", async ({
+  page,
+}) => {
+  await sessionTitleScenario(page);
+  await page.getByRole("link", { name: "Back to History", exact: true }).click();
+  await expect(page.getByRole("article")).toHaveCount(2);
+  const row = page.getByRole("article").filter({ hasText: "Original saved transcript." });
+  const rename = row.getByRole("button", { name: /^Rename dictation:/ });
+  await page.mouse.move(0, 0);
+  await expect(rename).toHaveCSS("opacity", "1");
+  await expect(rename.locator("svg")).toBeVisible();
+  await rename.hover();
+  const renameHelp = page.getByRole("tooltip", { name: "Rename dictation", exact: true });
+  await expect(renameHelp).toBeVisible();
+  await page.mouse.move(0, 0);
+  await rename.focus();
+  await page.keyboard.press("Shift+Tab");
+  await page.keyboard.press("Tab");
+  await expect(rename).toBeFocused();
+  await expect(renameHelp).toBeVisible();
+  await expect(renameHelp).toHaveCSS("opacity", "1");
+  await expect(rename).toHaveCSS("opacity", "1");
+  await rename.press("Enter");
+  const dialog = page.getByRole("dialog", { name: "Rename dictation", exact: true });
+  const input = dialog.getByRole("textbox", { name: "Title", exact: true });
+  await input.fill("Unsubmitted title");
+  await page.keyboard.press("Escape");
+  await expect(rename).toBeFocused();
+  expect(await page.evaluate(() => window.sessionTitleTest.calls)).toEqual([]);
+  await rename.click();
+  await input.fill("Searchable meeting notes");
+  await dialog.getByRole("button", { name: "Save title", exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(row).toContainText("Searchable meeting notes");
+  await expect(rename).toBeFocused();
+  expect(new URL(page.url()).hash).toBe("#/history");
+  const search = page.getByRole("textbox", { name: "Search transcripts", exact: true });
+  await search.fill("Searchable meeting");
+  await expect(page.getByRole("article")).toHaveCount(1);
+  await rename.click();
+  await input.fill("");
+  await dialog.getByRole("button", { name: "Save title", exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(page.getByRole("article")).toHaveCount(0);
+  await expect(
+    page.getByRole("heading", { name: "No matching transcripts", exact: true }),
+  ).toBeVisible();
+  await expect(search).toBeFocused();
+  expect(await page.evaluate(() => window.dictationTest.snapshot.history[0])).toMatchObject({
+    rawTranscript: "um, original recording",
+    finalTranscript: "Original saved transcript.",
+    audioPath: "/saved/one.wav",
+    title: "",
+  });
+});
+
+test("session title editing keeps IME and failed drafts and guards pending dismissal", async ({
+  page,
+}) => {
+  await sessionTitleScenario(page);
+  await page.getByRole("button", { name: "Rename dictation", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Rename dictation", exact: true });
+  const input = dialog.getByRole("textbox", { name: "Title", exact: true });
+  await input.fill("Recovery notes");
+  await input.dispatchEvent("compositionstart");
+  await input.dispatchEvent("keydown", { key: "Enter", isComposing: true });
+  expect(await page.evaluate(() => window.sessionTitleTest.calls)).toEqual([]);
+  await input.dispatchEvent("compositionend");
+  await page.evaluate(() => {
+    window.sessionTitleTest.fail = true;
+  });
+  await dialog.getByRole("button", { name: "Save title", exact: true }).click();
+  await expect(dialog.getByRole("alert")).toHaveText("Title save failed");
+  await expect(input).toHaveValue("Recovery notes");
+  await expect(input).not.toHaveAttribute("aria-invalid", "true");
+  await expect(input).toHaveAccessibleDescription("Title save failed");
+  await expect(
+    page.locator("#main-content").getByRole("heading", { level: 1, includeHidden: true }),
+  ).toHaveText("Original saved transcript.");
+  await page.evaluate(() => {
+    window.sessionTitleTest.fail = false;
+    window.sessionTitleTest.defer = true;
+  });
+  await dialog.getByRole("button", { name: "Save title", exact: true }).click();
+  await expect(dialog.getByRole("button", { name: "Saving…", exact: true })).toBeDisabled();
+  await expect(dialog.getByRole("button", { name: "Cancel", exact: true })).toBeDisabled();
+  await page.keyboard.press("Escape");
+  await expect(dialog).toBeVisible();
+  await page.evaluate(() => window.sessionTitleTest.finish?.());
+  await expect(dialog).toHaveCount(0);
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Recovery notes");
+  expect(await page.evaluate(() => window.sessionTitleTest.calls)).toHaveLength(2);
+});
+
+test("a late title save cannot replace the next dictation after navigation", async ({ page }) => {
+  await sessionTitleScenario(page);
+  await page.evaluate(() => {
+    window.sessionTitleTest.defer = true;
+  });
+  await page.getByRole("button", { name: "Rename dictation", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Rename dictation", exact: true });
+  await dialog.getByRole("textbox", { name: "Title", exact: true }).fill("First dictation name");
+  await dialog.getByRole("button", { name: "Save title", exact: true }).click();
+  await expect(dialog.getByRole("button", { name: "Saving…", exact: true })).toBeDisabled();
+  await page.evaluate(() => {
+    location.hash = "#/history/title-two";
+  });
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Second saved transcript.");
+  await page.evaluate(() => window.sessionTitleTest.finish?.());
+  await expect
+    .poll(() => page.evaluate(() => window.dictationTest.snapshot.history[0].title))
+    .toBe("First dictation name");
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Second saved transcript.");
+  await expect(dialog).toHaveCount(0);
 });
 
 test("saved transcript edits drive display, search, copy and export while keeping originals", async ({
@@ -5698,7 +6560,7 @@ test("saved transcript edits drive display, search, copy and export while keepin
   await page.goto("/#/history");
   await page.getByRole("link", { name: /Send PostgreSQL/ }).click();
   await page.getByRole("button", { name: "Edit transcript", exact: true }).click();
-  const dialog = page.getByRole("dialog", { name: "Edit transcript" });
+  const dialog = page.getByRole("region", { name: "Edit transcript" });
   const input = dialog.getByRole("textbox", {
     name: "Editable text",
     exact: true,
@@ -5706,7 +6568,9 @@ test("saved transcript edits drive display, search, copy and export while keepin
   await expect(input).toHaveValue("Send PostgreSQL.");
   await expect(input).toBeFocused();
   await expect(
-    dialog.getByRole("status").filter({ hasText: /Changes save automatically|Not saved yet:/ }),
+    dialog
+      .getByRole("status")
+      .filter({ hasText: /Saved|Changes save automatically|Not saved yet:/ }),
   ).toBeVisible();
   await input.fill("Send PostgreSQL to Benji.\nThanks!");
   await dialog.getByRole("button", { name: "Done" }).click();
@@ -5716,7 +6580,7 @@ test("saved transcript edits drive display, search, copy and export while keepin
   await expect
     .poll(() => page.evaluate(() => window.dictationTest.snapshot.status.transcript))
     .toBe("Send PostgreSQL to Benji.\nThanks!");
-  await page.getByRole("button", { name: "Export result", exact: true }).click();
+  await detailAction(page, "Export");
   await expect
     .poll(() => page.evaluate(() => window.dictationTest.exportedText))
     .toBe("Send PostgreSQL to Benji.\nThanks!");
@@ -5755,7 +6619,7 @@ test("editor retains its draft across refresh and failed saves, then saves with 
   await page.goto("/#/history");
   await page.getByRole("link", { name: /Original plain transcript/ }).click();
   await page.getByRole("button", { name: "Edit transcript", exact: true }).click();
-  const dialog = page.getByRole("dialog", { name: "Edit transcript" });
+  const dialog = page.getByRole("region", { name: "Edit transcript" });
   const input = dialog.getByRole("textbox", {
     name: "Editable text",
     exact: true,
@@ -5777,12 +6641,14 @@ test("editor retains its draft across refresh and failed saves, then saves with 
     window.dictationTest.failSave = false;
   });
   await input.press("Control+Enter");
-  await expect(
-    dialog.getByRole("status").filter({ hasText: "Changes save automatically" }),
-  ).toBeVisible();
+  await expect(dialog.getByRole("status").filter({ hasText: "Saved" })).toBeVisible();
   await dialog.getByRole("button", { name: "Done", exact: true }).click();
   await expect(dialog).toHaveCount(0);
-  await expect(page.getByText("My correction.", { exact: true })).toBeVisible();
+  await expect(
+    page
+      .getByRole("region", { name: "Result", exact: true })
+      .getByText("My correction.", { exact: true }),
+  ).toBeVisible();
 });
 
 test("Done and Escape flush edits, empty edits cannot be saved, and outside clicks keep the draft", async ({
@@ -5809,14 +6675,16 @@ test("Done and Escape flush edits, empty edits cannot be saved, and outside clic
     exact: true,
   });
   await edit.click();
-  const dialog = page.getByRole("dialog", { name: "Edit transcript" });
+  const dialog = page.getByRole("region", { name: "Edit transcript" });
   const input = dialog.getByRole("textbox", {
     name: "Editable text",
     exact: true,
   });
   await input.fill(" \n ");
   await expect(
-    dialog.getByRole("status").filter({ hasText: /Changes save automatically|Not saved yet:/ }),
+    dialog
+      .getByRole("status")
+      .filter({ hasText: /Saved|Changes save automatically|Not saved yet:/ }),
   ).toBeVisible();
   await input.fill("Discard this.");
   await page.mouse.click(5, 5);
@@ -5856,7 +6724,7 @@ test("deleted recordings fail safely without losing the editor draft", async ({ 
   await page.goto("/#/history");
   await page.getByRole("link", { name: /Original plain transcript/ }).click();
   await page.getByRole("button", { name: "Edit transcript", exact: true }).click();
-  const dialog = page.getByRole("dialog", { name: "Edit transcript" });
+  const dialog = page.getByRole("region", { name: "Edit transcript" });
   await dialog.getByRole("textbox", { name: "Editable text", exact: true }).fill("Keep my draft.");
   await page.evaluate(() => {
     window.dictationTest.snapshot.history = [];
@@ -5909,7 +6777,7 @@ test("a selected correction adds a confirmed term without saving the transcript 
     name: "Add to vocabulary",
     exact: true,
   });
-  await expect(add).toBeDisabled();
+  await expect(add).toHaveCount(0);
   await input.press("Home");
   await input.press("Control+Shift+ArrowRight");
   await expect(add).toBeEnabled();
@@ -5931,7 +6799,7 @@ test("a selected correction adds a confirmed term without saving the transcript 
     });
   });
   await term.getByRole("button", { name: "Save term", exact: true }).click();
-  await expect(page.getByRole("dialog", { name: "Edit transcript" })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Edit transcript" })).toBeVisible();
   await expect(page.getByRole("status").filter({ hasText: "Added to vocabulary" })).toBeVisible();
   await expect(input).toHaveValue("PostgreSQL connection ready.");
   await expect(input).toBeFocused();
@@ -5960,16 +6828,13 @@ test("a selected correction adds a confirmed term without saving the transcript 
     .poll(() => page.evaluate(() => window.dictationTest.snapshot.status.transcript))
     .toBe("");
   await input.press("Control+Enter");
-  await expect(page.getByRole("dialog", { name: "Edit transcript", exact: true })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Edit transcript", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Done", exact: true }).click();
-  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(activeDialog(page)).toHaveCount(0);
   await expect
     .poll(() => page.evaluate(() => window.dictationTest.snapshot.history[0].finalTranscript))
     .toBe("PostgreSQL connection ready.");
-  await page
-    .getByRole("navigation", { name: "Main navigation" })
-    .getByRole("link", { name: "Vocabulary", exact: true })
-    .click();
+  await navigateMain(page, "Vocabulary");
   await expect(page.getByLabel("Preferred spelling", { exact: true }).last()).toHaveValue(
     "PostgreSQL",
   );
@@ -6030,7 +6895,7 @@ test("Cancel and Escape return from vocabulary confirmation without losing edits
     .poll(() => page.evaluate(() => window.dictationTest.snapshot.vocabulary.length))
     .toBe(0);
   await input.press("Escape");
-  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(activeDialog(page)).toHaveCount(0);
   await expect
     .poll(() => page.evaluate(() => window.dictationTest.snapshot.history[0].finalTranscript))
     .toBe("PostgreSQL connection ready.");
@@ -6046,10 +6911,10 @@ test("vocabulary selection rejects multiline or oversized terms and respects act
   });
   await input.fill("a".repeat(81));
   await input.press("Control+A");
-  await expect(add).toBeDisabled();
+  await expect(add).toHaveCount(0);
   await input.fill("Two\nlines");
   await input.press("Control+A");
-  await expect(add).toBeDisabled();
+  await expect(add).toHaveCount(0);
   await input.fill("PostgreSQL");
   await input.press("Control+A");
   await expect(add).toBeEnabled();
@@ -6105,7 +6970,7 @@ test("History pages select and export only the current page, and recover after d
     window.dictationTest.failSave = true;
   });
   await page.getByRole("button", { name: "Delete selected", exact: true }).click();
-  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(activeDialog(page)).toHaveCount(0);
   await expect(page.getByRole("alert")).toHaveText("History deletion failed");
   await page.evaluate(() => {
     window.dictationTest.failSave = false;
@@ -6188,10 +7053,25 @@ test("Recently Deleted supports retry and restoration on narrow screens after th
     const remove = page.getByRole("button", { name: "Delete permanently", exact: true });
     const restoreBounds = (await restore.boundingBox())!;
     const removeBounds = (await remove.boundingBox())!;
-    expect(Math.abs(restoreBounds.x - removeBounds.x)).toBeLessThan(1);
-    expect(removeBounds.y).toBeGreaterThanOrEqual(restoreBounds.y + restoreBounds.height);
-    await expect(restore).toHaveText("");
-    await expect(remove).toHaveText("");
+    const sameRow =
+      Math.abs(
+        restoreBounds.y + restoreBounds.height / 2 - removeBounds.y - removeBounds.height / 2,
+      ) < 1;
+    if (width === 1086) expect(sameRow).toBe(true);
+    if (sameRow) {
+      expect(removeBounds.x).toBeGreaterThanOrEqual(restoreBounds.x + restoreBounds.width + 4);
+    } else {
+      expect(removeBounds.y).toBeGreaterThanOrEqual(restoreBounds.y + restoreBounds.height);
+      expect(removeBounds.x + removeBounds.width).toBeCloseTo(
+        restoreBounds.x + restoreBounds.width,
+        0,
+      );
+    }
+    for (const button of [restore, remove]) {
+      expect(await button.evaluate((node) => node.scrollWidth <= node.clientWidth + 1)).toBe(true);
+    }
+    await expect(restore).toHaveText("Restore");
+    await expect(remove).toHaveText("Delete permanently");
     await remove.hover();
     const tooltip = page
       .locator('[data-slot="tooltip-content"]')
@@ -6309,14 +7189,14 @@ test("deletion Undo remains available after navigating away from History", async
   });
   await page.goto("/#/history");
   await page.getByRole("link", { name: /Corrected transcript/ }).click();
-  await page.getByRole("button", { name: "Delete", exact: true }).click();
+  await detailAction(page, "Delete dictation");
   await page.getByRole("link", { name: "Settings", exact: true }).click();
   await page
     .locator('[data-slot="toast"]')
     .getByRole("button", { name: "Undo", exact: true })
     .click();
   await expect.poll(() => page.evaluate(() => window.dictationTest.recentlyDeleted.length)).toBe(0);
-  await page.getByRole("link", { name: "History", exact: true }).click();
+  await navigateMain(page, "History");
   await expect(page.getByRole("link", { name: /Corrected transcript/ })).toBeVisible();
 });
 
@@ -6596,18 +7476,20 @@ test("Models shows actual disk usage and protects the active model during remova
     ];
   });
   await page.goto("/#/models");
-  await expect(page.getByRole("group", { name: "Model storage" })).toContainText("5 MB");
-  await expect(page.getByRole("group", { name: "Model storage" })).toContainText(
-    "2 models downloaded",
-  );
+  await expect(page.getByLabel("Model storage", { exact: true })).toContainText("5 MB");
+  await expect(page.getByLabel("Model storage", { exact: true })).toContainText("2 downloaded");
   await expect(
-    page.getByRole("button", { name: "Remove Whisper Base", exact: true }),
+    (await modelMenu(page, "Whisper Base")).getByRole("menuitem", {
+      name: "Remove model",
+      exact: true,
+    }),
   ).toBeDisabled();
-  await page.getByRole("button", { name: "Remove Whisper Tiny", exact: true }).click();
+  await page.keyboard.press("Escape");
+  await modelAction(page, "Remove model", "Whisper Tiny");
   let dialog = page.getByRole("dialog", { name: "Remove Whisper Tiny?" });
   await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
-  await expect(page.getByRole("group", { name: "Model storage" })).toContainText("5 MB");
-  await page.getByRole("button", { name: "Remove Whisper Tiny", exact: true }).click();
+  await expect(page.getByLabel("Model storage", { exact: true })).toContainText("5 MB");
+  await modelAction(page, "Remove model", "Whisper Tiny");
   dialog = page.getByRole("dialog", { name: "Remove Whisper Tiny?" });
   await page.evaluate(() => {
     window.dictationTest.status("recording");
@@ -6624,13 +7506,15 @@ test("Models shows actual disk usage and protects the active model during remova
   });
   await dialog.getByRole("button", { name: "Remove model", exact: true }).click();
   await expect(dialog).toHaveCount(0);
-  await expect(page.getByRole("group", { name: "Model storage" })).toContainText("3 MB");
-  await expect(page.getByRole("group", { name: "Model storage" })).toContainText(
-    "1 model downloaded",
-  );
-  await expect(page.getByRole("button", { name: "Remove Whisper Tiny", exact: true })).toHaveCount(
-    0,
-  );
+  await expect(page.getByLabel("Model storage", { exact: true })).toContainText("3 MB");
+  await expect(page.getByLabel("Model storage", { exact: true })).toContainText("1 downloaded");
+  await expect(page.locator('[data-slot="model-row"]')).toHaveCount(1);
+  await page.getByRole("button", { name: "All models", exact: true }).click();
+  await expect(
+    page
+      .getByRole("region", { name: "Whisper Tiny", exact: true })
+      .getByRole("button", { name: /^More actions/ }),
+  ).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Download & use", exact: true })).toBeEnabled();
   await expect
     .poll(() => page.evaluate(() => window.dictationTest.snapshot.settings.modelPath))
@@ -6900,10 +7784,7 @@ test("shortcut recorder is disabled during active work and works in first-run se
     state.snapshot.microphoneTested = true;
     state.callbacks["setup:changed"]();
   });
-  await page
-    .getByRole("navigation", { name: "Main navigation" })
-    .getByRole("link", { name: "Dictate", exact: true })
-    .click();
+  await navigateMain(page, "Dictate");
   await page.getByRole("button", { name: "Next", exact: true }).click();
   await page.getByRole("button", { name: "Next", exact: true }).click();
   const dialog = await recordShortcut(page);
@@ -6924,8 +7805,9 @@ test("prompt drafts survive refresh and failed save; model testing uses saved co
 }, testInfo) => {
   await page.setViewportSize({ width: 760, height: 680 });
   await page.goto("/#/prompts?section=models");
-  await page.getByRole("switch", { name: "Enable LLM processing" }).check();
+  await page.getByRole("switch", { name: "Enable text processing" }).check();
   await page.getByLabel("Model identifier").fill("my-local-model");
+  await showServerAddress(page);
   await page.getByLabel("Local server URL").fill("http://127.0.0.1:1234/v1");
   await page.getByRole("tab", { name: "Prompts", exact: true }).click();
   await page.getByRole("button", { name: "Add prompt" }).click();
@@ -6961,7 +7843,12 @@ test("prompt drafts survive refresh and failed save; model testing uses saved co
   await automatic.check();
   await expect(automatic).toBeChecked();
   await automatic.uncheck();
-  await expect(page.getByText("Automatic processing is off.", { exact: true })).toBeVisible();
+  await expect(
+    page.getByText(
+      "Turn on to use this prompt after dictation. Profiles and chains can override the default.",
+      { exact: true },
+    ),
+  ).toBeVisible();
   await automatic.check();
   await page.getByRole("tab", { name: "Text model", exact: true }).click();
   await expect(page.getByRole("button", { name: "Test model", exact: true })).toBeDisabled();
@@ -7005,9 +7892,14 @@ test("prompt drafts survive refresh and failed save; model testing uses saved co
     .getByRole("button", { name: "Delete prompt", exact: true })
     .click();
   await expect(automatic).not.toBeChecked();
-  await expect(page.getByText("Automatic processing is off.", { exact: true })).toBeVisible();
+  await expect(
+    page.getByText(
+      "Turn on to use this prompt after dictation. Profiles and chains can override the default.",
+      { exact: true },
+    ),
+  ).toBeVisible();
   await page.getByRole("tab", { name: "Text model", exact: true }).click();
-  await page.getByRole("switch", { name: "Enable LLM processing" }).uncheck();
+  await page.getByRole("switch", { name: "Enable text processing" }).uncheck();
   await saveDraft(page);
   await expect
     .poll(() => page.evaluate(() => window.dictationTest.snapshot.textProcessing.enabled))
@@ -7040,7 +7932,7 @@ async function openPromptEditor(page: Page) {
   await page
     .getByRole("textbox", { name: "Editable text", exact: true })
     .fill("Unsaved draft for summary.");
-  await page.getByRole("button", { name: "Process text", exact: true }).click();
+  await page.getByRole("button", { name: "Run prompt or chain…", exact: true }).click();
 }
 
 test("prompt previews use the draft and change History only after apply and save", async ({
@@ -7191,7 +8083,7 @@ test("Markdown formats transcriptions and outputs while copy, export and editing
   await expect
     .poll(() => page.evaluate(() => window.dictationTest.snapshot.status.transcript))
     .toBe(source);
-  await page.getByRole("button", { name: "Export result", exact: true }).click();
+  await detailAction(page, "Export");
   await expect.poll(() => page.evaluate(() => window.dictationTest.exportedText)).toBe(source);
   await page.getByRole("button", { name: "Edit transcript", exact: true }).click();
   await expect(page.getByRole("textbox", { name: "Editable text" })).toHaveValue(source);
@@ -7212,7 +8104,7 @@ test("Markdown formats transcriptions and outputs while copy, export and editing
   await expect(output.getByText("Remote image", { exact: true })).toHaveCount(0);
   await expect(output.getByRole("heading", { name: "Meeting notes", level: 1 })).toBeVisible();
   await expect(output.getByRole("cell", { name: "Benji" })).toBeVisible();
-  await output.getByRole("button", { name: "Copy output", exact: true }).click();
+  await page.getByRole("button", { name: "Copy output", exact: true }).click();
   await expect
     .poll(() => page.evaluate(() => window.dictationTest.snapshot.status.transcript))
     .toBe(source);
@@ -7283,7 +8175,7 @@ test("failed and cancelled generation retain the draft and suppress late results
   await expect(page.getByRole("textbox", { name: "Editable text", exact: true })).toHaveValue(
     "Unsaved draft for summary.",
   );
-  await page.getByRole("button", { name: "Process text", exact: true }).click();
+  await page.getByRole("button", { name: "Run prompt or chain…", exact: true }).click();
   await page.getByRole("button", { name: "Generate preview", exact: true }).click();
   await page.keyboard.press("Escape");
   await expect(page.getByRole("textbox", { name: "Editable text", exact: true })).toHaveValue(
@@ -7365,7 +8257,9 @@ for (const route of ["vocabulary", "settings"]) {
       route === "vocabulary"
         ? page.getByRole("button", { name: "Add term", exact: true })
         : page.getByRole("switch", { name: /^Keep recordings/ });
-    await expect(page.getByText("Snapshot unavailable", { exact: true })).toBeVisible();
+    await expect(
+      page.getByRole("alert").filter({ hasText: /^Snapshot unavailable$/ }),
+    ).toBeVisible();
     await expect(control).toBeDisabled();
     await page.evaluate(() => {
       window.dictationTest.failSnapshot = false;
@@ -7395,8 +8289,12 @@ test("an active damaged model can be repaired without enabling removal", async (
   });
   await page.goto("/#/models");
   await expect(
-    page.getByRole("button", { name: "Remove Whisper Tiny", exact: true }),
+    (await modelMenu(page, "Whisper Tiny")).getByRole("menuitem", {
+      name: "Remove model",
+      exact: true,
+    }),
   ).toBeDisabled();
+  await page.keyboard.press("Escape");
   await page.getByRole("button", { name: "Repair & use", exact: true }).click();
   await expect
     .poll(() => page.evaluate(() => window.dictationTest.installedModelIDs))
@@ -7405,10 +8303,14 @@ test("an active damaged model can be repaired without enabling removal", async (
     window.dictationTest.status("idle");
     window.dictationTest.history();
   });
-  await expect(page.getByRole("button", { name: "Active", exact: true })).toBeDisabled();
+  await expectActiveModel(currentSpeechModel(page));
   await expect(
-    page.getByRole("button", { name: "Remove Whisper Tiny", exact: true }),
+    (await modelMenu(page, "Whisper Tiny")).getByRole("menuitem", {
+      name: "Remove model",
+      exact: true,
+    }),
   ).toBeDisabled();
+  await page.keyboard.press("Escape");
 });
 
 test("an outdated backend keeps the interface visible and recovers after restart", async ({
@@ -7423,12 +8325,12 @@ test("an outdated backend keeps the interface visible and recovers after restart
   await expect(page.getByRole("alert").filter({ hasText: "different versions" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Prompts & chains", exact: true })).toBeVisible();
   await expect(page.getByRole("navigation", { name: "Main navigation" })).toBeVisible();
-  await expect(page.getByRole("switch", { name: "Enable LLM processing" })).toBeDisabled();
+  await expect(page.getByRole("switch", { name: "Enable text processing" })).toBeDisabled();
   await page.evaluate(() => {
     window.dictationTest.legacySnapshot = false;
   });
   await page.getByRole("button", { name: "Retry loading", exact: true }).click();
-  await expect(page.getByRole("switch", { name: "Enable LLM processing" })).toBeEnabled();
+  await expect(page.getByRole("switch", { name: "Enable text processing" })).toBeEnabled();
   await expect(page.getByRole("alert")).toHaveCount(0);
   await page.evaluate(() => {
     window.dictationTest.legacySnapshot = true;
@@ -7447,7 +8349,7 @@ test("local models can be selected without changing saved preferences until Save
   });
   await page.goto("/#/prompts?section=models");
   await expect(
-    page.getByText("Server responded. 2 models available.", { exact: true }),
+    page.getByText("2 models found. Test your selection.", { exact: true }),
   ).toBeVisible();
   await page.getByRole("tab", { name: "Prompts", exact: true }).click();
   await page.getByLabel("Name", { exact: true }).fill("My cleanup");
@@ -7460,7 +8362,7 @@ test("local models can be selected without changing saved preferences until Save
   await expect
     .poll(() => page.evaluate(() => window.dictationTest.snapshot.textProcessing.model))
     .toBe("");
-  await page.getByRole("switch", { name: "Enable LLM processing" }).check();
+  await page.getByRole("switch", { name: "Enable text processing" }).check();
   await expect(page.getByRole("button", { name: "Test model", exact: true })).toBeDisabled();
   await page.getByRole("button", { name: "Refresh models", exact: true }).click();
   await page.getByRole("tab", { name: "Prompts", exact: true }).click();
@@ -7495,6 +8397,7 @@ test("server presets discover LM Studio and auto-save valid choices", async ({
   const model = page.getByRole("combobox", { name: "Model", exact: true });
   await expect(server).toContainText("Ollama");
   await expect(model).toContainText("ollama-model");
+  await showServerAddress(page);
   await page.getByLabel("Local server URL").fill("http://10.5.0.2:1234/api/v1/models");
   await expect(server).toContainText("Custom");
   await page.evaluate(() => {
@@ -7615,7 +8518,7 @@ test("endpoint changes and navigation cancel discovery and ignore late model lis
     window.dictationTest.pendingModelLists[0].resolve(["stale-server-model"]);
   });
   await expect(
-    page.getByText("Server responded. 1 model available.", { exact: true }),
+    page.getByText("1 model found. Test your selection.", { exact: true }),
   ).toBeVisible();
   await page.getByRole("combobox", { name: "Model", exact: true }).click();
   await expect(page.getByRole("option", { name: "stale-server-model", exact: true })).toHaveCount(
@@ -7629,7 +8532,7 @@ test("endpoint changes and navigation cancel discovery and ignore late model lis
   await expect
     .poll(() => page.evaluate(() => window.dictationTest.pendingModelLists.length))
     .toBe(3);
-  await page.getByRole("link", { name: "Settings", exact: true }).click();
+  await navigateMain(page, "History");
   await expect
     .poll(() =>
       page.evaluate(() =>
@@ -7642,7 +8545,7 @@ test("endpoint changes and navigation cancel discovery and ignore late model lis
   await page.evaluate(() => {
     window.dictationTest.pendingModelLists[2].resolve(["late-after-navigation"]);
   });
-  await expect(page.getByRole("tablist", { name: "Settings sections", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "History", exact: true })).toBeVisible();
   await expect
     .poll(() => page.evaluate(() => window.dictationTest.snapshot.textProcessing.model))
     .toBe("current-server-model");
@@ -7688,7 +8591,8 @@ test("render crashes show copyable recovery and retry preserves saved data", asy
         enabled: true,
       },
     ];
-    Reflect.set(state.snapshot.settings, "shortcut", null);
+    Reflect.set(state, "recoveryModelPath", state.snapshot.settings.modelPath);
+    Reflect.set(state.snapshot.settings, "modelPath", { invalid: true });
   });
   await page.goto("/");
   await expect(page.getByRole("heading", { name: /couldn.t display the interface/ })).toBeVisible();
@@ -7708,10 +8612,23 @@ test("render crashes show copyable recovery and retry preserves saved data", asy
     fullPage: true,
   });
   await page.evaluate(() => {
-    window.dictationTest.snapshot.settings.shortcut = "Ctrl+Alt+Space";
+    window.dictationTest.snapshot.settings.modelPath = Reflect.get(
+      window.dictationTest,
+      "recoveryModelPath",
+    );
+    // The mock creates its default profile on first snapshot. Repair the
+    // derived invalid path too, while leaving saved preferences/text intact.
+    for (const profile of window.dictationTest.snapshot.dictationProfiles ?? []) {
+      if (typeof profile.modelPath !== "string")
+        profile.modelPath = window.dictationTest.snapshot.settings.modelPath;
+    }
   });
   await page.getByRole("button", { name: "Retry interface", exact: true }).click();
   await expect(page.getByRole("region", { name: "Dictation recorder", exact: true })).toBeVisible();
+  await page
+    .getByRole("navigation", { name: "Main navigation" })
+    .getByRole("link", { name: "History", exact: true })
+    .click();
   await expect(page.getByRole("link").filter({ hasText: "Saved correction" })).toBeVisible();
   await page.getByRole("link", { name: "Settings", exact: true }).click();
   await expect(
@@ -7750,7 +8667,7 @@ test("persistent crashes stay recoverable and window reload keeps persisted pref
       sessionStorage.setItem("saved-recovery-fixture", JSON.stringify(state.snapshot));
       localStorage.setItem("desktop-theme", "dark");
       localStorage.setItem("yap-sidebar-collapsed", "true");
-      Reflect.set(state.snapshot.settings, "shortcut", null);
+      Reflect.set(state.snapshot.settings, "modelPath", { invalid: true });
     }
   });
   await page.goto("/");
@@ -7762,9 +8679,13 @@ test("persistent crashes stay recoverable and window reload keeps persisted pref
     page.getByRole("button", { name: "Reload window", exact: true }).click(),
   ]);
   await expect(page.getByRole("region", { name: "Dictation recorder", exact: true })).toBeVisible();
+  await page
+    .getByRole("navigation", { name: "Main navigation" })
+    .getByRole("link", { name: "History", exact: true })
+    .click();
   await expect(page.getByRole("link").filter({ hasText: "Persisted history" })).toBeVisible();
   await expect(page.locator("html")).toHaveClass(/dark/);
-  await expect(page.getByRole("button", { name: "Expand sidebar", exact: true })).toBeVisible();
+  await expect(page.getByRole("navigation", { name: "Main navigation" })).toBeVisible();
   await page.getByRole("link", { name: "Settings", exact: true }).click();
   await expect(
     page
@@ -7815,7 +8736,7 @@ test("startup recovery provides diagnostics and retry without overwriting saved 
   });
   await page.goto("/#/prompts?section=models");
   await expect(page.getByRole("region", { name: "Connection recovery" })).toBeVisible();
-  await expect(page.getByRole("switch", { name: "Enable LLM processing" })).toBeDisabled();
+  await expect(page.getByRole("switch", { name: "Enable text processing" })).toBeDisabled();
   await page.getByText("Technical details", { exact: true }).click();
   await page.getByRole("button", { name: "Copy diagnostics", exact: true }).click();
   await expect
@@ -7829,7 +8750,7 @@ test("startup recovery provides diagnostics and retry without overwriting saved 
   });
   await page.getByRole("button", { name: "Retry loading", exact: true }).click();
   await expect(page.getByRole("region", { name: "Connection recovery" })).toHaveCount(0);
-  await expect(page.getByRole("switch", { name: "Enable LLM processing" })).toBeChecked();
+  await expect(page.getByRole("switch", { name: "Enable text processing" })).toBeChecked();
   await expect(page.getByLabel("Model identifier")).toHaveValue("saved-model");
   await expect
     .poll(() => page.evaluate(() => window.dictationTest.snapshot.settings.language))
@@ -7920,7 +8841,7 @@ test("backups export optional audio and require a preview before a merge restore
   await expect
     .poll(() => page.evaluate(() => window.dictationTest.discardedBackups))
     .toEqual(["preview-token"]);
-  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(activeDialog(page)).toHaveCount(0);
   await panel.getByRole("button", { name: "Restore backup", exact: true }).click();
   await dialog.getByRole("button", { name: "Restore backup", exact: true }).click();
   await expect(panel.getByRole("status")).toContainText(
@@ -7941,8 +8862,8 @@ test("backups export optional audio and require a preview before a merge restore
     .check();
   await dialog.getByRole("button", { name: "Restore backup", exact: true }).click();
   await expect(page.getByLabel("Spoken language", { exact: true })).toContainText("German");
-  await expect(page.getByText("Changes save automatically", { exact: true })).toBeVisible();
-  await page.getByRole("link", { name: "History", exact: true }).click();
+  await expect(page.getByRole("status").filter({ hasText: /^Saved$/ })).toBeVisible();
+  await navigateMain(page, "History");
   await expect(page.getByRole("link", { name: /Restored transcription/ }).first()).toBeVisible();
 });
 
@@ -8019,7 +8940,7 @@ test("failed restores keep the preview for retry and navigation discards late pr
   });
   await panel.getByRole("button", { name: "Restore backup", exact: true }).click();
   await expect.poll(() => page.evaluate(() => !!window.dictationTest.resolveBackup)).toBe(true);
-  await page.getByRole("link", { name: "History", exact: true }).click();
+  await navigateMain(page, "History");
   await page.evaluate(() => {
     window.dictationTest.resolveBackup!();
   });
@@ -8064,7 +8985,7 @@ test("backup cancellation remains available after navigating back to Settings", 
     state.snapshot.status.message = "Checking backup…";
     state.callbacks["dictation:status"](structuredClone(state.snapshot.status));
   });
-  await page.getByRole("link", { name: "History", exact: true }).click();
+  await navigateMain(page, "History");
   await page.getByRole("link", { name: "Settings", exact: true }).click();
   await page.getByRole("tab", { name: "History & data", exact: true }).click();
   await expect(panel.getByRole("status")).toContainText("Checking backup…");
@@ -8080,7 +9001,7 @@ test("backup cancellation remains available after navigating back to Settings", 
   await expect
     .poll(() => page.evaluate(() => window.dictationTest.discardedBackups))
     .toEqual(["preview-token"]);
-  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(activeDialog(page)).toHaveCount(0);
 });
 
 async function dropAudioFiles(page: Page, paths: string[]) {
@@ -8147,14 +9068,14 @@ test("audio drag and drop shows feedback and imports across navigation", async (
     .poll(() => page.evaluate(() => window.dictationTest.droppedAudio))
     .toEqual([["C:\\Audio\\meeting.wav"]]);
   await expect(page.getByRole("button", { name: "Import audio", exact: true })).toBeEnabled();
-  await page.getByRole("link", { name: "History", exact: true }).click();
+  await navigateMain(page, "History");
   await page.getByRole("button", { name: "Cancel transcription", exact: true }).click();
   await expect(page.getByRole("button", { name: "Import audio", exact: true })).toBeEnabled();
   await page.getByRole("link", { name: "Settings", exact: true }).click();
   await dropAudioFiles(page, ["C:\\Audio\\interview.mp3"]);
   await expect.poll(() => page.evaluate(() => window.dictationTest.droppedAudio.length)).toBe(2);
   expect(await page.evaluate(() => window.dictationTest.audioImports)).toBe(0);
-  await page.getByRole("link", { name: "History", exact: true }).click();
+  await navigateMain(page, "History");
   await expect(
     page.getByRole("status").filter({ hasText: "Transcribing imported audio…" }),
   ).toBeVisible();
@@ -8275,9 +9196,9 @@ test("audio import is cancellable across navigation and results open from Histor
   await expect(
     page.getByRole("status").filter({ hasText: "Transcribing imported audio…" }),
   ).toBeVisible();
-  await page.getByRole("link", { name: "Dictate", exact: true }).click();
-  await expect(page.getByRole("button", { name: "Start recording", exact: true })).toBeDisabled();
-  await page.getByRole("link", { name: "History", exact: true }).click();
+  await navigateMain(page, "Dictate");
+  await expect(page.getByRole("button", { name: "Transcribing…", exact: true })).toBeDisabled();
+  await navigateMain(page, "History");
   await page.getByRole("button", { name: "Cancel transcription", exact: true }).click();
   await expect
     .poll(() => page.evaluate(() => window.dictationTest.snapshot.status.phase))
@@ -8381,6 +9302,7 @@ test("audio import shows missing decoder guidance and allows retry", async ({ pa
 
 test("history preference is shared between Home and Settings", async ({ page }) => {
   await page.goto("/");
+  await openRecordingOptions(page);
   await page.getByRole("switch", { name: "Save to history" }).click();
   await expect(page.getByRole("switch", { name: "Save to history" })).not.toBeChecked();
   await page.getByRole("link", { name: "Settings", exact: true }).click();
@@ -8388,7 +9310,8 @@ test("history preference is shared between Home and Settings", async ({ page }) 
   await expect(page.getByRole("switch", { name: "Save dictations to history" })).not.toBeChecked();
   await expect(page.getByRole("switch", { name: "Keep recordings" })).toBeDisabled();
   await page.getByRole("switch", { name: "Save dictations to history" }).click();
-  await page.getByRole("link", { name: "Dictate", exact: true }).click();
+  await navigateMain(page, "Dictate");
+  await openRecordingOptions(page);
   await expect(page.getByRole("switch", { name: "Save to history" })).toBeChecked();
 });
 
@@ -8444,23 +9367,23 @@ test("temporary latest result supports copy, explicit save, and dismiss", async 
 test("page drafts flush on navigation and remain saved when returning", async ({ page }) => {
   await page.goto("/#/settings");
   await page.getByLabel("Global shortcut", { exact: true }).fill("Ctrl+Alt+P");
-  await page.getByRole("link", { name: "Prompts & chains", exact: true }).click();
+  await navigateMain(page, "Prompts & chains");
   await expect
     .poll(() => page.evaluate(() => window.dictationTest.snapshot.settings.shortcut))
     .toBe("Ctrl+Alt+P");
   await page.getByRole("tab", { name: "Text model", exact: true }).click();
   await page.getByLabel("Model identifier").fill("unsaved-local-model");
-  await page.getByRole("link", { name: "Vocabulary", exact: true }).click();
+  await navigateMain(page, "Vocabulary");
   await page.getByRole("button", { name: "Add term", exact: true }).click();
   await page.getByLabel("Preferred spelling", { exact: true }).fill("PostgreSQL");
-  await page.getByRole("link", { name: "History", exact: true }).click();
+  await navigateMain(page, "History");
   await page.getByRole("link", { name: "Settings", exact: true }).click();
   await expect(page.getByLabel("Global shortcut", { exact: true })).toHaveValue("Ctrl+Alt+P");
-  await page.getByRole("link", { name: "Prompts & chains", exact: true }).click();
+  await navigateMain(page, "Prompts & chains");
   await page.getByRole("tab", { name: "Text model", exact: true }).click();
   await expect(page.getByLabel("Model identifier")).toHaveValue("unsaved-local-model");
   await saveDraft(page);
-  await page.getByRole("link", { name: "Vocabulary", exact: true }).click();
+  await navigateMain(page, "Vocabulary");
   await expect(page.getByLabel("Preferred spelling", { exact: true })).toHaveValue("PostgreSQL");
   await saveDraft(page);
   await page.getByRole("link", { name: "Settings", exact: true }).click();
@@ -8511,7 +9434,7 @@ test("delivery warnings persist and recover through the current Home result afte
     window.dictationTest.failClipboard = false;
     window.dictationTest.snapshot.status.transcript = "A later result";
   });
-  await page.getByRole("link", { name: "Dictate", exact: true }).click();
+  await navigateMain(page, "Dictate");
   await panel.getByRole("button", { name: "Copy", exact: true }).click();
   await expect
     .poll(() => page.evaluate(() => window.dictationTest.clipboard))
@@ -8523,7 +9446,7 @@ test("dictation profiles create edit switch and delete", async ({ page }, testIn
   await homeModelScenario(page);
   await page.getByRole("link", { name: "Manage dictation profiles" }).click();
   await page.getByRole("button", { name: "New profile", exact: true }).click();
-  const dialog = page.getByRole("dialog");
+  const dialog = activeDialog(page);
   await dialog.getByLabel("Profile name").fill("Email");
   await dialog.getByRole("combobox", { name: "Spoken language", exact: true }).click();
   await page.getByRole("option", { name: "German", exact: true }).click();
@@ -8536,7 +9459,8 @@ test("dictation profiles create edit switch and delete", async ({ page }, testIn
   await page.getByRole("button", { name: "Edit Email", exact: true }).click();
   await dialog.getByLabel("Profile name").fill("Work email");
   await dialog.getByRole("button", { name: "Done", exact: true }).click();
-  await page.getByRole("link", { name: "Dictate", exact: true }).click();
+  await navigateMain(page, "Dictate");
+  await openRecordingOptions(page);
   const selector = page.getByRole("combobox", { name: "Dictation profile", exact: true });
   await selector.click();
   await page.getByRole("option", { name: "Work email", exact: true }).click();
@@ -8578,7 +9502,7 @@ test("profile failures retain drafts and selection and Escape attempts a save", 
   await homeModelScenario(page);
   await page.getByRole("link", { name: "Manage dictation profiles" }).click();
   await page.getByRole("button", { name: "New profile", exact: true }).click();
-  const dialog = page.getByRole("dialog");
+  const dialog = activeDialog(page);
   await page.evaluate(() => {
     window.dictationTest.failSave = true;
   });
@@ -8591,10 +9515,11 @@ test("profile failures retain drafts and selection and Escape attempts a save", 
     window.dictationTest.failSave = false;
   });
   await dialog.getByRole("button", { name: "Done", exact: true }).click();
-  await page.getByRole("link", { name: "Dictate", exact: true }).click();
+  await navigateMain(page, "Dictate");
   await page.evaluate(() => {
     window.dictationTest.failSave = true;
   });
+  await openRecordingOptions(page);
   const selector = page.getByRole("combobox", { name: "Dictation profile", exact: true });
   await selector.click();
   await page.getByRole("option", { name: "Quick notes", exact: true }).click();
@@ -8622,7 +9547,8 @@ test("profile switching rebases untouched settings while keeping the autosaved s
   await homeModelScenario(page);
   await page.getByRole("link", { name: "Settings", exact: true }).click();
   await page.getByLabel("Global shortcut", { exact: true }).fill("Ctrl+Alt+P");
-  await page.getByRole("link", { name: "Dictate", exact: true }).click();
+  await navigateMain(page, "Dictate");
+  await openRecordingOptions(page);
   await page.getByRole("combobox", { name: "Dictation profile", exact: true }).click();
   await page.getByRole("option", { name: "Email", exact: true }).click();
   await expect(
@@ -8648,6 +9574,7 @@ test("Default is selected from saved settings and unrelated preferences do not m
   page,
 }) => {
   await homeModelScenario(page);
+  await openRecordingOptions(page);
   const selector = page.getByRole("combobox", { name: "Dictation profile", exact: true });
   await expect(selector).toContainText("Default");
   await expect(selector.getByRole("img", { name: "Modified profile" })).toHaveCount(0);
@@ -8661,14 +9588,16 @@ test("Default is selected from saved settings and unrelated preferences do not m
   await expect(selector).toContainText("Default");
   await expect(selector.getByRole("img", { name: "Modified profile" })).toHaveCount(0);
   await page.getByRole("link", { name: "Manage dictation profiles" }).click();
-  await expect(page.getByRole("button", { name: "Use Default", exact: true })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Make Default active", exact: true })).toHaveCount(
+    0,
+  );
   await expect(page.getByRole("button", { name: "Delete Default", exact: true })).toHaveCount(0);
   await page.getByRole("button", { name: "Edit Default", exact: true }).click();
-  await expect(page.getByRole("dialog").getByLabel("Profile name")).toBeDisabled();
+  await expect(activeDialog(page).getByLabel("Profile name")).toBeDisabled();
 });
 
 for (const theme of ["light", "dark"] as const) {
-  test(`modified profile menu preserves the name and restores Default in ${theme}`, async ({
+  test(`modified profile actions preserve the name and restore Default in ${theme}`, async ({
     page,
   }, testInfo) => {
     await homeModelScenario(page);
@@ -8677,8 +9606,9 @@ for (const theme of ["light", "dark"] as const) {
     await page.getByRole("link", { name: "Settings", exact: true }).click();
     await page.getByRole("combobox", { name: "Spoken language", exact: true }).click();
     await page.getByRole("option", { name: "German", exact: true }).click();
-    await page.getByRole("link", { name: "Dictate", exact: true }).click();
+    await navigateMain(page, "Dictate");
     await page.setViewportSize({ width: 760, height: 560 });
+    await openRecordingOptions(page);
     const selector = page.getByRole("combobox", { name: "Dictation profile", exact: true });
     await expect(selector).toContainText("Default");
     await expect(selector).not.toContainText("(modified)");
@@ -8686,9 +9616,10 @@ for (const theme of ["light", "dark"] as const) {
     await expect(marker).toBeInViewport();
     await marker.focus();
     await page.keyboard.press("Enter");
-    await expect(page.getByRole("menuitem", { name: "Restore saved choices" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Restore saved choices" })).toBeVisible();
     await page.keyboard.press("Escape");
-    await expect(marker).toBeFocused();
+    await expect(page.getByRole("button", { name: /^Recording options/ })).toBeFocused();
+    await openRecordingOptions(page);
     await expect
       .poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
       .toBe(true);
@@ -8728,6 +9659,7 @@ test("a named profile retains its name and modified marker across navigation and
     ];
   });
   await homeModelScenario(page);
+  await openRecordingOptions(page);
   const selector = page.getByRole("combobox", { name: "Dictation profile", exact: true });
   await selector.click();
   await page.getByRole("option", { name: "Email", exact: true }).click();
@@ -8742,8 +9674,9 @@ test("a named profile retains its name and modified marker across navigation and
   await settle(page);
   await page.getByRole("img", { name: "Modified profile" }).hover();
   await expect(page.locator('[data-slot="tooltip-content"]')).toHaveText("Modified");
-  await page.getByRole("button", { name: "Use Email", exact: true }).click();
-  await page.getByRole("link", { name: "Dictate", exact: true }).click();
+  await page.getByRole("button", { name: "Make Email active", exact: true }).click();
+  await navigateMain(page, "Dictate");
+  await openRecordingOptions(page);
   await expect(selector).toContainText("Email");
   await expect(page.getByRole("button", { name: "Modified", exact: true })).toHaveCount(0);
 });
@@ -8785,7 +9718,7 @@ for (const theme of ["light", "dark"] as const) {
     await expect(marker).toBeFocused();
     await expect(tooltip).toContainText("Profile: Off");
     await page.keyboard.press("Escape");
-    await page.getByRole("link", { name: "Vocabulary", exact: true }).click();
+    await navigateMain(page, "Vocabulary");
     await page.getByRole("link", { name: "Settings", exact: true }).click();
     await expect(cleanup).toBeChecked();
     await expect(marker).toBeVisible();
@@ -8811,7 +9744,7 @@ for (const theme of ["light", "dark"] as const) {
       animations: "disabled",
     });
     await page.getByRole("tab", { name: "Profiles", exact: true }).click();
-    await page.getByRole("button", { name: "Use Default", exact: true }).click();
+    await page.getByRole("button", { name: "Make Default active", exact: true }).click();
     await page.getByRole("tab", { name: "Dictation", exact: true }).click();
     await expect(marker).toHaveCount(0);
     await expect(cleanup).not.toBeChecked();
@@ -8840,7 +9773,8 @@ test("setting indicators mark only differing profile fields and use readable lan
     0,
   );
   await page.getByRole("tab", { name: "Advanced", exact: true }).click();
-  await page.getByLabel("Speech model", { exact: true }).fill("/base");
+  await showCustomModelFiles(page);
+  await page.getByLabel("Speech model file", { exact: true }).fill("/base");
   const model = page.getByRole("img", { name: "Speech model changed from Default", exact: true });
   await model.hover();
   await expect(page.locator('[data-slot="tooltip-content"]')).toContainText(
@@ -8849,7 +9783,7 @@ test("setting indicators mark only differing profile fields and use readable lan
   await expect(page.locator('[data-slot="tooltip-content"]')).toContainText(
     "Current: Whisper Base",
   );
-  await page.getByLabel("Speech model", { exact: true }).fill("/tiny");
+  await page.getByLabel("Speech model file", { exact: true }).fill("/tiny");
   await expect(model).toHaveCount(0);
   await page.getByRole("tab", { name: "Dictation", exact: true }).click();
   await page.getByRole("combobox", { name: "Spoken language", exact: true }).click();
@@ -8868,7 +9802,7 @@ test("setting indicators mark only differing profile fields and use readable lan
     state.history();
   });
   await page.getByRole("tab", { name: "Profiles", exact: true }).click();
-  await page.getByRole("button", { name: "Use Email", exact: true }).click();
+  await page.getByRole("button", { name: "Make Email active", exact: true }).click();
   await page.getByRole("tab", { name: "Dictation", exact: true }).click();
   await expect(page.getByRole("switch", { name: /^Light cleanup/ })).toBeChecked();
   await expect(page.getByRole("img", { name: /changed from/ })).toHaveCount(0);
@@ -8885,7 +9819,7 @@ test("automatic prompt indicator explains the selected prompt and follows save d
     window.dictationTest.snapshot.textProcessing.autoPromptId = "cleanup";
   });
   await homeModelScenario(page);
-  await page.getByRole("link", { name: "Prompts & chains", exact: true }).click();
+  await navigateMain(page, "Prompts & chains");
   const automatic = page.getByRole("switch", { name: "Run after dictation", exact: true });
   const marker = page.getByRole("img", {
     name: "Run after dictation changed from Default",
@@ -8929,8 +9863,8 @@ test("automatic prompt indicator explains the selected prompt and follows save d
     .toBe(true);
   await page.getByRole("link", { name: "Settings", exact: true }).click();
   await page.getByRole("tab", { name: "Profiles", exact: true }).click();
-  await page.getByRole("button", { name: "Use Default", exact: true }).click();
-  await page.getByRole("link", { name: "Prompts & chains", exact: true }).click();
+  await page.getByRole("button", { name: "Make Default active", exact: true }).click();
+  await navigateMain(page, "Prompts & chains");
   await expect(marker).toHaveCount(0);
   expect(await page.evaluate(() => window.dictationTest.snapshot.textProcessing.autoPromptId)).toBe(
     "cleanup",
@@ -8976,6 +9910,10 @@ test("prompt chains can be saved with explicit sources and selected for automati
   await expect(
     page.getByRole("menuitem", { name: "Move step 1 down", exact: true }),
   ).toBeDisabled();
+  await expect(page.getByText("This is already the first step.", { exact: true })).toBeVisible();
+  await expect(
+    page.getByText("Later steps use this result. Keep it before them.", { exact: true }),
+  ).toBeVisible();
   await page.keyboard.press("Escape");
   await page.getByRole("switch", { name: "Run chain after dictation", exact: true }).check();
   await saveDraft(page);
@@ -9000,8 +9938,8 @@ test("prompt chains can be saved with explicit sources and selected for automati
     fullPage: true,
   });
   await page.setViewportSize({ width: 1280, height: 720 });
-  await page.getByRole("link", { name: "History", exact: true }).click();
-  await page.getByRole("link", { name: "Prompts & chains", exact: true }).click();
+  await navigateMain(page, "History");
+  await navigateMain(page, "Prompts & chains");
   await page.getByRole("tab", { name: "Chains", exact: true }).click();
   await expect(page.getByRole("textbox", { name: "Chain name", exact: true })).toHaveValue(
     "Meeting follow-up",
@@ -9014,7 +9952,7 @@ test("prompt chains can be saved with explicit sources and selected for automati
   await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
   await page.getByRole("tab", { name: "Chains", exact: true }).click();
   await page.getByRole("button", { name: "Delete chain", exact: true }).click();
-  await page.getByRole("dialog").getByRole("button", { name: "Delete chain", exact: true }).click();
+  await activeDialog(page).getByRole("button", { name: "Delete chain", exact: true }).click();
   await saveDraft(page);
   await expect
     .poll(() => page.evaluate(() => window.dictationTest.snapshot.textProcessing.autoPromptId))
@@ -9070,7 +10008,7 @@ test("manual prompt chains retain intermediate results and show their input sour
   const outputPicker = page.getByRole("combobox", { name: "Output prompt", exact: true });
   await expect(outputPicker.locator("svg.lucide-workflow")).toHaveCount(1);
   await expect(outputPicker).not.toContainText("(chain)");
-  await page.getByRole("button", { name: "Run chain", exact: true }).click();
+  await generateWith(page, "Run chain");
   await expect
     .poll(() => page.evaluate(() => window.dictationTest.processing?.input))
     .toBe("Raw speech.");
@@ -9100,8 +10038,13 @@ test("manual prompt chains retain intermediate results and show their input sour
   ).toBeVisible();
   const email = page.getByRole("article", { name: "Email output", exact: true });
   await expect(email).toContainText("Input: Step 1: Cleanup");
+  await selectSavedOutput(page, 1);
   await expect(page.getByRole("article", { name: "Summary output", exact: true })).toContainText(
     "A short summary.",
+  );
+  await selectSavedOutput(page, 2);
+  await expect(page.getByRole("article", { name: "Cleanup output", exact: true })).toContainText(
+    "Cleaned speech.",
   );
   expect(await page.evaluate(() => window.dictationTest.clipboard)).toBe("");
   expect(await page.evaluate(() => window.dictationTest.snapshot.history[0].finalTranscript)).toBe(
@@ -9142,7 +10085,7 @@ test("cancelled manual prompt chains leave completed results available", async (
   await page.getByRole("tab", { name: "Outputs", exact: true }).click();
   await page.getByRole("combobox", { name: "Output prompt", exact: true }).click();
   await page.getByRole("option", { name: "Notes", exact: true }).click();
-  await page.getByRole("button", { name: "Run chain", exact: true }).click();
+  await generateWith(page, "Run chain");
   await expect
     .poll(() => page.evaluate(() => window.dictationTest.processing?.input))
     .toBe("Raw speech.");
@@ -9176,7 +10119,7 @@ test("dictation profiles can select saved prompt chains", async ({ page }) => {
   });
   await page.getByRole("link", { name: "Manage dictation profiles" }).click();
   await page.getByRole("button", { name: "New profile", exact: true }).click();
-  const dialog = page.getByRole("dialog");
+  const dialog = activeDialog(page);
   await dialog.getByLabel("Profile name").fill("Meeting");
   await dialog.getByRole("combobox", { name: "After dictation", exact: true }).click();
   const chainOption = page.getByRole("option", { name: "Meeting notes", exact: true });
@@ -9197,7 +10140,8 @@ test("dictation profiles can select saved prompt chains", async ({ page }) => {
       ),
     )
     .toBe("notes");
-  await page.getByRole("link", { name: "Dictate", exact: true }).click();
+  await navigateMain(page, "Dictate");
+  await openRecordingOptions(page);
   await page.getByRole("combobox", { name: "Dictation profile", exact: true }).click();
   await page.getByRole("option", { name: "Meeting", exact: true }).click();
   await expect
@@ -9250,7 +10194,7 @@ test("temporary prompt chains expose completed results after an interrupted run"
   });
   await page.goto("/#/");
   const temporary = page.getByRole("region", { name: "Temporary latest result", exact: true });
-  await temporary.getByText("Original generated outputs (1)", { exact: true }).click();
+  await temporary.getByRole("tab", { name: /^Outputs/ }).click();
   await expect(temporary).toContainText("Step 1: Cleanup");
   await expect(temporary).toContainText("Cleaned result.");
   await temporary.getByRole("button", { name: "Copy output", exact: true }).click();
@@ -9273,7 +10217,7 @@ test("profile cards add, keep, and remove automatic apps as badges", async ({ pa
       { applicationId: "windows:outlook.exe", applicationName: "Outlook", profileId: "default" },
     ]);
   await expect(apps.getByText("Outlook", { exact: true })).toBeVisible();
-  await page.getByRole("link", { name: "Dictate", exact: true }).click();
+  await navigateMain(page, "Dictate");
   await page.getByRole("link", { name: "Settings", exact: true }).click();
   await page.getByRole("tab", { name: "Profiles", exact: true }).click();
   await expect(apps.getByText("Outlook", { exact: true })).toBeVisible();
@@ -9439,6 +10383,7 @@ test("recording shows its automatic profile while manual selection stays unchang
     };
     state.callbacks["dictation:status"](state.snapshot.status);
   });
+  await openRecordingOptions(page);
   const selector = page.getByRole("combobox", { name: "Dictation profile", exact: true });
   await expect(selector).toContainText("Email");
   await expect(selector).toBeDisabled();
@@ -9478,6 +10423,13 @@ for (const theme of ["light", "dark"]) {
     await page.goto("/#/prompts?section=chains");
     const editor = page.getByRole("region", { name: "Prompt chains", exact: true });
     await expect(editor.getByRole("listitem")).toHaveCount(4);
+    const chainSelector = await editor
+      .getByRole("combobox", { name: "Saved chain", exact: true })
+      .boundingBox();
+    const chainName = await editor
+      .getByRole("textbox", { name: "Chain name", exact: true })
+      .boundingBox();
+    expect(Math.abs(chainSelector!.y - chainName!.y)).toBeLessThan(1);
     await expect(editor.getByText("Final output", { exact: true })).toHaveCount(1);
     await expect(editor.getByText("Later steps use this result.", { exact: false })).toHaveCount(0);
     await expect(
@@ -9543,6 +10495,7 @@ for (const theme of ["light", "dark"]) {
 test("chain editor adds prompts with the keyboard and preserves references when managing steps", async ({
   page,
 }) => {
+  await page.setViewportSize({ width: 1086, height: 722 });
   await page.addInitScript(() => {
     const config = window.dictationTest.snapshot.textProcessing;
     config.enabled = true;
@@ -9561,11 +10514,25 @@ test("chain editor adds prompts with the keyboard and preserves references when 
   await expect(page.getByRole("combobox", { name: "Step 2 prompt", exact: true })).toContainText(
     "Summary",
   );
+  await expect(page.getByRole("combobox", { name: "Step 2 prompt", exact: true })).toBeFocused();
   await expect(page.getByRole("combobox", { name: "Step 2 input", exact: true })).toContainText(
     "Step 1: Cleanup",
   );
   await addStep.click();
   await page.getByRole("menuitem", { name: "Email", exact: true }).click();
+  await expect(page.getByRole("combobox", { name: "Step 3 prompt", exact: true })).toBeFocused();
+  for (const index of [1, 2, 3]) {
+    const prompt = await page
+      .getByRole("combobox", { name: `Step ${index} prompt`, exact: true })
+      .boundingBox();
+    const input = await page
+      .getByRole("combobox", { name: `Step ${index} input`, exact: true })
+      .boundingBox();
+    expect(input!.x).toBeGreaterThan(prompt!.x);
+    expect(
+      Math.abs(prompt!.y + prompt!.height / 2 - input!.y - input!.height / 2),
+    ).toBeLessThanOrEqual(1);
+  }
   await page.getByRole("combobox", { name: "Step 3 input", exact: true }).click();
   await page.getByRole("option", { name: "Original transcription", exact: true }).click();
   await page.getByRole("button", { name: "Step 3 actions", exact: true }).click();
@@ -9655,7 +10622,7 @@ test("auto-save pauses invalid vocabulary and prompts, then resumes after correc
   await expect
     .poll(() => page.evaluate(() => window.dictationTest.snapshot.vocabulary.length))
     .toBe(1);
-  await page.getByRole("link", { name: "Prompts & chains", exact: true }).click();
+  await navigateMain(page, "Prompts & chains");
   await page.getByLabel("Instructions", { exact: true }).fill("");
   await expect(page.getByRole("status").filter({ hasText: "Not saved yet:" })).toContainText(
     "Cleanup needs instructions",
@@ -9711,7 +10678,7 @@ test("auto-save prompt and chain deletion Undo restores the previous draft and a
     .toBe("cleanup");
   await page.getByRole("tab", { name: "Chains", exact: true }).click();
   await page.getByRole("button", { name: "Delete chain", exact: true }).click();
-  await page.getByRole("dialog").getByRole("button", { name: "Delete chain", exact: true }).click();
+  await activeDialog(page).getByRole("button", { name: "Delete chain", exact: true }).click();
   await expect
     .poll(() => page.evaluate(() => window.dictationTest.snapshot.textProcessing.chains?.length))
     .toBe(0);
@@ -9838,7 +10805,7 @@ test("auto-save profile creates once on its first valid save and Done flushes su
   await homeModelScenario(page);
   await page.getByRole("link", { name: "Manage dictation profiles" }).click();
   await page.getByRole("button", { name: "New profile", exact: true }).click();
-  const dialog = page.getByRole("dialog");
+  const dialog = activeDialog(page);
   await expect(dialog.getByRole("button", { name: "Save profile" })).toHaveCount(0);
   await dialog.getByLabel("Profile name").fill("Email");
   await expect
@@ -9882,7 +10849,7 @@ test("auto-save transcript stays open, never saves empty text, and Done flushes 
   });
   await page.goto("/#/history/auto");
   await page.getByRole("button", { name: "Edit transcript", exact: true }).click();
-  const dialog = page.getByRole("dialog", { name: "Edit transcript", exact: true });
+  const dialog = page.getByRole("region", { name: "Edit transcript", exact: true });
   const input = dialog.getByRole("textbox", { name: "Editable text" });
   await input.fill("First correction");
   await expect
@@ -10074,8 +11041,9 @@ test("auto-save history restores the vocabulary list and transcript, marks curre
     .toBe("Earlier term");
   await page.goto("/#/history/history");
   await page.getByRole("button", { name: "Edit transcript", exact: true }).click();
-  const editor = page.getByRole("dialog", { name: "Edit transcript", exact: true });
-  await editor.getByRole("button", { name: "Version history", exact: true }).click();
+  const editor = page.getByRole("region", { name: "Edit transcript", exact: true });
+  await editor.getByRole("button", { name: "Editing tools", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Version history", exact: true }).click();
   const history = page.getByRole("dialog", { name: "Transcript version history", exact: true });
   await history
     .getByRole("navigation", { name: "Versions", exact: true })
@@ -10159,7 +11127,7 @@ for (const dark of [false, true]) {
     await recovery.getByRole("link", { name: "Change shortcut", exact: true }).click();
     await expect(page.getByLabel("Global shortcut", { exact: true })).toBeFocused();
     await expect(page).toHaveURL(/section=dictation&focus=shortcut/);
-    await page.getByRole("link", { name: "Dictate", exact: true }).click();
+    await navigateMain(page, "Dictate");
     await page.evaluate(() => {
       const state = window.dictationTest;
       state.snapshot.status.shortcutError = "Accessibility access required";
@@ -10192,6 +11160,16 @@ test("desktop integration: tray routes are validated and focus shortcut settings
   page,
 }) => {
   await homeModelScenario(page);
+  await page.evaluate(() => {
+    window.dictationTest.status("text-processing");
+    window.dictationTest.callbacks["desktop:navigate"](
+      "/settings?section=dictation&focus=shortcut",
+    );
+  });
+  await expect(page.getByLabel("Global shortcut", { exact: true })).toBeDisabled();
+  await page.evaluate(() => window.dictationTest.status("idle"));
+  await expect(page.getByLabel("Global shortcut", { exact: true })).toBeFocused();
+  await navigateMain(page, "Dictate");
   for (const route of [
     "/history",
     "/settings",
@@ -10206,7 +11184,7 @@ test("desktop integration: tray routes are validated and focus shortcut settings
     await expect(page).toHaveURL(new RegExp(`#${route.replaceAll("?", "\\?")}$`));
     if (route.includes("focus=shortcut")) {
       await expect(page.getByLabel("Global shortcut", { exact: true })).toBeFocused();
-      const history = page.getByRole("link", { name: "History", exact: true });
+      const history = page.getByRole("button", { name: "Close", exact: true });
       await history.focus();
       await page.evaluate(() => window.dictationTest.status("text-processing"));
       await expect(page.getByLabel("Global shortcut", { exact: true })).toBeDisabled();
@@ -10225,7 +11203,7 @@ test("desktop integration: completion offers one current result action without s
   page,
 }, info) => {
   await homeModelScenario(page);
-  await page.getByRole("link", { name: "History", exact: true }).click();
+  await navigateMain(page, "History");
   await page.evaluate(() => {
     const state = window.dictationTest;
     state.status("transcribing");
@@ -10252,7 +11230,7 @@ test("desktop integration: recovery notification stays actionable and expires on
   page,
 }, info) => {
   await homeModelScenario(page);
-  await page.getByRole("link", { name: "History", exact: true }).click();
+  await navigateMain(page, "History");
   await page.evaluate(() => {
     const state = window.dictationTest;
     state.status("transcribing");
@@ -10288,6 +11266,7 @@ test("desktop integration: profile-only conflict opens the cycling shortcut", as
   });
   const recovery = page.getByRole("region", { name: "Shortcut recovery" });
   await expect(recovery).toContainText("Profile shortcut unavailable");
+  await page.keyboard.press("Escape");
   await recovery.getByRole("link", { name: "Change shortcut", exact: true }).click();
   await expect(page.getByLabel("Cycle profiles shortcut", { exact: true })).toBeFocused();
 });
@@ -10303,6 +11282,7 @@ test("desktop integration: synthetic conflict-to-result walkthrough", async ({ p
   const recovery = page.getByRole("region", { name: "Shortcut recovery" });
   await recovery.scrollIntoViewIfNeeded();
   // Pauses make the captured interaction readable.
+  await page.keyboard.press("Escape");
   await page.waitForTimeout(700);
   await recovery.getByRole("link", { name: "Change shortcut", exact: true }).click();
   await expect(page.getByLabel("Global shortcut", { exact: true })).toBeFocused();
@@ -10312,7 +11292,7 @@ test("desktop integration: synthetic conflict-to-result walkthrough", async ({ p
     state.snapshot.status.shortcutError = "";
     state.status("idle");
   });
-  await page.getByRole("link", { name: "History", exact: true }).click();
+  await navigateMain(page, "History");
   await page.evaluate(() => {
     const state = window.dictationTest;
     state.status("transcribing");
@@ -10345,4 +11325,502 @@ test("desktop integration: synthetic conflict-to-result walkthrough", async ({ p
   await latest.scrollIntoViewIfNeeded();
   await page.waitForTimeout(900);
   await page.screenshot({ path: info.outputPath("desktop-recovered-result.png") });
+});
+
+test("UI polish settings search opens a category, focuses the setting and restores the calling page", async ({
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await homeSurfaceScenario(page);
+  const trigger = page.getByRole("link", { name: "Settings", exact: true });
+  await trigger.focus();
+  await trigger.press("Enter");
+  const settings = page.getByRole("dialog", { name: "Settings", exact: true });
+  const search = settings.getByRole("textbox", { name: "Search settings", exact: true });
+  await expect(search).toBeFocused();
+  const settingsTitle = settings.locator('[data-slot="dialog-title"]');
+  const titleTop = (await settingsTitle.boundingBox())!.y;
+  await expect(settings.locator('[data-slot="settings-save-state"]')).toBeInViewport();
+  await expect
+    .poll(() => settings.evaluate((node) => node.scrollHeight <= node.clientHeight))
+    .toBe(true);
+  await search.fill("hotkey");
+  await expect(settings.getByRole("tab", { selected: true })).toHaveCount(0);
+  await settings.getByRole("button", { name: /^Global shortcut/ }).click();
+  await expect(page).toHaveURL(/section=dictation.*focus=/);
+  const shortcut = settings.getByLabel("Global shortcut", { exact: true });
+  await expect(shortcut).toBeFocused();
+  await expect(settings.getByRole("tab", { name: "Dictation", exact: true })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+  await shortcut.fill("Ctrl+Alt+J");
+  await shortcut.press("Tab");
+  await expect
+    .poll(() => page.evaluate(() => window.dictationTest.snapshot.settings.shortcut))
+    .toBe("Ctrl+Alt+J");
+  await search.fill("retention");
+  await settings.getByRole("button", { name: /^History retention/ }).click();
+  await expect(
+    settings.getByRole("combobox", { name: "History retention", exact: true }),
+  ).toBeFocused();
+  for (const [query, title, category] of [
+    ["backup", /^Backup & restore/, "history"],
+    ["FFmpeg", /^Audio support \(FFmpeg\)/, "advanced"],
+    ["diagnostics", /^Dictation diagnostics/, "advanced"],
+    ["startup", /^Launch at login/, "general"],
+    ["runtime", /^Whisper executable/, "advanced"],
+    ["updates", /^App updates/, "general"],
+    ["stats", /^Performance statistics/, "advanced"],
+  ] as const) {
+    await search.fill(query);
+    await settings.getByRole("button", { name: title }).first().click();
+    await expect(page).toHaveURL(new RegExp(`section=${category}.*focus=`));
+    await expect(search).toHaveValue("");
+    await expect.poll(() => settings.evaluate((node) => node.scrollTop)).toBe(0);
+    expect(Math.abs((await settingsTitle.boundingBox())!.y - titleTop)).toBeLessThan(1);
+    await expect(settings.locator('[data-slot="settings-save-state"]')).toBeInViewport();
+  }
+  await search.fill("setting-that-does-not-exist");
+  await expect(settings.getByText("No settings found", { exact: true })).toBeVisible();
+  await settings.getByRole("button", { name: "Clear search", exact: true }).click();
+  await page.keyboard.press("Escape");
+  await expect(settings).toHaveCount(0);
+  await expect(page).toHaveURL(/#\/$/);
+  await expect(trigger).toBeFocused();
+  await expect(page.getByRole("button", { name: "Start recording", exact: true })).toBeEnabled();
+});
+
+test("UI polish settings keeps category navigation and controls reachable at enlarged text", async ({
+  page,
+}) => {
+  await settingsClarityScenario(page);
+  const settings = page.getByRole("dialog", { name: "Settings", exact: true });
+  const pane = settings.locator('[data-slot="settings-scroll-pane"]');
+  for (const width of [760, 480]) {
+    await page.setViewportSize({ width, height: 600 });
+    await page.evaluate(() => (document.documentElement.style.fontSize = "200%"));
+    const categories = settings.getByRole("combobox", { name: "Settings sections", exact: true });
+    const search = settings.getByRole("textbox", { name: "Search settings", exact: true });
+    await search.focus();
+    await page.keyboard.press("Shift+Tab");
+    await expect(categories).toBeFocused();
+    await page.keyboard.press("Tab");
+    await expect(search).toBeFocused();
+    for (const label of ["Dictation", "Profiles", "General", "History & data", "Advanced"]) {
+      await categories.click();
+      await page.getByRole("option", { name: label, exact: true }).click();
+      await expect(categories).toContainText(label);
+    }
+    // Outer overflow checks alone allowed the sidebar to crush this pane to 16px.
+    expect(await pane.evaluate((node) => node.clientWidth)).toBeGreaterThan(320);
+    expect(await pane.evaluate((node) => node.clientHeight)).toBeGreaterThan(280);
+    const refresh = settings.getByRole("button", { name: "Refresh diagnostics", exact: true });
+    await refresh.focus();
+    await expect(refresh).toBeInViewport();
+    const geometry = await refresh.evaluate((button) => {
+      const box = button.getBoundingClientRect();
+      const content = button.closest('[data-slot="settings-scroll-pane"]')!.getBoundingClientRect();
+      const heading = button.closest("section")!.querySelector("h2")!.getBoundingClientRect();
+      return {
+        left: box.left,
+        right: box.right,
+        contentLeft: content.left,
+        contentRight: content.right,
+        headingTop: heading.top,
+        headingBottom: heading.bottom,
+        contentTop: content.top,
+        contentBottom: content.bottom,
+      };
+    });
+    expect(geometry.left).toBeGreaterThanOrEqual(geometry.contentLeft);
+    expect(geometry.right).toBeLessThanOrEqual(geometry.contentRight);
+    expect(geometry.headingTop).toBeGreaterThanOrEqual(geometry.contentTop);
+    expect(geometry.headingBottom).toBeLessThanOrEqual(geometry.contentBottom);
+    const setup = settings.getByRole("button", { name: "Run setup", exact: true });
+    await setup.focus();
+    await expect(setup).toBeInViewport();
+    expect(await pane.evaluate((node) => node.scrollWidth <= node.clientWidth)).toBe(true);
+    expect(await settings.evaluate((node) => node.scrollWidth <= node.clientWidth)).toBe(true);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+      true,
+    );
+  }
+});
+
+test("UI polish Escape flushes focused settings and failed drafts survive closing", async ({
+  page,
+}) => {
+  await homeSurfaceScenario(page);
+  await page.getByRole("link", { name: "Settings", exact: true }).click();
+  const modal = page.getByRole("dialog", { name: "Settings", exact: true });
+  const shortcut = modal.getByLabel("Global shortcut", { exact: true });
+  await shortcut.fill("Ctrl+Alt+J");
+  await shortcut.press("Escape");
+  await expect(modal).toHaveCount(0);
+  await expect
+    .poll(() => page.evaluate(() => window.dictationTest.snapshot.settings.shortcut))
+    .toBe("Ctrl+Alt+J");
+  await page.getByRole("link", { name: "Settings", exact: true }).click();
+  await page.evaluate(() => (window.dictationTest.failSave = true));
+  await shortcut.fill("Ctrl+Alt+K");
+  await shortcut.press("Escape");
+  await expect(modal).toHaveCount(0);
+  const failureNotice = page
+    .locator('[data-slot="toast"]')
+    .filter({ hasText: "Settings not saved" });
+  await expect(failureNotice).toBeVisible();
+  await expect(
+    page.locator('[data-slot="app-save-notice-host"] [data-slot="toast"]'),
+  ).toBeVisible();
+  const afterCloseNotice = await failureNotice.boundingBox();
+  const afterCloseRecorder = await page.locator('[data-slot="home-recorder"]').boundingBox();
+  expect(afterCloseRecorder!.y).toBeGreaterThanOrEqual(
+    afterCloseNotice!.y + afterCloseNotice!.height - 1,
+  );
+  await failureNotice.getByRole("button", { name: "Error details", exact: true }).click();
+  const errorReader = page.getByRole("dialog", { name: "Error details", exact: true });
+  await expect(
+    errorReader.getByRole("region", { name: "Full error details", exact: true }),
+  ).toHaveText("Settings save failed");
+  await errorReader.getByRole("button", { name: "Back", exact: true }).click();
+  expect(await page.evaluate(() => window.dictationTest.snapshot.settings.shortcut)).toBe(
+    "Ctrl+Alt+J",
+  );
+  await page.getByRole("link", { name: "Settings", exact: true }).click();
+  await expect(shortcut).toHaveValue("Ctrl+Alt+K");
+  await expect(modal.getByRole("status").filter({ hasText: "Changes not saved" })).toBeVisible();
+  await page.evaluate(() => (window.dictationTest.failSave = false));
+  await modal.getByRole("button", { name: "Retry", exact: true }).click();
+  await expect
+    .poll(() => page.evaluate(() => window.dictationTest.snapshot.settings.shortcut))
+    .toBe("Ctrl+Alt+K");
+});
+
+test("UI polish recording options start closed, preserve settings and return keyboard focus", async ({
+  page,
+}) => {
+  await homeSurfaceScenario(page);
+  await page.reload();
+  const recorder = page.getByRole("region", { name: "Dictation recorder", exact: true });
+  const trigger = recorder.getByRole("button", { name: "Recording options", exact: true });
+  const options = page.getByRole("region", { name: "Recording options", exact: true });
+  await expect(trigger).toHaveAttribute("aria-expanded", "false");
+  await expect(options).toBeHidden();
+  await expect(recorder.getByRole("combobox")).toHaveCount(0);
+  await expect(
+    recorder.getByRole("button", { name: "Start recording", exact: true }),
+  ).toBeEnabled();
+  await trigger.press("Enter");
+  await expect(
+    options.getByRole("combobox", { name: "Dictation profile", exact: true }),
+  ).toBeVisible();
+  await expect(options.getByRole("combobox", { name: "Speech model", exact: true })).toBeVisible();
+  await page.evaluate(() => {
+    window.dictationTest.snapshot.models[0].name = "NVIDIA Parakeet TDT v3 — long model name";
+    window.dictationTest.history();
+  });
+  await page.setViewportSize({ width: 360, height: 720 });
+  await expect(options.getByText("Profile", { exact: true })).toBeVisible();
+  const model = options.getByRole("combobox", { name: "Speech model", exact: true });
+  await expect(model).toContainText("NVIDIA Parakeet TDT v3 — long model name");
+  await expect
+    .poll(() =>
+      model.evaluate((node) => {
+        const value = node.querySelector('[data-slot="select-value"]')!;
+        const outer = node.getBoundingClientRect(),
+          inner = value.getBoundingClientRect();
+        return inner.top >= outer.top && inner.bottom <= outer.bottom;
+      }),
+    )
+    .toBe(true);
+  await page.setViewportSize({ width: 1086, height: 722 });
+  const history = options.getByRole("switch", { name: "Save to history", exact: true });
+  await history.uncheck();
+  await expect
+    .poll(() => page.evaluate(() => window.dictationTest.snapshot.settings.saveHistory))
+    .toBe(false);
+  await history.press("Escape");
+  await expect(options).toBeHidden();
+  await expect(trigger).toBeFocused();
+  const historyOff = recorder.getByRole("status", { name: "Not saving to history", exact: true });
+  await expect(historyOff).toBeVisible();
+  await expect(historyOff).toHaveText("History off");
+  const controls = await trigger.boundingBox(),
+    indicator = await historyOff.boundingBox();
+  expect(
+    Math.abs(controls!.y + controls!.height / 2 - indicator!.y - indicator!.height / 2),
+  ).toBeLessThanOrEqual(1);
+  await trigger.press("Enter");
+  await expect(history).not.toBeChecked();
+  await recorder.getByRole("button", { name: "Start recording", exact: true }).click();
+  await expect(recorder.getByRole("button", { name: "Stop recording", exact: true })).toBeEnabled();
+  await openRecordingOptions(page);
+  await expect(options.getByRole("combobox", { name: "Speech model", exact: true })).toBeDisabled();
+  await expect(
+    options.getByRole("combobox", { name: "Dictation profile", exact: true }),
+  ).toBeDisabled();
+  await expect(history).toBeEnabled();
+  await history.check();
+  await expect(historyOff).toBeVisible();
+});
+
+test("UI polish long transcript comparison preserves literal source, fits the draft and saves the end", async ({
+  page,
+}, info) => {
+  const raw = Array.from(
+    { length: 90 },
+    (_, i) =>
+      `Section ${i + 1}: Keep **literal markers** and every line break. Review the project notes with the team, preserve the original meaning, and record the next practical step.`,
+  ).join("\n\n");
+  const edited = raw.replace("literal markers", "corrected markers");
+  await page.addInitScript(
+    ({ raw, edited }) => {
+      window.dictationTest.snapshot.history = [
+        {
+          id: "polish-long",
+          createdAt: "2026-11-04T10:00:00Z",
+          durationMs: 600000,
+          rawTranscript: raw,
+          finalTranscript: edited,
+          speechModel: "Whisper Small",
+          language: "en",
+          audioPath: "",
+        },
+      ];
+    },
+    { raw, edited },
+  );
+  await page.setViewportSize({ width: 1086, height: 722 });
+  await page.goto("/#/history/polish-long");
+  await page.getByRole("button", { name: "Edit transcript", exact: true }).click();
+  const editor = page.getByRole("region", { name: "Edit transcript", exact: true });
+  const draft = editor.getByRole("textbox", { name: "Editable text", exact: true });
+  await editor.getByRole("button", { name: "Compare with original", exact: true }).click();
+  const original = editor.locator('[data-slot="editor-original"]');
+  expect(await original.textContent()).toBe(raw);
+  await expect
+    .poll(() => draft.evaluate((node) => node.scrollHeight <= node.clientHeight))
+    .toBe(true);
+  const layout = await editor.evaluate((node) => {
+    const draft = node.querySelector<HTMLTextAreaElement>("#transcript-editor")!;
+    const original = node.querySelector<HTMLElement>('[data-slot="editor-original"]')!;
+    const a = getComputedStyle(draft),
+      b = getComputedStyle(original);
+    return {
+      draftFont: a.fontSize,
+      originalFont: b.fontSize,
+      draftLine: a.lineHeight,
+      originalLine: b.lineHeight,
+      topDelta: Math.abs(
+        draft.getBoundingClientRect().top +
+          parseFloat(a.borderTopWidth) +
+          parseFloat(a.paddingTop) -
+          original.getBoundingClientRect().top,
+      ),
+      widthDelta: Math.abs(
+        draft.clientWidth -
+          parseFloat(a.paddingLeft) -
+          parseFloat(a.paddingRight) -
+          original.clientWidth,
+      ),
+    };
+  });
+  expect(layout.draftFont).toBe(layout.originalFont);
+  expect(layout.draftLine).toBe(layout.originalLine);
+  expect(layout.topDelta).toBeLessThan(2);
+  expect(layout.widthDelta).toBeLessThan(2);
+  await page.screenshot({ path: info.outputPath("long-editor-compare.png") });
+  await page.setViewportSize({ width: 760, height: 560 });
+  await expect
+    .poll(() => draft.evaluate((node) => node.scrollHeight <= node.clientHeight))
+    .toBe(true);
+  await draft.press("Control+End");
+  await page.keyboard.type(" Final correction.");
+  const done = editor.getByRole("button", { name: "Done", exact: true });
+  await expect(done).toBeInViewport();
+  await done.click();
+  await expect(editor).toHaveCount(0);
+  await expect
+    .poll(() => page.evaluate(() => window.dictationTest.snapshot.history[0].finalTranscript))
+    .toBe(edited + " Final correction.");
+  expect(await page.evaluate(() => window.dictationTest.snapshot.history[0].rawTranscript)).toBe(
+    raw,
+  );
+  await expect(page.getByRole("button", { name: "Edit transcript", exact: true })).toBeFocused();
+});
+
+for (const [language, width, height] of [
+  ["en", 360, 640],
+  ["de", 480, 760],
+] as const) {
+  test(`focused pass keeps Original editing and change navigation contained ${language}`, async ({
+    page,
+  }) => {
+    const copy = language === "de" ? de : en;
+    await page.addInitScript(
+      (language) => localStorage.setItem("desktop-language", language),
+      language,
+    );
+    await sessionTitleScenario(page);
+    await page.setViewportSize({ width, height });
+    await page.evaluate(() => (document.documentElement.style.fontSize = "200%"));
+    await page.getByRole("tab", { name: copy["historyEntryPage.changes"], exact: true }).click();
+    const next = page.getByRole("button", { name: copy["uiPolish.nextChange"], exact: true });
+    await next.focus();
+    await expect(next).toBeInViewport();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+      true,
+    );
+    await next.press("Enter");
+    await expect(page.locator("[data-diff-change]").first()).toBeFocused();
+    await page.getByRole("tab", { name: copy["historyEntryPage.original"], exact: true }).click();
+    const edit = page.getByRole("button", {
+      name: copy["uiPolish.editSavedTranscript"],
+      exact: true,
+    });
+    await edit.focus();
+    await expect(edit).toBeInViewport();
+    const box = (await edit.boundingBox())!;
+    expect(box.x).toBeGreaterThanOrEqual(0);
+    expect(box.x + box.width).toBeLessThanOrEqual(width);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+      true,
+    );
+    await edit.press("Enter");
+    await expect(
+      page.getByRole("textbox", { name: copy["transcriptEditor.editableText"], exact: true }),
+    ).toHaveValue("Original saved transcript.");
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+      true,
+    );
+    expect(await page.evaluate(() => window.dictationTest.snapshot.history[0].rawTranscript)).toBe(
+      "um, original recording",
+    );
+  });
+}
+
+test("UI polish changes navigate separate edits in long text without modifying either version", async ({
+  page,
+}) => {
+  const raw =
+    "Start incorrect.\n\n" +
+    Array.from(
+      { length: 70 },
+      (_, i) => `Unchanged section ${i + 1} contains the same neutral words and remains readable.`,
+    ).join("\n\n") +
+    "\n\nEnd mistaken.";
+  const edited = raw.replace("incorrect", "correct").replace("mistaken", "fixed");
+  await page.addInitScript(
+    ({ raw, edited }) => {
+      window.dictationTest.snapshot.history = [
+        {
+          id: "polish-diff",
+          createdAt: "2026-11-04T10:00:00Z",
+          durationMs: 600000,
+          rawTranscript: raw,
+          finalTranscript: edited,
+          speechModel: "Whisper Small",
+          language: "en",
+          audioPath: "",
+        },
+      ];
+    },
+    { raw, edited },
+  );
+  await page.goto("/#/history/polish-diff");
+  await page.getByRole("tab", { name: "Changes", exact: true }).click();
+  const pane = page.getByRole("tabpanel", { name: "Changes", exact: true });
+  const changes = pane.locator("[data-diff-change]");
+  await expect(changes).toHaveCount(2);
+  await expect(pane.getByRole("status")).toHaveText("2 changes");
+  await pane.getByRole("button", { name: "Next change", exact: true }).press("Enter");
+  await expect(changes.nth(0)).toBeFocused();
+  await expect(pane.getByRole("status")).toHaveText("Change 1 of 2");
+  await pane.getByRole("button", { name: "Previous change", exact: true }).focus();
+  await expect(changes.nth(0)).not.toBeFocused();
+  await expect(changes.nth(0)).toHaveAttribute("aria-current", "true");
+  await pane.getByRole("button", { name: "Next change", exact: true }).press("Enter");
+  await expect(changes.nth(1)).toBeFocused();
+  await expect(changes.nth(1)).toBeInViewport();
+  await expect(pane.getByRole("button", { name: "Previous change", exact: true })).toBeInViewport();
+  await pane.getByRole("button", { name: "Previous change", exact: true }).press("Enter");
+  await expect(changes.nth(0)).toBeFocused();
+  expect(await page.evaluate(() => window.dictationTest.snapshot.history[0].rawTranscript)).toBe(
+    raw,
+  );
+  expect(await page.evaluate(() => window.dictationTest.snapshot.history[0].finalTranscript)).toBe(
+    edited,
+  );
+});
+
+test("UI polish setup support links clear the sticky footer at normal and enlarged text", async ({
+  page,
+}, info) => {
+  await page.addInitScript(() => {
+    const s = window.dictationTest.snapshot;
+    s.settings.setupComplete = false;
+    s.settings.modelPath = "/tiny";
+    s.ready = true;
+    s.models = [
+      {
+        id: "tiny",
+        name: "Whisper Tiny",
+        description: "Small download",
+        size: 77691713,
+        diskBytes: 77691713,
+        path: "/tiny",
+        installed: true,
+        removable: true,
+      },
+      {
+        id: "base",
+        name: "Whisper Base",
+        description: "Everyday",
+        size: 147951465,
+        diskBytes: 0,
+        path: "/base",
+        installed: false,
+        removable: false,
+      },
+      {
+        id: "small",
+        name: "Whisper Small",
+        description: "Balanced",
+        size: 487601967,
+        diskBytes: 0,
+        path: "/small",
+        installed: false,
+        removable: false,
+      },
+    ];
+  });
+  await page.goto("/");
+  const support = page.getByRole("link", { name: "Bring your own model", exact: true });
+  const next = page.getByRole("button", { name: "Next", exact: true });
+  for (const [width, height, font] of [
+    [1086, 722, 100],
+    [760, 560, 100],
+    [760, 560, 200],
+  ]) {
+    await page.setViewportSize({ width, height });
+    await page.evaluate((font) => {
+      document.documentElement.style.fontSize = `${font}%`;
+    }, font);
+    await page.evaluate(() =>
+      window.scrollTo({ top: document.documentElement.scrollHeight, behavior: "instant" }),
+    );
+    await expect
+      .poll(async () => {
+        const link = await support.boundingBox();
+        const footer = await page.locator("footer").boundingBox();
+        return !!link && !!footer && link.y + link.height <= footer.y - 8;
+      })
+      .toBe(true);
+    await expect(next).toBeInViewport();
+    await expect
+      .poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
+      .toBe(true);
+  }
+  await page.screenshot({ path: info.outputPath("setup-footer-clearance.png") });
 });

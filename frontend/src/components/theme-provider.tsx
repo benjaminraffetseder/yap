@@ -1,5 +1,5 @@
 import { SetIndicatorTheme } from "@bindings/yap/app";
-import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import { createContext, useContext, useLayoutEffect, useState, type ReactNode } from "react";
 
 type Theme = "light" | "dark" | "system";
 type ThemeContextValue = { theme: Theme; setTheme: (theme: Theme) => void };
@@ -19,12 +19,26 @@ function readTheme(): Theme {
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [theme, updateTheme] = useState<Theme>(readTheme);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const media = window.matchMedia("(prefers-color-scheme: dark)");
+    const root = document.documentElement;
+    let firstFrame = 0;
+    let secondFrame = 0;
     const apply = async () => {
       const dark = theme === "dark" || (theme === "system" && media.matches);
-      document.documentElement.classList.toggle("dark", dark);
-      document.documentElement.style.colorScheme = dark ? "dark" : "light";
+      cancelAnimationFrame(firstFrame);
+      cancelAnimationFrame(secondFrame);
+      root.dataset.themeSwitching = "";
+      root.classList.toggle("dark", dark);
+      root.style.colorScheme = dark ? "dark" : "light";
+      // Commit both text and surfaces together; avoid interpolating through
+      // low-contrast color combinations while switching themes.
+      void root.offsetWidth;
+      firstFrame = requestAnimationFrame(() => {
+        secondFrame = requestAnimationFrame(() => {
+          delete root.dataset.themeSwitching;
+        });
+      });
       try {
         await SetIndicatorTheme(dark);
       } catch {
@@ -33,7 +47,12 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     };
     void apply();
     media.addEventListener("change", apply);
-    return () => media.removeEventListener("change", apply);
+    return () => {
+      cancelAnimationFrame(firstFrame);
+      cancelAnimationFrame(secondFrame);
+      delete root.dataset.themeSwitching;
+      media.removeEventListener("change", apply);
+    };
   }, [theme]);
 
   function setTheme(value: Theme) {

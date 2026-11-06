@@ -38,7 +38,7 @@ func scanSession(row interface{ Scan(...any) error }, v *Session, deleted bool) 
 	if deleted {
 		args = append(args, &v.DeletedAt)
 	}
-	args = append(args, &stats)
+	args = append(args, &v.Title, &stats)
 	if err := row.Scan(args...); err != nil {
 		return err
 	}

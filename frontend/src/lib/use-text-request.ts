@@ -30,7 +30,10 @@ export function useTextRequest() {
       const output = await action(id);
       if (current.current === id) {
         if (cancelled.current) setError(i18n.t("useTextRequest.processingCancelled"));
-        else setResult(output);
+        else {
+          setResult(output);
+          return output;
+        }
       }
     } catch (cause) {
       if (current.current === id)

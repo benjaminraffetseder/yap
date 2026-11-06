@@ -98,6 +98,7 @@ func TestBackupBlocksHistoryAccessAndMutation(t *testing.T) {
 		{"audio", func() error { _, err := a.GetAudio(entry.ID); return err }},
 		{"outputs", func() error { _, err := a.GetSessionOutputs(entry.ID); return err }},
 		{"edit", func() error { return a.SaveTranscript(entry.ID, "Changed transcript") }},
+		{"rename", func() error { return a.RenameSession(entry.ID, "Changed title") }},
 		{"delete output", func() error { return a.DeleteSessionOutput(entry.ID, "output") }},
 		{"delete session", func() error { return a.DeleteSessions([]string{entry.ID}) }},
 	}

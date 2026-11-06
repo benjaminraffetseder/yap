@@ -60,7 +60,7 @@ func (s *Store) searchHistory(query string, page int, deleted bool) (HistoryPage
 	if deleted {
 		filter, order = "d.id IS NOT NULL", "d.deleted_at"
 	}
-	rows, err := s.db.Query(`SELECT r.id,r.created_at,r.duration_ms,r.transcript,r.model,r.language,r.audio_path,COALESCE(o.transcript,r.transcript),COALESCE(d.deleted_at,''),` + speechStatsColumn + `
+	rows, err := s.db.Query(`SELECT r.id,r.created_at,r.duration_ms,r.transcript,r.model,r.language,r.audio_path,COALESCE(o.transcript,r.transcript),COALESCE(d.deleted_at,''),` + sessionTitleColumn + `,` + speechStatsColumn + `
 		FROM recordings r LEFT JOIN recording_outputs o ON r.id=o.id LEFT JOIN deleted_recordings d ON d.id=r.id WHERE ` + filter + ` ORDER BY ` + order + ` COLLATE yap_datetime DESC,r.id DESC`)
 	if err != nil {
 		return out, err
@@ -72,7 +72,7 @@ func (s *Store) searchHistory(query string, page int, deleted bool) (HistoryPage
 		if err := scanSession(rows, &v, true); err != nil {
 			return out, err
 		}
-		if query != "" && !strings.Contains(strings.ToLower(v.RawTranscript), query) && !strings.Contains(strings.ToLower(v.FinalTranscript), query) {
+		if query != "" && !strings.Contains(strings.ToLower(v.Title), query) && !strings.Contains(strings.ToLower(v.RawTranscript), query) && !strings.Contains(strings.ToLower(v.FinalTranscript), query) {
 			continue
 		}
 		if out.Total >= page*HistoryPageSize && len(out.Entries) < HistoryPageSize {

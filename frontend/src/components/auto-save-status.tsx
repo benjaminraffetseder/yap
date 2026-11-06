@@ -10,6 +10,7 @@ export function AutoSaveStatus({
   discard,
   disabled = false,
   showDiscard = false,
+  compact = false,
 }: {
   status: AutoSaveState;
   reason?: string;
@@ -17,12 +18,16 @@ export function AutoSaveStatus({
   discard: () => void;
   disabled?: boolean;
   showDiscard?: boolean;
+  compact?: boolean;
 }) {
   const { t } = useTranslation();
   return (
-    <div className="flex flex-wrap items-center gap-2">
+    <div data-slot="auto-save-status" className="flex flex-wrap items-center gap-2">
       <span
         role="status"
+        title={
+          compact && status === "saved" ? t("autoSaveStatus.changesSaveAutomatically") : undefined
+        }
         className={`flex items-center gap-1.5 text-xs ${status === "failed" || (status === "blocked" && reason) ? "text-destructive" : "text-muted-foreground"}`}
       >
         {status === "failed" ? (
@@ -44,19 +49,40 @@ export function AutoSaveStatus({
         ) : (
           <>
             <Check aria-hidden="true" className="size-3.5" />
-            {t("autoSaveStatus.changesSaveAutomatically")}
+            <span data-slot="saved-state-label">
+              {compact ? t("uiPolish.saved") : t("autoSaveStatus.changesSaveAutomatically")}
+            </span>
           </>
         )}
       </span>
       {(status === "failed" || showDiscard) && (
-        <Button variant="ghost" disabled={disabled} onClick={discard}>
-          {t("autoSaveStatus.discardChanges")}
-        </Button>
-      )}
-      {status === "failed" && (
-        <Button variant="outline" disabled={disabled} onClick={() => void retry()}>
-          {t("common.retry")}
-        </Button>
+        <div
+          data-slot="save-recovery-actions"
+          className="flex max-w-full flex-wrap items-center gap-2"
+        >
+          <Button
+            variant="outline"
+            size={compact ? "sm" : "default"}
+            aria-label={t("autoSaveStatus.discardChanges")}
+            title={compact ? t("autoSaveStatus.discardChanges") : undefined}
+            disabled={disabled}
+            onClick={discard}
+          >
+            {compact ? t("uiPolish.discardShort") : t("autoSaveStatus.discardChanges")}
+          </Button>
+          {status === "failed" && (
+            <Button
+              variant="default"
+              size={compact ? "sm" : "default"}
+              aria-label={t("common.retry")}
+              title={compact ? t("common.retry") : undefined}
+              disabled={disabled}
+              onClick={() => void retry()}
+            >
+              {compact ? t("uiPolish.retryShort") : t("common.retry")}
+            </Button>
+          )}
+        </div>
       )}
     </div>
   );

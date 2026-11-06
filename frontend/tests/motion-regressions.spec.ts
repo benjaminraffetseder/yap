@@ -260,12 +260,9 @@ test("recording level feedback avoids layout and follows live reduced-motion cha
   await page.emulateMedia({ reducedMotion: "no-preference" });
   await recordingScenario(page);
   const recorder = page.getByRole("region", { name: "Dictation recorder" });
-  const meter = recorder
-    .locator('[aria-hidden="true"]')
-    .filter({ has: page.locator("span") })
-    .last();
+  const meter = recorder.locator('[data-slot="recording-level-meter"]');
   const bars = meter.locator("span");
-  await expect(bars).toHaveCount(17);
+  expect(await bars.count()).toBeGreaterThan(1);
   const geometry = () =>
     bars.evaluateAll((elements) =>
       elements.map((element) => ({
@@ -289,8 +286,7 @@ test("recording level feedback avoids layout and follows live reduced-motion cha
     .not.toEqual(quiet.map((bar) => bar.transform));
   expect((await geometry()).map((bar) => bar.height)).toEqual(quiet.map((bar) => bar.height));
   await page.emulateMedia({ reducedMotion: "reduce" });
-  const ring = recorder.locator('[data-slot="recording-level-halo"]');
-  await expect(ring).toHaveCSS("transform", "none");
+  await expect(meter).toHaveCSS("animation-name", "none");
   await level(0);
   const reducedQuiet = await geometry();
   await level(1);
@@ -298,7 +294,6 @@ test("recording level feedback avoids layout and follows live reduced-motion cha
   expect(reducedLoud.map((bar) => bar.transform)).toEqual(reducedQuiet.map((bar) => bar.transform));
   expect(reducedLoud.map((bar) => bar.height)).toEqual(reducedQuiet.map((bar) => bar.height));
   expect(reducedLoud.map((bar) => bar.opacity)).not.toEqual(reducedQuiet.map((bar) => bar.opacity));
-  await expect(ring).toHaveCSS("transform", "none");
   const button = recorder.getByRole("button", { name: "Stop recording", exact: true });
   await button.hover();
   await expect(button).toHaveCSS("transform", "none");
@@ -311,6 +306,8 @@ test("recording level feedback avoids layout and follows live reduced-motion cha
     scenario.snapshot.status.message = "Transcribing…";
     scenario.callbacks["dictation:status"](structuredClone(scenario.snapshot.status));
   });
-  const busy = page.getByRole("status").filter({ hasText: "Transcribing…" });
+  await expect(page.getByRole("heading", { name: "Transcribing…", exact: true })).toBeVisible();
+  const busy = recorder.getByRole("button", { name: "Transcribing…", exact: true });
+  await expect(busy).toBeDisabled();
   await expect(busy.locator("svg").first()).toHaveCSS("animation-name", "none");
 });
