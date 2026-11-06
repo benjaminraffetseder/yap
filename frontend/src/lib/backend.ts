@@ -30,8 +30,8 @@ import {
   GetRevisions,
   GetSession,
   GetSessionOutputs,
-  GetTranscriptExportPreview,
   GetSnapshot,
+  GetTranscriptExportPreview,
   HomeResultAction,
   ImportAudio,
   ImportDroppedAudio,
@@ -46,6 +46,7 @@ import {
   RegenerateSessionOutput,
   RemoveImport,
   RemoveModel,
+  RenameSession,
   ReorderImportQueue,
   RestartSetup,
   RestoreBackup,
@@ -58,7 +59,6 @@ import {
   SaveSettings,
   SaveTextProcessing,
   SaveTranscript,
-  RenameSession,
   SaveVocabulary,
   SelectFile,
   SetSaveHistory,
@@ -71,7 +71,8 @@ import {
   TestTextModel,
 } from "@bindings/yap/app";
 import type { Config } from "@bindings/yap/internal/inference/text/models";
-export type { TranscriptExportRequest, TranscriptExportPreview } from "@bindings/yap/models";
+export { isDesktop } from "@/lib/desktop";
+export type { TranscriptExportPreview, TranscriptExportRequest } from "@bindings/yap/models";
 export type TranscriptExportSelection = {
   sessionIds: string[];
   allMatching: boolean;
@@ -133,7 +134,6 @@ export const defaultTextProcessing: TextProcessing = {
     },
   ],
 };
-export { isDesktop } from "@/lib/desktop";
 export const backendVersionMismatchMessage =
   "Yap's interface and backend are different versions. Quit and reopen Yap. In development, restart wails3 dev.";
 export type Settings = {
@@ -360,6 +360,15 @@ function normalizeTextProcessing(config: Config): TextProcessing {
   };
 }
 
+async function updateHistorySessions(ids: string[], update: (batch: string[]) => Promise<void>) {
+  // Native history mutations accept at most 50 IDs per call. Infinite scrolling
+  // lets a selection span multiple batches, including a deletion's Undo action.
+  if (ids.length <= 50) return update(ids);
+  for (let offset = 0; offset < ids.length; offset += 50) {
+    await update(ids.slice(offset, offset + 50));
+  }
+}
+
 export const backend = {
   homeResult: async (): Promise<HomeResult | null> => {
     const result = await GetHomeResult();
@@ -491,10 +500,10 @@ export const backend = {
     return { ...result, entries: result.entries ?? [] };
   },
   restoreSessions: async (ids: string[]): Promise<void> => {
-    return RestoreSessions(ids);
+    return updateHistorySessions(ids, RestoreSessions);
   },
   permanentlyDeleteSessions: async (ids: string[]): Promise<void> => {
-    return PermanentlyDeleteSessions(ids);
+    return updateHistorySessions(ids, PermanentlyDeleteSessions);
   },
   session: async (id: string): Promise<Session | null> => {
     return GetSession(id);
@@ -520,7 +529,7 @@ export const backend = {
     return DeleteSessionOutput(sessionID, outputID);
   },
   removeSessions: async (ids: string[]): Promise<void> => {
-    return DeleteSessions(ids);
+    return updateHistorySessions(ids, DeleteSessions);
   },
   removeModel: RemoveModel,
   beginShortcutCapture: BeginShortcutCapture,

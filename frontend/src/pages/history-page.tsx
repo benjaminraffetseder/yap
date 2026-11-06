@@ -1,17 +1,16 @@
-import { nativeText } from "@/i18n/native-text";
-import { useTranslation } from "react-i18next";
-import i18n from "@/i18n";
 import { AudioImportButton } from "@/components/audio-import-button";
 import { useDictation } from "@/components/dictation-provider";
 import { DictationRow } from "@/components/dictation-row";
+import { PageHeading } from "@/components/page-heading";
 import { SessionTitleAction } from "@/components/session-title-action";
 import { TranscriptExportDialog } from "@/components/transcript-export-dialog";
-import { PageHeading } from "@/components/page-heading";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { toastManager } from "@/components/ui/toast";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import i18n from "@/i18n";
+import { nativeText } from "@/i18n/native-text";
 import {
   backend,
   isDesktop,
@@ -21,8 +20,9 @@ import {
   type TranscriptExportSelection,
 } from "@/lib/backend";
 import { deleteTranscriptions } from "@/lib/delete-transcriptions";
-import { Download, History, RotateCcw, Search, Trash2, X } from "lucide-react";
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { Download, History, Loader2, RotateCcw, Search, Trash2, X } from "lucide-react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 import { useSearchParams } from "react-router";
 
 function historyGroups(entries: Session[], deleted: boolean) {
@@ -110,17 +110,20 @@ function HistoryList({ viewToggle }: { viewToggle: ReactNode }) {
     Number.isInteger(requestedPage) && requestedPage >= 0 && requestedPage <= 1000000
       ? requestedPage
       : 0;
-  function setPage(next: number) {
-    setParams(
-      (old) => {
-        const value = new URLSearchParams(old);
-        if (next) value.set("page", String(next));
-        else value.delete("page");
-        return value;
-      },
-      { replace: true },
-    );
-  }
+  const setPage = useCallback(
+    (next: number) => {
+      setParams(
+        (old) => {
+          const value = new URLSearchParams(old);
+          if (next) value.set("page", String(next));
+          else value.delete("page");
+          return value;
+        },
+        { replace: true },
+      );
+    },
+    [setParams],
+  );
   const detailSearch = params.toString() ? `?${params.toString()}` : "";
   const [reload, setReload] = useState(0);
   const [result, setResult] = useState<HistoryPageResult>({
@@ -130,8 +133,19 @@ function HistoryList({ viewToggle }: { viewToggle: ReactNode }) {
     pageSize: 50,
   });
   const [loading, setLoading] = useState(isDesktop);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState("");
+  const [loadMoreError, setLoadMoreError] = useState("");
+  const [retry, setRetry] = useState(0);
   const request = useRef(0);
+  const loaded = useRef<{
+    query: string;
+    deleted: boolean;
+    reload: number;
+    history: Session[];
+    result: HistoryPageResult;
+  } | null>(null);
+  const loadMoreTrigger = useRef<HTMLDivElement>(null);
   const searchInput = useRef<HTMLInputElement>(null);
   const renamed = useRef<string | null>(null);
   const selectPage = useRef<HTMLElement>(null);
@@ -163,27 +177,58 @@ function HistoryList({ viewToggle }: { viewToggle: ReactNode }) {
   useEffect(() => {
     if (!isDesktop) return;
     const revision = ++request.current;
-    setLoading(true);
+    const previous = loaded.current;
+    const append =
+      previous !== null &&
+      previous.query === query &&
+      previous.deleted === deleted &&
+      previous.reload === reload &&
+      previous.history === snapshot.history &&
+      page === previous.result.page + 1;
+    setLoading(!append);
+    setLoadingMore(append);
     setError("");
+    setLoadMoreError("");
     const timer = setTimeout(() => {
-      void (deleted ? backend.recentlyDeleted(query, page) : backend.history(query, page))
+      const fetchPage = (index: number) =>
+        deleted ? backend.recentlyDeleted(query, index) : backend.history(query, index);
+      const fetchEntries = async () => {
+        let value = await fetchPage(append ? page : 0);
+        if (revision !== request.current) return null;
+        if (append) {
+          const entries = new Map(previous.result.entries.map((entry) => [entry.id, entry]));
+          value.entries.forEach((entry) => entries.set(entry.id, entry));
+          return { ...value, entries: [...entries.values()] };
+        }
+        // Refresh every loaded batch together so edits and deletions cannot leave
+        // stale entries or shifted page boundaries in the accumulated list.
+        const last = Math.min(page, Math.max(0, Math.ceil(value.total / value.pageSize) - 1));
+        const entries = new Map(value.entries.map((entry) => [entry.id, entry]));
+        for (let index = 1; index <= last; index++) {
+          value = await fetchPage(index);
+          if (revision !== request.current) return null;
+          value.entries.forEach((entry) => entries.set(entry.id, entry));
+        }
+        return { ...value, entries: [...entries.values()] };
+      };
+      void fetchEntries()
         .then((value) => {
-          if (revision !== request.current) return;
-          const last = Math.max(0, Math.ceil(value.total / value.pageSize) - 1);
-          if (page > last) {
-            setPage(last);
-            return;
-          }
+          if (!value || revision !== request.current) return;
+          loaded.current = { query, deleted, reload, history: snapshot.history, result: value };
           setResult(value);
+          if (page > value.page) setPage(value.page);
           if (!value.total) setAllMatching(false);
           const ids = new Set(value.entries.map((entry) => entry.id));
           setSelected((old) => old.filter((id) => ids.has(id)));
           setLoading(false);
+          setLoadingMore(false);
         })
         .catch((cause) => {
           if (revision === request.current) {
-            setError(message(cause));
+            if (append) setLoadMoreError(message(cause));
+            else setError(message(cause));
             setLoading(false);
+            setLoadingMore(false);
           }
         });
     }, 150);
@@ -191,9 +236,45 @@ function HistoryList({ viewToggle }: { viewToggle: ReactNode }) {
       clearTimeout(timer);
       request.current++;
     };
-  }, [query, page, deleted, reload, snapshot.history]);
+  }, [query, page, deleted, reload, retry, snapshot.history, setPage]);
 
-  const { entries, total, pageSize } = result;
+  const { entries, total } = result;
+  const hasMore = (result.page + 1) * result.pageSize < total;
+  useEffect(() => {
+    const node = loadMoreTrigger.current;
+    if (
+      !node ||
+      !isDesktop ||
+      !hasMore ||
+      loading ||
+      loadingMore ||
+      error ||
+      loadMoreError ||
+      deletingNow ||
+      exportSelection
+    )
+      return;
+    const observer = new IntersectionObserver(
+      (observations) => {
+        if (!observations.some((entry) => entry.isIntersecting)) return;
+        observer.disconnect();
+        setPage(result.page + 1);
+      },
+      { rootMargin: "0px 0px 300px 0px" },
+    );
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [
+    hasMore,
+    loading,
+    loadingMore,
+    error,
+    loadMoreError,
+    deletingNow,
+    exportSelection,
+    result.page,
+    setPage,
+  ]);
   const selectedOnPage = entries.filter((entry) =>
     allMatching ? !excluded.includes(entry.id) : selected.includes(entry.id),
   ).length;
@@ -210,13 +291,7 @@ function HistoryList({ viewToggle }: { viewToggle: ReactNode }) {
     ].find((node) => node.dataset.dictationTitleAction === id);
     (trigger ?? searchInput.current)?.focus({ preventScroll: true });
   }, [entries, loading]);
-  const pages = Math.max(1, Math.ceil(total / pageSize));
   const unavailable = !isDesktop || loading || !!error || deletingNow || !!exportSelection;
-  function changePage(next: number) {
-    setLoading(true);
-    if (!allMatching) setSelected([]);
-    setPage(next);
-  }
   async function remove(ids: string[]) {
     if (deletingNow) return;
     setDeletingNow(true);
@@ -391,7 +466,7 @@ function HistoryList({ viewToggle }: { viewToggle: ReactNode }) {
                   setSelected(checked ? entries.map((entry) => entry.id) : []);
                 }}
               />
-              {t("historyPage.selectPage")}
+              {t("historyPage.selectLoaded")}
             </label>
           )}
           {!deleted &&
@@ -462,7 +537,7 @@ function HistoryList({ viewToggle }: { viewToggle: ReactNode }) {
                     }
                     selection={{
                       label: t("historyPage.selectDictation", {
-                        index: page * pageSize + index + 1,
+                        index: index + 1,
                       }),
                       checked: allMatching
                         ? !excluded.includes(entry.id)
@@ -496,29 +571,26 @@ function HistoryList({ viewToggle }: { viewToggle: ReactNode }) {
           ))}
         </div>
       )}
-      {total > pageSize && (
-        <nav
-          aria-label={t("historyPage.historyPages")}
-          className="flex items-center justify-between gap-3"
-        >
-          <Button
-            variant="outline"
-            disabled={unavailable || page === 0}
-            onClick={() => changePage(page - 1)}
-          >
-            {t("historyPage.previous")}
-          </Button>
-          <span className="text-xs text-muted-foreground">
-            {t("historyPage.page")} {page + 1} {t("historyPage.of")} {pages}
-          </span>
-          <Button
-            variant="outline"
-            disabled={unavailable || page + 1 >= pages}
-            onClick={() => changePage(page + 1)}
-          >
-            {t("common.next")}
-          </Button>
-        </nav>
+      {hasMore && (
+        <div ref={loadMoreTrigger} className="flex min-h-9 items-center justify-center">
+          {loadingMore && (
+            <p role="status" className="flex items-center gap-2 text-xs text-muted-foreground">
+              <Loader2
+                aria-hidden="true"
+                className="size-4 animate-spin motion-reduce:animate-none"
+              />
+              {t("historyPage.loadingMoreHistory")}
+            </p>
+          )}
+          {loadMoreError && (
+            <div role="alert" className="flex items-center gap-3 text-sm text-destructive">
+              {nativeText(loadMoreError)}
+              <Button variant="outline" size="sm" onClick={() => setRetry((old) => old + 1)}>
+                {t("common.retry")}
+              </Button>
+            </div>
+          )}
+        </div>
       )}
       {selectionCount > 0 && (
         <div className="pointer-events-none fixed right-0 bottom-[calc(1.25rem+env(safe-area-inset-bottom))] left-[var(--sidebar-width)] z-30 flex justify-center px-3 sm:px-6">

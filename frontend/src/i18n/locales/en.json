@@ -77,6 +77,8 @@
   "historyPage.searchTranscripts2": "Search transcripts…",
   "historyPage.cancelTranscription": "Cancel transcription",
   "historyPage.loadingHistory": "Loading History…",
+  "historyPage.loadingMoreHistory": "Loading more dictations…",
+  "historyPage.selectLoaded": "Select loaded",
   "historyPage.dictation": "dictation",
   "historyPage.selectPage": "Select page",
   "historyPage.noMatchingTranscripts": "No matching transcripts",

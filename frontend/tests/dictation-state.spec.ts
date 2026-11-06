@@ -1,6 +1,6 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
-import en from "../src/i18n/locales/en.json" with { type: "json" };
 import de from "../src/i18n/locales/de.json" with { type: "json" };
+import en from "../src/i18n/locales/en.json" with { type: "json" };
 import type {
   AppProfileRule,
   BackupPreview,
@@ -15,8 +15,8 @@ import type {
   Status,
   TextProcessing,
   TextPrompt,
-  TranscriptExportSelection,
   TranscriptExportRequest,
+  TranscriptExportSelection,
   VocabularyEntry,
 } from "../src/lib/backend";
 
@@ -3313,7 +3313,8 @@ declare global {
       installedModelIDs: string[];
       pendingSnapshots: (() => void)[];
       deferHistory: boolean;
-      pendingHistory: { query: string; resolve: () => void }[];
+      pendingHistory: { query: string; page: number; resolve: () => void }[];
+      historyRequests: { query: string; page: number; deleted: boolean }[];
       failSession: boolean;
       deferSessions: boolean;
       pendingSessions: { id: string; resolve: () => void }[];
@@ -3377,6 +3378,7 @@ async function installDictationFixture(page: Page) {
   await page.addInitScript(() => {
     const state: Window["dictationTest"] = {
       recentlyDeleted: [],
+      historyRequests: [],
       snapshot: {
         textProcessing: {
           enabled: false,
@@ -3770,6 +3772,7 @@ async function installDictationFixture(page: Page) {
               state.history();
             },
             GetHistory: async (query: string, page: number) => {
+              state.historyRequests.push({ query, page, deleted: false });
               if (state.failHistory) throw new Error("History load failed");
               const entries = state.snapshot.history.filter((entry) =>
                 [entry.title ?? "", entry.rawTranscript, entry.finalTranscript].some((text) =>
@@ -3786,6 +3789,7 @@ async function installDictationFixture(page: Page) {
                 return new Promise((resolve) => {
                   state.pendingHistory.push({
                     query,
+                    page,
                     resolve: () => resolve(result),
                   });
                 });
@@ -3806,6 +3810,7 @@ async function installDictationFixture(page: Page) {
               return value;
             },
             GetRecentlyDeleted: async (query: string, page: number) => {
+              state.historyRequests.push({ query, page, deleted: true });
               if (state.failHistory) throw new Error("History load failed");
               const entries = state.recentlyDeleted.filter((entry) =>
                 [entry.rawTranscript, entry.finalTranscript].some((text) =>
@@ -3820,6 +3825,7 @@ async function installDictationFixture(page: Page) {
               };
             },
             RestoreSessions: async (ids: string[]) => {
+              if (ids.length > 50) throw new Error("Select at most 50 dictations");
               if (state.failSave) throw new Error("History restoration failed");
               const restored = state.recentlyDeleted.filter((entry) => ids.includes(entry.id));
               state.snapshot.history.push(
@@ -3831,6 +3837,7 @@ async function installDictationFixture(page: Page) {
               state.history();
             },
             PermanentlyDeleteSessions: async (ids: string[]) => {
+              if (ids.length > 50) throw new Error("Select at most 50 dictations");
               if (state.failSave) throw new Error("Permanent deletion failed");
               if (state.snapshot.history.some((entry) => ids.includes(entry.id)))
                 throw new Error("Only Recently Deleted dictations can be permanently deleted");
@@ -3841,6 +3848,7 @@ async function installDictationFixture(page: Page) {
               state.history();
             },
             DeleteSessions: async (ids: string[]) => {
+              if (ids.length > 50) throw new Error("Select at most 50 dictations");
               if (state.failSave) throw new Error("History deletion failed");
               state.recentlyDeleted.push(
                 ...state.snapshot.history
@@ -5216,7 +5224,7 @@ test("History opens a dictation page with content tabs that fit narrow windows",
     exact: true,
   });
   const pageCheckbox = page.getByRole("checkbox", {
-    name: "Select page",
+    name: "Select loaded",
     exact: true,
   });
   await firstCheckbox.focus();
@@ -5228,7 +5236,7 @@ test("History opens a dictation page with content tabs that fit narrow windows",
     fullPage: true,
     animations: "disabled",
   });
-  await page.getByText("Select page", { exact: true }).click();
+  await page.getByText("Select loaded", { exact: true }).click();
   await expect(pageCheckbox).toBeChecked();
   await expect(page.locator("article[data-selected=true]")).toHaveCount(5);
   await pageCheckbox.focus();
@@ -5422,7 +5430,7 @@ test("transcription and editor Changes compare the correct versions and remain u
   await expect(page.getByRole("region", { name: "Transcription", exact: true })).toBeVisible();
 });
 
-test("dictation pages preserve the History search and page when returning and deleting", async ({
+test("dictation pages preserve the History search and loaded batches when returning and deleting", async ({
   page,
 }) => {
   await page.addInitScript(() => {
@@ -5438,7 +5446,7 @@ test("dictation pages preserve the History search and page when returning and de
     }));
   });
   await page.goto("/#/history?q=Original&page=1");
-  await expect(page.getByText("Page 2 of 2", { exact: true })).toBeVisible();
+  await expect(page.getByRole("checkbox", { name: /^Select dictation / })).toHaveCount(52);
   await page.getByRole("link", { name: /Dictation 50\b/ }).click();
   await expect(page).toHaveURL(/#\/history\/row-50\?q=Original&page=1$/);
   await expect(page.getByRole("region", { name: "Result", exact: true })).toContainText(
@@ -5457,7 +5465,7 @@ test("dictation pages preserve the History search and page when returning and de
   await expect(page).toHaveURL(/#\/history\/row-50\?q=Original&page=1$/);
   await page.getByRole("link", { name: "Back to History", exact: true }).click();
   await expect(page.getByLabel("Search transcripts")).toHaveValue("Original");
-  await expect(page.getByText("Page 2 of 2", { exact: true })).toBeVisible();
+  await expect(page.getByRole("checkbox", { name: /^Select dictation / })).toHaveCount(52);
   await page.getByRole("link", { name: /Dictation 50\b/ }).click();
   await page.evaluate(() => {
     window.dictationTest.failSave = true;
@@ -5471,7 +5479,7 @@ test("dictation pages preserve the History search and page when returning and de
   await detailAction(page, "Delete dictation");
   await expect(page).toHaveURL(/#\/history\?q=Original&page=1$/);
   await expect(page.getByLabel("Search transcripts")).toHaveValue("Original");
-  await expect(page.getByText("Page 2 of 2", { exact: true })).toBeVisible();
+  await expect(page.getByRole("checkbox", { name: /^Select dictation / })).toHaveCount(51);
   await expect(page.getByRole("link", { name: /Dictation 51\b/ })).toBeVisible();
   await expect(page.getByRole("link", { name: /Dictation 50\b/ })).toHaveCount(0);
   const toast = page.locator('[data-slot="toast"]').last();
@@ -6994,7 +7002,124 @@ test("vocabulary selection rejects multiline or oversized terms and respects act
   await expect(input).toHaveValue("PostgreSQL");
 });
 
-test("History pages select and export only the current page, and recover after deleting its last entries", async ({
+test("History loads one batch at a time, stops at the end, and deletes and restores a selection across batches", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    window.dictationTest.snapshot.history = Array.from({ length: 105 }, (_, index) => ({
+      id: `scroll-${index}`,
+      createdAt: "2026-11-06T10:00:00Z",
+      durationMs: 1000,
+      rawTranscript: `Scroll dictation ${index}`,
+      finalTranscript: `Scroll dictation ${index}`,
+      speechModel: "base",
+      language: "en",
+      audioPath: "",
+    }));
+  });
+  await page.goto("/#/history");
+  const rows = page.getByRole("checkbox", { name: /^Select dictation / });
+  await expect(rows).toHaveCount(50);
+  await expect(page.getByRole("navigation", { name: "History pages" })).toHaveCount(0);
+  await rows.first().check();
+  await page.evaluate(() => {
+    window.dictationTest.deferHistory = true;
+  });
+  await rows.last().scrollIntoViewIfNeeded();
+  await expect(
+    page.getByRole("status").filter({ hasText: "Loading more dictations" }),
+  ).toBeVisible();
+  await expect.poll(() => page.evaluate(() => window.dictationTest.pendingHistory.length)).toBe(1);
+  await rows.last().scrollIntoViewIfNeeded();
+  await expect(rows.first()).toBeEnabled();
+  await expect(rows.first()).toBeChecked();
+  expect(
+    await page.evaluate(() => window.dictationTest.historyRequests.map(({ page }) => page)),
+  ).toEqual([0, 1]);
+  await page.evaluate(() => {
+    window.dictationTest.deferHistory = false;
+    window.dictationTest.pendingHistory[0].resolve();
+  });
+  await expect(rows).toHaveCount(100);
+  await expect(page.getByText("1 selected", { exact: true })).toBeVisible();
+  await rows.last().scrollIntoViewIfNeeded();
+  await expect(rows).toHaveCount(105);
+  await rows.last().scrollIntoViewIfNeeded();
+  expect(
+    await page.evaluate(() => window.dictationTest.historyRequests.map(({ page }) => page)),
+  ).toEqual([0, 1, 2]);
+  // Refresh the entire loaded range after an external edit and shifted boundary.
+  await page.evaluate(() => {
+    const state = window.dictationTest;
+    state.snapshot.history[75].finalTranscript = "Updated older dictation";
+    state.snapshot.history.splice(20, 1);
+    state.history();
+  });
+  await expect(rows).toHaveCount(104);
+  await expect(page.getByRole("link", { name: /Updated older dictation/ })).toHaveCount(1);
+  await expect(page.getByRole("link", { name: /Scroll dictation 20\b/ })).toHaveCount(0);
+  await expect(rows.first()).toBeChecked();
+  await page.getByRole("checkbox", { name: "Select loaded", exact: true }).check();
+  await expect(page.getByText("104 selected", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Delete selected", exact: true }).click();
+  await expect(page.getByText("No dictations yet", { exact: true })).toBeVisible();
+  await page
+    .locator('[data-slot="toast"]')
+    .getByRole("button", { name: "Undo", exact: true })
+    .click();
+  await expect(page.getByText("104 dictations", { exact: true })).toBeVisible();
+  expect(await page.evaluate(() => window.dictationTest.recentlyDeleted.length)).toBe(0);
+});
+
+test("History retries a failed next batch and ignores its reply after a new search", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    window.dictationTest.snapshot.history = Array.from({ length: 52 }, (_, index) => ({
+      id: `retry-${index}`,
+      createdAt: "2026-11-06T10:00:00Z",
+      durationMs: 1000,
+      rawTranscript: `Retry dictation ${index}`,
+      finalTranscript: `Retry dictation ${index}`,
+      speechModel: "base",
+      language: "en",
+      audioPath: "",
+    }));
+  });
+  await page.goto("/#/history");
+  const rows = page.getByRole("checkbox", { name: /^Select dictation / });
+  await expect(rows).toHaveCount(50);
+  await page.evaluate(() => {
+    window.dictationTest.failHistory = true;
+  });
+  await rows.last().scrollIntoViewIfNeeded();
+  await expect(page.getByRole("alert")).toContainText("History load failed");
+  await expect(rows).toHaveCount(50);
+  await expect(rows.last()).toBeEnabled();
+  await page.evaluate(() => {
+    window.dictationTest.failHistory = false;
+    window.dictationTest.deferHistory = true;
+  });
+  await page.getByRole("button", { name: "Retry", exact: true }).click();
+  await expect.poll(() => page.evaluate(() => window.dictationTest.pendingHistory.length)).toBe(1);
+  expect(await page.evaluate(() => window.dictationTest.pendingHistory[0].page)).toBe(1);
+  await page.getByLabel("Search transcripts", { exact: true }).fill("Retry dictation 51");
+  await expect.poll(() => page.evaluate(() => window.dictationTest.pendingHistory.length)).toBe(2);
+  await page.evaluate(() => {
+    window.dictationTest.pendingHistory[1].resolve();
+  });
+  await expect(rows).toHaveCount(1);
+  await page.evaluate(() => {
+    window.dictationTest.pendingHistory[0].resolve();
+  });
+  await settle(page);
+  await expect(rows).toHaveCount(1);
+  await expect(page.getByRole("link", { name: /Retry dictation 51/ })).toBeVisible();
+  await expect(page).toHaveURL(/#\/history\?q=Retry\+dictation\+51$/);
+  await expect(page.getByRole("alert")).toHaveCount(0);
+});
+
+test("History preserves selections while scrolling, exports selected entries, and refreshes after deletion", async ({
   page,
 }) => {
   await page.addInitScript(() => {
@@ -7010,13 +7135,17 @@ test("History pages select and export only the current page, and recover after d
     }));
   });
   await page.goto("/#/history");
-  await expect(page.getByText("Page 1 of 2", { exact: true })).toBeVisible();
-  await page.getByRole("checkbox", { name: "Select page", exact: true }).check();
+  await expect(page.getByRole("checkbox", { name: /^Select dictation / })).toHaveCount(50);
+  await page.getByRole("checkbox", { name: "Select loaded", exact: true }).check();
   await expect(page.getByText("50 selected", { exact: true })).toBeVisible();
-  await page.getByRole("button", { name: "Next", exact: true }).click();
-  await expect(page.getByText("Page 2 of 2", { exact: true })).toBeVisible();
-  await expect(page.getByText("50 selected", { exact: true })).toHaveCount(0);
-  await page.getByRole("checkbox", { name: "Select page", exact: true }).check();
+  await page
+    .getByRole("checkbox", { name: "Select dictation 50", exact: true })
+    .scrollIntoViewIfNeeded();
+  await expect(page.getByRole("checkbox", { name: /^Select dictation / })).toHaveCount(52);
+  await expect(page.getByText("50 selected", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Clear selection", exact: true }).click();
+  await page.getByRole("checkbox", { name: "Select dictation 51", exact: true }).check();
+  await page.getByRole("checkbox", { name: "Select dictation 52", exact: true }).check();
   await page.getByRole("button", { name: "Export selected", exact: true }).click();
   await page
     .getByRole("dialog", { name: "Export transcripts", exact: true })
@@ -7063,7 +7192,7 @@ test("History pages select and export only the current page, and recover after d
   await expect(page.getByText("No matching transcripts", { exact: true })).toBeVisible();
   await page.getByLabel("Search transcripts").fill("");
   await expect(page.getByText("Dictation 51", { exact: true })).toBeVisible();
-  await page.getByRole("checkbox", { name: "Select page", exact: true }).check();
+  await page.getByRole("checkbox", { name: "Select loaded", exact: true }).check();
   await page.getByRole("button", { name: "Restore selected", exact: true }).click();
   await expect(page.getByText("No recently deleted dictations", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Show all dictations", exact: true }).click();
@@ -7104,7 +7233,7 @@ test("Recently Deleted supports retry and restoration on narrow screens after th
   await expect(
     page.getByRole("button", { name: "Show all dictations", exact: true }),
   ).toHaveAttribute("aria-pressed", "true");
-  const selectPage = page.getByRole("checkbox", { name: "Select page", exact: true });
+  const selectPage = page.getByRole("checkbox", { name: "Select loaded", exact: true });
   const uncheckedBounds = (await selectPage.boundingBox())!;
   await selectPage.check();
   const checkedBounds = (await selectPage.boundingBox())!;
@@ -7183,7 +7312,7 @@ test("Recently Deleted permanently deletes individual entries and selections wit
     }));
   });
   await page.goto("/#/history?view=deleted&page=1");
-  await expect(page.getByText("Page 2 of 2", { exact: true })).toBeVisible();
+  await expect(page.getByRole("article")).toHaveCount(52);
   await page.setViewportSize({ width: 360, height: 850 });
   await expect(
     page.getByRole("button", { name: "Delete permanently", exact: true }).first(),
@@ -7200,7 +7329,7 @@ test("Recently Deleted permanently deletes individual entries and selections wit
   });
   await page
     .getByRole("article")
-    .first()
+    .filter({ hasText: "Deleted dictation 50" })
     .getByRole("button", { name: "Delete permanently", exact: true })
     .click();
   await expect(page.locator('[data-slot="dialog-content"]')).toHaveCount(0);
@@ -7211,7 +7340,7 @@ test("Recently Deleted permanently deletes individual entries and selections wit
   });
   await page
     .getByRole("article")
-    .first()
+    .filter({ hasText: "Deleted dictation 50" })
     .getByRole("button", { name: "Delete permanently", exact: true })
     .click();
   await expect(page.getByText("Deleted dictation 50", { exact: true })).toHaveCount(0);
@@ -7220,7 +7349,7 @@ test("Recently Deleted permanently deletes individual entries and selections wit
     .filter({ hasText: "Dictation permanently deleted" });
   await expect(toast).toBeVisible();
   await expect(toast.getByRole("button", { name: "Undo", exact: true })).toHaveCount(0);
-  await page.getByRole("checkbox", { name: "Select page", exact: true }).check();
+  await page.getByRole("checkbox", { name: "Select loaded", exact: true }).check();
   const selectionBounds = (await page
     .getByRole("region", { name: "Selection actions", exact: true })
     .boundingBox())!;
@@ -7228,11 +7357,8 @@ test("Recently Deleted permanently deletes individual entries and selections wit
   expect(toastBounds.y + toastBounds.height).toBeLessThanOrEqual(selectionBounds.y);
   await page.getByRole("button", { name: "Delete selected permanently", exact: true }).click();
   await expect(page.locator('[data-slot="dialog-content"]')).toHaveCount(0);
-  await expect(page.getByText("50 dictations", { exact: true })).toBeVisible();
-  await expect(page).toHaveURL(/view=deleted$/);
-  await page.getByRole("checkbox", { name: "Select page", exact: true }).check();
-  await page.getByRole("button", { name: "Delete selected permanently", exact: true }).click();
   await expect(page.getByText("No recently deleted dictations", { exact: true })).toBeVisible();
+  await expect(page).toHaveURL(/view=deleted$/);
   await expect.poll(() => page.evaluate(() => window.dictationTest.recentlyDeleted.length)).toBe(0);
 });
 
@@ -7307,7 +7433,7 @@ test("History keeps its header stable and selection actions at the bottom while 
     path: testInfo.outputPath("history-header-desktop.png"),
     animations: "disabled",
   });
-  const selectPage = page.getByRole("checkbox", { name: "Select page", exact: true });
+  const selectPage = page.getByRole("checkbox", { name: "Select loaded", exact: true });
   const checkboxBefore = (await selectPage.boundingBox())!;
   const selectionBar = page.getByRole("region", { name: "Selection actions", exact: true });
   await expect(selectionBar).toHaveCount(0);
@@ -7405,7 +7531,7 @@ test("History searches all entries beyond 500 and ignores older search replies",
   });
   await search.fill("missing");
   await expect(page.getByRole("alert").filter({ hasText: "History load failed" })).toBeVisible();
-  await expect(page.getByRole("checkbox", { name: "Select page", exact: true })).toBeDisabled();
+  await expect(page.getByRole("checkbox", { name: "Select loaded", exact: true })).toBeDisabled();
   await page.evaluate(() => {
     window.dictationTest.failHistory = false;
   });
@@ -12048,7 +12174,7 @@ test("transcript exports require content and return to a direct file when only o
   });
 });
 
-test("transcript exports select all search matches across pages and freeze the selected transcript IDs", async ({
+test("transcript exports select all search matches across loaded batches and freeze the selected transcript IDs", async ({
   page,
 }) => {
   await page.addInitScript(() => {
@@ -12066,8 +12192,8 @@ test("transcript exports select all search matches across pages and freeze the s
     }));
   });
   await page.goto("/#/history?q=project");
-  await expect(page.getByText("Page 1 of 2", { exact: true })).toBeVisible();
-  await page.getByRole("checkbox", { name: "Select page", exact: true }).check();
+  await expect(page.getByRole("checkbox", { name: /^Select dictation / })).toHaveCount(50);
+  await page.getByRole("checkbox", { name: "Select loaded", exact: true }).check();
   await page
     .getByRole("button", { name: "Select all 54 matching transcripts for export", exact: true })
     .click();
@@ -12075,13 +12201,18 @@ test("transcript exports select all search matches across pages and freeze the s
   await expect(page.getByRole("button", { name: "Delete selected", exact: true })).toHaveCount(0);
   await page.getByRole("checkbox", { name: "Select dictation 1", exact: true }).uncheck();
   await expect(page.getByText("53 selected for export", { exact: true })).toBeVisible();
-  await expect(page.getByRole("checkbox", { name: "Select page", exact: true })).toHaveAttribute(
+  await expect(page.getByRole("checkbox", { name: "Select loaded", exact: true })).toHaveAttribute(
     "aria-checked",
     "mixed",
   );
-  await page.getByRole("button", { name: "Next", exact: true }).click();
-  await expect(page.getByText("Page 2 of 2", { exact: true })).toBeVisible();
-  await expect(page.getByRole("checkbox", { name: "Select page", exact: true })).toBeChecked();
+  await page
+    .getByRole("checkbox", { name: "Select dictation 50", exact: true })
+    .scrollIntoViewIfNeeded();
+  await expect(page.getByRole("checkbox", { name: /^Select dictation / })).toHaveCount(54);
+  await expect(page.getByRole("checkbox", { name: "Select loaded", exact: true })).toHaveAttribute(
+    "aria-checked",
+    "mixed",
+  );
   await expect(page.getByText("53 selected for export", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Export selected", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "Export transcripts", exact: true });

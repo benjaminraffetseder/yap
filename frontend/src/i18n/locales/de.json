@@ -79,6 +79,8 @@
   "historyPage.loadingHistory": "Verlauf wird geladen…",
   "historyPage.dictation": "Diktat",
   "historyPage.selectPage": "Seite auswählen",
+  "historyPage.loadingMoreHistory": "Weitere Diktate werden geladen…",
+  "historyPage.selectLoaded": "Geladene auswählen",
   "historyPage.noMatchingTranscripts": "Keine passenden Transkripte",
   "historyPage.noRecentlyDeletedDictations": "Keine zuletzt gelöschten Diktate",
   "historyPage.noDictationsYet": "Noch keine Diktate",
