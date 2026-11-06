@@ -4,8 +4,10 @@ import {
   BeginShortcutCapture,
   Cancel,
   CancelTextProcessing,
+  CancelBulkTextQueue,
   CheckForUpdates,
   ClearFinishedImports,
+  ClearFinishedBulkTextJobs,
   CompleteSetup,
   CopyText,
   DeleteDictationProfile,
@@ -42,6 +44,7 @@ import {
   PermanentlyDeleteSessions,
   PreviewBackup,
   ProcessText,
+  QueueBulkText,
   RefinePrompt,
   RegenerateSessionOutput,
   RemoveImport,
@@ -73,6 +76,13 @@ import {
 import type { Config } from "@bindings/yap/internal/inference/text/models";
 export { isDesktop } from "@/lib/desktop";
 export type { TranscriptExportPreview, TranscriptExportRequest } from "@bindings/yap/models";
+export type { BulkTextJob } from "@bindings/yap/models";
+export type BulkTextRequest = {
+  selection: TranscriptExportSelection;
+  action: "title" | "output";
+  promptId: string;
+  replaceTitles: boolean;
+};
 export type TranscriptExportSelection = {
   sessionIds: string[];
   allMatching: boolean;
@@ -297,6 +307,7 @@ export type Model = {
   removable: boolean;
 };
 export type Snapshot = {
+  bulkTextQueue?: import("@bindings/yap/models").BulkTextJob[];
   importQueue?: ImportJob[];
   appProfileRules?: AppProfileRule[];
   profileShortcut?: string;
@@ -370,6 +381,16 @@ async function updateHistorySessions(ids: string[], update: (batch: string[]) =>
 }
 
 export const backend = {
+  queueBulkText: (request: BulkTextRequest): Promise<number> =>
+    QueueBulkText({
+      ...request,
+      selection: {
+        ...request.selection,
+        excludedSessionIds: request.selection.excludedSessionIds ?? [],
+      },
+    }),
+  cancelBulkTextQueue: CancelBulkTextQueue,
+  clearFinishedBulkTextJobs: ClearFinishedBulkTextJobs,
   homeResult: async (): Promise<HomeResult | null> => {
     const result = await GetHomeResult();
     return result && { ...result, outputs: result.outputs ?? [] };
@@ -443,6 +464,7 @@ export const backend = {
       ...value,
       textProcessing: normalizeTextProcessing(value.textProcessing),
       importQueue: value.importQueue ?? [],
+      bulkTextQueue: value.bulkTextQueue ?? [],
       appProfileRules: value.appProfileRules ?? [],
       dictationProfiles: value.dictationProfiles ?? [],
       history: value.history ?? [],
@@ -509,7 +531,11 @@ export const backend = {
     return GetSession(id);
   },
   generatedOutputs: async (id: string): Promise<GeneratedOutput[]> => {
-    return (await GetSessionOutputs(id)) ?? [];
+    // Go serializes the zero-value chain for standalone prompts as an object.
+    return ((await GetSessionOutputs(id)) ?? []).map((output) => ({
+      ...output,
+      chain: output.chain?.runId ? output.chain : null,
+    }));
   },
   generateOutput: async (
     requestID: string,

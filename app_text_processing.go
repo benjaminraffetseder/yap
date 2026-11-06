@@ -47,6 +47,9 @@ func (a *App) TestTextModel(requestID string) (string, error) {
 type outputTarget struct{ sessionID, outputID string }
 type promptRefinement struct{ endpoint, model string }
 type textRequest struct {
+	config          *textmodel.Config
+	saveTitle       bool
+	expectedTitle   string
 	input, promptID string
 	titleSessionID  string
 	test            bool
@@ -70,6 +73,10 @@ func (a *App) GenerateSessionTitle(requestID, sessionID string) (string, error) 
 	if err != nil {
 		return "", err
 	}
+	return normalizeSessionTitle(output)
+}
+
+func normalizeSessionTitle(output string) (string, error) {
 	if !utf8.ValidString(output) || strings.IndexFunc(output, func(r rune) bool {
 		return unicode.IsControl(r) && !unicode.IsSpace(r)
 	}) >= 0 {
@@ -163,8 +170,14 @@ func (a *App) ListTextModels(requestID, endpoint string) ([]string, error) {
 }
 
 func (a *App) processTextRequest(requestID string, request textRequest) (string, error) {
-	input, target := request.input, request.target
 	a.mu.Lock()
+	return a.processTextRequestLocked(requestID, request)
+}
+
+// Takes ownership of a.mu and releases it while inference runs. Queue workers
+// claim their next job and start processing under the same lock.
+func (a *App) processTextRequestLocked(requestID string, request textRequest) (string, error) {
+	input, target := request.input, request.target
 	if err := a.available(); err != nil {
 		a.mu.Unlock()
 		return "", err
@@ -183,6 +196,9 @@ func (a *App) processTextRequest(requestID string, request textRequest) (string,
 		return "", errors.New("finish the current operation before processing text")
 	}
 	configSource := a.textConfig
+	if request.config != nil {
+		configSource = *request.config
+	}
 	if request.refinement != nil {
 		configSource = textmodel.Config{Enabled: true, Endpoint: request.refinement.endpoint, Model: request.refinement.model}
 		if err := textmodel.ValidateInstruction(input); err != nil {
@@ -308,6 +324,22 @@ func (a *App) processTextRequest(requestID string, request textRequest) (string,
 		err = a.store.AddGeneratedOutput(generated)
 		if err == nil {
 			a.event("dictation:history")
+		}
+	}
+	if err == nil && request.saveTitle {
+		output, err = normalizeSessionTitle(output)
+		if err == nil {
+			var entry storage.Session
+			entry, err = a.store.Session(request.titleSessionID)
+			if err == nil && entry.Title != request.expectedTitle {
+				err = errors.New("the title changed while generation was running; the new title was kept")
+			}
+			if err == nil {
+				err = a.store.SaveSessionTitle(entry.ID, output)
+				if err == nil {
+					a.event("dictation:history")
+				}
+			}
 		}
 	}
 	return output, err

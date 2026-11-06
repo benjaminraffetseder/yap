@@ -63,36 +63,13 @@ func (a *App) GetTranscriptExportPreview(selection TranscriptExportSelection) (T
 	if err := a.historyAvailableLocked(); err != nil {
 		return preview, err
 	}
-	ids := selection.SessionIDs
-	if selection.AllMatching {
-		if len(ids) != 0 {
-			return preview, errors.New("choose selected transcripts or all matching transcripts")
-		}
-		var err error
-		ids, err = a.store.MatchingHistoryIDs(selection.Query)
-		if err != nil {
-			return preview, err
-		}
-		excluded := map[string]bool{}
-		for _, id := range selection.ExcludedSessionIDs {
-			excluded[id] = true
-		}
-		included := make([]string, 0, len(ids))
-		for _, id := range ids {
-			if !excluded[id] {
-				included = append(included, id)
-			}
-		}
-		ids = included
-	} else if len(selection.ExcludedSessionIDs) != 0 {
-		return preview, errors.New("exclude transcripts only when selecting all search matches")
-	}
-	entries, err := a.store.SelectedSessions(ids)
+	entries, err := a.selectedHistoryLocked(selection)
 	if err != nil {
 		return preview, err
 	}
-	preview.SessionIDs = ids
+	preview.SessionIDs = make([]string, 0, len(entries))
 	for _, entry := range entries {
+		preview.SessionIDs = append(preview.SessionIDs, entry.ID)
 		outputs, err := a.store.GeneratedOutputs(entry.ID)
 		if err != nil {
 			return preview, err
@@ -108,6 +85,35 @@ func (a *App) GetTranscriptExportPreview(selection TranscriptExportSelection) (T
 		}
 	}
 	return preview, nil
+}
+
+// Resolve selection once, including unloaded search matches and exclusions.
+func (a *App) selectedHistoryLocked(selection TranscriptExportSelection) ([]storage.Session, error) {
+	ids := selection.SessionIDs
+	if selection.AllMatching {
+		if len(ids) != 0 {
+			return nil, errors.New("choose selected transcripts or all matching transcripts")
+		}
+		var err error
+		ids, err = a.store.MatchingHistoryIDs(selection.Query)
+		if err != nil {
+			return nil, err
+		}
+		excluded := map[string]bool{}
+		for _, id := range selection.ExcludedSessionIDs {
+			excluded[id] = true
+		}
+		included := make([]string, 0, len(ids))
+		for _, id := range ids {
+			if !excluded[id] {
+				included = append(included, id)
+			}
+		}
+		ids = included
+	} else if len(selection.ExcludedSessionIDs) != 0 {
+		return nil, errors.New("exclude transcripts only when selecting all search matches")
+	}
+	return a.store.SelectedSessions(ids)
 }
 
 type transcriptExportFile struct {

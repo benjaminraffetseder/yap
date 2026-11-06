@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import type { ImportJob, Snapshot } from "../src/lib/backend";
+import type { BulkTextJob, ImportJob, Snapshot } from "../src/lib/backend";
 
 const job = (id: string, state = "queued", progress = -1): ImportJob => ({
   id,
@@ -83,6 +83,7 @@ test.beforeEach(async ({ page }) => {
       copied: "",
       dropped: [] as string[],
       rejectReorder: false,
+      cancelCalls: 0,
       queue(jobs: ImportJob[]) {
         snapshot.importQueue = jobs;
         callbacks["import:queue"]?.(structuredClone(jobs));
@@ -90,6 +91,10 @@ test.beforeEach(async ({ page }) => {
       status(status: Partial<Snapshot["status"]>) {
         Object.assign(snapshot.status, status);
         callbacks["dictation:status"]?.(structuredClone(snapshot.status));
+      },
+      textQueue(jobs: BulkTextJob[]) {
+        snapshot.bulkTextQueue = jobs;
+        callbacks["text:queue"]?.(structuredClone(jobs));
       },
       drop(paths: string[]) {
         drop?.(0, 0, paths);
@@ -115,6 +120,10 @@ test.beforeEach(async ({ page }) => {
         main: {
           App: {
             GetSnapshot: async () => structuredClone(snapshot),
+            Cancel: async () => {
+              state.cancelCalls++;
+              state.status({ phase: "idle", message: "Ready", importId: "" });
+            },
             GetHistory: async () => ({ entries: [], total: 0, page: 0, pageSize: 50 }),
             GetMicrophones: async () => [],
             GetDiagnosticChecks: async () => [],
@@ -160,38 +169,32 @@ test.beforeEach(async ({ page }) => {
   await expect(page.getByRole("button", { name: "Import audio", exact: true })).toBeEnabled();
 });
 
-test("centers the drawer within the content frame at desktop and narrow widths with fixed navigation", async ({
-  page,
-}, testInfo) => {
+test("docks the activity pane inside desktop and narrow content frames", async ({ page }) => {
   await queue(page, [job("interview", "transcribing", 42), job("notes")]);
-  const drawer = page.getByRole("dialog", { name: /Imports/ });
+  const pane = page.getByRole("region", { name: "Processing activity", exact: true });
   for (const width of [1086, 480]) {
     await page.setViewportSize({ width, height: 754 });
-    await expect
-      .poll(async () => {
-        const bounds = await drawer.boundingBox();
-        const content = await page.getByRole("main").boundingBox();
-        return bounds && content
-          ? Math.abs(bounds.x + bounds.width / 2 - (content.x + content.width / 2))
-          : Infinity;
-      })
-      .toBeLessThan(1);
-    const bounds = (await drawer.boundingBox())!;
+    const bounds = (await pane.boundingBox())!;
     const content = (await page.getByRole("main").boundingBox())!;
-    expect(bounds.x).toBeGreaterThanOrEqual(content.x + 16);
-    expect(bounds.x + bounds.width).toBeLessThanOrEqual(content.x + content.width - 16);
-    await page.screenshot({ path: testInfo.outputPath(`centered-drawer-${width}.png`) });
+    expect(bounds.x).toBeGreaterThanOrEqual(content.x + 12);
+    expect(bounds.x + bounds.width).toBeLessThanOrEqual(content.x + content.width - 12);
+    expect(bounds.width).toBeLessThanOrEqual(288);
+    expect(bounds.height).toBeLessThan(200);
   }
 });
 
 test("shows real and indeterminate progress, and remains non-modal", async ({ page }, testInfo) => {
   await queue(page, [job("interview", "transcribing", 42), job("notes")]);
-  await expect(page.getByRole("dialog", { name: /Imports/ })).toBeVisible();
+  await expect(
+    page.getByRole("region", { name: "Processing activity", exact: true }),
+  ).toBeVisible();
   await expect(page.getByText("Transcribing 42%", { exact: true })).toBeVisible();
   const progress = page.getByRole("progressbar", { name: "Progress for interview.wav" });
   await expect(progress).toHaveAttribute("aria-valuenow", "42");
   await page.getByRole("link", { name: "Dictate", exact: true }).click();
-  await expect(page.getByRole("dialog", { name: /Imports/ })).toBeVisible();
+  await expect(
+    page.getByRole("region", { name: "Processing activity", exact: true }),
+  ).toBeVisible();
   await queue(page, [job("interview", "preparing"), job("notes")]);
   await expect(progress).not.toHaveAttribute("aria-valuenow");
   const indicator = progress.locator("[data-slot=progress-indicator]");
@@ -202,71 +205,151 @@ test("shows real and indeterminate progress, and remains non-modal", async ({ pa
   await page.screenshot({ path: testInfo.outputPath("import-drawer.png") });
 });
 
-test("minimizes to a FAB with hover and focus status, then reopens", async ({ page }, testInfo) => {
-  await page.evaluate(() => document.documentElement.classList.add("dark"));
+test("minimizes completely and keeps updates hidden until reopened from any view", async ({
+  page,
+}) => {
   await queue(page, [job("interview", "transcribing", 42), job("notes")]);
-  await page.getByRole("button", { name: "Minimize import queue" }).click();
-  const fab = page.getByRole("button", { name: "Open import queue" });
-  await expect(fab).toBeVisible();
-  const expectOpaqueBackground = async () => {
-    await expect
-      .poll(() =>
-        fab.evaluate((element) => {
-          const canvas = document.createElement("canvas");
-          const context = canvas.getContext("2d")!;
-          context.fillStyle = getComputedStyle(element).backgroundColor;
-          context.fillRect(0, 0, 1, 1);
-          return context.getImageData(0, 0, 1, 1).data[3];
-        }),
-      )
-      .toBe(255);
-  };
-  await expectOpaqueBackground();
-  await fab.hover();
-  await expectOpaqueBackground();
-  await expect(page.locator('[data-slot="tooltip-content"]')).toHaveText(
-    "Transcribing interview.wav · 42% · 1 queued",
-  );
-  await page.screenshot({ path: testInfo.outputPath("import-fab.png") });
-  await page.mouse.move(0, 0);
-  await fab.focus();
-  await expect(page.locator('[data-slot="tooltip-content"]')).toBeVisible();
-  await fab.click();
-  await expect(page.getByRole("dialog", { name: /Imports/ })).toBeVisible();
-  await expect(fab).toBeHidden();
-  await page.getByRole("button", { name: "Minimize import queue" }).click();
+  const pane = page.getByRole("region", { name: "Processing activity", exact: true });
+  const toggle = page.getByRole("button", { name: "Processing activity", exact: true });
+  await pane.getByRole("button", { name: "Minimize activity pane" }).click();
+  await expect(pane).toBeHidden();
+  await expect(toggle).toBeFocused();
+  await expect(toggle).toHaveAttribute("aria-expanded", "false");
+  await expect(toggle).toHaveAttribute("aria-description", "2 tasks pending");
   await queue(page, [job("interview", "transcribing", 52), job("notes"), job("extra")]);
-  await expect(fab).toBeVisible();
+  await expect(pane).toBeHidden();
   await queue(page, [job("interview", "done"), job("notes", "done"), job("extra", "done")]);
-  await queue(page, [
-    job("interview", "done"),
-    job("notes", "done"),
-    job("extra", "done"),
-    job("new"),
-  ]);
-  await expect(page.getByRole("dialog", { name: /Imports/ })).toBeVisible();
+  await queue(page, [job("new")]);
+  await expect(pane).toBeHidden();
+  await page.getByRole("link", { name: "Vocabulary", exact: true }).click();
+  await expect(pane).toBeHidden();
+  await toggle.click();
+  await expect(pane).toBeVisible();
+  await expect(pane.getByText("new.wav", { exact: true })).toBeVisible();
 });
 
-test("swiping the drawer down minimizes it", async ({ page }) => {
-  await queue(page, [job("waiting")]);
-  const handle = page.locator('[data-slot="drawer-swipe-handle"]');
-  await handle.click({ trial: true });
-  const bounds = (await handle.boundingBox())!;
-  const x = bounds.x + bounds.width / 2;
-  const y = bounds.y + bounds.height / 2;
-  await page.mouse.move(x, y);
-  await page.mouse.down();
-  for (let step = 1; step <= 10; step++) {
-    await page.mouse.move(x, y + step * 12);
-    await page.evaluate(() => new Promise(requestAnimationFrame));
-  }
-  await page.mouse.up();
-  const fab = page.getByRole("button", { name: "Open import queue" });
-  await expect(fab).toBeVisible();
-  await fab.hover();
-  await expect(page.locator('[data-slot="tooltip-content"]')).toHaveText(
-    "Waiting for dictation to finish",
+test("the activity button opens the empty pane and Escape returns focus", async ({ page }) => {
+  const toggle = page.getByRole("button", { name: "Processing activity", exact: true });
+  await toggle.press("Enter");
+  const pane = page.getByRole("region", { name: "Processing activity", exact: true });
+  await expect(pane).toContainText("No processing activity");
+  await pane.getByRole("button", { name: "Minimize activity pane" }).focus();
+  await page.keyboard.press("Escape");
+  await expect(pane).toBeHidden();
+  await expect(toggle).toBeFocused();
+});
+
+test("one activity pane shows both queues without counting the active operation twice", async ({
+  page,
+}) => {
+  await queue(page, [job("interview", "transcribing", 42)]);
+  await page.evaluate(() => {
+    const state = Reflect.get(window, "queueTest");
+    state.status({ importId: "interview", phase: "transcribing", message: "Transcribing" });
+    state.textQueue([
+      {
+        id: "text-1",
+        sessionId: "saved",
+        name: "Meeting notes",
+        action: "output",
+        prompt: "Summary",
+        state: "queued",
+        error: "",
+      },
+    ]);
+  });
+  const pane = page.getByRole("region", { name: "Processing activity", exact: true });
+  const toggle = page.getByRole("button", { name: "Processing activity", exact: true });
+  await expect(pane.getByRole("region", { name: "Imports", exact: true })).toBeVisible();
+  await expect(
+    pane.getByRole("region", { name: "Transcript processing queue", exact: true }),
+  ).toBeVisible();
+  await expect(pane.getByRole("region", { name: "Current operation", exact: true })).toHaveCount(0);
+  await expect(toggle).toHaveAttribute("aria-description", "2 tasks pending");
+  await pane.getByRole("button", { name: "Minimize activity pane" }).click();
+  await page.evaluate(() => {
+    const state = Reflect.get(window, "queueTest");
+    state.queue([
+      {
+        id: "interview",
+        name: "interview.wav",
+        state: "done",
+        progress: 100,
+        message: "Saved",
+        error: "",
+        transcript: "",
+        sessionId: "",
+      },
+    ]);
+    state.textQueue([
+      {
+        id: "text-1",
+        sessionId: "saved",
+        name: "Meeting notes",
+        action: "output",
+        prompt: "Summary",
+        state: "running",
+        error: "",
+      },
+    ]);
+    state.status({ importId: "", phase: "text-processing", message: "Generating a summary" });
+  });
+  await expect(pane).toBeHidden();
+  await expect(toggle).toHaveAttribute("aria-description", "1 task pending");
+  await toggle.click();
+  await expect(pane.getByRole("region", { name: "Current operation", exact: true })).toHaveCount(0);
+  await pane
+    .getByRole("region", { name: "Imports", exact: true })
+    .getByRole("button", { name: "Clear finished" })
+    .click();
+  await expect(pane.getByRole("region", { name: "Imports", exact: true })).toHaveCount(0);
+  await expect(pane.getByRole("link", { name: "Meeting notes", exact: true })).toBeVisible();
+});
+
+test("standalone processing uses the shared activity pane and can reopen from the sidebar or command palette", async ({
+  page,
+}) => {
+  const pane = page.getByRole("region", { name: "Processing activity", exact: true });
+  const toggle = page.getByRole("button", { name: "Processing activity", exact: true });
+  await page.evaluate(() =>
+    Reflect.get(window, "queueTest").status({
+      phase: "transcribing",
+      message: "Transcribing speech",
+    }),
   );
+  await expect(pane.getByRole("region", { name: "Current operation", exact: true })).toContainText(
+    "Transcribing speech",
+  );
+  await pane.getByRole("button", { name: "Minimize activity pane" }).click();
+  await expect(pane).toBeHidden();
+  await expect(
+    page.getByRole("button", { name: "View processing activity", exact: true }),
+  ).toHaveCount(0);
+  await toggle.click();
+  await expect(pane).toBeVisible();
+  await pane.getByRole("button", { name: "Minimize activity pane" }).click();
+  await page.evaluate(() =>
+    Reflect.get(window, "queueTest").status({
+      phase: "downloading",
+      progress: 0.42,
+      message: "Downloading model",
+    }),
+  );
+  await expect(pane).toBeHidden();
+  await toggle.click();
+  await expect(
+    pane.getByRole("progressbar", { name: "Current operation", exact: true }),
+  ).toHaveAttribute("aria-valuenow", "42");
+  await pane.getByRole("button", { name: "Cancel current operation", exact: true }).click();
+  await expect(pane).toContainText("No processing activity");
+  expect(await page.evaluate(() => Reflect.get(window, "queueTest").cancelCalls)).toBe(1);
+  await pane.getByRole("button", { name: "Minimize activity pane" }).click();
+  await page.keyboard.press("Control+k");
+  const command = page.getByRole("dialog", { name: "Command palette", exact: true });
+  await command.getByRole("combobox").fill("Processing activity");
+  await command.getByRole("option", { name: "Processing activity", exact: true }).click();
+  await expect(pane).toBeVisible();
+  await expect(toggle).toHaveAttribute("aria-expanded", "true");
 });
 
 test("keyboard and grip dragging reorder only queued rows", async ({ page }) => {
@@ -296,7 +379,9 @@ test("keyboard and grip dragging reorder only queued rows", async ({ page }) => 
   await expect
     .poll(() => page.evaluate(() => Reflect.get(window, "queueTest").reorderCalls.at(-1)))
     .toEqual(["two", "three", "one"]);
-  await expect(page.getByRole("dialog", { name: /Imports/ })).toBeVisible();
+  await expect(
+    page.getByRole("region", { name: "Processing activity", exact: true }),
+  ).toBeVisible();
 });
 
 test("keyboard reorder keeps focus across pending saves and consecutive moves", async ({
@@ -377,7 +462,7 @@ test("failed reorder rolls back and rows expose cancel, retry, copy, and clear",
 test("suppresses per-file toasts and summarizes a minimized batch once", async ({ page }) => {
   await queue(page, [job("old", "done")]);
   await queue(page, [job("old", "done"), job("one", "transcribing", 42), job("two")]);
-  await page.getByRole("button", { name: "Minimize import queue" }).click();
+  await page.getByRole("button", { name: "Minimize activity pane" }).click();
   await page.evaluate(() => {
     const state = Reflect.get(window, "queueTest");
     state.status({ importId: "one", phase: "transcribing" });

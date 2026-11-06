@@ -448,7 +448,7 @@ function EntryDetail({ id }: { id: string }) {
         <div
           ref={playerDock}
           data-slot="recording-player-dock"
-          className="pointer-events-none fixed right-0 bottom-0 left-[var(--sidebar-width,0px)] z-30 pb-[max(1rem,env(safe-area-inset-bottom))] group-has-[[data-slot=import-queue-fab]]/layout:pb-24"
+          className="pointer-events-none fixed right-0 bottom-0 left-[var(--sidebar-width,0px)] z-30 pb-[max(1rem,env(safe-area-inset-bottom))]"
         >
           <div className="mx-auto max-w-5xl px-3 sm:px-10 lg:px-20">
             <AudioPlayer

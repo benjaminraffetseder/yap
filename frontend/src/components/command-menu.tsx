@@ -14,6 +14,7 @@ import {
 import { backend, isBusy, isDesktop, type Session } from "@/lib/backend";
 import {
   BookOpen,
+  Activity,
   Copy,
   Download,
   HardDriveDownload,
@@ -122,7 +123,8 @@ function CommandMenuContent({
 }) {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const { snapshot, loading, run, update, checkingUpdates, checkUpdates } = useDictation();
+  const { snapshot, loading, run, update, checkingUpdates, checkUpdates, setProcessingPanelOpen } =
+    useDictation();
   const { theme, setTheme } = useTheme();
   const { settings, status, latestResult } = snapshot;
   const [query, setQuery] = useState("");
@@ -182,74 +184,82 @@ function CommandMenuContent({
     {
       heading: t("commandMenu.navigate"),
       items: [
-        { label: t("appLayout.dictate"), to: "/", icon: Mic, keywords: ["home", "record"] },
         {
-          label: t("common.history"),
-          to: "/history",
-          icon: History,
-          keywords: ["transcripts", "dictations"],
+          label: t("processing.activity"),
+          icon: Activity,
+          keywords: ["activity", "processing", "queue", "jobs", "imports"],
+          action: () => setProcessingPanelOpen(true),
         },
-        {
-          label: t("commandMenu.recentlyDeleted"),
-          to: "/history?view=deleted",
-          icon: History,
-          keywords: ["trash", "restore"],
-        },
-        {
-          label: t("modelsPage.models"),
-          to: "/models",
-          icon: HardDriveDownload,
-          keywords: ["speech", "whisper"],
-        },
-        {
-          label: t("common.vocabulary"),
-          to: "/vocabulary",
-          icon: BookOpen,
-          keywords: ["dictionary", "words"],
-        },
-        {
-          label: t("promptsPage.prompts"),
-          to: "/prompts?section=prompts",
-          icon: Sparkles,
-          keywords: ["instructions"],
-        },
-        {
-          label: t("promptsPage.chains"),
-          to: "/prompts?section=chains",
-          icon: Workflow,
-          keywords: ["prompts", "steps"],
-        },
-        {
-          label: t("promptsPage.textModel"),
-          to: "/prompts?section=models",
-          icon: Sparkles,
-          keywords: ["llm", "ollama"],
-        },
-        {
-          label: t("commandMenu.settingsDictation"),
-          to: "/settings?section=dictation",
-          icon: Settings2,
-          keywords: ["microphone", "shortcut", "profiles"],
-        },
-        {
-          label: t("commandMenu.settingsGeneral"),
-          to: "/settings?section=general",
-          icon: Settings2,
-          keywords: ["updates", "startup"],
-        },
-        {
-          label: t("commandMenu.settingsHistoryData"),
-          to: "/settings?section=history",
-          icon: Settings2,
-          keywords: ["backup", "retention", "storage"],
-        },
-        {
-          label: t("commandMenu.settingsAdvanced"),
-          to: "/settings?section=advanced",
-          icon: Settings2,
-          keywords: ["diagnostics", "audio support"],
-        },
-      ].map(({ to, ...item }) => ({ ...item, action: () => navigate(to) })),
+        ...[
+          { label: t("appLayout.dictate"), to: "/", icon: Mic, keywords: ["home", "record"] },
+          {
+            label: t("common.history"),
+            to: "/history",
+            icon: History,
+            keywords: ["transcripts", "dictations"],
+          },
+          {
+            label: t("commandMenu.recentlyDeleted"),
+            to: "/history?view=deleted",
+            icon: History,
+            keywords: ["trash", "restore"],
+          },
+          {
+            label: t("modelsPage.models"),
+            to: "/models",
+            icon: HardDriveDownload,
+            keywords: ["speech", "whisper"],
+          },
+          {
+            label: t("common.vocabulary"),
+            to: "/vocabulary",
+            icon: BookOpen,
+            keywords: ["dictionary", "words"],
+          },
+          {
+            label: t("promptsPage.prompts"),
+            to: "/prompts?section=prompts",
+            icon: Sparkles,
+            keywords: ["instructions"],
+          },
+          {
+            label: t("promptsPage.chains"),
+            to: "/prompts?section=chains",
+            icon: Workflow,
+            keywords: ["prompts", "steps"],
+          },
+          {
+            label: t("promptsPage.textModel"),
+            to: "/prompts?section=models",
+            icon: Sparkles,
+            keywords: ["llm", "ollama"],
+          },
+          {
+            label: t("commandMenu.settingsDictation"),
+            to: "/settings?section=dictation",
+            icon: Settings2,
+            keywords: ["microphone", "shortcut", "profiles"],
+          },
+          {
+            label: t("commandMenu.settingsGeneral"),
+            to: "/settings?section=general",
+            icon: Settings2,
+            keywords: ["updates", "startup"],
+          },
+          {
+            label: t("commandMenu.settingsHistoryData"),
+            to: "/settings?section=history",
+            icon: Settings2,
+            keywords: ["backup", "retention", "storage"],
+          },
+          {
+            label: t("commandMenu.settingsAdvanced"),
+            to: "/settings?section=advanced",
+            icon: Settings2,
+            keywords: ["diagnostics", "audio support"],
+          },
+        ].map(({ to, ...item }) => ({ ...item, action: () => navigate(to) })),
+      ],
     },
     {
       heading: t("historyEntryPage.dictation"),

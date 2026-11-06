@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import { AudioDropImport } from "@/components/audio-drop-import";
 import { CommandMenu } from "@/components/command-menu";
 import { useDictation } from "@/components/dictation-provider";
-import { ImportQueue } from "@/components/import-queue/import-queue";
+import { ProcessingPanel, ProcessingPanelToggle } from "@/components/processing-panel";
 import { RecordingStatus } from "@/components/recording-status";
 import { RecoveryActions } from "@/components/recovery-actions";
 import { Button } from "@/components/ui/button";
@@ -21,7 +21,15 @@ import {
   Settings2,
   Sparkles,
 } from "lucide-react";
-import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type Ref } from "react";
+import {
+  Fragment,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type Ref,
+} from "react";
 import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router";
 
 export function AppLayout({ saveNoticeRef }: { saveNoticeRef?: Ref<HTMLDivElement> }) {
@@ -141,30 +149,36 @@ export function AppLayout({ saveNoticeRef }: { saveNoticeRef?: Ref<HTMLDivElemen
           </div>
           <nav aria-label={t("appLayout.mainNavigation")} className="flex flex-1 flex-col gap-1">
             {navigation.map(({ to, label, shortLabel, icon: Icon }) => (
-              <Tooltip key={to} disabled={!compactNavigation}>
-                <TooltipTrigger
-                  render={
-                    <NavLink
-                      to={to}
-                      end={to !== "/history"}
-                      aria-label={label}
-                      className={cn(
-                        "flex shrink-0 flex-col items-center justify-center gap-1 rounded-lg text-sm text-muted-foreground outline-none transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring aria-[current=page]:bg-primary/10 aria-[current=page]:font-medium aria-[current=page]:text-primary",
-                        compactNavigation ? "h-[44px] px-0" : "h-14 px-1",
-                        to === "/settings" && "mt-auto",
-                      )}
-                    />
-                  }
-                >
-                  <Icon className="size-5 shrink-0" aria-hidden="true" />
-                  <span
-                    className={cn("max-w-full text-xs leading-5", compactNavigation && "sr-only")}
+              <Fragment key={to}>
+                {to === "/settings" && (
+                  <div className="mt-auto">
+                    <ProcessingPanelToggle compact={compactNavigation} />
+                  </div>
+                )}
+                <Tooltip disabled={!compactNavigation}>
+                  <TooltipTrigger
+                    render={
+                      <NavLink
+                        to={to}
+                        end={to !== "/history"}
+                        aria-label={label}
+                        className={cn(
+                          "flex shrink-0 flex-col items-center justify-center gap-1 rounded-lg text-sm text-muted-foreground outline-none transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring aria-[current=page]:bg-primary/10 aria-[current=page]:font-medium aria-[current=page]:text-primary",
+                          compactNavigation ? "h-[44px] px-0" : "h-14 px-1",
+                        )}
+                      />
+                    }
                   >
-                    {shortLabel ?? label}
-                  </span>
-                </TooltipTrigger>
-                <TooltipContent side="right">{label}</TooltipContent>
-              </Tooltip>
+                    <Icon className="size-5 shrink-0" aria-hidden="true" />
+                    <span
+                      className={cn("max-w-full text-xs leading-5", compactNavigation && "sr-only")}
+                    >
+                      {shortLabel ?? label}
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent side="right">{label}</TooltipContent>
+                </Tooltip>
+              </Fragment>
             ))}
           </nav>
         </aside>
@@ -266,7 +280,7 @@ export function AppLayout({ saveNoticeRef }: { saveNoticeRef?: Ref<HTMLDivElemen
           </div>
         </main>
         <RecordingStatus />
-        <ImportQueue sidebarWidth={sidebarWidth} />
+        <ProcessingPanel />
         <CommandMenu open={commandOpen} onOpenChange={setCommandOpen} />
         <AudioDropImport />
       </div>

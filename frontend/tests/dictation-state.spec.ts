@@ -92,9 +92,10 @@ async function showCustomModelFiles(page: Page) {
 }
 async function generateWith(page: Page, name = "Generate output") {
   const button = page.getByRole("button", { name, exact: true });
-  if (!(await button.isVisible()))
-    await page.getByRole("button", { name: "New output", exact: true }).click();
+  const trigger = page.getByRole("button", { name: "New output", exact: true });
+  if (await trigger.isVisible()) await trigger.click();
   await button.click();
+  await expect(page.getByRole("dialog", { name: "Create an output", exact: true })).toBeHidden();
 }
 async function selectSavedOutput(page: Page, index: number) {
   await page.locator("#saved-output").click();
@@ -5640,6 +5641,7 @@ test("saved outputs retain their recipes, regenerate as new versions and leave e
   });
   await page.goto("/#/history/one");
   await page.getByRole("tab", { name: "Outputs", exact: true }).click();
+  await page.getByRole("button", { name: "New output", exact: true }).click();
   await page.getByRole("combobox", { name: "Output prompt", exact: true }).click();
   await page.getByRole("option", { name: "Summary", exact: true }).click();
   await generateWith(page);
@@ -5691,12 +5693,31 @@ test("saved outputs retain their recipes, regenerate as new versions and leave e
   await page.keyboard.press("Escape");
   await expect(savedOutput).toBeFocused();
   const createOutput = page.getByRole("button", { name: "New output", exact: true });
+  const toolbar = page.locator('[data-slot="output-toolbar"]');
+  const toolbarBounds = await toolbar.boundingBox();
+  const articleBounds = await page.locator("article").boundingBox();
+  expect(await createOutput.innerText()).toBe("");
+  const copyOutput = page.getByRole("button", { name: "Copy output", exact: true });
+  const copyBounds = (await copyOutput.boundingBox())!;
+  expect(copyBounds.width).toBe(copyBounds.height);
+  await expect(copyOutput.locator('[aria-live="polite"]')).toHaveClass("sr-only");
   await createOutput.click();
-  await expect(createOutput).toHaveCount(0);
-  const composer = page.getByRole("region", { name: "Generate output", exact: true });
+  const composer = page.getByRole("dialog", { name: "Create an output", exact: true });
   await expect(composer).toBeVisible();
+  await expect(
+    composer.getByRole("combobox", { name: "Output prompt", exact: true }),
+  ).toBeFocused();
+  expect(await toolbar.boundingBox()).toEqual(toolbarBounds);
+  expect(await page.locator("article").boundingBox()).toEqual(articleBounds);
   await composer.getByRole("button", { name: "Cancel", exact: true }).click();
-  await expect(composer).toHaveCount(0);
+  await expect(composer).toBeHidden();
+  await expect(createOutput).toBeFocused();
+  expect(await toolbar.boundingBox()).toEqual(toolbarBounds);
+  expect(await page.locator("article").boundingBox()).toEqual(articleBounds);
+  await createOutput.press("Enter");
+  await expect(composer).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(composer).toBeHidden();
   await expect(createOutput).toBeFocused();
   await expect(page.getByRole("article")).toHaveCount(1);
   await first.getByText("Source & prompt", { exact: true }).click();
@@ -5706,6 +5727,8 @@ test("saved outputs retain their recipes, regenerate as new versions and leave e
   await expect
     .poll(() => page.evaluate(() => window.dictationTest.snapshot.status.transcript))
     .toBe("Compare the new model's recognition of names and technical terms.");
+  await expect(copyOutput.locator("svg.lucide-check")).toBeVisible();
+  expect(await copyOutput.boundingBox()).toEqual(copyBounds);
   await page.getByRole("button", { name: "Edit transcript", exact: true }).click();
   await page
     .getByRole("textbox", { name: "Editable text", exact: true })
@@ -5855,6 +5878,58 @@ test("failed, cancelled and abandoned output generation never adds a late result
   expect(await page.evaluate(() => window.dictationTest.snapshot.status.transcript)).toBe("");
 });
 
+test("standalone output metadata omits the backend's empty chain", async ({ page }) => {
+  await page.addInitScript(() => {
+    const state = window.dictationTest;
+    state.snapshot.history = [
+      {
+        id: "one",
+        createdAt: "2026-10-07",
+        durationMs: 1000,
+        rawTranscript: "Original speech",
+        finalTranscript: "Edited speech",
+        speechModel: "base",
+        language: "en",
+        audioPath: "",
+      },
+    ];
+    state.outputs = [
+      {
+        id: "summary",
+        sessionId: "one",
+        createdAt: "2026-10-07T12:30:00Z",
+        prompt: { id: "summary", name: "Summary", instruction: "Summarize the input" },
+        model: "local-model",
+        endpoint: "http://127.0.0.1:1234/v1",
+        input: "Edited speech",
+        text: "A saved summary",
+        chain: {
+          runId: "",
+          chainId: "",
+          name: "",
+          stepId: "",
+          step: 0,
+          total: 0,
+          input: "",
+          sourceOutputId: "",
+        },
+      },
+    ];
+  });
+  await page.goto("/#/history/one");
+  await page.getByRole("tab", { name: "Outputs", exact: true }).click();
+  const savedOutput = page.getByRole("combobox", { name: /^Saved output \(/ });
+  const output = page.getByRole("article", { name: "Summary output", exact: true });
+  await expect(savedOutput).not.toContainText("0/0");
+  await expect(output).toContainText("From: Saved transcript");
+  await expect(output).not.toContainText("0/0");
+  await savedOutput.click();
+  await expect(page.getByRole("option")).not.toContainText("0/0");
+  await page.keyboard.press("Escape");
+  await output.getByText("Source & prompt", { exact: true }).click();
+  await expect(output).not.toContainText("Earlier step");
+});
+
 test("saved outputs remain usable with the model disabled and recover after a failed load", async ({
   page,
 }) => {
@@ -5894,7 +5969,7 @@ test("saved outputs remain usable with the model disabled and recover after a fa
   await page.goto("/#/history/one");
   await page.getByRole("tab", { name: "Outputs", exact: true }).click();
   await expect(page.getByRole("alert").filter({ hasText: "Outputs unavailable" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Generate output", exact: true })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "New output", exact: true })).toBeDisabled();
   await page.evaluate(() => {
     window.dictationTest.failOutputs = false;
   });
@@ -6231,7 +6306,7 @@ async function sessionTitleScenario(page: Page) {
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("Original saved transcript.");
 }
 
-test("output composer aligns prompt and chain controls and wraps safely at narrow or enlarged sizes", async ({
+test("output dialog keeps prompt and chain controls usable at narrow or enlarged sizes", async ({
   page,
 }, testInfo) => {
   await page.addInitScript(() => {
@@ -6248,7 +6323,8 @@ test("output composer aligns prompt and chain controls and wraps safely at narro
   await sessionTitleScenario(page);
   await page.setViewportSize({ width: 1086, height: 722 });
   await page.getByRole("tab", { name: "Outputs", exact: true }).click();
-  const composer = page.locator("#output-composer");
+  await page.getByRole("button", { name: "New output", exact: true }).click();
+  const composer = page.getByRole("dialog", { name: "Create an output", exact: true });
   const selector = composer.getByRole("combobox", { name: "Output prompt", exact: true });
   await selector.click();
   await page.getByRole("option", { name: "Action Items", exact: true }).click();
@@ -6272,8 +6348,11 @@ test("output composer aligns prompt and chain controls and wraps safely at narro
     }
     expect(field.width).toBeGreaterThan(100);
     expect(await composer.evaluate((node) => node.scrollWidth <= node.clientWidth + 1)).toBe(true);
+    await expect(action).toBeInViewport();
     await testInfo.attach(`composer-${state.width}-${state.scale}`, {
-      body: await composer.screenshot(),
+      body: await composer.screenshot({
+        path: testInfo.outputPath(`output-dialog-${state.width}-${state.scale}.png`),
+      }),
       contentType: "image/png",
     });
   }
@@ -9258,7 +9337,7 @@ test("audio drag and drop shows feedback and imports across navigation", async (
     .toEqual([["C:\\Audio\\meeting.wav"]]);
   await expect(page.getByRole("button", { name: "Import audio", exact: true })).toBeEnabled();
   await navigateMain(page, "History");
-  await page.getByRole("button", { name: "Cancel transcription", exact: true }).click();
+  await page.getByRole("button", { name: "Cancel current operation", exact: true }).click();
   await expect(page.getByRole("button", { name: "Import audio", exact: true })).toBeEnabled();
   await page.getByRole("link", { name: "Settings", exact: true }).click();
   await dropAudioFiles(page, ["C:\\Audio\\interview.mp3"]);
@@ -9388,7 +9467,7 @@ test("audio import is cancellable across navigation and results open from Histor
   await navigateMain(page, "Dictate");
   await expect(page.getByRole("button", { name: "Transcribing…", exact: true })).toBeDisabled();
   await navigateMain(page, "History");
-  await page.getByRole("button", { name: "Cancel transcription", exact: true }).click();
+  await page.getByRole("button", { name: "Cancel current operation", exact: true }).click();
   await expect
     .poll(() => page.evaluate(() => window.dictationTest.snapshot.status.phase))
     .toBe("idle");
@@ -10189,6 +10268,7 @@ test("manual prompt chains retain intermediate results and show their input sour
   });
   await page.goto("/#/history/chain");
   await page.getByRole("tab", { name: "Outputs", exact: true }).click();
+  await page.getByRole("button", { name: "New output", exact: true }).click();
   await page.getByRole("combobox", { name: "Output prompt", exact: true }).click();
   const chainOption = page.getByRole("option", { name: "Follow-up", exact: true });
   await expect(chainOption.locator("svg.lucide-workflow")).toHaveCount(1);
@@ -10277,6 +10357,7 @@ for (const chain of [false, true]) {
     await page.goto("/#/history/editor-generation");
     await page.getByRole("tab", { name: "Outputs", exact: true }).click();
     if (chain) {
+      await page.getByRole("button", { name: "New output", exact: true }).click();
       await page.getByRole("combobox", { name: "Output prompt", exact: true }).click();
       await page.getByRole("option", { name: "Review chain", exact: true }).click();
     }
@@ -10374,6 +10455,7 @@ test("cancelled manual prompt chains leave completed results available", async (
   });
   await page.goto("/#/history/chain");
   await page.getByRole("tab", { name: "Outputs", exact: true }).click();
+  await page.getByRole("button", { name: "New output", exact: true }).click();
   await page.getByRole("combobox", { name: "Output prompt", exact: true }).click();
   await page.getByRole("option", { name: "Notes", exact: true }).click();
   await generateWith(page, "Run chain");

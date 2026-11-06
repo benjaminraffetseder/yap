@@ -25,9 +25,20 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { backend, isBusy, message, processingOptions, type GeneratedOutput } from "@/lib/backend";
 import { useTextRequest } from "@/lib/use-text-request";
-import { Download, Loader2, RefreshCw, Sparkles, Trash2, Workflow } from "lucide-react";
+import {
+  Download,
+  FileText,
+  Loader2,
+  Plus,
+  RefreshCw,
+  Sparkles,
+  Square,
+  Trash2,
+  Workflow,
+} from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router";
 
@@ -48,6 +59,7 @@ export function GeneratedOutputs({
   const [activeOutput, setActiveOutput] = useState("");
   const [composerOpen, setComposerOpen] = useState(false);
   const composerTrigger = useRef<HTMLButtonElement>(null);
+  const promptTrigger = useRef<HTMLButtonElement>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [reload, setReload] = useState(0);
@@ -125,10 +137,13 @@ export function GeneratedOutputs({
   );
   const ordered = [...outputs].sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
   const output = ordered.find((item) => item.id === activeOutput) ?? ordered[0];
-  const composerVisible = generation.pending || composerOpen || (!loading && !outputs.length);
+  const generationStatus = selectedChain
+    ? nativeText(snapshot.status.message)
+    : t("generatedOutputs.generatingOutput");
   const outputOptions = ordered.map((item) => ({
     value: item.id,
     label: `${item.prompt.name}${item.chain ? ` · ${item.chain.name} ${item.chain.step}/${item.chain.total}` : ""} · ${new Date(item.createdAt).toLocaleString(i18n.resolvedLanguage, { dateStyle: "medium", timeStyle: "short" })}`,
+    output: item,
   }));
   const selectedIdentity = outputOptions.find((item) => item.value === output?.id)?.label;
   const sourceOutput = output?.chain?.sourceOutputId
@@ -148,37 +163,32 @@ export function GeneratedOutputs({
   return (
     <section
       aria-label={t("generatedOutputs.generatedOutputs")}
-      className="@container/outputs max-w-[72ch] space-y-4 text-base"
+      className="@container/outputs min-w-0 space-y-5 text-base"
     >
-      {composerVisible && (
-        <section
+      <Dialog open={composerOpen} onOpenChange={setComposerOpen}>
+        <DialogContent
           id="output-composer"
-          aria-label={t("generatedOutputs.generateOutput")}
-          className="max-w-[72ch] text-base space-y-4 rounded-xl border bg-card/30 p-4"
+          initialFocus={promptTrigger}
+          finalFocus={composerTrigger}
+          className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-md"
         >
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <h3 className="text-sm font-semibold">{t("uiPolish.createOutput")}</h3>
-              <p className="mt-1 text-sm text-muted-foreground">
-                {t("uiPolish.outputDescription")}
-              </p>
-            </div>
-            {!!outputs.length && !generation.pending && (
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => {
-                  setComposerOpen(false);
-                  requestAnimationFrame(() => composerTrigger.current?.focus());
-                }}
-              >
-                {t("common.cancel")}
-              </Button>
-            )}
-          </div>
-          <div className="flex flex-wrap items-end gap-3">
-            <div className="flex min-w-0 flex-[1_1_14rem] flex-col gap-2">
-              <Label htmlFor="output-prompt">{t("generatedOutputs.outputPrompt")}</Label>
+          <DialogHeader className="pr-6 text-left">
+            <DialogTitle>{t("uiPolish.createOutput")}</DialogTitle>
+            <DialogDescription>{t("uiPolish.outputDescription")}</DialogDescription>
+          </DialogHeader>
+          <form
+            className="min-w-0 space-y-4"
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (!canGenerate || !selected) return;
+              setComposerOpen(false);
+              void generate((id) => backend.generateOutput(id, sessionID, selected));
+            }}
+          >
+            <div className="flex min-w-0 flex-col gap-2">
+              <Label htmlFor="output-prompt" className="text-xs text-muted-foreground">
+                {t("generatedOutputs.outputPrompt")}
+              </Label>
               <Select
                 items={options}
                 value={selected || null}
@@ -186,167 +196,245 @@ export function GeneratedOutputs({
                 onValueChange={(value) => {
                   if (value) {
                     setSelected(value);
-                    generation.clear();
                   }
                 }}
               >
                 <SelectTrigger
+                  ref={promptTrigger}
                   id="output-prompt"
                   aria-description={selectedChain ? t("dictationProfiles.promptChain") : undefined}
-                  className="w-full max-w-md"
+                  className="w-full bg-background data-[size=default]:h-9 dark:bg-control"
                 >
                   {selectedChain && <Workflow aria-hidden="true" className="size-4" />}
-                  <SelectValue placeholder={t("generatedOutputs.chooseAPrompt")} />
+                  <SelectValue
+                    className="min-w-0 truncate"
+                    placeholder={t("generatedOutputs.chooseAPrompt")}
+                  />
                 </SelectTrigger>
                 <SelectContent alignItemWithTrigger={false}>
                   <ProcessingSelectItems options={options} />
                 </SelectContent>
               </Select>
             </div>
-            {generation.pending ? (
-              <Button size="sm" variant="outline" onClick={() => void generation.cancel()}>
-                {t("generatedOutputs.cancelGeneration")}
+            {!enabled && (
+              <Link
+                to="/prompts?section=models"
+                onClick={() => setComposerOpen(false)}
+                className="block text-sm text-primary underline underline-offset-4"
+              >
+                {t("generatedOutputs.setUpTextModel")}
+              </Link>
+            )}
+            {selectedChain && (
+              <p className="text-xs leading-5 text-muted-foreground">
+                {t("generatedOutputs.eachStepUsesItsChosenInputCompleted")}
+              </p>
+            )}
+            <DialogFooter>
+              <Button type="button" variant="ghost" onClick={() => setComposerOpen(false)}>
+                {t("common.cancel")}
               </Button>
-            ) : (
               <Button
+                type="submit"
                 pressFeedback
-                size="sm"
                 disabled={!canGenerate || !selected}
                 aria-label={
                   selectedChain
                     ? t("generatedOutputs.runChain")
                     : t("generatedOutputs.generateOutput")
                 }
-                onClick={() =>
-                  void generate((id) => backend.generateOutput(id, sessionID, selected))
-                }
               >
                 <Sparkles aria-hidden="true" className="size-3.5" />
                 {selectedChain ? t("generatedOutputs.runChain") : t("generatedOutputs.generate")}
               </Button>
-            )}
-          </div>
-          {!enabled && (
-            <Link
-              to="/prompts?section=models"
-              className="text-sm text-primary underline underline-offset-4"
-            >
-              {t("generatedOutputs.setUpTextModel")}
-            </Link>
-          )}
-          {selectedChain && (
-            <p className="text-xs leading-5 text-muted-foreground">
-              {t("generatedOutputs.eachStepUsesItsChosenInputCompleted")}
-            </p>
-          )}
-        </section>
-      )}
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
       <div
         data-slot="output-toolbar"
-        className="grid min-w-0 items-center gap-x-4 gap-y-2 @min-[38rem]/outputs:flex @min-[38rem]/outputs:flex-wrap"
+        className="flex min-w-0 flex-col gap-3 @min-[28rem]/outputs:flex-row @min-[28rem]/outputs:items-center"
       >
-        <div className="flex min-w-0 max-w-full flex-col gap-2 @min-[38rem]/outputs:flex-[1_1_12rem]">
-          {output && (
+        <div className="min-w-0 flex-1">
+          {output ? (
             <>
               <Label htmlFor="saved-output" className="sr-only">
                 {t("uiPolish.savedOutput")}{" "}
                 <span className="text-muted-foreground">({outputs.length})</span>
               </Label>
-              <div className="flex flex-wrap items-center gap-2">
-                <div className="min-w-0 flex-[1_1_12rem]">
-                  <Select
-                    items={outputOptions}
-                    value={output.id}
-                    disabled={disabled}
-                    onValueChange={(value) => {
-                      if (value) setActiveOutput(value);
-                    }}
+              <Select
+                items={outputOptions}
+                value={output.id}
+                disabled={disabled}
+                onValueChange={(value) => {
+                  if (value) setActiveOutput(value);
+                }}
+              >
+                <SelectTrigger
+                  id="saved-output"
+                  title={selectedIdentity}
+                  aria-description={selectedIdentity}
+                  className="h-auto min-h-14 w-full gap-3 border-border bg-card/50 px-3 py-2 shadow-none hover:bg-accent/50 data-popup-open:border-ring dark:bg-card/50 dark:hover:bg-accent/50"
+                >
+                  <span
+                    aria-hidden="true"
+                    className="flex size-8 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground"
                   >
-                    <SelectTrigger
-                      id="saved-output"
-                      title={selectedIdentity}
-                      aria-description={selectedIdentity}
-                      className="h-auto min-h-10 w-full border-input bg-background/40 py-0 shadow-none hover:bg-accent/50 dark:bg-control/40 dark:hover:bg-accent/50"
+                    {output.chain ? (
+                      <Workflow className="size-4" />
+                    ) : (
+                      <FileText className="size-4" />
+                    )}
+                  </span>
+                  <SelectValue className="min-w-0 leading-5" style={{ display: "block" }}>
+                    <span className="block truncate text-sm font-medium">{output.prompt.name}</span>
+                    <span
+                      role={generation.pending ? "status" : undefined}
+                      className="block truncate text-xs font-normal text-muted-foreground"
                     >
-                      <SelectValue className="min-w-0 leading-5" style={{ display: "block" }}>
-                        <span className="block truncate text-sm font-medium">
-                          {output.prompt.name}
-                          {output.chain
-                            ? ` · ${output.chain.name} ${output.chain.step}/${output.chain.total}`
-                            : ""}
+                      {generation.pending ? (
+                        generationStatus
+                      ) : (
+                        <>
+                          {output.chain &&
+                            `${output.chain.name} · ${output.chain.step}/${output.chain.total} · `}
+                          <time dateTime={output.createdAt}>
+                            {new Date(output.createdAt).toLocaleString(i18n.resolvedLanguage, {
+                              dateStyle: "medium",
+                              timeStyle: "short",
+                            })}
+                          </time>
+                        </>
+                      )}
+                    </span>
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent
+                  alignItemWithTrigger={false}
+                  align="start"
+                  className="p-1"
+                  style={{
+                    width: "max-content",
+                    minWidth: "var(--anchor-width)",
+                    maxWidth: "calc(100vw - 2rem)",
+                  }}
+                >
+                  {outputOptions.map((item) => (
+                    <SelectItem
+                      key={item.value}
+                      value={item.value}
+                      aria-label={item.label}
+                      className="[&>:first-child]:min-w-0 [&>:first-child]:shrink [&>:first-child]:whitespace-normal [&>:first-child]:[overflow-wrap:anywhere]"
+                    >
+                      <div className="min-w-0 space-y-0.5 py-1">
+                        <span className="block font-medium">{item.output.prompt.name}</span>
+                        <span className="block text-xs text-muted-foreground">
+                          {item.output.chain &&
+                            `${item.output.chain.name} · ${item.output.chain.step}/${item.output.chain.total} · `}
+                          <time dateTime={item.output.createdAt}>
+                            {new Date(item.output.createdAt).toLocaleString(i18n.resolvedLanguage, {
+                              dateStyle: "medium",
+                              timeStyle: "short",
+                            })}
+                          </time>
                         </span>
-                        <time
-                          dateTime={output.createdAt}
-                          className="block truncate text-xs font-normal text-muted-foreground"
-                        >
-                          {new Date(output.createdAt).toLocaleString(i18n.resolvedLanguage, {
-                            dateStyle: "medium",
-                            timeStyle: "short",
-                          })}
-                        </time>
-                      </SelectValue>
-                    </SelectTrigger>
-                    <SelectContent
-                      alignItemWithTrigger={false}
-                      align="start"
-                      style={{
-                        width: "max-content",
-                        minWidth: "var(--anchor-width)",
-                        maxWidth: "calc(100vw - 2rem)",
-                      }}
-                    >
-                      {outputOptions.map((item) => (
-                        <SelectItem
-                          key={item.value}
-                          value={item.value}
-                          className="[&>:first-child]:min-w-0 [&>:first-child]:shrink [&>:first-child]:whitespace-normal [&>:first-child]:[overflow-wrap:anywhere]"
-                        >
-                          {item.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </>
+          ) : (
+            <p
+              role={loading || generation.pending ? "status" : undefined}
+              className="flex min-h-14 items-center gap-2 text-sm text-muted-foreground"
+            >
+              {(loading || generation.pending) && (
+                <Loader2
+                  aria-hidden="true"
+                  className="size-4 shrink-0 animate-spin motion-reduce:animate-none"
+                />
+              )}
+              {loading
+                ? t("generatedOutputs.loadingOutputs")
+                : generation.pending
+                  ? generationStatus
+                  : t("generatedOutputs.noGeneratedOutputsYet")}
+            </p>
           )}
         </div>
-        <div className="flex max-w-full flex-wrap items-center gap-1.5">
-          {output && !composerVisible && (
-            <Button
-              ref={composerTrigger}
-              size="sm"
-              variant="ghost"
-              className="font-normal text-muted-foreground hover:text-foreground"
-              aria-expanded={false}
-              aria-controls="output-composer"
-              onClick={() => setComposerOpen(true)}
+        <div className="flex max-w-full flex-wrap items-center justify-end gap-1">
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button
+                  ref={composerTrigger}
+                  pressFeedback
+                  size="icon-sm"
+                  variant="outline"
+                  className="shadow-none"
+                  disabled={
+                    unavailable || deletingNow || (!generation.pending && (loading || !!error))
+                  }
+                />
+              }
+              aria-label={
+                generation.pending
+                  ? t("generatedOutputs.cancelGeneration")
+                  : t("uiPolish.newOutput")
+              }
+              aria-haspopup={generation.pending ? undefined : "dialog"}
+              aria-expanded={generation.pending ? undefined : composerOpen}
+              aria-controls={generation.pending ? undefined : "output-composer"}
+              onClick={() => {
+                if (generation.pending) void generation.cancel();
+                else {
+                  setComposerOpen(true);
+                }
+              }}
             >
-              <Sparkles aria-hidden="true" className="size-3.5" />
-              {t("uiPolish.newOutput")}
-            </Button>
-          )}
+              {generation.pending ? (
+                <Square aria-hidden="true" className="size-3.5" />
+              ) : (
+                <Plus aria-hidden="true" className="size-4" />
+              )}
+            </TooltipTrigger>
+            <TooltipContent>
+              {generation.pending
+                ? t("generatedOutputs.cancelGeneration")
+                : t("uiPolish.newOutput")}
+            </TooltipContent>
+          </Tooltip>
           {output && (
             <>
               <CopyButton
                 key={output.id}
-                compact
+                iconOnly
                 text={output.text}
                 label={t("generatedOutputs.copyOutput")}
                 disabled={disabled}
               />
-              <Button
-                size="sm"
-                variant="ghost"
-                className="font-normal text-muted-foreground hover:text-foreground"
-                disabled={!canGenerate}
-                onClick={() =>
-                  void generate((id) => backend.regenerateOutput(id, sessionID, output.id))
-                }
-              >
-                <RefreshCw aria-hidden="true" />
-                {t("generatedOutputs.regenerate")}
-              </Button>
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <Button
+                      pressFeedback
+                      size="icon-sm"
+                      variant="ghost"
+                      className="text-muted-foreground hover:text-foreground"
+                      disabled={!canGenerate}
+                    />
+                  }
+                  aria-label={t("generatedOutputs.regenerate")}
+                  disabled={!canGenerate}
+                  onClick={() =>
+                    void generate((id) => backend.regenerateOutput(id, sessionID, output.id))
+                  }
+                >
+                  <RefreshCw aria-hidden="true" />
+                </TooltipTrigger>
+                <TooltipContent>{t("generatedOutputs.regenerate")}</TooltipContent>
+              </Tooltip>
               <ActionMenu
                 triggerRef={outputActionsTrigger}
                 label={t("uiPolish.outputActions")}
@@ -380,14 +468,6 @@ export function GeneratedOutputs({
           onClose={() => setExporting(null)}
         />
       )}
-      {generation.pending && (
-        <p role="status" className="flex items-center gap-2 text-sm text-muted-foreground">
-          <Loader2 aria-hidden="true" className="size-4 animate-spin motion-reduce:animate-none" />
-          {selectedChain
-            ? nativeText(snapshot.status.message)
-            : t("generatedOutputs.generatingOutput")}
-        </p>
-      )}
       {generation.error && (
         <p role="alert" className="text-sm text-destructive">
           {generation.error}
@@ -400,11 +480,6 @@ export function GeneratedOutputs({
             : t("generatedOutputs.outputSaved")}
         </p>
       )}
-      {loading && (
-        <p role="status" className="text-sm text-muted-foreground">
-          {t("generatedOutputs.loadingOutputs")}
-        </p>
-      )}
       {error && (
         <div role="alert" className="flex flex-wrap items-center gap-3 text-sm text-destructive">
           {nativeText(error)}
@@ -412,11 +487,6 @@ export function GeneratedOutputs({
             {t("generatedOutputs.retryOutputs")}
           </Button>
         </div>
-      )}
-      {!loading && !error && !output && (
-        <p className="py-8 text-sm text-muted-foreground">
-          {t("generatedOutputs.noGeneratedOutputsYet")}
-        </p>
       )}
       {output && (
         <article

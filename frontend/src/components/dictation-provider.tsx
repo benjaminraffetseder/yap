@@ -15,6 +15,7 @@ import {
   type UpdateStatus,
 } from "@/lib/backend";
 import { Events } from "@wailsio/runtime";
+import { processingActivity } from "@/lib/processing-activity";
 import {
   createContext,
   useCallback,
@@ -177,7 +178,8 @@ const empty: Snapshot = {
 };
 type Context = {
   importQueue: ImportJob[];
-  setImportQueueMinimized: (value: boolean) => void;
+  processingPanelOpen: boolean;
+  setProcessingPanelOpen: (open: boolean) => void;
   update: UpdateStatus | null;
   checkingUpdates: boolean;
   updateError: string;
@@ -201,6 +203,10 @@ export function DictationProvider({ children }: { children: ReactNode }) {
   const [updateError, setUpdateError] = useState("");
   const updateRequest = useRef(false);
   const [snapshot, setSnapshot] = useState(empty);
+  // Follow activity until the user chooses visibility. New work never overrides
+  // an explicit minimization, even across page changes or completed batches.
+  const [processingPanelPreference, setProcessingPanelOpen] = useState<boolean | null>(null);
+  const processingPanelOpen = processingPanelPreference ?? processingActivity(snapshot).hasActivity;
   const [level, setLevel] = useState(0);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(isDesktop);
@@ -209,7 +215,9 @@ export function DictationProvider({ children }: { children: ReactNode }) {
   const snapshotRequest = useRef(0);
   const statusRevision = useRef(0);
   const queueRevision = useRef(0);
+  const textQueueRevision = useRef(0);
   const importQueueMinimized = useRef(false);
+  importQueueMinimized.current = !processingPanelOpen;
   const queueWasPending = useRef(false);
   const knownImportIDs = useRef(new Set<string>());
   const importBatch = useRef(new Map<string, ImportJob>());
@@ -239,6 +247,7 @@ export function DictationProvider({ children }: { children: ReactNode }) {
     const request = ++snapshotRequest.current;
     const revision = statusRevision.current;
     const importRevision = queueRevision.current;
+    const textRevision = textQueueRevision.current;
     let value: Snapshot;
     try {
       value = await backend.snapshot();
@@ -263,6 +272,10 @@ export function DictationProvider({ children }: { children: ReactNode }) {
         ? old
         : {
             ...value,
+            bulkTextQueue:
+              textRevision === textQueueRevision.current
+                ? (value.bulkTextQueue ?? [])
+                : old.bulkTextQueue,
             importQueue:
               importRevision === queueRevision.current
                 ? (value.importQueue ?? [])
@@ -434,6 +447,14 @@ export function DictationProvider({ children }: { children: ReactNode }) {
       queueWasPending.current = pending;
       setSnapshot((old) => ({ ...old, importQueue: jobs }));
     });
+    const offTextQueue = Events.On(
+      "text:queue",
+      ({ data }: { data: NonNullable<Snapshot["bulkTextQueue"]> }) => {
+        if (!active) return;
+        textQueueRevision.current++;
+        setSnapshot((old) => ({ ...old, bulkTextQueue: data }));
+      },
+    );
     const offLevel = Events.On("dictation:level", ({ data: value }: { data: number }) => {
       if (active) setLevel(value);
     });
@@ -465,6 +486,7 @@ export function DictationProvider({ children }: { children: ReactNode }) {
       snapshotRequest.current++;
       offStatus();
       offQueue();
+      offTextQueue();
       offLevel();
       offHistory();
       offSetup();
@@ -475,9 +497,8 @@ export function DictationProvider({ children }: { children: ReactNode }) {
     <DictationContext.Provider
       value={{
         importQueue: snapshot.importQueue ?? [],
-        setImportQueueMinimized: (value) => {
-          importQueueMinimized.current = value;
-        },
+        processingPanelOpen,
+        setProcessingPanelOpen,
         update,
         checkingUpdates,
         updateError,

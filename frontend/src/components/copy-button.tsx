@@ -5,17 +5,20 @@ import { nativeText } from "@/i18n/native-text";
 import { backend, message } from "@/lib/backend";
 import { Button } from "@/components/ui/button";
 import { toastManager } from "@/components/ui/toast";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 export function CopyButton({
   text,
   label,
   disabled,
   compact = false,
+  iconOnly = false,
 }: {
   text: string;
   label: string;
   disabled?: boolean;
   compact?: boolean;
+  iconOnly?: boolean;
 }) {
   const { t } = useTranslation();
   const [pending, setPending] = useState(false);
@@ -51,11 +54,12 @@ export function CopyButton({
       if (mounted.current) setPending(false);
     }
   }
-  return (
+  const button = (
     <Button
-      size="sm"
+      size={iconOnly ? "icon-sm" : "sm"}
+      pressFeedback={iconOnly}
       aria-label={label}
-      title={compact ? label : undefined}
+      title={compact && !iconOnly ? label : undefined}
       disabled={disabled || pending}
       onClick={() => void copy()}
     >
@@ -66,9 +70,17 @@ export function CopyButton({
       ) : (
         <Copy aria-hidden="true" className="size-3.5" />
       )}
-      <span aria-live="polite">
+      <span aria-live="polite" className={iconOnly ? "sr-only" : undefined}>
         {copied ? t("uiPolish.copied") : compact ? t("common.copy") : label}
       </span>
     </Button>
+  );
+  return iconOnly ? (
+    <Tooltip>
+      <TooltipTrigger render={button} disabled={disabled || pending} />
+      <TooltipContent>{copied ? t("uiPolish.copied") : label}</TooltipContent>
+    </Tooltip>
+  ) : (
+    button
   );
 }

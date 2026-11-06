@@ -39,7 +39,7 @@ export function ImportQueueRow({
   const content = (
     <>
       <Button
-        size="icon-sm"
+        size="icon-xs"
         variant="ghost"
         aria-label={t("importQueueRow.reorder", { name: job.name })}
         aria-description={t("importQueueRow.useAltArrowUpOrAltArrowDownToMove")}
@@ -60,12 +60,12 @@ export function ImportQueueRow({
       >
         <GripVertical className="size-4" />
       </Button>
-      <div className="min-w-0 flex-1 space-y-1.5">
-        <p className="truncate text-sm font-medium" title={job.name}>
+      <div className="min-w-0 flex-1 space-y-0.5">
+        <p className="truncate text-xs" title={job.name}>
           {job.name}
         </p>
         <p
-          className={`truncate text-xs ${job.state === "failed" ? "text-destructive" : "text-muted-foreground"}`}
+          className={`truncate text-[10px] ${job.state === "failed" ? "text-destructive" : "text-muted-foreground"}`}
           title={importLabel(job)}
         >
           {importLabel(job)}
@@ -84,7 +84,7 @@ export function ImportQueueRow({
       >
         {job.transcript && (
           <Button
-            size="icon-sm"
+            size="icon-xs"
             variant="ghost"
             aria-label={t("importQueueRow.copy", { name: job.name })}
             onClick={() => void run(() => backend.copy(job.transcript), false)}
@@ -94,7 +94,7 @@ export function ImportQueueRow({
         )}
         {job.sessionId && (
           <Button
-            size="icon-sm"
+            size="icon-xs"
             variant="ghost"
             render={<Link to={`/history/${job.sessionId}`} />}
             aria-label={t("importQueueRow.open", { name: job.name })}
@@ -104,7 +104,7 @@ export function ImportQueueRow({
         )}
         {(job.state === "failed" || job.state === "cancelled") && (
           <Button
-            size="icon-sm"
+            size="icon-xs"
             variant="ghost"
             aria-label={t("importQueueRow.retry", { name: job.name })}
             onClick={() => void run(() => backend.retryImport(job.id), false)}
@@ -114,7 +114,7 @@ export function ImportQueueRow({
         )}
         {pending && (
           <Button
-            size="icon-sm"
+            size="icon-xs"
             variant="ghost"
             aria-label={`${queued ? t("common.remove") : t("common.cancel")} ${job.name}`}
             onClick={() => void run(() => backend.removeImport(job.id), false)}
@@ -126,7 +126,7 @@ export function ImportQueueRow({
     </>
   );
   const className =
-    "relative flex items-center gap-2 rounded-lg border border-transparent bg-popover px-2 py-3";
+    "relative flex items-center gap-1 rounded-md border border-transparent bg-popover px-1 py-1.5";
   return queued ? (
     <Reorder.Item
       value={job.id}

@@ -248,6 +248,7 @@ func (a *App) importAudioWithDecoder(job *importJob) error {
 		a.status.ImportID = ""
 		a.emitImportQueueLocked()
 		a.pumpImportQueueLocked()
+		a.pumpBulkTextQueueLocked()
 	}()
 	return nil
 }

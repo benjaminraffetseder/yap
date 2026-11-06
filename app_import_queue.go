@@ -46,7 +46,7 @@ func (a *App) emitImportQueueLocked() {
 }
 
 func (a *App) pumpImportQueueLocked() {
-	if a.closing || a.busy() || a.textJobID != "" || a.importActive != "" || a.importPumpPending {
+	if a.closing || a.busy() || a.textJobID != "" || a.importActive != "" || a.importPumpPending || a.bulkTextActive != "" {
 		return
 	}
 	for _, job := range a.importQueue {
@@ -65,7 +65,7 @@ func (a *App) startNextImport() {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.importPumpPending = false
-	if a.closing || a.busy() || a.textJobID != "" || a.importActive != "" {
+	if a.closing || a.busy() || a.textJobID != "" || a.importActive != "" || a.bulkTextActive != "" {
 		return
 	}
 	for _, job := range a.importQueue {
@@ -79,9 +79,13 @@ func (a *App) startNextImport() {
 			a.importActive = ""
 			a.emitImportQueueLocked()
 			a.pumpImportQueueLocked()
+			a.pumpBulkTextQueueLocked()
 		}
 		return
 	}
+	// A scheduled import may have been removed before this worker acquired the
+	// lock. Give waiting text jobs a chance even when no import remains.
+	a.pumpBulkTextQueueLocked()
 }
 
 func (a *App) importProgress(job *importJob, progress float64) {

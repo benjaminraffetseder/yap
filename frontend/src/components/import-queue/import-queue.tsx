@@ -1,47 +1,23 @@
 import { useTranslation } from "react-i18next";
 import { useDictation } from "@/components/dictation-provider";
 import { Button } from "@/components/ui/button";
-import {
-  Drawer,
-  DrawerContent,
-  DrawerDescription,
-  DrawerHeader,
-  DrawerTitle,
-} from "@/components/ui/drawer";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { toastManager } from "@/components/ui/toast";
 import { backend, importPending, message } from "@/lib/backend";
-import { ChevronDown } from "lucide-react";
+import { Trash2 } from "lucide-react";
 import { Reorder } from "motion/react";
 import { useRef, useState } from "react";
-import { ImportQueueFab } from "./import-queue-fab";
 import { ImportQueueRow } from "./import-queue-row";
 
-export function ImportQueue({ sidebarWidth }: { sidebarWidth: string }) {
+export function ImportQueue() {
   const { t } = useTranslation();
-  const { importQueue: jobs, setImportQueueMinimized, run, refresh } = useDictation();
-  const [view, setView] = useState<{
-    mode: "hidden" | "open" | "minimized";
-    ids: string;
-    pending: boolean;
-  }>({ mode: "hidden", ids: "", pending: false });
+  const { importQueue: jobs, run, refresh } = useDictation();
   const [order, setOrder] = useState<string[] | null>(null);
   const [saving, setSaving] = useState(false);
   const draft = useRef<string[] | null>(null);
   const current = useRef(jobs);
   current.current = jobs;
-  const pending = jobs.some(importPending);
-  const ids = jobs.map((job) => job.id).join(",");
-  // Derive batch visibility during render, so a new batch never flashes the FAB.
-  if (ids !== view.ids || pending !== view.pending) {
-    const oldIds = new Set(view.ids.split(","));
-    const added = jobs.some((job) => !oldIds.has(job.id));
-    const newBatch = (!view.pending && (added || pending)) || view.mode === "hidden";
-    setView({ mode: !jobs.length ? "hidden" : newBatch ? "open" : view.mode, ids, pending });
-  }
-  const mode = !jobs.length ? "hidden" : view.mode;
-  // The provider reads this only on queue events, avoiding render-driven toasts.
-  setImportQueueMinimized(mode === "minimized");
-  if (mode === "hidden") return null;
+  if (!jobs.length) return null;
   const queued = jobs.filter((job) => job.state === "queued");
   const queuedIds = queued.map((job) => job.id);
   const localOrder =
@@ -52,7 +28,6 @@ export function ImportQueue({ sidebarWidth }: { sidebarWidth: string }) {
   let next = 0;
   const rows = jobs.map((job) => (job.state === "queued" ? byId.get(localOrder[next++])! : job));
   const finished = jobs.filter((job) => !importPending(job)).length;
-  const active = jobs.find((job) => importPending(job) && job.state !== "queued");
 
   async function commit(nextOrder: string[]) {
     if (saving) return;
@@ -77,99 +52,62 @@ export function ImportQueue({ sidebarWidth }: { sidebarWidth: string }) {
     setOrder(result);
     void commit(result);
   }
-  const minimize = () => setView((value) => ({ ...value, mode: "minimized" }));
   return (
-    <>
-      <Drawer
-        open={mode === "open"}
-        onOpenChange={(open) => {
-          if (!open) minimize();
+    <section aria-label={t("importQueue.imports")} className="min-w-0 p-1.5">
+      <div className="flex min-w-0 items-center gap-1 px-1 pb-1">
+        <h3 className="min-w-0 flex-1 truncate text-xs font-medium">{t("importQueue.imports")}</h3>
+        <span className="shrink-0 text-[11px] text-muted-foreground tabular-nums">
+          {finished}/{jobs.length}
+        </span>
+        {!!finished && (
+          <Tooltip>
+            <TooltipTrigger
+              render={<Button variant="ghost" size="icon-xs" />}
+              aria-label={t("importQueue.clearFinished")}
+              onClick={() => void run(backend.clearFinishedImports, false)}
+            >
+              <Trash2 aria-hidden="true" />
+            </TooltipTrigger>
+            <TooltipContent>{t("importQueue.clearFinished")}</TooltipContent>
+          </Tooltip>
+        )}
+      </div>
+      <Reorder.Group
+        axis="y"
+        values={localOrder}
+        onReorder={(value) => {
+          draft.current = value;
+          setOrder(value);
         }}
-        swipeDirection="down"
-        modal={false}
-        disablePointerDismissal
-        showSwipeHandle
+        layoutScroll
+        className="max-h-56 min-h-0 overflow-y-auto overscroll-contain"
+        aria-label={t("importQueue.importFiles")}
       >
-        <DrawerContent
-          initialFocus={false}
-          finalFocus={false}
-          // The portal is outside the layout, so pass its sidebar width explicitly.
-          style={{ left: sidebarWidth, width: `min(32rem, calc(100% - ${sidebarWidth} - 2rem))` }}
-          className="import-queue-drawer mx-auto max-h-[40vh] rounded-xl border shadow-lg [--drawer-inset:1rem] after:hidden"
-        >
-          <DrawerHeader className="flex-row items-center justify-between gap-2 pb-2 text-left">
-            <div className="min-w-0">
-              <DrawerTitle>
-                {t("importQueue.imports")} {Math.min(jobs.length, finished + (active ? 1 : 0))}{" "}
-                {t("historyPage.of")} {jobs.length}
-              </DrawerTitle>
-              <DrawerDescription className="sr-only">
-                {t("importQueue.audioImportsRunOneAtATime")}
-              </DrawerDescription>
-            </div>
-            <div className="flex items-center gap-1">
-              <Button
-                variant="ghost"
-                size="sm"
-                disabled={!finished}
-                onClick={() => void run(backend.clearFinishedImports, false)}
-              >
-                {t("importQueue.clearFinished")}
-              </Button>
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                aria-label={t("importQueue.minimizeImportQueue")}
-                onClick={minimize}
-              >
-                <ChevronDown className="size-4" />
-              </Button>
-            </div>
-          </DrawerHeader>
-          <Reorder.Group
-            axis="y"
-            values={localOrder}
-            onReorder={(value) => {
-              draft.current = value;
-              setOrder(value);
+        {rows.map((job) => (
+          <ImportQueueRow
+            key={job.id}
+            job={job}
+            reorderDisabled={saving}
+            onMove={move}
+            onDrop={() => {
+              const result = draft.current;
+              const queuedNow = current.current
+                .filter((job) => job.state === "queued")
+                .map((job) => job.id);
+              if (
+                result &&
+                result.length === queuedNow.length &&
+                result.every((id) => queuedNow.includes(id))
+              )
+                void commit(result);
+              else {
+                draft.current = null;
+                setOrder(null);
+              }
             }}
-            layoutScroll
-            className="min-h-0 overflow-y-auto px-2 pb-2"
-            aria-label={t("importQueue.importFiles")}
-          >
-            {rows.map((job) => (
-              <ImportQueueRow
-                key={job.id}
-                job={job}
-                reorderDisabled={saving}
-                onMove={move}
-                onDrop={() => {
-                  const result = draft.current;
-                  const queuedNow = current.current
-                    .filter((job) => job.state === "queued")
-                    .map((job) => job.id);
-                  if (
-                    result &&
-                    result.length === queuedNow.length &&
-                    result.every((id) => queuedNow.includes(id))
-                  )
-                    void commit(result);
-                  else {
-                    draft.current = null;
-                    setOrder(null);
-                  }
-                }}
-              />
-            ))}
-          </Reorder.Group>
-        </DrawerContent>
-      </Drawer>
-      {mode === "minimized" && (
-        <ImportQueueFab
-          jobs={jobs}
-          onOpen={() => setView((value) => ({ ...value, mode: "open" }))}
-        />
-      )}
-    </>
+          />
+        ))}
+      </Reorder.Group>
+    </section>
   );
 }

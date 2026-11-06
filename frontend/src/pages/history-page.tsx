@@ -1,10 +1,12 @@
 import { AudioImportButton } from "@/components/audio-import-button";
+import { BulkTextDialog } from "@/components/bulk-text-dialog";
 import { useDictation } from "@/components/dictation-provider";
 import { DictationRow } from "@/components/dictation-row";
 import { PageHeading } from "@/components/page-heading";
 import { SessionTitleAction } from "@/components/session-title-action";
 import { TranscriptExportDialog } from "@/components/transcript-export-dialog";
 import { Button } from "@/components/ui/button";
+import { ActionMenu, ActionMenuItem } from "@/components/ui/action-menu";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { toastManager } from "@/components/ui/toast";
@@ -20,7 +22,17 @@ import {
   type TranscriptExportSelection,
 } from "@/lib/backend";
 import { deleteTranscriptions } from "@/lib/delete-transcriptions";
-import { Download, History, Loader2, RotateCcw, Search, Trash2, X } from "lucide-react";
+import {
+  Download,
+  History,
+  Loader2,
+  RotateCcw,
+  Search,
+  Sparkles,
+  Trash2,
+  Workflow,
+  X,
+} from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { useSearchParams } from "react-router";
@@ -163,6 +175,12 @@ function HistoryList({ viewToggle }: { viewToggle: ReactNode }) {
   const [deleteError, setDeleteError] = useState("");
   const [exportSelection, setExportSelection] = useState<TranscriptExportSelection | null>(null);
   const exportTrigger = useRef<HTMLButtonElement>(null);
+  const processTrigger = useRef<HTMLButtonElement>(null);
+  const [processingSelection, setProcessingSelection] = useState<{
+    action: "title" | "output";
+    selection: TranscriptExportSelection;
+    count: number;
+  } | null>(null);
 
   useEffect(() => {
     if (!isDesktop) return;
@@ -241,7 +259,8 @@ function HistoryList({ viewToggle }: { viewToggle: ReactNode }) {
       error ||
       loadMoreError ||
       deletingNow ||
-      exportSelection
+      exportSelection ||
+      processingSelection
     )
       return;
     const observer = new IntersectionObserver(
@@ -262,6 +281,7 @@ function HistoryList({ viewToggle }: { viewToggle: ReactNode }) {
     loadMoreError,
     deletingNow,
     exportSelection,
+    processingSelection,
     result.page,
     setPage,
   ]);
@@ -281,7 +301,8 @@ function HistoryList({ viewToggle }: { viewToggle: ReactNode }) {
     ].find((node) => node.dataset.dictationTitleAction === id);
     (trigger ?? searchInput.current)?.focus({ preventScroll: true });
   }, [entries, loading]);
-  const unavailable = !isDesktop || loading || !!error || deletingNow || !!exportSelection;
+  const unavailable =
+    !isDesktop || loading || !!error || deletingNow || !!exportSelection || !!processingSelection;
   async function remove(ids: string[]) {
     if (deletingNow) return;
     setDeletingNow(true);
@@ -343,12 +364,18 @@ function HistoryList({ viewToggle }: { viewToggle: ReactNode }) {
     }
   }
   function exportSelected() {
-    setExportSelection({
+    setExportSelection(currentSelection());
+  }
+  function currentSelection(): TranscriptExportSelection {
+    return {
       sessionIds: allMatching ? [] : selected,
       allMatching,
       query: allMatching ? query : "",
       excludedSessionIds: allMatching ? excluded : [],
-    });
+    };
+  }
+  function processSelected(action: "title" | "output") {
+    setProcessingSelection({ action, selection: currentSelection(), count: selectionCount });
   }
   function changeExportExclusions(next: string[]) {
     if (next.length >= total) {
@@ -403,14 +430,6 @@ function HistoryList({ viewToggle }: { viewToggle: ReactNode }) {
             {viewToggle}
           </div>
         </PageHeading>
-        {snapshot.status.phase === "transcribing" && (
-          <div role="status" className="flex flex-wrap items-center gap-3 text-sm">
-            <span>{nativeText(snapshot.status.message)}</span>
-            <Button size="sm" variant="outline" onClick={() => void run(backend.cancel, false)}>
-              {t("historyPage.cancelTranscription")}
-            </Button>
-          </div>
-        )}
         {snapshot.status.historyError && (
           <p role="alert" className="text-sm text-destructive">
             {nativeText(snapshot.status.historyError)}
@@ -600,6 +619,23 @@ function HistoryList({ viewToggle }: { viewToggle: ReactNode }) {
             </p>
             <div className="col-span-2 row-start-2 flex flex-wrap items-center justify-center gap-1 sm:flex-nowrap">
               {!deleted && (
+                <ActionMenu
+                  text={t("bulkText.process")}
+                  label={t("bulkText.processSelected")}
+                  triggerRef={processTrigger}
+                  disabled={unavailable}
+                >
+                  <ActionMenuItem onClick={() => processSelected("title")}>
+                    <Sparkles aria-hidden="true" />
+                    {t("bulkText.generateTitles")}
+                  </ActionMenuItem>
+                  <ActionMenuItem onClick={() => processSelected("output")}>
+                    <Workflow aria-hidden="true" />
+                    {t("bulkText.runPromptOrChain")}
+                  </ActionMenuItem>
+                </ActionMenu>
+              )}
+              {!deleted && (
                 <Button
                   size="sm"
                   variant="ghost"
@@ -658,7 +694,7 @@ function HistoryList({ viewToggle }: { viewToggle: ReactNode }) {
                     variant="ghost"
                     aria-label={t("historyPage.clearSelection")}
                     className="col-start-2 row-start-1 text-muted-foreground"
-                    disabled={deletingNow || !!exportSelection}
+                    disabled={deletingNow || !!exportSelection || !!processingSelection}
                     onClick={() => {
                       setSelected([]);
                       setAllMatching(false);
@@ -680,6 +716,13 @@ function HistoryList({ viewToggle }: { viewToggle: ReactNode }) {
           returnFocus={exportTrigger}
           selection={exportSelection}
           onClose={() => setExportSelection(null)}
+        />
+      )}
+      {processingSelection && (
+        <BulkTextDialog
+          {...processingSelection}
+          returnFocus={processTrigger}
+          onClose={() => setProcessingSelection(null)}
         />
       )}
     </div>

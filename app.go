@@ -52,6 +52,7 @@ type TemporaryResult struct {
 	Outputs []storage.GeneratedOutput `json:"outputs,omitempty"`
 }
 type Snapshot struct {
+	BulkTextQueue          []BulkTextJob              `json:"bulkTextQueue"`
 	ImportQueue            []ImportJob                `json:"importQueue"`
 	AppProfileRules        []storage.AppProfileRule   `json:"appProfileRules"`
 	ProfileShortcut        string                     `json:"profileShortcut"`
@@ -77,6 +78,9 @@ type Snapshot struct {
 	StartInTrayAvailable   bool                       `json:"startInTrayAvailable"`
 }
 type App struct {
+	bulkTextQueue                    []*bulkTextJob
+	bulkTextActive                   string
+	bulkTextPumpPending              bool
 	desktop                          *application.App
 	window                           *application.WebviewWindow
 	importQueue                      []*importJob
@@ -458,6 +462,7 @@ func (a *App) emit() {
 		a.event("dictation:status", a.status)
 	}
 	a.pumpImportQueueLocked()
+	a.pumpBulkTextQueueLocked()
 }
 func (a *App) event(topic string, data ...interface{}) {
 	if a.notify != nil {
@@ -602,7 +607,7 @@ func (a *App) GetSnapshot() (Snapshot, error) {
 			profileModified = !p.Matches(a.settings, a.textConfig)
 		}
 	}
-	return Snapshot{ImportQueue: a.importSnapshotLocked(), AppProfileRules: append([]storage.AppProfileRule{}, a.profileLibrary.AppRules...), ProfileShortcut: a.profileLibrary.ProfileShortcut, DefaultProfileID: a.profileLibrary.DefaultID, ProfileModified: profileModified, DictationProfiles: append([]storage.DictationProfile{}, a.profileLibrary.Profiles...), ActiveProfileID: activeProfileID, RecordingSaveHistory: a.recordSettings.SaveHistory, LatestResult: latest, TextProcessing: config, Diagnostic: a.diagnostic, Vocabulary: entries, MicrophoneTested: a.microphoneTested, ShortcutTested: a.shortcutTested, Settings: a.settings, Status: a.status, History: history, Models: models.List(a.store.Dir), DataDir: a.store.Dir, Ready: ready, FloatingIndicator: a.indicator != nil, LaunchAtLoginAvailable: a.loginStart != nil, StartInTrayAvailable: a.tray != nil && !a.development}, nil
+	return Snapshot{BulkTextQueue: a.bulkTextSnapshotLocked(), ImportQueue: a.importSnapshotLocked(), AppProfileRules: append([]storage.AppProfileRule{}, a.profileLibrary.AppRules...), ProfileShortcut: a.profileLibrary.ProfileShortcut, DefaultProfileID: a.profileLibrary.DefaultID, ProfileModified: profileModified, DictationProfiles: append([]storage.DictationProfile{}, a.profileLibrary.Profiles...), ActiveProfileID: activeProfileID, RecordingSaveHistory: a.recordSettings.SaveHistory, LatestResult: latest, TextProcessing: config, Diagnostic: a.diagnostic, Vocabulary: entries, MicrophoneTested: a.microphoneTested, ShortcutTested: a.shortcutTested, Settings: a.settings, Status: a.status, History: history, Models: models.List(a.store.Dir), DataDir: a.store.Dir, Ready: ready, FloatingIndicator: a.indicator != nil, LaunchAtLoginAvailable: a.loginStart != nil, StartInTrayAvailable: a.tray != nil && !a.development}, nil
 }
 func (a *App) GetMicrophones() ([]audio.Device, error) {
 	a.mu.Lock()

@@ -43,6 +43,7 @@ if (methods) {
     "dictation:history",
     "desktop:navigate",
     "import:queue",
+    "text:queue",
     "setup:changed",
     "profile:changed",
     "shortcut:capture-ended",

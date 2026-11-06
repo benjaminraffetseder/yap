@@ -75,6 +75,7 @@ func (a *App) endHomeResult() {
 	}
 	a.homeResultOperation = false
 	a.pumpImportQueueLocked()
+	a.pumpBulkTextQueueLocked()
 	a.mu.Unlock()
 	a.wg.Done()
 }

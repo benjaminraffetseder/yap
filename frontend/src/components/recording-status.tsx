@@ -25,6 +25,7 @@ export function RecordingStatus({ inline = false }: { inline?: boolean }) {
   }, [capturing]);
   if (
     status.importId ||
+    (!inline && !capturing) ||
     (status.phase === "mic-test" && microphoneTestVisible && !inline) ||
     (!testing && floatingIndicator && !inline) ||
     (!capturing && status.phase !== "transcribing" && status.phase !== "diagnostic-transcribing")
