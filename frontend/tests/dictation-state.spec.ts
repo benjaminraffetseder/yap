@@ -7250,21 +7250,16 @@ test("Recently Deleted supports retry and restoration on narrow screens after th
       Math.abs(
         restoreBounds.y + restoreBounds.height / 2 - removeBounds.y - removeBounds.height / 2,
       ) < 1;
-    if (width === 1086) expect(sameRow).toBe(true);
-    if (sameRow) {
-      expect(removeBounds.x).toBeGreaterThanOrEqual(restoreBounds.x + restoreBounds.width + 4);
-    } else {
-      expect(removeBounds.y).toBeGreaterThanOrEqual(restoreBounds.y + restoreBounds.height);
-      expect(removeBounds.x + removeBounds.width).toBeCloseTo(
-        restoreBounds.x + restoreBounds.width,
-        0,
-      );
+    expect(sameRow).toBe(true);
+    expect(removeBounds.x).toBeGreaterThanOrEqual(restoreBounds.x + restoreBounds.width + 4);
+    for (const bounds of [restoreBounds, removeBounds]) {
+      expect(bounds.width).toBeCloseTo(bounds.height, 0);
     }
     for (const button of [restore, remove]) {
       expect(await button.evaluate((node) => node.scrollWidth <= node.clientWidth + 1)).toBe(true);
     }
-    await expect(restore).toHaveText("Restore");
-    await expect(remove).toHaveText("Delete permanently");
+    await expect(restore).toHaveText("");
+    await expect(remove).toHaveText("");
     await remove.hover();
     const tooltip = page
       .locator('[data-slot="tooltip-content"]')

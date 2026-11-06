@@ -70,30 +70,20 @@ export function HistoryPage() {
     <HistoryList
       key={deleted ? "deleted" : "history"}
       viewToggle={
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <Button
-                ref={toggle}
-                size="sm"
-                variant="outline"
-                aria-label={toggleLabel}
-                aria-pressed={deleted}
-                className="text-muted-foreground"
-                onClick={() => {
-                  focusToggle.current = true;
-                  setParams(deleted ? {} : { view: "deleted" });
-                }}
-              />
-            }
-          >
-            {deleted ? <History aria-hidden="true" /> : <Trash2 aria-hidden="true" />}
-            {deleted ? t("historyPage.showAllDictations") : t("historyPage.recentlyDeleted")}
-          </TooltipTrigger>
-          <TooltipContent side="bottom" align="end">
-            {toggleLabel}
-          </TooltipContent>
-        </Tooltip>
+        <Button
+          ref={toggle}
+          variant="outline"
+          aria-label={toggleLabel}
+          aria-pressed={deleted}
+          className="text-muted-foreground"
+          onClick={() => {
+            focusToggle.current = true;
+            setParams(deleted ? {} : { view: "deleted" });
+          }}
+        >
+          {deleted ? <History aria-hidden="true" /> : <Trash2 aria-hidden="true" />}
+          {deleted ? t("historyPage.showAllDictations") : t("historyPage.recentlyDeleted")}
+        </Button>
       }
     />
   );

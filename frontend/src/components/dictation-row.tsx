@@ -133,16 +133,16 @@ export function DictationRow({
             <TooltipTrigger
               render={
                 <Button
-                  size="sm"
-                  variant="default"
+                  size="icon-sm"
+                  variant="ghost"
                   aria-label={t("historyPage.restore")}
+                  className="text-muted-foreground hover:text-foreground"
                   disabled={disabled}
                   onClick={deleted.onRestore}
                 />
               }
             >
               <RotateCcw aria-hidden="true" className="size-3.5" />
-              {t("historyPage.restore")}
             </TooltipTrigger>
             <TooltipContent side="left">{t("historyPage.restore")}</TooltipContent>
           </Tooltip>
@@ -150,7 +150,7 @@ export function DictationRow({
             <TooltipTrigger
               render={
                 <Button
-                  size="sm"
+                  size="icon-sm"
                   variant="ghost"
                   aria-label={t("historyPage.deletePermanently")}
                   className="text-destructive hover:bg-destructive/10 hover:text-destructive"
@@ -160,7 +160,6 @@ export function DictationRow({
               }
             >
               <Trash2 aria-hidden="true" className="size-3.5" />
-              {t("historyPage.deletePermanently")}
             </TooltipTrigger>
             <TooltipContent side="left">{t("historyPage.deletePermanently")}</TooltipContent>
           </Tooltip>
