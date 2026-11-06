@@ -327,8 +327,10 @@ function EntryDetail({ id }: { id: string }) {
           </p>
         </section>
       )}
-      {entry && !editing && (
+      {/* Keep output requests mounted while the inline editor is open. */}
+      {entry && (
         <Tabs
+          hidden={!!editing}
           value={activeTab}
           onValueChange={(value) => setActiveTab(String(value))}
           className="min-w-0 gap-4 sm:pl-11"

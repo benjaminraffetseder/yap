@@ -14,8 +14,9 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { backend, isBusy, isDesktop, type HomeResult } from "@/lib/backend";
+import { useSavedDraft } from "@/lib/use-saved-draft";
 import { Check, Copy, Loader2, Pencil, X } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router";
 
 function recoveryWarning(result: HomeResult) {
@@ -545,9 +546,7 @@ export function HomeResultPanel({
           error={error}
           stale={!result || result.revision !== editing.revision}
           onCancel={closeEditor}
-          onSubmit={async (text) => {
-            if (await act(editing, "edit", text)) closeEditor();
-          }}
+          onSubmit={(text) => act(editing, "edit", text)}
         />
       )}
     </section>
@@ -573,10 +572,33 @@ function HomeResultEditor({
   error: string;
   stale: boolean;
   onCancel: () => void;
-  onSubmit: (text: string) => Promise<void>;
+  onSubmit: (text: string) => Promise<boolean>;
 }) {
   const { t } = useTranslation();
-  const [text, setText] = useState(result.text);
+  const baseline = useMemo(
+    () => [result.session.id, result.revision, result.text] as const,
+    [result.session.id, result.revision, result.text],
+  );
+  const [draft, setDraft, draftState] = useSavedDraft("home-result-edit", baseline);
+  const sameResult = draft[0] === result.session.id && draft[1] === result.revision;
+  const text = sameResult ? draft[2] : result.text;
+  // Keep the draft across navigation, but never reuse it for another result or revision.
+  useEffect(() => {
+    if (!sameResult) setDraft(baseline);
+  }, [sameResult, baseline, setDraft]);
+  function setText(value: string) {
+    setDraft([result.session.id, result.revision, value]);
+  }
+  function cancel() {
+    setDraft(baseline);
+    onCancel();
+  }
+  async function submit() {
+    if (await onSubmit(text)) {
+      draftState.markSubmitted([result.session.id, result.revision, text]);
+      onCancel();
+    }
+  }
   const input = useRef<HTMLTextAreaElement>(null);
   const composing = useRef(false);
   const invalid = !text.trim() || text.includes("\0") || Array.from(text).length > 100000;
@@ -606,7 +628,7 @@ function HomeResultEditor({
         ) {
           event.preventDefault();
           event.stopPropagation();
-          onCancel();
+          cancel();
         }
       }}
     >
@@ -622,14 +644,14 @@ function HomeResultEditor({
           </p>
         </div>
         <div className="flex max-w-full flex-wrap items-center gap-2">
-          <Button variant="outline" size="sm" disabled={pending} onClick={onCancel}>
+          <Button variant="outline" size="sm" disabled={pending} onClick={cancel}>
             {t("common.cancel")}
           </Button>
           <Button
             size="sm"
             disabled={busy || invalid || stale || text === result.text}
             onClick={() => {
-              if (!composing.current) void onSubmit(text);
+              if (!composing.current) void submit();
             }}
           >
             {pending ? (
@@ -669,7 +691,7 @@ function HomeResultEditor({
               event.keyCode !== 229
             ) {
               event.preventDefault();
-              if (!busy && !invalid && !stale && text !== result.text) void onSubmit(text);
+              if (!busy && !invalid && !stale && text !== result.text) void submit();
             }
           }}
         />

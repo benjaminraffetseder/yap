@@ -288,8 +288,14 @@ test("recording level feedback avoids layout and follows live reduced-motion cha
   await page.emulateMedia({ reducedMotion: "reduce" });
   await expect(meter).toHaveCSS("animation-name", "none");
   await level(0);
+  await expect
+    .poll(async () => (await geometry()).map((bar) => Number(bar.opacity)))
+    .toEqual(quiet.map(() => 0.35));
   const reducedQuiet = await geometry();
   await level(1);
+  await expect
+    .poll(async () => (await geometry()).map((bar) => Number(bar.opacity)))
+    .toEqual(quiet.map(() => 1));
   const reducedLoud = await geometry();
   expect(reducedLoud.map((bar) => bar.transform)).toEqual(reducedQuiet.map((bar) => bar.transform));
   expect(reducedLoud.map((bar) => bar.height)).toEqual(reducedQuiet.map((bar) => bar.height));

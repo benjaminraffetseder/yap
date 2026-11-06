@@ -10053,6 +10053,108 @@ test("manual prompt chains retain intermediate results and show their input sour
   await page.screenshot({ path: testInfo.outputPath("prompt-chain-results.png"), fullPage: true });
 });
 
+for (const chain of [false, true]) {
+  test(`opening the transcript editor keeps ${chain ? "a chain" : "an output"} generation running`, async ({
+    page,
+  }) => {
+    await page.addInitScript((chain) => {
+      const state = window.dictationTest;
+      state.snapshot.textProcessing.enabled = true;
+      state.snapshot.textProcessing.model = "local-model";
+      if (chain)
+        state.snapshot.textProcessing.chains = [
+          {
+            id: "review-chain",
+            name: "Review chain",
+            steps: [
+              { id: "a", promptId: "cleanup", input: "original" },
+              { id: "b", promptId: "summary", input: "step:a" },
+            ],
+          },
+        ];
+      state.snapshot.history = [
+        {
+          id: "editor-generation",
+          createdAt: "2026-11-06T12:00:00Z",
+          durationMs: 1000,
+          rawTranscript: "Original recording.",
+          finalTranscript: "Saved transcript.",
+          speechModel: "base",
+          language: "en",
+          audioPath: "",
+        },
+      ];
+    }, chain);
+    await page.goto("/#/history/editor-generation");
+    await page.getByRole("tab", { name: "Outputs", exact: true }).click();
+    if (chain) {
+      await page.getByRole("combobox", { name: "Output prompt", exact: true }).click();
+      await page.getByRole("option", { name: "Review chain", exact: true }).click();
+    }
+    await generateWith(page, chain ? "Run chain" : "Generate output");
+    await expect.poll(() => page.evaluate(() => !!window.dictationTest.processing)).toBe(true);
+    await page.getByRole("button", { name: "Edit transcript", exact: true }).click();
+    const editor = page.getByRole("region", { name: "Edit transcript", exact: true });
+    await expect(editor).toBeVisible();
+    await expect(
+      page.getByRole("tablist", { name: "Dictation contents", exact: true }),
+    ).toBeHidden();
+    await page.evaluate(() => window.dictationTest.processing!.resolve("Cleaned recording."));
+    if (chain) {
+      await expect
+        .poll(() => page.evaluate(() => window.dictationTest.processing?.prompt))
+        .toBe("summary");
+      await page.evaluate(() => window.dictationTest.processing!.resolve("A completed summary."));
+    }
+    await expect
+      .poll(() => page.evaluate(() => window.dictationTest.outputs.length))
+      .toBe(chain ? 2 : 1);
+    expect(await page.evaluate(() => window.dictationTest.cancelledProcessing)).toEqual([]);
+    await editor.getByRole("button", { name: "Done", exact: true }).click();
+    await expect(page.getByRole("combobox", { name: /Saved output/ })).toBeVisible();
+    await expect(
+      page.getByRole("article", { name: chain ? "Summary output" : "Cleanup output", exact: true }),
+    ).toContainText(chain ? "A completed summary." : "Cleaned recording.");
+  });
+}
+
+test("copy confirmation ignores a reply for a different transcript tab", async ({ page }) => {
+  await page.addInitScript(() => {
+    window.dictationTest.snapshot.history = [
+      {
+        id: "delayed-copy",
+        createdAt: "2026-11-06T12:00:00Z",
+        durationMs: 1000,
+        rawTranscript: "Original recording.",
+        finalTranscript: "Edited transcript.",
+        speechModel: "base",
+        language: "en",
+        audioPath: "",
+      },
+    ];
+    Reflect.get(window, "mockBackend").main.App.CopyText = (text: string) =>
+      new Promise<void>((resolve) => {
+        Reflect.set(window, "finishDelayedCopy", () => {
+          window.dictationTest.clipboard = text;
+          resolve();
+        });
+      });
+  });
+  await page.goto("/#/history/delayed-copy");
+  await page.getByRole("button", { name: "Copy result", exact: true }).click();
+  await page.getByRole("tab", { name: "Original", exact: true }).click();
+  const originalCopy = page.getByRole("button", { name: "Copy original", exact: true });
+  await expect(originalCopy).toBeDisabled();
+  await page.evaluate(() => Reflect.get(window, "finishDelayedCopy")());
+  await expect(originalCopy).toBeEnabled();
+  expect(await originalCopy.textContent()).toBe("Copy");
+  expect(await page.evaluate(() => window.dictationTest.clipboard)).toBe("Edited transcript.");
+  await originalCopy.click();
+  await page.evaluate(() => Reflect.get(window, "finishDelayedCopy")());
+  await expect(originalCopy).toHaveText("Copied");
+  expect(await page.evaluate(() => window.dictationTest.clipboard)).toBe("Original recording.");
+});
+
 test("cancelled manual prompt chains leave completed results available", async ({ page }) => {
   await page.addInitScript(() => {
     const state = window.dictationTest;

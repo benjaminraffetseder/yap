@@ -588,6 +588,42 @@ test("saved edits submit explicitly, cancel without writes, return focus and kee
 });
 
 for (const saved of [true, false]) {
+  test(`Home keeps an unapplied ${saved ? "saved" : "temporary"} draft across navigation`, async ({
+    page,
+  }) => {
+    await scenario(page, saved);
+    const original = await page.evaluate(() => window.homeResultsTest.result!.text);
+    const edit = page.getByRole("button", { name: "Edit result", exact: true });
+    const editor = page.getByRole("region", { name: "Edit result", exact: true });
+    const draft = editor.getByLabel("Your text", { exact: true });
+    await edit.click();
+    await draft.fill("Unsaved correction retained across navigation.");
+    await page.getByRole("link", { name: "History", exact: true }).click();
+    expect(await page.evaluate(() => window.homeResultsTest.calls)).toEqual([]);
+    expect(await page.evaluate(() => window.homeResultsTest.result!.text)).toBe(original);
+    await page.getByRole("link", { name: "Dictate", exact: true }).click();
+    await edit.click();
+    await expect(draft).toHaveValue("Unsaved correction retained across navigation.");
+
+    await editor.getByRole("button", { name: "Cancel", exact: true }).click();
+    await edit.click();
+    await expect(draft).toHaveValue(original);
+    await draft.fill("Explicitly applied correction.");
+    await editor.getByRole("button", { name: "Apply changes", exact: true }).click();
+    await expect(editor).toHaveCount(0);
+    await edit.click();
+    await expect(draft).toHaveValue("Explicitly applied correction.");
+    expect(await page.evaluate(() => window.homeResultsTest.calls)).toEqual(["edit"]);
+    expect(await page.evaluate(() => window.homeResultsTest.result!.saved)).toBe(saved);
+    expect(
+      await page.evaluate(() => {
+        const event = new Event("beforeunload", { cancelable: true });
+        window.dispatchEvent(event);
+        return event.defaultPrevented;
+      }),
+    ).toBe(false);
+  });
+
   test(`returning to Home waits for pending reads and shows the current ${saved ? "saved" : "temporary"} result`, async ({
     page,
   }, testInfo) => {
@@ -636,6 +672,37 @@ for (const saved of [true, false]) {
       path: testInfo.outputPath(`home-return-${saved ? "saved" : "temporary"}.png`),
       animations: "disabled",
     });
+  });
+}
+
+for (const replacement of ["revision", "session"] as const) {
+  test(`Home does not reuse an unapplied draft for a replacement ${replacement}`, async ({
+    page,
+  }) => {
+    await scenario(page);
+    const edit = page.getByRole("button", { name: "Edit result", exact: true });
+    const editor = page.getByRole("region", { name: "Edit result", exact: true });
+    await edit.click();
+    await editor.getByLabel("Your text").fill("A draft for the old result only.");
+    await page.getByRole("link", { name: "History", exact: true }).click();
+    await page.evaluate((replacement) => {
+      const result = window.homeResultsTest.result!;
+      if (replacement === "session") result.session.id = "replacement-session";
+      else result.revision = "replacement-revision";
+      result.text = result.session.finalTranscript = "Current replacement result.";
+    }, replacement);
+    await page.getByRole("link", { name: "Dictate", exact: true }).click();
+    await edit.click();
+    await expect(editor.getByLabel("Your text")).toHaveValue("Current replacement result.");
+    await expect(editor.getByRole("button", { name: "Apply changes", exact: true })).toBeDisabled();
+    expect(
+      await page.evaluate(() => {
+        const event = new Event("beforeunload", { cancelable: true });
+        window.dispatchEvent(event);
+        return event.defaultPrevented;
+      }),
+    ).toBe(false);
+    expect(await page.evaluate(() => window.homeResultsTest.calls)).toEqual([]);
   });
 }
 

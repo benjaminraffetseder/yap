@@ -22,6 +22,7 @@ export function CopyButton({
   const [copied, setCopied] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const mounted = useRef(true);
+  const textVersion = useRef(0);
   useEffect(() => {
     mounted.current = true;
     return () => {
@@ -30,15 +31,17 @@ export function CopyButton({
     };
   }, []);
   useEffect(() => {
+    textVersion.current++;
     setCopied(false);
     clearTimeout(timer.current);
   }, [text]);
   async function copy() {
     if (pending || disabled) return;
+    const version = textVersion.current;
     setPending(true);
     try {
       await backend.copy(text);
-      if (!mounted.current) return;
+      if (!mounted.current || version !== textVersion.current) return;
       setCopied(true);
       clearTimeout(timer.current);
       timer.current = setTimeout(() => setCopied(false), 1800);
