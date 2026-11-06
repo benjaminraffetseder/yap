@@ -656,6 +656,44 @@ async function settingsClarityScenario(
   await page.goto(`/#/settings?section=${section}`);
 }
 
+for (const lang of ["en", "de"] as const) {
+  test(`automatic titles are an app-wide History preference ${lang}`, async ({ page }) => {
+    const copy = lang === "de" ? de : en;
+    await page.addInitScript((lang) => localStorage.setItem("desktop-language", lang), lang);
+    await settingsClarityScenario(page, "history");
+    const titles = page.getByRole("switch", {
+      name: new RegExp(`^${copy["settingsPage.automaticallyGenerateTitles"]}`),
+    });
+    await expect(titles).not.toBeChecked();
+    await expect(titles).toBeEnabled();
+    await expect(
+      page.getByText(copy["settingsPage.automaticallyGenerateTitlesHelp"], { exact: true }),
+    ).toBeVisible();
+    await titles.check();
+    await expect
+      .poll(() => page.evaluate(() => window.dictationTest.snapshot.settings.autoGenerateTitles))
+      .toBe(true);
+    await page.goto("/#/settings?section=profiles");
+    await page.goto("/#/settings?section=history");
+    await expect(titles).toBeChecked();
+    const history = page.getByRole("switch", {
+      name: new RegExp(`^${copy["settingsPage.saveDictationsToHistory"]}`),
+    });
+    await history.uncheck();
+    await expect(titles).toBeDisabled();
+    await expect(titles).toBeChecked();
+    await expect
+      .poll(() => page.evaluate(() => window.dictationTest.snapshot.settings.saveHistory))
+      .toBe(false);
+    await history.check();
+    await expect(titles).toBeEnabled();
+    await titles.uncheck();
+    await expect
+      .poll(() => page.evaluate(() => window.dictationTest.snapshot.settings.autoGenerateTitles))
+      .toBe(false);
+  });
+}
+
 test("settings clarity separates profiles and puts recording controls first", async ({ page }) => {
   await settingsClarityScenario(page);
   await expect(page.getByRole("heading", { name: "Settings", exact: true })).toBeVisible();

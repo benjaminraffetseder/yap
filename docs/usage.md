@@ -206,6 +206,13 @@ sparkle button beside the title input. It uses the saved transcript to suggest a
 name. You can cancel generation with the square button, edit the suggestion, or
 discard it. The title is saved only when you choose **Save title**.
 
+Turn on **Settings → History & data → Automatically generate titles** to name new
+dictations and audio imports saved to History automatically. This is off by
+default, applies to every dictation profile, and requires an enabled text model
+in **Prompts**. Titles run through the text queue after transcription and automatic
+prompts, without delaying clipboard delivery. Existing titles stay unchanged;
+you can still rename a dictation manually.
+
 When an entry has retained audio, **Play recording** opens the recording player.
 Use its play/pause button, seek bar, playback speed, mute and volume controls.
 The seek and volume sliders also support arrow keys, Home and End. The player

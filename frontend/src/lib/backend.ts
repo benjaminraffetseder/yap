@@ -157,6 +157,7 @@ export type Settings = {
   autoPaste: boolean;
   saveHistory: boolean;
   saveAudio: boolean;
+  autoGenerateTitles?: boolean;
   launchAtLogin: boolean;
   startInTray: boolean;
   cleanText: boolean;
@@ -484,7 +485,11 @@ export const backend = {
   cancel: Cancel,
   microphones: async (): Promise<Microphone[]> => (await GetMicrophones()) ?? [],
   settings: (settings: Settings) =>
-    SaveSettings({ ...settings, statsForNerds: settings.statsForNerds ?? false }),
+    SaveSettings({
+      ...settings,
+      autoGenerateTitles: settings.autoGenerateTitles ?? false,
+      statsForNerds: settings.statsForNerds ?? false,
+    }),
   setSaveHistory: SetSaveHistory,
   saveLatestResult: SaveLatestResult,
   dismissLatestResult: DismissLatestResult,

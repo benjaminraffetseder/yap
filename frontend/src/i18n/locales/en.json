@@ -275,6 +275,8 @@
   "settingsPage.startupOptionsRequireAPackagedWindowsOr": "Startup options require a packaged Windows or macOS app.",
   "settingsPage.saveDictationsToHistory": "Save dictations to history",
   "settingsPage.keepTranscriptsAndGeneratedTextInHistory": "Keep transcripts and generated text in History. Turn off for temporary dictation.",
+  "settingsPage.automaticallyGenerateTitles": "Automatically generate titles",
+  "settingsPage.automaticallyGenerateTitlesHelp": "Title new dictations and audio imports saved to History. Applies to all profiles and requires an enabled text model in Prompts.",
   "settingsPage.keepRecordings": "Keep recordings",
   "settingsPage.saveAudioForPlaybackWhenHistorySaving": "Save audio for playback when history saving is on. Otherwise, delete it after processing.",
   "settingsPage.historyRetention": "History retention",

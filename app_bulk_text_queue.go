@@ -7,6 +7,7 @@ import (
 
 	"github.com/google/uuid"
 	textmodel "yap/internal/inference/text"
+	"yap/internal/storage"
 )
 
 type BulkTextRequest struct {
@@ -83,19 +84,17 @@ func (a *App) QueueBulkText(request BulkTextRequest) (int, error) {
 		if duplicate {
 			continue
 		}
-		name := entry.Title
-		if name == "" {
-			preview := []rune(strings.Join(strings.Fields(entry.FinalTranscript), " "))
-			name = string(preview[:min(80, len(preview))])
-		}
-		job := &bulkTextJob{BulkTextJob: BulkTextJob{ID: uuid.NewString(), SessionID: entry.ID, Name: name, Action: request.Action, Prompt: promptName, State: "queued"}}
-		job.request = textRequest{config: &config, promptID: request.PromptID}
+		var job *bulkTextJob
 		if request.Action == "title" {
-			job.request.titleSessionID = entry.ID
-			job.request.saveTitle = true
-			job.request.expectedTitle = entry.Title
+			job = newTitleJob(entry, config)
 		} else {
-			job.request.target = &outputTarget{sessionID: entry.ID}
+			name := entry.Title
+			if name == "" {
+				preview := []rune(strings.Join(strings.Fields(entry.FinalTranscript), " "))
+				name = string(preview[:min(80, len(preview))])
+			}
+			job = &bulkTextJob{BulkTextJob: BulkTextJob{ID: uuid.NewString(), SessionID: entry.ID, Name: name, Action: request.Action, Prompt: promptName, State: "queued"}}
+			job.request = textRequest{config: &config, promptID: request.PromptID, target: &outputTarget{sessionID: entry.ID}}
 		}
 		jobs = append(jobs, job)
 	}
@@ -103,6 +102,18 @@ func (a *App) QueueBulkText(request BulkTextRequest) (int, error) {
 	a.emitBulkTextQueueLocked()
 	a.pumpBulkTextQueueLocked()
 	return len(jobs), nil
+}
+
+func newTitleJob(entry storage.Session, config textmodel.Config) *bulkTextJob {
+	name := entry.Title
+	if name == "" {
+		preview := []rune(strings.Join(strings.Fields(entry.FinalTranscript), " "))
+		name = string(preview[:min(80, len(preview))])
+	}
+	return &bulkTextJob{
+		BulkTextJob: BulkTextJob{ID: uuid.NewString(), SessionID: entry.ID, Name: name, Action: "title", State: "queued"},
+		request:     textRequest{config: &config, titleSessionID: entry.ID, saveTitle: true, expectedTitle: entry.Title},
+	}
 }
 
 func (a *App) bulkTextSnapshotLocked() []BulkTextJob {

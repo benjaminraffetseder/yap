@@ -15,6 +15,7 @@ func TestPersistenceAndAudioDeletion(t *testing.T) {
 	settings := Defaults()
 	settings.Language = "de"
 	settings.SaveAudio = true
+	settings.AutoGenerateTitles = true
 	settings.AutoCopy = false
 	settings.MicrophoneID = "persistent-usb-device"
 	settings.LaunchAtLogin, settings.StartInTray = true, true
@@ -52,6 +53,24 @@ func TestPersistenceAndAudioDeletion(t *testing.T) {
 	entries, err = s.History()
 	if err != nil || len(entries) != 0 {
 		t.Fatalf("deleted transcript still exists: %v", err)
+	}
+}
+
+func TestAutomaticTitlesDefaultOffForExistingSettings(t *testing.T) {
+	s, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	if Defaults().AutoGenerateTitles {
+		t.Fatal("automatic titles must be opt-in")
+	}
+	if _, err := s.db.Exec(`INSERT INTO settings(id,value) VALUES(1,'{"saveHistory":true,"language":"de"}')`); err != nil {
+		t.Fatal(err)
+	}
+	settings, err := s.Settings()
+	if err != nil || settings.AutoGenerateTitles || !settings.SaveHistory || settings.Language != "de" {
+		t.Fatalf("existing settings changed: %+v %v", settings, err)
 	}
 }
 

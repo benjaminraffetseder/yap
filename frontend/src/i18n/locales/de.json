@@ -275,6 +275,8 @@
   "settingsPage.startupOptionsRequireAPackagedWindowsOr": "Startoptionen erfordern eine installierte Windows- oder macOS-App.",
   "settingsPage.saveDictationsToHistory": "Diktate im Verlauf speichern",
   "settingsPage.keepTranscriptsAndGeneratedTextInHistory": "Speichert Transkripte und generierten Text im Verlauf. Für vorübergehende Diktate ausschalten.",
+  "settingsPage.automaticallyGenerateTitles": "Titel automatisch generieren",
+  "settingsPage.automaticallyGenerateTitlesHelp": "Erstellt Titel für neue Diktate und Audioimporte im Verlauf. Gilt für alle Profile und benötigt ein aktiviertes Textmodell unter Prompts.",
   "settingsPage.keepRecordings": "Aufnahmen behalten",
   "settingsPage.saveAudioForPlaybackWhenHistorySaving": "Speichert bei aktiver Verlaufsspeicherung Audio zur Wiedergabe. Andernfalls wird es nach der Verarbeitung gelöscht.",
   "settingsPage.historyRetention": "Aufbewahrungsdauer",

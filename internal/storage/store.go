@@ -26,6 +26,7 @@ type Settings struct {
 	AutoPaste            bool   `json:"autoPaste"`
 	SaveHistory          bool   `json:"saveHistory"`
 	SaveAudio            bool   `json:"saveAudio"`
+	AutoGenerateTitles   bool   `json:"autoGenerateTitles"`
 	LaunchAtLogin        bool   `json:"launchAtLogin"`
 	StartInTray          bool   `json:"startInTray"`
 	CleanText            bool   `json:"cleanText"`

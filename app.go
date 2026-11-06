@@ -797,6 +797,17 @@ func (a *App) transcribe(ctx context.Context, id, path, target string, duration 
 		persisted = true
 		a.homeResult.Saved, a.homeResult.Outcomes.History = true, "saved"
 		a.pruneHistoryLocked()
+		// Title inference follows delivery and any automatic prompt. Reuse the
+		// text queue so imports and model requests remain serialized.
+		defer func() {
+			if settings.AutoGenerateTitles && textConfig.Enabled && !a.closing && ctx.Err() == nil {
+				a.bulkTextQueue = append(a.bulkTextQueue, newTitleJob(session, textConfig))
+				a.emitBulkTextQueueLocked()
+				if a.importActive == "" {
+					a.pumpBulkTextQueueLocked()
+				}
+			}
+		}()
 	} else {
 		a.latestResult = &TemporaryResult{Session: session, Text: text}
 	}

@@ -1033,6 +1033,15 @@ export function SettingsPage({
                       }
                     />
                     <ToggleSetting
+                      title={t("settingsPage.automaticallyGenerateTitles")}
+                      description={t("settingsPage.automaticallyGenerateTitlesHelp")}
+                      checked={settings.autoGenerateTitles ?? false}
+                      disabled={controlsDisabled || !settings.saveHistory}
+                      onCheckedChange={(autoGenerateTitles) =>
+                        setSettings((old) => ({ ...old, autoGenerateTitles }))
+                      }
+                    />
+                    <ToggleSetting
                       title={t("settingsPage.keepRecordings")}
                       description={t("settingsPage.saveAudioForPlaybackWhenHistorySaving")}
                       checked={settings.saveAudio}
