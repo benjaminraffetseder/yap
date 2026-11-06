@@ -1,10 +1,10 @@
 import i18n from "@/i18n";
-import { useEffect, useRef, useState } from "react";
 import { backend, message } from "@/lib/backend";
+import { useEffect, useRef, useState } from "react";
 
 // Request identity protects a new preview against late replies/cancellation
-// from an older one. All unmount paths cancel the native request.
-export function useTextRequest() {
+// from an older one. Saved operations can outlive the screen that started them.
+export function useTextRequest({ cancelOnUnmount = true }: { cancelOnUnmount?: boolean } = {}) {
   const current = useRef<string | null>(null);
   const cancelled = useRef(false);
   const [pending, setPending] = useState(false);
@@ -14,9 +14,9 @@ export function useTextRequest() {
     () => () => {
       const id = current.current;
       current.current = null;
-      if (id) void backend.cancelTextProcessing(id).catch(() => {});
+      if (id && cancelOnUnmount) void backend.cancelTextProcessing(id).catch(() => {});
     },
-    [],
+    [cancelOnUnmount],
   );
   async function request(action: (id: string) => Promise<string>) {
     if (current.current) return;

@@ -1,4 +1,3 @@
-import { useTranslation } from "react-i18next";
 import { ProfileSettingIndicator } from "@/components/profile-setting-indicator";
 import { RevisionHistory } from "@/components/revision-history";
 import { Button } from "@/components/ui/button";
@@ -37,6 +36,7 @@ import {
   Workflow,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 
 const emptyChains: PromptChain[] = [];
 const menuClass =
@@ -157,7 +157,8 @@ export function PromptChainsEditor({
                 ? (document.getElementById(`chain-prompt-${lastAddedStep.current}`) ?? true)
                 : true
             }
-            className={`${menuClass} max-h-80 w-72 max-w-[calc(100vw-2rem)] overflow-y-auto`}
+            className={`${menuClass} w-72`}
+            style={{ maxHeight: "min(20rem, var(--available-height))" }}
           >
             <p className="px-3 py-2 text-xs text-muted-foreground">
               {t("promptChainsEditor.chooseAPromptToAdd")}
@@ -213,14 +214,26 @@ export function PromptChainsEditor({
                   placeholder={t("promptChainsEditor.noSavedChains")}
                 />
               </SelectTrigger>
-              <SelectContent alignItemWithTrigger={false} align="start">
+              <SelectContent
+                alignItemWithTrigger={false}
+                align="start"
+                style={{
+                  width: "max-content",
+                  minWidth: "var(--anchor-width)",
+                  maxWidth: "min(32rem, var(--available-width))",
+                }}
+              >
                 {chainOptions.map((item) => (
-                  <SelectItem key={item.value} value={item.value} className="[&>span]:min-w-0">
+                  <SelectItem
+                    key={item.value}
+                    value={item.value}
+                    className="[&>:first-child]:min-w-0 [&>:first-child]:shrink"
+                  >
                     <Workflow
                       aria-hidden="true"
                       className="size-4 shrink-0 text-muted-foreground"
                     />
-                    <span className="truncate">{item.label}</span>
+                    <span className="min-w-0 whitespace-normal wrap-anywhere">{item.label}</span>
                   </SelectItem>
                 ))}
               </SelectContent>

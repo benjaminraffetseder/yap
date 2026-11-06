@@ -1,8 +1,6 @@
-import { nativeText } from "@/i18n/native-text";
-import { useTranslation } from "react-i18next";
 import { AutoSaveStatus } from "@/components/auto-save-status";
-import { HomeProfileActions } from "@/components/home-profile-actions";
 import { useDictation } from "@/components/dictation-provider";
+import { HomeProfileActions } from "@/components/home-profile-actions";
 import { ProcessingSelectItems } from "@/components/processing-select-items";
 import { ProfileApps } from "@/components/profile-apps";
 import { ModifiedMarker } from "@/components/profile-setting-indicator";
@@ -29,6 +27,7 @@ import {
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { nativeText } from "@/i18n/native-text";
 import {
   backend,
   isBusy,
@@ -43,8 +42,9 @@ import {
 import { useLanguages } from "@/lib/languages";
 import { useAutoSave } from "@/lib/use-auto-save";
 import { useSavedDraft } from "@/lib/use-saved-draft";
-import { Pencil, Plus, Settings2, Trash2, Workflow } from "lucide-react";
-import { useRef, useState, type RefObject } from "react";
+import { ArrowLeft, Pencil, Plus, Settings2, Trash2, Workflow } from "lucide-react";
+import { useEffect, useRef, useState, type RefObject } from "react";
+import { useTranslation } from "react-i18next";
 import { Link } from "react-router";
 
 export function ProfileSelector({
@@ -163,7 +163,13 @@ export function ProfileSelector({
   );
 }
 
-export function ProfilesPanel({ disabled }: { disabled: boolean }) {
+export function ProfilesPanel({
+  disabled,
+  beforeClose,
+}: {
+  disabled: boolean;
+  beforeClose: RefObject<(() => Promise<boolean>) | null>;
+}) {
   const languages = useLanguages();
   const { t } = useTranslation();
   const { snapshot, refresh } = useDictation();
@@ -173,8 +179,15 @@ export function ProfilesPanel({ disabled }: { disabled: boolean }) {
   const [error, setError] = useState("");
   const [apps, setApps] = useState<ProfileApplication[]>([]);
   const [loadingApps, setLoadingApps] = useState(false);
+  const returnFocus = useRef<HTMLButtonElement | null>(null);
   const profiles = snapshot.dictationProfiles ?? [];
   const rules = snapshot.appProfileRules ?? [];
+  useEffect(() => {
+    if (!editing) returnFocus.current?.focus();
+  }, [editing]);
+  function closeEditor() {
+    setEditing(null);
+  }
   async function apply(id: string) {
     setPending(true);
     setError("");
@@ -212,190 +225,197 @@ export function ProfilesPanel({ disabled }: { disabled: boolean }) {
   }
   return (
     <>
-      <SettingsSection title={t("dictationProfiles.dictationProfiles")}>
-        <div className="space-y-4 py-4">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <p className="max-w-lg text-xs leading-5 text-muted-foreground">
-              {t("dictationProfiles.saveASpeechModelLanguageCleanupAnd")}
-            </p>
-            <Button
-              size="sm"
-              variant="default"
-              disabled={
-                disabled ||
-                pending ||
-                profiles.filter((p) => p.id !== snapshot.defaultProfileId).length >= 20 ||
-                !snapshot.settings.modelPath
-              }
-              onClick={() => {
-                setError("");
-                setEditing({
-                  id: "",
-                  name: "",
-                  modelPath: snapshot.settings.modelPath,
-                  language: snapshot.settings.language,
-                  cleanText: snapshot.settings.cleanText,
-                  autoPromptId: snapshot.textProcessing.autoPromptId,
-                });
-              }}
-            >
-              <Plus className="size-4" />
-              {t("dictationProfiles.newProfile")}
-            </Button>
-          </div>
-          {!profiles.length && (
-            <p className="text-sm text-muted-foreground">
-              {t("dictationProfiles.noProfilesYetCreateOneFromYour")}
-            </p>
-          )}
-          {profiles.map((profile) => (
-            <div
-              key={profile.id}
-              data-slot="profile-card"
-              className="min-w-0 space-y-3 rounded-xl border bg-card p-4 [overflow-wrap:anywhere] @max-[24rem]/settings:p-3"
-            >
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="break-words text-sm font-medium">
-                    <Tooltip
-                      disabled={
-                        snapshot.activeProfileId !== profile.id || !snapshot.profileModified
-                      }
-                    >
-                      <TooltipTrigger
-                        render={
-                          <span
-                            tabIndex={
-                              snapshot.activeProfileId === profile.id && snapshot.profileModified
-                                ? 0
-                                : undefined
-                            }
-                            className="inline-flex max-w-full items-center gap-1.5 outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                          />
-                        }
-                      >
-                        <span className="break-words">{profile.name}</span>
-                        {snapshot.activeProfileId === profile.id && snapshot.profileModified && (
-                          <ModifiedMarker />
-                        )}
-                      </TooltipTrigger>
-                      <TooltipContent>{t("dictationProfiles.modified")}</TooltipContent>
-                    </Tooltip>
-                    {snapshot.activeProfileId === profile.id && (
-                      <span className="ml-2 text-xs text-primary">{t("modelsPage.active")}</span>
-                    )}
-                  </p>
-                </div>
-                <div
-                  data-slot="profile-actions"
-                  className="flex min-w-0 max-w-full shrink-0 flex-wrap items-center gap-1"
-                >
-                  {!(snapshot.activeProfileId === profile.id && !snapshot.profileModified) && (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      aria-label={t("uiPolish.makeProfileActive", { name: profile.name })}
-                      disabled={
-                        disabled ||
-                        pending ||
-                        (snapshot.activeProfileId === profile.id && !snapshot.profileModified)
-                      }
-                      onClick={() => void apply(profile.id)}
-                    >
-                      {t("uiPolish.makeActive")}
-                    </Button>
-                  )}
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    aria-label={t("dictationProfiles.edit", { name: profile.name })}
-                    disabled={disabled || pending}
-                    onClick={() => setEditing(profile)}
-                  >
-                    <Pencil aria-hidden="true" />
-                    {t("common.edit")}
-                  </Button>
-                  {profile.id !== snapshot.defaultProfileId && (
-                    <Button
-                      size="icon-sm"
-                      variant="ghost"
-                      aria-label={t("dictationProfiles.delete", { name: profile.name })}
-                      disabled={disabled || pending}
-                      onClick={() => {
-                        setError("");
-                        setDeleting(profile);
-                      }}
-                    >
-                      <Trash2 aria-hidden="true" />
-                    </Button>
-                  )}
-                </div>
-              </div>
-              <dl className="grid min-w-0 grid-cols-1 gap-x-5 gap-y-3 text-sm @min-[26rem]/settings:grid-cols-2 @min-[38rem]/settings:grid-cols-4">
-                <div className="min-w-0">
-                  <dt className="text-xs text-muted-foreground">{t("common.speechModel")}</dt>
-                  <dd className="mt-1">
-                    {snapshot.models.find((model) => model.path === profile.modelPath)?.name ??
-                      profile.modelPath.split(/[\\/]/).pop()}
-                  </dd>
-                </div>
-                <div className="min-w-0">
-                  <dt className="text-xs text-muted-foreground">
-                    {t("settingsPage.spokenLanguage")}
-                  </dt>
-                  <dd className="mt-1">
-                    {languages.find((language) => language.value === profile.language)?.label ??
-                      profile.language}
-                  </dd>
-                </div>
-                <div className="min-w-0">
-                  <dt className="text-xs text-muted-foreground">
-                    {t("settingsPage.lightCleanup")}
-                  </dt>
-                  <dd className="mt-1">{profile.cleanText ? t("common.on") : t("common.off")}</dd>
-                </div>
-                <div className="min-w-0">
-                  <dt className="text-xs text-muted-foreground">
-                    {t("dictationProfiles.afterDictation")}
-                  </dt>
-                  <dd className="mt-1">
-                    {profile.autoPromptId
-                      ? (processingOptions(snapshot.textProcessing).find(
-                          (p) => p.value === profile.autoPromptId,
-                        )?.label ?? t("dictationProfiles.promptOrChainUnavailable"))
-                      : t("common.noAutomaticProcessing")}
-                  </dd>
-                </div>
-              </dl>
-              <div className="border-t pt-3">
-                <ProfileApps
-                  profile={profile}
-                  profiles={profiles}
-                  rules={rules}
-                  apps={apps}
-                  loading={loadingApps}
-                  disabled={disabled || pending || !isDesktop}
-                  onOpen={() => void loadApps()}
-                  onChange={(next) => void saveRules(next)}
-                />
-              </div>
-            </div>
-          ))}
-          {error && !deleting && (
-            <p role="alert" className="text-sm text-destructive">
-              {nativeText(error)}
-            </p>
-          )}
-        </div>
-      </SettingsSection>
       {editing && (
         <ProfileEditor
           key={editing.id}
           profile={editing}
           disabled={disabled}
-          onClose={() => setEditing(null)}
+          beforeClose={beforeClose}
+          onClose={closeEditor}
         />
       )}
+      <div data-slot="profile-list" hidden={!!editing}>
+        <SettingsSection title={t("dictationProfiles.dictationProfiles")}>
+          <div className="space-y-4 py-4">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <p className="max-w-lg text-xs leading-5 text-muted-foreground">
+                {t("dictationProfiles.saveASpeechModelLanguageCleanupAnd")}
+              </p>
+              <Button
+                size="sm"
+                variant="default"
+                disabled={
+                  disabled ||
+                  pending ||
+                  profiles.filter((p) => p.id !== snapshot.defaultProfileId).length >= 20 ||
+                  !snapshot.settings.modelPath
+                }
+                onClick={(event) => {
+                  returnFocus.current = event.currentTarget;
+                  setError("");
+                  setEditing({
+                    id: "",
+                    name: "",
+                    modelPath: snapshot.settings.modelPath,
+                    language: snapshot.settings.language,
+                    cleanText: snapshot.settings.cleanText,
+                    autoPromptId: snapshot.textProcessing.autoPromptId,
+                  });
+                }}
+              >
+                <Plus className="size-4" />
+                {t("dictationProfiles.newProfile")}
+              </Button>
+            </div>
+            {!profiles.length && (
+              <p className="text-sm text-muted-foreground">
+                {t("dictationProfiles.noProfilesYetCreateOneFromYour")}
+              </p>
+            )}
+            {profiles.map((profile) => (
+              <div
+                key={profile.id}
+                data-slot="profile-card"
+                className="min-w-0 space-y-3 rounded-xl border bg-card p-4 [overflow-wrap:anywhere] @max-[24rem]/settings:p-3"
+              >
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="break-words text-sm font-medium">
+                      <Tooltip
+                        disabled={
+                          snapshot.activeProfileId !== profile.id || !snapshot.profileModified
+                        }
+                      >
+                        <TooltipTrigger
+                          render={
+                            <span
+                              tabIndex={
+                                snapshot.activeProfileId === profile.id && snapshot.profileModified
+                                  ? 0
+                                  : undefined
+                              }
+                              className="inline-flex max-w-full items-center gap-1.5 outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                            />
+                          }
+                        >
+                          <span className="break-words">{profile.name}</span>
+                          {snapshot.activeProfileId === profile.id && snapshot.profileModified && (
+                            <ModifiedMarker />
+                          )}
+                        </TooltipTrigger>
+                        <TooltipContent>{t("dictationProfiles.modified")}</TooltipContent>
+                      </Tooltip>
+                      {snapshot.activeProfileId === profile.id && (
+                        <span className="ml-2 text-xs text-primary">{t("modelsPage.active")}</span>
+                      )}
+                    </p>
+                  </div>
+                  <div
+                    data-slot="profile-actions"
+                    className="flex min-w-0 max-w-full shrink-0 flex-wrap items-center gap-1"
+                  >
+                    {!(snapshot.activeProfileId === profile.id && !snapshot.profileModified) && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        aria-label={t("uiPolish.makeProfileActive", { name: profile.name })}
+                        disabled={
+                          disabled ||
+                          pending ||
+                          (snapshot.activeProfileId === profile.id && !snapshot.profileModified)
+                        }
+                        onClick={() => void apply(profile.id)}
+                      >
+                        {t("uiPolish.makeActive")}
+                      </Button>
+                    )}
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      aria-label={t("dictationProfiles.edit", { name: profile.name })}
+                      disabled={disabled || pending}
+                      onClick={(event) => {
+                        returnFocus.current = event.currentTarget;
+                        setEditing(profile);
+                      }}
+                    >
+                      <Pencil aria-hidden="true" />
+                      {t("common.edit")}
+                    </Button>
+                    {profile.id !== snapshot.defaultProfileId && (
+                      <Button
+                        size="icon-sm"
+                        variant="ghost"
+                        aria-label={t("dictationProfiles.delete", { name: profile.name })}
+                        disabled={disabled || pending}
+                        onClick={() => {
+                          setError("");
+                          setDeleting(profile);
+                        }}
+                      >
+                        <Trash2 aria-hidden="true" />
+                      </Button>
+                    )}
+                  </div>
+                </div>
+                <dl className="grid min-w-0 grid-cols-1 gap-x-5 gap-y-3 text-sm @min-[26rem]/settings:grid-cols-2 @min-[38rem]/settings:grid-cols-4">
+                  <div className="min-w-0">
+                    <dt className="text-xs text-muted-foreground">{t("common.speechModel")}</dt>
+                    <dd className="mt-1">
+                      {snapshot.models.find((model) => model.path === profile.modelPath)?.name ??
+                        profile.modelPath.split(/[\\/]/).pop()}
+                    </dd>
+                  </div>
+                  <div className="min-w-0">
+                    <dt className="text-xs text-muted-foreground">
+                      {t("settingsPage.spokenLanguage")}
+                    </dt>
+                    <dd className="mt-1">
+                      {languages.find((language) => language.value === profile.language)?.label ??
+                        profile.language}
+                    </dd>
+                  </div>
+                  <div className="min-w-0">
+                    <dt className="text-xs text-muted-foreground">
+                      {t("settingsPage.lightCleanup")}
+                    </dt>
+                    <dd className="mt-1">{profile.cleanText ? t("common.on") : t("common.off")}</dd>
+                  </div>
+                  <div className="min-w-0">
+                    <dt className="text-xs text-muted-foreground">
+                      {t("dictationProfiles.afterDictation")}
+                    </dt>
+                    <dd className="mt-1">
+                      {profile.autoPromptId
+                        ? (processingOptions(snapshot.textProcessing).find(
+                            (p) => p.value === profile.autoPromptId,
+                          )?.label ?? t("dictationProfiles.promptOrChainUnavailable"))
+                        : t("common.noAutomaticProcessing")}
+                    </dd>
+                  </div>
+                </dl>
+                <div className="border-t pt-3">
+                  <ProfileApps
+                    profile={profile}
+                    profiles={profiles}
+                    rules={rules}
+                    apps={apps}
+                    loading={loadingApps}
+                    disabled={disabled || pending || !isDesktop}
+                    onOpen={() => void loadApps()}
+                    onChange={(next) => void saveRules(next)}
+                  />
+                </div>
+              </div>
+            ))}
+            {error && !deleting && (
+              <p role="alert" className="text-sm text-destructive">
+                {nativeText(error)}
+              </p>
+            )}
+          </div>
+        </SettingsSection>
+      </div>
       <Dialog
         open={!!deleting}
         disablePointerDismissal
@@ -454,10 +474,12 @@ export function ProfilesPanel({ disabled }: { disabled: boolean }) {
 function ProfileEditor({
   profile,
   disabled,
+  beforeClose,
   onClose,
 }: {
   profile: DictationProfile;
   disabled: boolean;
+  beforeClose: RefObject<(() => Promise<boolean>) | null>;
   onClose: () => void;
 }) {
   const languages = useLanguages();
@@ -468,6 +490,14 @@ function ProfileEditor({
   const profileID = useRef(profile.id);
   const [error, setError] = useState("");
   const [closing, setClosing] = useState(false);
+  const editorRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    const editor = editorRef.current;
+    editor?.closest('[data-slot="settings-scroll-pane"]')?.scrollTo({ top: 0 });
+    editor
+      ?.querySelector<HTMLElement>('input:not(:disabled), [role="combobox"]:not(:disabled)')
+      ?.focus({ preventScroll: true });
+  }, []);
   const models = snapshot.models
     .filter((model) => model.installed)
     .map((model) => ({ value: model.path, label: model.name }));
@@ -525,93 +555,126 @@ function ProfileEditor({
     save,
     delay: 800,
   });
-  async function close() {
-    if (closing) return;
+  async function prepareClose() {
+    if (closing) return false;
     setClosing(true);
-    if (!draftState.dirty || reason || (await autoSave.retry())) onClose();
+    const canClose = !draftState.dirty || !!reason || (await autoSave.retry());
     setClosing(false);
+    return canClose;
+  }
+  useEffect(() => {
+    beforeClose.current = prepareClose;
+    return () => {
+      beforeClose.current = null;
+    };
+  });
+  async function close() {
+    if (await prepareClose()) onClose();
   }
   return (
-    <Dialog
-      open
-      disablePointerDismissal
-      onOpenChange={(open) => {
-        if (!open) void close();
+    <section
+      ref={editorRef}
+      aria-labelledby="profile-editor-title"
+      data-slot="profile-editor"
+      className="min-w-0 space-y-5 [overflow-wrap:anywhere]"
+      onKeyDown={(event) => {
+        // Portalled dropdowns handle their own Escape key.
+        if (
+          event.key === "Escape" &&
+          !event.defaultPrevented &&
+          event.currentTarget.contains(event.target as Node)
+        ) {
+          event.preventDefault();
+          event.stopPropagation();
+          void close();
+        }
       }}
     >
-      <DialogContent showCloseButton={false} className="max-h-[calc(100dvh-2rem)] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>
-            {profile.id
-              ? t("dictationProfiles.editDictationProfile")
-              : t("dictationProfiles.newDictationProfile")}
-          </DialogTitle>
-          <DialogDescription>
-            {t("dictationProfiles.savingAProfileLeavesYourCurrentSettings")}
-          </DialogDescription>
-        </DialogHeader>
-        <fieldset disabled={disabled || closing} className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="profile-name">{t("dictationProfiles.profileName")}</Label>
-            <Input
-              id="profile-name"
-              disabled={profile.id === snapshot.defaultProfileId}
-              maxLength={60}
-              placeholder={t("dictationProfiles.forExampleQuickNoteOrEmail")}
-              value={draft.name}
-              onChange={(e) => setDraft({ ...draft, name: e.target.value })}
-            />
+      <header className="space-y-3">
+        <Button
+          variant="ghost"
+          size="sm"
+          className="-ml-2 text-muted-foreground"
+          disabled={closing}
+          onClick={() => void close()}
+        >
+          <ArrowLeft aria-hidden="true" className="size-4" />
+          {t("dictationProfiles.backToProfiles")}
+        </Button>
+        <h2 id="profile-editor-title" className="text-lg font-semibold tracking-tight">
+          {profile.id
+            ? t("dictationProfiles.editDictationProfile")
+            : t("dictationProfiles.newDictationProfile")}
+        </h2>
+        <p className="max-w-lg text-xs leading-5 text-muted-foreground">
+          {t("dictationProfiles.savingAProfileLeavesYourCurrentSettings")}
+        </p>
+      </header>
+      <fieldset disabled={disabled || closing} className="space-y-5 disabled:opacity-60">
+        <div className="space-y-2">
+          <Label htmlFor="profile-name">{t("dictationProfiles.profileName")}</Label>
+          <Input
+            id="profile-name"
+            disabled={profile.id === snapshot.defaultProfileId}
+            maxLength={60}
+            placeholder={t("dictationProfiles.forExampleQuickNoteOrEmail")}
+            value={draft.name}
+            onChange={(e) => setDraft({ ...draft, name: e.target.value })}
+          />
+        </div>
+        <div className="space-y-4 rounded-xl border bg-card p-4 @max-[24rem]/settings:p-3">
+          <div className="grid gap-4 @min-[32rem]/settings:grid-cols-2">
+            <div className="min-w-0 space-y-2">
+              <Label htmlFor="profile-model">{t("common.speechModel")}</Label>
+              <Select
+                items={models}
+                value={draft.modelPath}
+                onValueChange={(value) => {
+                  if (value) setDraft({ ...draft, modelPath: value });
+                }}
+              >
+                <SelectTrigger id="profile-model" className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {models.map((model) => (
+                    <SelectItem key={model.value} value={model.value}>
+                      {model.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="min-w-0 space-y-2">
+              <Label htmlFor="profile-language">{t("settingsPage.spokenLanguage")}</Label>
+              <Select
+                items={languageOptions}
+                value={draft.language}
+                onValueChange={(value) => {
+                  if (value) setDraft({ ...draft, language: value });
+                }}
+              >
+                <SelectTrigger id="profile-language" className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {languageOptions.map((language) => (
+                    <SelectItem key={language.value} value={language.value}>
+                      {language.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
-          <div className="space-y-2">
-            <Label htmlFor="profile-model">{t("common.speechModel")}</Label>
-            <Select
-              items={models}
-              value={draft.modelPath}
-              onValueChange={(value) => {
-                if (value) setDraft({ ...draft, modelPath: value });
-              }}
-            >
-              <SelectTrigger id="profile-model" className="w-full">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {models.map((model) => (
-                  <SelectItem key={model.value} value={model.value}>
-                    {model.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="profile-language">{t("settingsPage.spokenLanguage")}</Label>
-            <Select
-              items={languageOptions}
-              value={draft.language}
-              onValueChange={(value) => {
-                if (value) setDraft({ ...draft, language: value });
-              }}
-            >
-              <SelectTrigger id="profile-language" className="w-full">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {languageOptions.map((language) => (
-                  <SelectItem key={language.value} value={language.value}>
-                    {language.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <label className="flex items-center justify-between gap-3 text-sm">
+          <label className="flex items-center justify-between gap-3 border-t pt-4 text-sm">
             <span>{t("settingsPage.lightCleanup")}</span>
             <Switch
               checked={draft.cleanText}
               onCheckedChange={(cleanText) => setDraft({ ...draft, cleanText })}
             />
           </label>
-          <div className="space-y-2">
+          <div className="space-y-2 border-t pt-4">
             <Label htmlFor="profile-prompt">{t("dictationProfiles.afterDictation")}</Label>
             <Select
               items={prompts}
@@ -649,25 +712,28 @@ function ProfileEditor({
               {t("dictationProfiles.automaticPromptsAndChainsUseYourShared")}
             </p>
           </div>
-        </fieldset>
-        {error && (
-          <p role="alert" className="text-sm text-destructive">
-            {nativeText(error)}
-          </p>
-        )}
-        <DialogFooter className="items-center sm:justify-between">
-          <AutoSaveStatus
-            status={autoSave.status}
-            reason={reason}
-            retry={autoSave.retry}
-            discard={() => setDraft(saved)}
-            disabled={disabled || closing}
-          />
-          <Button variant="outline" disabled={closing} onClick={() => void close()}>
-            {t("dictationProfiles.done")}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        </div>
+      </fieldset>
+      {error && (
+        <p role="alert" className="text-sm text-destructive">
+          {nativeText(error)}
+        </p>
+      )}
+      <footer className="flex flex-wrap items-center justify-between gap-3 border-t pt-4">
+        <AutoSaveStatus
+          status={autoSave.status}
+          reason={reason}
+          retry={autoSave.retry}
+          discard={() => {
+            setDraft(saved);
+            setError("");
+          }}
+          disabled={disabled || closing}
+        />
+        <Button variant="outline" disabled={closing} onClick={() => void close()}>
+          {t("dictationProfiles.done")}
+        </Button>
+      </footer>
+    </section>
   );
 }

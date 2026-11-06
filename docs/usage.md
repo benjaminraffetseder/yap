@@ -69,7 +69,10 @@ are qualitative guides, and changing models remains an explicit choice.
 Under **Settings → Profiles**, choose **New profile** to
 start from your saved settings. Name it, then choose its speech model, spoken
 language, light cleanup, and optional **After dictation** prompt. Changes save
-automatically once a name and model are present; choose **Done** to close the editor.
+automatically once a name and model are present. The editor opens inside the
+Profiles pane; choose **Back to profiles**, **Done**, or press Escape to return to
+the list. Closing Settings also saves valid profile edits; a failed save keeps
+the editor open so you can retry or discard the changes.
 Choose **Make active** or select it under **Recording options → Profile** on Dictate
 to activate it. You can save up to 20 additional profiles and edit or delete them
 from Settings. Yap creates and selects **Default** from your setup choices or

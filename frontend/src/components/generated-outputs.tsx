@@ -1,14 +1,11 @@
-import { nativeText } from "@/i18n/native-text";
-import i18n from "@/i18n";
-import { useTranslation } from "react-i18next";
+import { CopyButton } from "@/components/copy-button";
 import { useDictation } from "@/components/dictation-provider";
 import { InferenceStats } from "@/components/inference-stats";
 import { MarkdownContent } from "@/components/markdown-content";
 import { ProcessingSelectItems } from "@/components/processing-select-items";
-import { CopyButton } from "@/components/copy-button";
 import { TranscriptExportDialog } from "@/components/transcript-export-dialog";
-import { Button } from "@/components/ui/button";
 import { ActionMenu, ActionMenuItem } from "@/components/ui/action-menu";
+import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
@@ -26,6 +23,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import i18n from "@/i18n";
+import { nativeText } from "@/i18n/native-text";
 import { backend, isBusy, message, processingOptions, type GeneratedOutput } from "@/lib/backend";
 import { useTextRequest } from "@/lib/use-text-request";
 import {
@@ -40,6 +39,7 @@ import {
   Workflow,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Link } from "react-router";
 
 export function GeneratedOutputs({
@@ -68,7 +68,8 @@ export function GeneratedOutputs({
   const outputActionsTrigger = useRef<HTMLButtonElement>(null);
   const [deletingNow, setDeletingNow] = useState(false);
   const [deleteError, setDeleteError] = useState("");
-  const generation = useTextRequest();
+  // The backend saves outputs and reports activity even after navigation.
+  const generation = useTextRequest({ cancelOnUnmount: false });
   useEffect(() => {
     if (!processingOptions(snapshot.textProcessing).some((option) => option.value === selected))
       setSelected(processingOptions(snapshot.textProcessing)[0]?.value ?? "");

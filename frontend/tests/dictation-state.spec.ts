@@ -26,6 +26,9 @@ function activeDialog(page: Page) {
     .filter({ hasNot: page.getByRole("tablist", { name: "Settings sections", exact: true }) })
     .filter({ hasNot: page.getByRole("region", { name: "Recording options", exact: true }) });
 }
+function profileEditor(page: Page) {
+  return page.getByRole("region", { name: /^(New|Edit) dictation profile$/ });
+}
 async function expectRailFits(page: Page, font: number) {
   // Enlarged navigation must leave useful reading space instead of doubling
   // the desktop rail. The dedicated navigation test covers its accessible labels.
@@ -1049,9 +1052,9 @@ test("settings clarity interaction preview", async ({ page }, testInfo) => {
   });
   await page.waitForTimeout(900);
   await page.getByRole("button", { name: "Edit Work notes", exact: true }).click();
-  await expect(activeDialog(page)).toBeVisible();
+  await expect(profileEditor(page)).toBeVisible();
   await page.waitForTimeout(700);
-  await activeDialog(page).getByRole("button", { name: "Done", exact: true }).click();
+  await profileEditor(page).getByRole("button", { name: "Done", exact: true }).click();
   await page.getByRole("tab", { name: "Dictation", exact: true }).click();
   await expect(page.getByRole("switch", { name: /^Light cleanup/ })).toBeChecked();
   await page.waitForTimeout(600);
@@ -5798,7 +5801,7 @@ test("saved outputs retain their recipes, regenerate as new versions and leave e
   ).toContain("um we should test");
 });
 
-test("failed, cancelled and abandoned output generation never adds a late result", async ({
+test("output generation handles failure and cancellation and survives navigation", async ({
   page,
 }, testInfo) => {
   await page.addInitScript(() => {
@@ -5861,21 +5864,110 @@ test("failed, cancelled and abandoned output generation never adds a late result
   await expect(page.getByRole("article")).toContainText("Successful retry");
   await generateWith(page);
   const requestID = await page.evaluate(() => window.dictationTest.processing!.id);
+  await page.getByRole("button", { name: "Minimize activity pane", exact: true }).click();
   await page.getByRole("link", { name: "Back to History", exact: true }).click();
-  await expect
-    .poll(() =>
-      page.evaluate((id) => window.dictationTest.cancelledProcessing.includes(id), requestID),
-    )
-    .toBe(true);
-  await page.evaluate(() => window.dictationTest.processing!.resolve("Late after navigation"));
+  await expect(page).toHaveURL(/#\/history$/);
+  await expect(page.getByRole("tab", { name: "Outputs", exact: true })).toHaveCount(0);
   await settle(page);
+  expect(await page.evaluate(() => window.dictationTest.cancelledProcessing)).not.toContain(
+    requestID,
+  );
+  await page.goBack();
+  await page.getByRole("tab", { name: "Outputs", exact: true }).click();
+  await page.evaluate(() => window.dictationTest.processing!.resolve("Finished after navigation"));
+  await expect(page.getByRole("article")).toContainText("Finished after navigation");
+  await page.getByRole("button", { name: "Regenerate", exact: true }).click();
+  const regenerationID = await page.evaluate(() => window.dictationTest.processing!.id);
+  await navigateMain(page, "Models");
+  await expect(page).toHaveURL(/#\/models$/);
+  await expect(page.getByRole("tab", { name: "Outputs", exact: true })).toHaveCount(0);
+  await settle(page);
+  expect(await page.evaluate(() => window.dictationTest.cancelledProcessing)).not.toContain(
+    regenerationID,
+  );
+  await page.evaluate(() =>
+    window.dictationTest.processing!.resolve("Regenerated after navigation"),
+  );
+  await page.goBack();
+  await page.getByRole("tab", { name: "Outputs", exact: true }).click();
+  await expect(page.getByRole("article")).toContainText("Regenerated after navigation");
   expect(
     await page.evaluate(() => window.dictationTest.outputs.map((output) => output.text)),
-  ).toEqual(["Successful retry"]);
+  ).toEqual(["Regenerated after navigation", "Finished after navigation", "Successful retry"]);
   expect(await page.evaluate(() => window.dictationTest.snapshot.history[0].finalTranscript)).toBe(
     "Edited speech",
   );
   expect(await page.evaluate(() => window.dictationTest.snapshot.status.transcript)).toBe("");
+});
+
+test("prompt chain generation continues while viewing another transcription", async ({ page }) => {
+  await page.addInitScript(() => {
+    const state = window.dictationTest;
+    state.snapshot.textProcessing.enabled = true;
+    state.snapshot.textProcessing.model = "local-model";
+    state.snapshot.textProcessing.chains = [
+      {
+        id: "background-chain",
+        name: "Background chain",
+        steps: [
+          { id: "cleanup", promptId: "cleanup", input: "original" },
+          { id: "summary", promptId: "summary", input: "step:cleanup" },
+        ],
+      },
+    ];
+    state.snapshot.history = ["First", "Second"].map((name) => ({
+      id: name.toLowerCase(),
+      title: `${name} transcription`,
+      createdAt: "2026-11-06T12:00:00Z",
+      durationMs: 1000,
+      rawTranscript: `${name} recording.`,
+      finalTranscript: `${name} saved transcript.`,
+      speechModel: "base",
+      language: "en",
+      audioPath: "",
+    }));
+  });
+  await page.goto("/#/history/first");
+  await page.getByRole("tab", { name: "Outputs", exact: true }).click();
+  await page.getByRole("button", { name: "New output", exact: true }).click();
+  await page.getByRole("combobox", { name: "Output prompt", exact: true }).click();
+  await page.getByRole("option", { name: "Background chain", exact: true }).click();
+  await generateWith(page, "Run chain");
+  const requestID = await page.evaluate(() => window.dictationTest.processing!.id);
+  await navigateMain(page, "History");
+  await page.getByRole("link", { name: /Second transcription/ }).click();
+  await expect(
+    page.getByRole("heading", { name: "Second transcription", exact: true }),
+  ).toBeVisible();
+  await settle(page);
+  expect(await page.evaluate(() => window.dictationTest.cancelledProcessing)).not.toContain(
+    requestID,
+  );
+  await page.evaluate(() => window.dictationTest.processing!.resolve("Cleaned first recording."));
+  await expect
+    .poll(() => page.evaluate(() => window.dictationTest.processing?.prompt))
+    .toBe("summary");
+  expect(await page.evaluate(() => window.dictationTest.processing!.input)).toBe(
+    "Cleaned first recording.",
+  );
+  await page.evaluate(() => window.dictationTest.processing!.resolve("First recording summary."));
+  await expect.poll(() => page.evaluate(() => window.dictationTest.outputs.length)).toBe(2);
+  await page.getByRole("tab", { name: "Outputs", exact: true }).click();
+  await expect(page.getByText("No generated outputs yet.", { exact: true })).toBeVisible();
+  expect(
+    await page.evaluate(() => window.dictationTest.outputs.map((output) => output.sessionId)),
+  ).toEqual(["first", "first"]);
+  await navigateMain(page, "History");
+  await page.getByRole("link", { name: /First transcription/ }).click();
+  await page.getByRole("tab", { name: "Outputs", exact: true }).click();
+  await expect(page.getByRole("article", { name: "Summary output", exact: true })).toContainText(
+    "First recording summary.",
+  );
+  expect(
+    await page.evaluate(() =>
+      window.dictationTest.snapshot.history.map((entry) => entry.finalTranscript),
+    ),
+  ).toEqual(["First saved transcript.", "Second saved transcript."]);
 });
 
 test("standalone output metadata omits the backend's empty chain", async ({ page }) => {
@@ -9714,19 +9806,23 @@ test("dictation profiles create edit switch and delete", async ({ page }, testIn
   await homeModelScenario(page);
   await page.getByRole("link", { name: "Manage dictation profiles" }).click();
   await page.getByRole("button", { name: "New profile", exact: true }).click();
-  const dialog = activeDialog(page);
-  await dialog.getByLabel("Profile name").fill("Email");
-  await dialog.getByRole("combobox", { name: "Spoken language", exact: true }).click();
+  const editor = profileEditor(page);
+  await expect(page.getByRole("dialog")).toHaveCount(1);
+  await expect(editor.getByLabel("Profile name")).toBeFocused();
+  await editor.getByLabel("Profile name").fill("Email");
+  await editor.getByRole("combobox", { name: "Spoken language", exact: true }).click();
   await page.getByRole("option", { name: "German", exact: true }).click();
-  await dialog.getByRole("switch", { name: "Light cleanup" }).check();
-  await dialog.getByRole("button", { name: "Done", exact: true }).click();
-  await expect(dialog).toHaveCount(0);
+  await editor.getByRole("switch", { name: "Light cleanup" }).check();
+  await editor.getByRole("button", { name: "Done", exact: true }).click();
+  await expect(editor).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "New profile", exact: true })).toBeFocused();
   await expect
     .poll(() => page.evaluate(() => window.dictationTest.snapshot.settings.language))
     .toBe("auto");
   await page.getByRole("button", { name: "Edit Email", exact: true }).click();
-  await dialog.getByLabel("Profile name").fill("Work email");
-  await dialog.getByRole("button", { name: "Done", exact: true }).click();
+  await editor.getByLabel("Profile name").fill("Work email");
+  await editor.getByRole("button", { name: "Back to profiles", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Edit Work email", exact: true })).toBeFocused();
   await navigateMain(page, "Dictate");
   await openRecordingOptions(page);
   const selector = page.getByRole("combobox", { name: "Dictation profile", exact: true });
@@ -9752,6 +9848,7 @@ test("dictation profiles create edit switch and delete", async ({ page }, testIn
   await expect(selector).toBeDisabled();
   await page.evaluate(() => window.dictationTest.status("idle"));
   await page.getByRole("link", { name: "Manage dictation profiles" }).click();
+  const dialog = activeDialog(page);
   await page.getByRole("button", { name: "Delete Work email", exact: true }).click();
   await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
   await expect(page.getByRole("button", { name: "Edit Work email", exact: true })).toBeVisible();
@@ -9770,12 +9867,13 @@ test("profile failures retain drafts and selection and Escape attempts a save", 
   await homeModelScenario(page);
   await page.getByRole("link", { name: "Manage dictation profiles" }).click();
   await page.getByRole("button", { name: "New profile", exact: true }).click();
-  const dialog = activeDialog(page);
+  const dialog = profileEditor(page);
   await page.evaluate(() => {
     window.dictationTest.failSave = true;
   });
   await dialog.getByLabel("Profile name").fill("Quick notes");
   await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog", { name: "Settings", exact: true })).toBeVisible();
   await dialog.getByRole("button", { name: "Done", exact: true }).click();
   await expect(dialog.getByRole("alert")).toContainText("Could not save profile");
   await expect(dialog.getByLabel("Profile name")).toHaveValue("Quick notes");
@@ -9796,6 +9894,104 @@ test("profile failures retain drafts and selection and Escape attempts a save", 
     page.locator('[data-slot="toast"]').filter({ hasText: "Profile model unavailable" }),
   ).toBeVisible();
 });
+
+test("inline profile editor keeps dropdown Escape local and saves before Settings closes", async ({
+  page,
+}) => {
+  await homeModelScenario(page);
+  await page.getByRole("link", { name: "Manage dictation profiles" }).click();
+  const settings = page.getByRole("dialog", { name: "Settings", exact: true });
+  const editor = profileEditor(page);
+  await settings.getByRole("button", { name: "New profile", exact: true }).click();
+  const language = editor.getByRole("combobox", { name: "Spoken language", exact: true });
+  await language.click();
+  await expect(page.getByRole("listbox")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("listbox")).toHaveCount(0);
+  await expect(editor).toBeVisible();
+  await expect(language).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(editor).toHaveCount(0);
+  await expect(settings).toBeVisible();
+  await expect(settings.getByRole("button", { name: "New profile", exact: true })).toBeFocused();
+
+  await settings.getByRole("button", { name: "New profile", exact: true }).click();
+  await editor.getByLabel("Profile name").fill("Meeting notes");
+  await settings.getByRole("button", { name: "Close", exact: true }).click();
+  await expect(settings).toHaveCount(0);
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        window.dictationTest.snapshot.dictationProfiles?.filter((p) => p.name === "Meeting notes"),
+      ),
+    )
+    .toEqual([expect.objectContaining({ name: "Meeting notes" })]);
+
+  await openRecordingOptions(page);
+  await page.getByRole("link", { name: "Manage dictation profiles" }).click();
+  await settings.getByRole("button", { name: "Edit Meeting notes", exact: true }).click();
+  await page.evaluate(() => {
+    window.dictationTest.failSave = true;
+  });
+  await editor.getByLabel("Profile name").fill("Unsaved meeting notes");
+  await settings.getByRole("button", { name: "Close", exact: true }).click();
+  await expect(settings).toBeVisible();
+  await expect(editor.getByRole("alert")).toContainText("Could not save profile");
+  await expect(editor.getByLabel("Profile name")).toHaveValue("Unsaved meeting notes");
+  await editor.getByRole("button", { name: "Discard changes", exact: true }).click();
+  await expect(editor.getByLabel("Profile name")).toHaveValue("Meeting notes");
+  await expect(editor.getByRole("alert")).toHaveCount(0);
+  await settings.getByRole("button", { name: "Close", exact: true }).click();
+  await expect(settings).toHaveCount(0);
+});
+
+for (const [lang, width, height, font] of [
+  ["en", 878, 807, 100],
+  ["de", 878, 807, 100],
+  ["en", 480, 600, 200],
+  ["de", 480, 600, 200],
+] as const) {
+  test(`inline profile editor fits settings ${lang} ${width}x${height} ${font}%`, async ({
+    page,
+  }, testInfo) => {
+    const copy = lang === "de" ? de : en;
+    await page.setViewportSize({ width, height });
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await homeModelScenario(page);
+    await page.evaluate((language) => localStorage.setItem("desktop-language", language), lang);
+    await page.goto("/#/settings?section=profiles");
+    await page.reload();
+    await page.evaluate((size) => (document.documentElement.style.fontSize = `${size}%`), font);
+    const settings = page.getByRole("dialog", { name: copy["common.settings"], exact: true });
+    await settings
+      .getByRole("button", { name: copy["dictationProfiles.newProfile"], exact: true })
+      .click();
+    const editor = settings.getByRole("region", {
+      name: copy["dictationProfiles.newDictationProfile"],
+      exact: true,
+    });
+    await expect(page.getByRole("dialog")).toHaveCount(1);
+    await expect(editor.getByLabel(copy["dictationProfiles.profileName"])).toBeFocused();
+    await expect(settings.locator('[data-slot="profile-card"]:visible')).toHaveCount(0);
+    const controls = editor.locator('input:not([aria-hidden="true"]), button, [role="switch"]');
+    for (const control of await controls.all()) {
+      await control.focus();
+      await expect(control).toBeInViewport();
+      const geometry = await control.evaluate((node) => {
+        const box = node.getBoundingClientRect();
+        const pane = node.closest('[data-slot="settings-scroll-pane"]')!.getBoundingClientRect();
+        return { left: box.left, right: box.right, paneLeft: pane.left, paneRight: pane.right };
+      });
+      expect(geometry.left).toBeGreaterThanOrEqual(geometry.paneLeft);
+      expect(geometry.right).toBeLessThanOrEqual(geometry.paneRight);
+    }
+    const pane = settings.locator('[data-slot="settings-scroll-pane"]');
+    expect(await pane.evaluate((node) => node.scrollWidth <= node.clientWidth)).toBe(true);
+    expect(await settings.evaluate((node) => node.scrollWidth <= node.clientWidth)).toBe(true);
+    await pane.evaluate((node) => node.scrollTo({ top: 0 }));
+    await page.screenshot({ path: testInfo.outputPath("inline-profile-editor.png") });
+  });
+}
 
 test("profile switching rebases untouched settings while keeping the autosaved shortcut", async ({
   page,
@@ -9861,7 +10057,10 @@ test("Default is selected from saved settings and unrelated preferences do not m
   );
   await expect(page.getByRole("button", { name: "Delete Default", exact: true })).toHaveCount(0);
   await page.getByRole("button", { name: "Edit Default", exact: true }).click();
-  await expect(activeDialog(page).getByLabel("Profile name")).toBeDisabled();
+  await expect(profileEditor(page).getByLabel("Profile name")).toBeDisabled();
+  await expect(
+    profileEditor(page).getByRole("combobox", { name: "Speech model", exact: true }),
+  ).toBeFocused();
 });
 
 for (const theme of ["light", "dark"] as const) {
@@ -10363,6 +10562,7 @@ for (const chain of [false, true]) {
     }
     await generateWith(page, chain ? "Run chain" : "Generate output");
     await expect.poll(() => page.evaluate(() => !!window.dictationTest.processing)).toBe(true);
+    await page.getByRole("button", { name: "Minimize activity pane", exact: true }).click();
     await page.getByRole("button", { name: "Edit transcript", exact: true }).click();
     const editor = page.getByRole("region", { name: "Edit transcript", exact: true });
     await expect(editor).toBeVisible();
@@ -10492,7 +10692,7 @@ test("dictation profiles can select saved prompt chains", async ({ page }) => {
   });
   await page.getByRole("link", { name: "Manage dictation profiles" }).click();
   await page.getByRole("button", { name: "New profile", exact: true }).click();
-  const dialog = activeDialog(page);
+  const dialog = profileEditor(page);
   await dialog.getByLabel("Profile name").fill("Meeting");
   await dialog.getByRole("combobox", { name: "After dictation", exact: true }).click();
   const chainOption = page.getByRole("option", { name: "Meeting notes", exact: true });
@@ -10865,6 +11065,67 @@ for (const theme of ["light", "dark"]) {
   });
 }
 
+test("chain step picker fits the available space and scrolls to every prompt", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.addInitScript(() => {
+    localStorage.setItem("yap-sidebar-collapsed", "true");
+    const config = window.dictationTest.snapshot.textProcessing;
+    config.prompts = Array.from({ length: 30 }, (_, index) => ({
+      id: `prompt-${index + 1}`,
+      name: `Prompt ${index + 1}`,
+      instruction: "Process the transcript.",
+    }));
+    config.chains = [
+      {
+        id: "scrollable-chain",
+        name: "Scrollable chain",
+        steps: [{ id: "first", promptId: "prompt-1", input: "original" }],
+      },
+    ];
+  });
+  await page.goto("/#/prompts?section=chains");
+  const addStep = page.getByRole("button", { name: "Add step", exact: true });
+  const menu = page.getByRole("menu");
+  const lastPrompt = menu.getByRole("menuitem", { name: "Prompt 30", exact: true });
+
+  for (const [width, height, font] of [
+    [1086, 630, 100],
+    [760, 400, 100],
+    [760, 560, 200],
+  ]) {
+    await page.setViewportSize({ width, height });
+    await page.evaluate((font) => {
+      document.documentElement.style.fontSize = `${font}%`;
+    }, font);
+    await addStep.click();
+    await expect(menu).toBeVisible();
+    await expect
+      .poll(() =>
+        menu.evaluate((node) => {
+          const bounds = node.getBoundingClientRect();
+          return bounds.top >= 0 && bounds.bottom <= innerHeight;
+        }),
+      )
+      .toBe(true);
+    expect(await menu.evaluate((node) => node.scrollHeight > node.clientHeight)).toBe(true);
+    await menu.hover();
+    await page.mouse.wheel(0, 2000);
+    await expect(lastPrompt).toBeInViewport({ ratio: 1 });
+    await expect.poll(() => menu.evaluate((node) => node.scrollTop)).toBeGreaterThan(0);
+    await page.keyboard.press("Escape");
+
+    await addStep.press("Enter");
+    await page.keyboard.press("End");
+    await expect(lastPrompt).toBeFocused();
+    await expect(lastPrompt).toBeInViewport({ ratio: 1 });
+    await page.keyboard.press("Enter");
+    await expect(menu).toHaveCount(0);
+    const newStep = page.getByRole("combobox", { name: /^Step \d+ prompt$/ }).last();
+    await expect(newStep).toContainText("Prompt 30");
+    await expect(newStep).toBeFocused();
+  }
+});
+
 test("chain editor adds prompts with the keyboard and preserves references when managing steps", async ({
   page,
 }) => {
@@ -11178,7 +11439,7 @@ test("auto-save profile creates once on its first valid save and Done flushes su
   await homeModelScenario(page);
   await page.getByRole("link", { name: "Manage dictation profiles" }).click();
   await page.getByRole("button", { name: "New profile", exact: true }).click();
-  const dialog = activeDialog(page);
+  const dialog = profileEditor(page);
   await expect(dialog.getByRole("button", { name: "Save profile" })).toHaveCount(0);
   await dialog.getByLabel("Profile name").fill("Email");
   await expect

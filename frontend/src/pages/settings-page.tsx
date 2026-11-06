@@ -1,5 +1,3 @@
-import { nativeText } from "@/i18n/native-text";
-import { useTranslation } from "react-i18next";
 import { AudioSupportPanel } from "@/components/audio-support-panel";
 import { AutoSaveStatus } from "@/components/auto-save-status";
 import { BackupPanel } from "@/components/backup-panel";
@@ -7,13 +5,12 @@ import { DiagnosticsPanel } from "@/components/diagnostics-panel";
 import { ProfilesPanel } from "@/components/dictation-profiles";
 import { useDictation } from "@/components/dictation-provider";
 import { ProfileSettingIndicator } from "@/components/profile-setting-indicator";
-import { RecoveryActions } from "@/components/recovery-actions";
 import { RecordingStatus } from "@/components/recording-status";
+import { RecoveryActions } from "@/components/recovery-actions";
 import { SettingRow, SettingsSection, ToggleSetting } from "@/components/settings-section";
 import { ShortcutInput } from "@/components/shortcut-input";
 import { ShortcutStatus } from "@/components/shortcut-status";
 import { useTheme } from "@/components/theme-provider";
-import { languages as interfaceLanguages } from "@/i18n";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -34,6 +31,8 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toastManager } from "@/components/ui/toast";
 import { UpdatePanel } from "@/components/update-panel";
+import { languages as interfaceLanguages } from "@/i18n";
+import { nativeText } from "@/i18n/native-text";
 import {
   backend,
   backendVersionMismatchMessage,
@@ -48,6 +47,7 @@ import { useSavedDraft } from "@/lib/use-saved-draft";
 import { cn } from "@/lib/utils";
 import {
   ArrowRight,
+  ChevronRight,
   FolderOpen,
   Keyboard,
   Mic,
@@ -55,15 +55,15 @@ import {
   Moon,
   RefreshCw,
   Search,
-  ChevronRight,
   Settings2,
   Shield,
-  Users,
   Sun,
   Type,
+  Users,
   X,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
+import { useTranslation } from "react-i18next";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router";
 import { version } from "../../package.json";
 
@@ -143,6 +143,7 @@ export function SettingsPage({
   const controlsDisabled = !isDesktop || busy || loading;
   const focusedTargetRequest = useRef<string | null>(null);
   const contentRef = useRef<HTMLDivElement>(null);
+  const profileBeforeClose = useRef<(() => Promise<boolean>) | null>(null);
   const targetFocusEpoch = useRef(0);
   const [query, setQuery] = useState("");
   const [searchIndex, setSearchIndex] = useState<
@@ -402,6 +403,7 @@ export function SettingsPage({
   const saving = autoSave.saving;
   useEffect(() => {
     beforeClose.current = async () => {
+      if (profileBeforeClose.current && !(await profileBeforeClose.current())) return false;
       if (dirty && retentionNeedsConfirm) {
         setConfirmRetention(true);
         return false;
@@ -603,7 +605,7 @@ export function SettingsPage({
               "[&_[data-slot=settings-section-content]]:px-0 [&_[data-slot=setting-row]]:items-center",
               "[&_[data-slot=select-trigger]]:h-auto [&_[data-slot=select-trigger]]:min-h-9 [&_[data-slot=select-trigger]]:min-w-0 [&_[data-slot=select-trigger]]:max-w-full [&_[data-slot=select-trigger]]:whitespace-normal",
               "[&_[data-slot=select-value]]:flex [&_[data-slot=select-value]]:whitespace-normal [&_[data-slot=select-value]]:[overflow-wrap:anywhere] [&_[data-slot=select-value]]:[-webkit-line-clamp:unset]",
-              "[&_[data-slot=settings-profiles]>[data-slot=settings-section]]:border-0 [&_[data-slot=settings-profiles]>[data-slot=settings-section]]:bg-transparent [&_[data-slot=settings-profiles]>[data-slot=settings-section]]:p-0",
+              "[&_[data-slot=profile-list]>[data-slot=settings-section]]:border-0 [&_[data-slot=profile-list]>[data-slot=settings-section]]:bg-transparent [&_[data-slot=profile-list]>[data-slot=settings-section]]:p-0",
               "@max-[24rem]/settings:[&_[data-slot=settings-section]]:p-2 @max-[24rem]/settings:[&_[data-slot=setting-row]]:py-2 @max-[24rem]/settings:[&_[data-slot=toggle-setting]]:py-2 @max-[24rem]/settings:[&_[data-slot=settings-section]]:[overflow-wrap:anywhere]",
               "@max-[24rem]/settings:[&_[data-slot=button]]:h-auto @max-[24rem]/settings:[&_[data-slot=button]]:min-h-9 @max-[24rem]/settings:[&_[data-slot=button]]:max-w-full @max-[24rem]/settings:[&_[data-slot=button]]:whitespace-normal @max-[24rem]/settings:[&_[data-slot=button]]:[overflow-wrap:anywhere]",
             )}
@@ -913,7 +915,10 @@ export function SettingsPage({
                 data-slot="settings-profiles"
                 className="space-y-5"
               >
-                <ProfilesPanel disabled={controlsDisabled || saving || dirty} />
+                <ProfilesPanel
+                  disabled={controlsDisabled || saving || dirty}
+                  beforeClose={profileBeforeClose}
+                />
               </TabsContent>
               <TabsContent
                 data-settings-category="general"
