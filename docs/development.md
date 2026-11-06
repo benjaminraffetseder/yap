@@ -129,6 +129,16 @@ ID, then run `go test . -run '^TestChatLiveLocalModel$' -v -count=1` from the re
 root. It uses synthetic history in a temporary database to check source updates,
 passage references, and conversation compaction without changing app settings.
 
+To smoke-test a built-in Gemma model on Windows x64, set `YAP_GEMMA_INTEGRATION`
+to `gemma-4-e2b`, `gemma-4-e4b`, or `gemma-4-12b`, then run
+`go test ./internal/inference/text -run '^TestManagedGemmaIntegration$' -v -count=1 -timeout 20m`.
+It downloads the pinned runtime and model into temporary storage, verifies hashes,
+and checks completion, streaming chat, and context-length reloads. The model
+downloads are several GB; normal tests use a small real child-process fixture.
+Set `YAP_TEXT_RUNTIME_INTEGRATION=1` and run
+`go test ./internal/models -run '^TestTextRuntimeDownloadIntegration$' -v -count=1`
+to validate the runtime packages and app-local C++ libraries without model downloads.
+
 Native and download tests are opt-in. Run them from the repo root on Windows:
 
 | Environment variable | Command | What it exercises |

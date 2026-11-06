@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"unicode/utf8"
+	"yap/internal/models"
 )
 
 type Prompt struct {
@@ -30,12 +31,15 @@ type Chain struct {
 }
 
 type Config struct {
-	Enabled      bool     `json:"enabled"`
-	Endpoint     string   `json:"endpoint"`
-	Model        string   `json:"model"`
-	AutoPromptID string   `json:"autoPromptId"` // Saved prompt or chain ID.
-	Prompts      []Prompt `json:"prompts"`
-	Chains       []Chain  `json:"chains"`
+	Provider      string   `json:"provider"`      // Empty/external preserves pre-built-in configurations.
+	ContextLength int      `json:"contextLength"` // 0 chooses a conservative hardware-based default.
+	APIKey        string   `json:"-"`             // Ephemeral worker credential; never persisted or exposed to the UI.
+	Enabled       bool     `json:"enabled"`
+	Endpoint      string   `json:"endpoint"`
+	Model         string   `json:"model"`
+	AutoPromptID  string   `json:"autoPromptId"` // Saved prompt or chain ID.
+	Prompts       []Prompt `json:"prompts"`
+	Chains        []Chain  `json:"chains"`
 }
 
 func Defaults() Config {
@@ -90,6 +94,23 @@ func Endpoint(value string) (*url.URL, error) {
 }
 
 func Normalize(v Config) (Config, error) {
+	if v.Provider != "" && v.Provider != "external" && v.Provider != "builtin" {
+		return Config{}, errors.New("choose built-in models or an external server")
+	}
+	if v.Provider == "builtin" {
+		m, ok := models.FindTextModel(v.Model)
+		if !ok {
+			return Config{}, errors.New("choose a built-in Gemma model")
+		}
+		if v.ContextLength != 0 && (v.ContextLength < 2048 || v.ContextLength > m.MaxContext || v.ContextLength%1024 != 0) {
+			return Config{}, fmt.Errorf("context length must be automatic or a multiple of 1,024 between 2,048 and %d tokens", m.MaxContext)
+		}
+		// A built-in connection is resolved only at inference time. Ignore a stale
+		// external URL rather than using it as the managed worker's address.
+		if v.APIKey == "" {
+			v.Endpoint = Defaults().Endpoint
+		}
+	}
 	u, err := Endpoint(v.Endpoint)
 	if err != nil {
 		return Config{}, err

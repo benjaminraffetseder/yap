@@ -82,7 +82,12 @@ func completeMeasured(ctx context.Context, config Config, system, input string, 
 	defer closeClient()
 	started := time.Now()
 	attempts := 0
-	for maxTokens := initialOutputTokens; ; maxTokens *= 2 {
+	initialBudget := initialOutputTokens
+	if config.Provider == "builtin" && config.ContextLength > 0 {
+		initialBudget = min(initialBudget, config.ContextLength/2)
+		outputLimit = min(outputLimit, config.ContextLength/2)
+	}
+	for maxTokens := initialBudget; ; maxTokens = min(maxTokens*2, outputLimit) {
 		if ctx.Err() != nil {
 			return "", ctx.Err()
 		}
@@ -101,6 +106,9 @@ func completeMeasured(ctx context.Context, config Config, system, input string, 
 			return "", err
 		}
 		req.Header.Set("Content-Type", "application/json")
+		if config.APIKey != "" {
+			req.Header.Set("Authorization", "Bearer "+config.APIKey)
+		}
 		attemptStarted := time.Now()
 		attempts++
 		resp, err := client.Do(req)
@@ -111,7 +119,11 @@ func completeMeasured(ctx context.Context, config Config, system, input string, 
 			return "", errors.New("could not reach the local model; start its server and check the URL")
 		}
 		if resp.StatusCode != http.StatusOK {
+			data, _ := io.ReadAll(io.LimitReader(resp.Body, 65536))
 			resp.Body.Close()
+			if config.Provider == "builtin" && (resp.StatusCode == 400 || resp.StatusCode == 413) && (strings.Contains(strings.ToLower(string(data)), "context") || strings.Contains(strings.ToLower(string(data)), "token")) {
+				return "", errors.New("the text exceeds the model's context; increase context length in Prompts or use a shorter transcript")
+			}
 			// Server bodies can echo prompts/transcripts. Do not put them in errors.
 			return "", fmt.Errorf("local model returned HTTP %d; check that the model is loaded and the server supports /v1/chat/completions", resp.StatusCode)
 		}

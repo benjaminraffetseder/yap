@@ -1,14 +1,14 @@
 import {
   AddVocabularyTerm,
-  ApplyDictationProfile,
   ApplyChatReply,
+  ApplyDictationProfile,
   BeginShortcutCapture,
   Cancel,
-  CancelTextProcessing,
   CancelBulkTextQueue,
+  CancelTextProcessing,
   CheckForUpdates,
-  ClearFinishedImports,
   ClearFinishedBulkTextJobs,
+  ClearFinishedImports,
   ClearSessionChat,
   CompleteSetup,
   CopyText,
@@ -33,8 +33,8 @@ import {
   GetRecentlyDeleted,
   GetRevisions,
   GetSession,
-  GetSessionOutputs,
   GetSessionChat,
+  GetSessionOutputs,
   GetSnapshot,
   GetTranscriptExportPreview,
   HomeResultAction,
@@ -42,6 +42,7 @@ import {
   ImportDroppedAudio,
   InstallAudioSupport,
   InstallModel,
+  InstallTextModel,
   ListTextModels,
   OpenUpdateDownload,
   PermanentlyDeleteSessions,
@@ -49,9 +50,11 @@ import {
   ProcessText,
   QueueBulkText,
   RefinePrompt,
+  RefinePromptWithConfig,
   RegenerateSessionOutput,
   RemoveImport,
   RemoveModel,
+  RemoveTextModel,
   RenameSession,
   ReorderImportQueue,
   RestartSetup,
@@ -59,31 +62,34 @@ import {
   RestoreSessions,
   RetryImport,
   RetryShortcut,
+  SaveChatReply,
   SaveDictationProfile,
   SaveLatestResult,
   SaveProfileAutomation,
   SaveSettings,
   SaveTextProcessing,
   SaveTranscript,
-  SaveChatReply,
-  SendChatMessage,
   SaveVocabulary,
   SelectFile,
+  SendChatMessage,
   SetSaveHistory,
+  StartChatVoice,
   StartDiagnosticTest,
   StartMicrophoneTest,
   StartRecording,
-  StartChatVoice,
+  StopChatVoice,
   StopDiagnosticTest,
   StopMicrophoneTest,
   StopRecording,
-  StopChatVoice,
   TestTextModel,
 } from "@bindings/yap/app";
 import type { Config } from "@bindings/yap/internal/inference/text/models";
 export { isDesktop } from "@/lib/desktop";
-export type { TranscriptExportPreview, TranscriptExportRequest } from "@bindings/yap/models";
-export type { BulkTextJob } from "@bindings/yap/models";
+export type {
+  BulkTextJob,
+  TranscriptExportPreview,
+  TranscriptExportRequest,
+} from "@bindings/yap/models";
 export type BulkTextRequest = {
   selection: TranscriptExportSelection;
   action: "title" | "output";
@@ -112,6 +118,8 @@ export type Revision = { id: number; createdAt: string; updatedAt: string; value
 export type PromptChainStep = { id: string; promptId: string; input: string };
 export type PromptChain = { id: string; name: string; steps: PromptChainStep[] };
 export type TextProcessing = {
+  provider?: string;
+  contextLength?: number;
   enabled: boolean;
   endpoint: string;
   model: string;
@@ -131,6 +139,8 @@ export function processingOptions(config: TextProcessing): ProcessingOption[] {
   ];
 }
 export const defaultTextProcessing: TextProcessing = {
+  provider: "external",
+  contextLength: 0,
   enabled: false,
   endpoint: "http://127.0.0.1:11434/v1",
   model: "",
@@ -350,7 +360,18 @@ export type Model = {
   diskBytes: number;
   removable: boolean;
 };
+export type TextModel = {
+  id: string;
+  name: string;
+  size: number;
+  maxContext: number;
+  installed: boolean;
+  diskBytes?: number;
+};
 export type Snapshot = {
+  textModels?: TextModel[];
+  textRuntimeAvailable?: boolean;
+  recommendedTextContext?: number;
   bulkTextQueue?: import("@bindings/yap/models").BulkTextJob[];
   importQueue?: ImportJob[];
   appProfileRules?: AppProfileRule[];
@@ -412,6 +433,8 @@ export type BackupPreview = {
 function normalizeTextProcessing(config: Config): TextProcessing {
   return {
     ...config,
+    provider: config.provider || "external",
+    contextLength: config.contextLength ?? 0,
     prompts: config.prompts ?? [],
     chains: (config.chains ?? []).map((chain) => ({ ...chain, steps: chain.steps ?? [] })),
   };
@@ -427,6 +450,21 @@ async function updateHistorySessions(ids: string[], update: (batch: string[]) =>
 }
 
 export const backend = {
+  installTextModel: InstallTextModel,
+  removeTextModel: RemoveTextModel,
+  refinePromptWithConfig: (id: string, config: TextProcessing, instruction: string) =>
+    config.provider === "builtin"
+      ? RefinePromptWithConfig(
+          id,
+          {
+            ...config,
+            provider: config.provider,
+            contextLength: config.contextLength ?? 0,
+            chains: config.chains ?? [],
+          },
+          instruction,
+        )
+      : RefinePrompt(id, config.endpoint, config.model, instruction),
   queueBulkText: (request: BulkTextRequest): Promise<number> =>
     QueueBulkText({
       ...request,
@@ -515,6 +553,7 @@ export const backend = {
       dictationProfiles: value.dictationProfiles ?? [],
       history: value.history ?? [],
       models: value.models ?? [],
+      textModels: value.textModels ?? [],
       vocabulary: (value.vocabulary ?? []).map((entry) => ({
         ...entry,
         aliases: entry.aliases ?? [],
@@ -614,7 +653,14 @@ export const backend = {
     return RetryShortcut();
   },
   textProcessing: async (config: TextProcessing): Promise<TextProcessing> =>
-    normalizeTextProcessing(await SaveTextProcessing({ ...config, chains: config.chains ?? [] })),
+    normalizeTextProcessing(
+      await SaveTextProcessing({
+        ...config,
+        provider: config.provider ?? "external",
+        contextLength: config.contextLength ?? 0,
+        chains: config.chains ?? [],
+      }),
+    ),
   processText: ProcessText,
   startChatVoice: StartChatVoice,
   stopChatVoice: StopChatVoice,

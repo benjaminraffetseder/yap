@@ -35,7 +35,11 @@ func (Local) Chat(ctx context.Context, config Config, messages []Message, onText
 	}
 	u, _ := Endpoint(config.Endpoint)
 	u.Path += "/chat/completions"
-	body, err := json.Marshal(map[string]any{"model": config.Model, "messages": messages, "stream": onText != nil, "temperature": 0.2, "max_tokens": 2048})
+	budget := 2048
+	if config.Provider == "builtin" && config.ContextLength > 0 {
+		budget = min(budget, config.ContextLength/2)
+	}
+	body, err := json.Marshal(map[string]any{"model": config.Model, "messages": messages, "stream": onText != nil, "temperature": 0.2, "max_tokens": budget})
 	if err != nil {
 		return "", err
 	}
@@ -48,6 +52,9 @@ func (Local) Chat(ctx context.Context, config Config, messages []Message, onText
 		return "", err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	if config.APIKey != "" {
+		req.Header.Set("Authorization", "Bearer "+config.APIKey)
+	}
 	resp, err := client.Do(req)
 	if err != nil {
 		if ctx.Err() != nil {

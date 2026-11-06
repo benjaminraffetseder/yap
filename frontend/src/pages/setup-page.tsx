@@ -1,10 +1,9 @@
-import i18n from "@/i18n";
-import { useTranslation } from "react-i18next";
-import { nativeText } from "@/i18n/native-text";
-import { useMotionPreference } from "@/lib/use-motion-preference";
 import { useDictation } from "@/components/dictation-provider";
+import { MotionReveal } from "@/components/motion-reveal";
 import { ShortcutInput } from "@/components/shortcut-input";
 import { ShortcutStatus } from "@/components/shortcut-status";
+import { TextModelLibrary } from "@/components/text-model-library";
+import { TextModelSettings } from "@/components/text-model-settings";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import {
@@ -15,7 +14,12 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { toastManager } from "@/components/ui/toast";
+import i18n from "@/i18n";
+import { nativeText } from "@/i18n/native-text";
 import { backend, isBusy, type Microphone } from "@/lib/backend";
+import { fade } from "@/lib/motion";
+import { useMotionPreference } from "@/lib/use-motion-preference";
+import { useTextRequest } from "@/lib/use-text-request";
 import { cn } from "@/lib/utils";
 import { ModelsPage } from "@/pages/models-page";
 import {
@@ -28,18 +32,17 @@ import {
   RefreshCw,
   Square,
 } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
-import { Link } from "react-router";
 import { AnimatePresence, motion } from "motion/react";
-import { MotionReveal } from "@/components/motion-reveal";
-import { fade } from "@/lib/motion";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
+import { Link } from "react-router";
 
 export function SetupPage() {
   const { t } = useTranslation();
   const steps = [
     {
       label: t("common.speechModel"),
-      shortLabel: t("common.model"),
+      shortLabel: t("modelsPage.speechShort"),
       icon: HardDriveDownload,
       title: t("setupPage.chooseYourSpeechModel"),
       description: t("setupPage.pickTheModelThatFitsYourDay"),
@@ -53,10 +56,17 @@ export function SetupPage() {
     },
     {
       label: t("setupPage.shortcut"),
-      shortLabel: t("setupPage.shortcut"),
+      shortLabel: t("setupPage.shortcutShort"),
       icon: Keyboard,
       title: t("setupPage.oneShortcutReadyWhenYouAre"),
       description: t("setupPage.setAGlobalShortcutSoYapIs"),
+    },
+    {
+      label: t("promptsPage.textModel"),
+      shortLabel: t("modelsPage.textShort"),
+      icon: HardDriveDownload,
+      title: t("setupPage.addTextModel"),
+      description: t("setupPage.textModelDescription"),
     },
   ];
 
@@ -68,6 +78,16 @@ export function SetupPage() {
   const [mic, setMic] = useState(snapshot.settings.microphoneId);
   const [shortcut, setShortcut] = useState(snapshot.settings.shortcut);
   const [pending, setPending] = useState(false);
+  const textTest = useTextRequest();
+  const [testedConnection, setTestedConnection] = useState("");
+  const textConfig = snapshot.textProcessing;
+  const textConnection = `${textConfig.provider}:${textConfig.model}:${textConfig.contextLength ?? 0}`;
+  const textReady =
+    textConfig.enabled &&
+    !!textConfig.model &&
+    (textConfig.provider !== "builtin" ||
+      (snapshot.textRuntimeAvailable &&
+        !!snapshot.textModels?.some((model) => model.id === textConfig.model && model.installed)));
   const [micAttempted, setMicAttempted] = useState(false);
   const stepHeading = useRef<HTMLHeadingElement>(null);
   const footer = useRef<HTMLElement>(null);
@@ -83,7 +103,7 @@ export function SetupPage() {
     }
   }, []);
   const testing = snapshot.status.phase === "mic-test";
-  const busy = isBusy(snapshot.status.phase);
+  const busy = isBusy(snapshot.status.phase) || textTest.pending;
   useEffect(() => {
     const element = footer.current;
     if (!element) return;
@@ -144,28 +164,34 @@ export function SetupPage() {
   ];
   async function action(work: () => Promise<unknown>) {
     setPending(true);
-    await run(work);
-    setPending(false);
+    try {
+      await run(work);
+    } finally {
+      setPending(false);
+    }
   }
   const micPassed = snapshot.microphoneTested && mic === snapshot.settings.microphoneId;
   const shortcutPassed =
     snapshot.shortcutTested &&
     shortcut === snapshot.settings.shortcut &&
     !snapshot.status.shortcutError;
-  const completed = [snapshot.ready, micPassed, shortcutPassed];
+  const dictationReady = snapshot.ready && micPassed && shortcutPassed;
+  const completed = [snapshot.ready, micPassed, shortcutPassed, textReady];
   const canContinue = completed[step];
   const inputLevel = Math.min(1, Math.max(0, level));
   const guidance = canContinue
-    ? step === 2
+    ? step === steps.length - 1
       ? t("setupPage.everythingIsReadyLetSStartDictating")
       : t("setupPage.upNext", { step: steps[step + 1].label.toLowerCase() })
     : step === 0
       ? t("setupPage.downloadOrSelectAModelToContinue")
       : step === 1
         ? t("setupPage.testYourMicrophoneToContinue")
-        : shortcut !== snapshot.settings.shortcut
-          ? t("setupPage.applyYourShortcutThenPressItOnce")
-          : t("setupPage.pressYourShortcutOnceToFinishSetup");
+        : step === 3
+          ? t("setupPage.textModelOptionalHelp")
+          : shortcut !== snapshot.settings.shortcut
+            ? t("setupPage.applyYourShortcutThenPressItOnce")
+            : t("setupPage.pressYourShortcutOnceToFinishSetup");
   return (
     <div className="@container/setup flex min-h-[calc(100dvh-2rem)] flex-col gap-8">
       <header className="flex flex-wrap items-center justify-between gap-4">
@@ -174,13 +200,13 @@ export function SetupPage() {
         </div>
         <ol
           aria-label={t("setupPage.setupSteps")}
-          className="grid min-w-0 grid-cols-3 gap-2 @min-[40rem]/setup:gap-3"
+          className="grid min-w-0 grid-cols-4 gap-2 @min-[40rem]/setup:grid-cols-[repeat(4,auto)] @min-[40rem]/setup:gap-3"
         >
           {steps.map(({ label, shortLabel, icon: Icon }, index) => (
             <li
               key={label}
               aria-current={index === step ? "step" : undefined}
-              className="flex min-w-0 flex-col gap-3 p-2 @min-[40rem]/setup:flex-row @min-[40rem]/setup:items-center @min-[40rem]/setup:p-3"
+              className="flex min-w-0 flex-col gap-3 p-1 @min-[40rem]/setup:flex-row @min-[40rem]/setup:items-center @min-[40rem]/setup:p-3"
             >
               <span
                 className={cn(
@@ -235,6 +261,62 @@ export function SetupPage() {
           className="min-w-0 pb-[calc(var(--setup-footer-height,5rem)+1rem)]"
         >
           {step === 0 && <ModelsPage embedded />}
+          {step === 3 && (
+            <section aria-label={t("setupPage.textModelSetup")} className="space-y-6">
+              <TextModelLibrary embedded disabled={pending} />
+              {textReady && (
+                <section className="rounded-xl border bg-card px-5">
+                  {textConfig.provider === "builtin" ? (
+                    <TextModelSettings
+                      value={textConfig}
+                      disabled={busy || pending}
+                      showModelPicker={false}
+                      onChange={(value) =>
+                        void action(() => backend.textProcessing({ ...textConfig, ...value }))
+                      }
+                    />
+                  ) : (
+                    <p className="py-4 text-sm text-muted-foreground">
+                      {t("setupPage.externalTextModelReady", { model: textConfig.model })}
+                    </p>
+                  )}
+                  <div className="space-y-2 border-t py-4">
+                    {textTest.pending ? (
+                      <Button variant="outline" size="sm" onClick={() => void textTest.cancel()}>
+                        {t("promptsPage.cancelTest")}
+                      </Button>
+                    ) : (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={busy || pending}
+                        onClick={() => {
+                          setTestedConnection(textConnection);
+                          void textTest.request(backend.testTextModel);
+                        }}
+                      >
+                        {t("promptsPage.testModel")}
+                      </Button>
+                    )}
+                    <p
+                      role={
+                        textTest.error && testedConnection === textConnection ? "alert" : "status"
+                      }
+                      className="text-xs leading-5 text-muted-foreground"
+                    >
+                      {textTest.pending
+                        ? t("promptsPage.testingModel")
+                        : testedConnection === textConnection && textTest.error
+                          ? nativeText(textTest.error)
+                          : testedConnection === textConnection && textTest.result
+                            ? t("promptsPage.modelRespondedSuccessfully")
+                            : t("textModels.firstLoad")}
+                    </p>
+                  </div>
+                </section>
+              )}
+            </section>
+          )}
           {step === 1 && (
             <section
               aria-label={t("setupPage.microphoneSetup")}
@@ -481,17 +563,19 @@ export function SetupPage() {
       </AnimatePresence>
       <footer
         ref={footer}
-        className="sticky bottom-0 z-20 -mb-8 mt-auto flex flex-wrap items-center justify-between gap-4 border-t bg-background py-5"
+        className="sticky bottom-0 z-20 -mb-8 mt-auto flex flex-wrap items-center justify-between gap-3 border-t bg-background py-5"
       >
         <div className="flex items-center gap-2">
-          <Button
-            variant="ghost"
-            className="text-muted-foreground"
-            disabled={busy || pending}
-            onClick={() => void action(() => backend.completeSetup(true))}
-          >
-            {t("setupPage.skipSetup")}
-          </Button>
+          {step < steps.length - 1 && (
+            <Button
+              variant="ghost"
+              className="text-muted-foreground"
+              disabled={busy || pending}
+              onClick={() => void action(() => backend.completeSetup(true))}
+            >
+              {t("setupPage.skipSetup")}
+            </Button>
+          )}
           {step > 0 && (
             <Button
               variant="outline"
@@ -506,12 +590,19 @@ export function SetupPage() {
           )}
         </div>
         <div className="flex flex-wrap items-center gap-3">
-          <p className="text-xs text-muted-foreground">{guidance}</p>
-          {step < 2 ? (
+          <p
+            className={cn(
+              "text-xs text-muted-foreground",
+              step === 3 && "@max-[40rem]/setup:sr-only",
+            )}
+          >
+            {guidance}
+          </p>
+          {step < steps.length - 1 ? (
             <Button
               pressFeedback
               className="disabled:bg-muted disabled:text-muted-foreground"
-              disabled={busy || pending || (step === 0 ? !snapshot.ready : !micPassed)}
+              disabled={busy || pending || !canContinue}
               onClick={(event) =>
                 setNavigation({ step: step + 1, direction: 1, animate: event.detail > 0 })
               }
@@ -520,15 +611,39 @@ export function SetupPage() {
               <ArrowRight className="size-4" aria-hidden="true" />
             </Button>
           ) : (
-            <Button
-              pressFeedback
-              className="disabled:bg-muted disabled:text-muted-foreground"
-              disabled={busy || pending || !shortcutPassed}
-              onClick={() => void action(() => backend.completeSetup(false))}
-            >
-              {t("setupPage.finishSetup")}
-              <ArrowRight className="size-4" aria-hidden="true" />
-            </Button>
+            <>
+              {!textReady && (
+                <Button
+                  variant="outline"
+                  disabled={busy || pending || !dictationReady}
+                  onClick={() =>
+                    void action(async () => {
+                      if (textConfig.enabled)
+                        await backend.textProcessing({
+                          ...textConfig,
+                          enabled: false,
+                          autoPromptId: "",
+                        });
+                      await backend.completeSetup(false);
+                    })
+                  }
+                >
+                  {t("setupPage.skipTextModel")}
+                </Button>
+              )}
+              <Button
+                pressFeedback
+                className={cn(
+                  "disabled:bg-muted disabled:text-muted-foreground",
+                  !textReady && "@max-[40rem]/setup:hidden",
+                )}
+                disabled={busy || pending || !dictationReady || !textReady}
+                onClick={() => void action(() => backend.completeSetup(false))}
+              >
+                {t("setupPage.finishSetup")}
+                <ArrowRight className="size-4" aria-hidden="true" />
+              </Button>
+            </>
           )}
         </div>
       </footer>

@@ -56,7 +56,8 @@ saved combination intact. On macOS, grant Accessibility access before retrying.
 
 ### Choosing a speech model
 
-Models opens on **Downloaded** when you already have an installed model. Choose
+Use the **Speech models / Text models** segments at the top of Models to switch
+catalogs. The speech catalog opens on **Downloaded** when you already have an installed model. Choose
 **All models** to browse the full catalog, or search by model name or language.
 Select a model's language count to search its supported languages.
 **Help me choose** opens optional language and task guidance; choosing guidance
@@ -279,10 +280,41 @@ See [Audio support](audio-support.md) for manual setup and download details.
 
 ## Local text models
 
-Text processing is optional. It needs a running model server on your computer;
-Yap doesn't install the server or load a GGUF file itself.
+Text processing is optional. Setup introduces it after the speech, microphone,
+and shortcut checks. Download a text model and choose **Use model** to enable it,
+set context length, and optionally test a response before finishing. **Skip for now**
+finishes with dictation only; you can add a text model later in Models.
+If you already use LM Studio or Ollama, you can use the models downloaded in that
+app instead. Skip this setup step, then select **External server** under
+**Prompts → Text model** and connect its local server.
 
-In **Prompts → Text model**, select a server and model, turn on **Enable text
+On Windows x64, open **Models → Text models**
+to download Gemma 4 E2B, E4B, or 12B. Yap installs a pinned llama.cpp runtime and
+verifies downloaded files automatically. The models use Google's instruction-tuned,
+QAT four-bit GGUF weights. No LM Studio, Ollama, Python, or separate runtime
+installation is required. The initial download needs internet; inference works offline.
+
+In **Prompts → Text model**, select **Yap · built-in models**, choose your downloaded
+model, and turn on **Enable text processing**. **Context length** sets the token
+space shared by instructions, transcripts, conversation, and replies. Choose
+Automatic (a conservative default based on system memory), or an explicit limit
+up to the model's maximum. Larger contexts use more working memory. Changes save
+automatically and reload the model on its next request.
+
+Yap tries Vulkan GPU acceleration and falls back to CPU if loading fails. The
+first request loads the model; it stays available between requests and is unloaded
+after two idle minutes. Quitting Yap also stops the worker. A model's **More actions**
+menu offers **Verify / repair** and **Remove**. Downloads can be cancelled in
+Activity and resumed later; completed chunks are kept until the download is
+finished or removed. Switch away from a selected model before removing it.
+
+llama.cpp uses the MIT license and Gemma 4 uses Apache 2.0. License copies are
+installed alongside the runtime under the app data folder's `runtime` directory.
+Microsoft's C++ runtime libraries are downloaded into that same private directory,
+so no system-wide C++ redistributable installation or administrator access is needed.
+
+For an external server, select **External server** in **Prompts → Text model**,
+select a server and model, turn on **Enable text
 processing**, wait until the changes are saved, and choose **Test model**. The presets
 use these base URLs:
 
@@ -295,7 +327,8 @@ use these base URLs:
 Use a loopback URL ending in `/v1`, without `/api` or `/models`. Remote endpoints
 and API keys aren't supported. A listed model may still need loading in your
 server; **Test model** checks whether it can generate text. You can enter a model
-ID manually if the server doesn't list models.
+ID manually if the server doesn't list models. Configure context length in the
+external server itself.
 
 Cleanup and Summary prompts are included. Select one from the saved prompt library
 (or the **Saved prompt** picker in a narrow window). Edit it or add your own; there can

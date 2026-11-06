@@ -29,7 +29,13 @@ func (a *App) SaveTextProcessing(config textmodel.Config) (textmodel.Config, err
 	if err = a.store.SaveTextProcessing(normalized); err != nil {
 		return textmodel.Config{}, err
 	}
+	connectionChanged := a.textConfig.Provider != normalized.Provider || a.textConfig.Model != normalized.Model || a.textConfig.ContextLength != normalized.ContextLength || !normalized.Enabled
 	a.textConfig = normalized
+	if connectionChanged {
+		if engine, ok := a.textEngine.(interface{ Release() }); ok {
+			engine.Release()
+		}
+	}
 	a.event("setup:changed")
 	return textmodel.Normalize(normalized)
 }
@@ -61,6 +67,13 @@ type textRequest struct {
 // not require valid saved prompts or persist any settings or generated outputs.
 func (a *App) RefinePrompt(requestID, endpoint, model, instruction string) (string, error) {
 	return a.processTextRequest(requestID, textRequest{input: instruction, refinement: &promptRefinement{endpoint: endpoint, model: model}})
+}
+
+// Built-in refinement uses the complete draft connection, including its context
+// length, while preserving the existing external-server method contract.
+func (a *App) RefinePromptWithConfig(requestID string, config textmodel.Config, instruction string) (string, error) {
+	config.Enabled, config.AutoPromptID, config.Prompts, config.Chains = true, "", nil, nil
+	return a.processTextRequest(requestID, textRequest{input: instruction, config: &config, refinement: &promptRefinement{}})
 }
 
 // GenerateSessionTitle returns a suggestion only. RenameSession explicitly saves
@@ -200,7 +213,9 @@ func (a *App) processTextRequestLocked(requestID string, request textRequest) (s
 		configSource = *request.config
 	}
 	if request.refinement != nil {
-		configSource = textmodel.Config{Enabled: true, Endpoint: request.refinement.endpoint, Model: request.refinement.model}
+		if request.config == nil {
+			configSource = textmodel.Config{Enabled: true, Endpoint: request.refinement.endpoint, Model: request.refinement.model}
+		}
 		if err := textmodel.ValidateInstruction(input); err != nil {
 			a.mu.Unlock()
 			return "", err

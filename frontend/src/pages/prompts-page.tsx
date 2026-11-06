@@ -1,6 +1,3 @@
-import i18n from "@/i18n";
-import { nativeText } from "@/i18n/native-text";
-import { useTranslation } from "react-i18next";
 import { AutoSaveStatus } from "@/components/auto-save-status";
 import { useDictation } from "@/components/dictation-provider";
 import { ProfileSettingIndicator } from "@/components/profile-setting-indicator";
@@ -8,6 +5,7 @@ import { PromptChainsEditor } from "@/components/prompt-chains-editor";
 import { RevisionHistory } from "@/components/revision-history";
 import { SectionTabs } from "@/components/section-tabs";
 import { SettingRow, ToggleSetting } from "@/components/settings-section";
+import { TextModelSettings } from "@/components/text-model-settings";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -30,6 +28,8 @@ import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent } from "@/components/ui/tabs";
 import { toastManager } from "@/components/ui/toast";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import i18n from "@/i18n";
+import { nativeText } from "@/i18n/native-text";
 import {
   backend,
   defaultTextProcessing,
@@ -48,6 +48,7 @@ import { useTextRequest } from "@/lib/use-text-request";
 import { Menu } from "@base-ui/react/menu";
 import { Ellipsis, History, Info, Plus, RefreshCw, Sparkles, Trash2 } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useSearchParams } from "react-router";
 
 const localServers = [
@@ -115,10 +116,12 @@ export function PromptsPage() {
     prompt: TextPrompt;
     endpoint: string;
     model: string;
+    config: TextProcessing;
   } | null>(null);
   const [refinementNotice, setRefinementNotice] = useState("");
   const refineButton = useRef<HTMLButtonElement>(null);
-  const discovery = useModelDiscovery(draft.endpoint, isDesktop && !loading);
+  const builtin = draft.provider === "builtin";
+  const discovery = useModelDiscovery(draft.endpoint, isDesktop && !loading && !builtin);
   const [manualModel, setManualModel] = useState(false);
   const [customServer, setCustomServer] = useState(false);
   const presetEndpoint = draft.endpoint
@@ -179,7 +182,9 @@ export function PromptsPage() {
       (p) => p.id === refining.prompt.id && p.instruction === refining.prompt.instruction,
     ) &&
     draft.endpoint === refining.endpoint &&
-    draft.model === refining.model;
+    draft.model === refining.model &&
+    draft.provider === refining.config.provider &&
+    draft.contextLength === refining.config.contextLength;
   function update(value: Partial<TextProcessing>) {
     setDraft((old) => ({ ...old, ...value }));
     modelTest.clear();
@@ -234,11 +239,12 @@ export function PromptsPage() {
       prompt: { ...prompt },
       endpoint: draft.endpoint,
       model: draft.model,
+      config: { ...draft },
     };
     setRefining(value);
     setRefinementNotice("");
     void refinement.request((id) =>
-      backend.refinePrompt(id, value.endpoint, value.model, value.prompt.instruction),
+      backend.refinePromptWithConfig(id, value.config, value.prompt.instruction),
     );
   }
   function closeRefinement() {
@@ -318,12 +324,14 @@ export function PromptsPage() {
           <p className="mb-4 max-w-2xl text-sm leading-6 text-muted-foreground">
             {t("uiPolish.textModelIntro")}
           </p>
-          <details className="mb-4 text-sm text-muted-foreground">
-            <summary className="cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-ring">
-              {t("uiPolish.localTextSetup")}
-            </summary>
-            <p className="mt-2 max-w-2xl leading-6">{t("uiPolish.localTextSetupHelp")}</p>
-          </details>
+          {!builtin && (
+            <details className="mb-4 text-sm text-muted-foreground">
+              <summary className="cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                {t("uiPolish.localTextSetup")}
+              </summary>
+              <p className="mt-2 max-w-2xl leading-6">{t("uiPolish.localTextSetupHelp")}</p>
+            </details>
+          )}
           <section aria-label={t("promptsPage.textModel")} className="max-w-3xl divide-y">
             <fieldset disabled={controlsDisabled} className="divide-y disabled:opacity-60">
               <ToggleSetting
@@ -342,187 +350,267 @@ export function PromptsPage() {
                   })
                 }
               />
-              <SettingRow title={t("promptsPage.server")} htmlFor="llm-server">
+              <SettingRow title={t("textModels.provider")} htmlFor="text-provider">
                 <Select
-                  items={serverOptions}
-                  value={server}
-                  disabled={!isDesktop || busy || loading}
-                  onValueChange={(value) => {
-                    if (value === "custom") setCustomServer(true);
-                    else {
-                      const preset = localServers.find((item) => item.value === value);
-                      if (preset) {
-                        setCustomServer(false);
-                        update({ endpoint: preset.endpoint });
-                      }
-                    }
+                  items={[
+                    { value: "builtin", label: t("textModels.builtin") },
+                    { value: "external", label: t("textModels.external") },
+                  ]}
+                  value={builtin ? "builtin" : "external"}
+                  onValueChange={(provider) => {
+                    if (!provider) return;
+                    update({
+                      provider,
+                      model: provider === "builtin" ? "gemma-4-e2b" : builtin ? "" : draft.model,
+                      contextLength: 0,
+                    });
                   }}
                 >
-                  <SelectTrigger
-                    id="llm-server"
-                    className="data-[size=default]:h-9 w-full rounded-md bg-background"
-                  >
+                  <SelectTrigger id="text-provider" className="w-full">
                     <SelectValue />
                   </SelectTrigger>
-                  <SelectContent alignItemWithTrigger={false} align="start">
-                    <div className="p-1">
-                      {serverOptions.map((option) => (
-                        <SelectItem key={option.value} value={option.value}>
-                          {option.label}
-                        </SelectItem>
-                      ))}
-                    </div>
+                  <SelectContent>
+                    <SelectItem value="builtin">{t("textModels.builtin")}</SelectItem>
+                    <SelectItem value="external">{t("textModels.external")}</SelectItem>
                   </SelectContent>
                 </Select>
               </SettingRow>
-              <details
-                open={server === "custom" || undefined}
-                className="py-3 text-xs text-muted-foreground"
-              >
-                <summary
-                  className={
-                    server === "custom"
-                      ? "hidden"
-                      : "cursor-pointer rounded outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                  }
-                >
-                  {t("uiPolish.serverAddress")}
-                </summary>
-                <SettingRow title={t("promptsPage.localServerURL")} htmlFor="llm-endpoint">
-                  <Input
-                    id="llm-endpoint"
-                    value={draft.endpoint}
-                    placeholder="http://127.0.0.1:1234/v1"
-                    aria-describedby="llm-endpoint-help"
-                    onChange={(event) => update({ endpoint: event.target.value })}
-                  />
-                  <p id="llm-endpoint-help" className="mt-2 text-xs text-muted-foreground">
-                    {t("promptsPage.useTheLocalV1BaseURLWithout")}
-                  </p>
-                  <p className="mt-2 text-xs leading-5 text-muted-foreground">
-                    {t("promptsPage.modelsAreListedForTheSelectedServer")}
+              {!builtin && (
+                <>
+                  <SettingRow title={t("promptsPage.server")} htmlFor="llm-server">
+                    <Select
+                      items={serverOptions}
+                      value={server}
+                      disabled={!isDesktop || busy || loading}
+                      onValueChange={(value) => {
+                        if (value === "custom") setCustomServer(true);
+                        else {
+                          const preset = localServers.find((item) => item.value === value);
+                          if (preset) {
+                            setCustomServer(false);
+                            update({ endpoint: preset.endpoint });
+                          }
+                        }
+                      }}
+                    >
+                      <SelectTrigger
+                        id="llm-server"
+                        className="data-[size=default]:h-9 w-full rounded-md bg-background"
+                      >
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent alignItemWithTrigger={false} align="start">
+                        <div className="p-1">
+                          {serverOptions.map((option) => (
+                            <SelectItem key={option.value} value={option.value}>
+                              {option.label}
+                            </SelectItem>
+                          ))}
+                        </div>
+                      </SelectContent>
+                    </Select>
+                  </SettingRow>
+                  <details
+                    open={server === "custom" || undefined}
+                    className="py-3 text-xs text-muted-foreground"
+                  >
+                    <summary
+                      className={
+                        server === "custom"
+                          ? "hidden"
+                          : "cursor-pointer rounded outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      }
+                    >
+                      {t("uiPolish.serverAddress")}
+                    </summary>
+                    <SettingRow title={t("promptsPage.localServerURL")} htmlFor="llm-endpoint">
+                      <Input
+                        id="llm-endpoint"
+                        value={draft.endpoint}
+                        placeholder="http://127.0.0.1:1234/v1"
+                        aria-describedby="llm-endpoint-help"
+                        onChange={(event) => update({ endpoint: event.target.value })}
+                      />
+                      <p id="llm-endpoint-help" className="mt-2 text-xs text-muted-foreground">
+                        {t("promptsPage.useTheLocalV1BaseURLWithout")}
+                      </p>
+                      <p className="mt-2 text-xs leading-5 text-muted-foreground">
+                        {t("promptsPage.modelsAreListedForTheSelectedServer")}
+                      </p>
+                    </SettingRow>
+                  </details>
+                </>
+              )}
+            </fieldset>
+            {builtin ? (
+              <>
+                <TextModelSettings value={draft} disabled={controlsDisabled} onChange={update} />
+                <SettingRow title={t("promptsPage.connectionTest")}>
+                  {modelTest.pending ? (
+                    <Button variant="outline" size="sm" onClick={() => void modelTest.cancel()}>
+                      {t("promptsPage.cancelTest")}
+                    </Button>
+                  ) : (
+                    <Button
+                      size="sm"
+                      disabled={
+                        controlsDisabled ||
+                        dirty ||
+                        !saved.enabled ||
+                        !snapshot.textRuntimeAvailable ||
+                        !snapshot.textModels?.find((model) => model.id === draft.model)?.installed
+                      }
+                      onClick={() => void modelTest.request(backend.testTextModel)}
+                    >
+                      {t("promptsPage.testModel")}
+                    </Button>
+                  )}
+                  <p role="status" className="mt-2 text-xs text-muted-foreground">
+                    {modelTest.pending
+                      ? t("promptsPage.testingModel")
+                      : modelTest.error
+                        ? nativeText(modelTest.error)
+                        : modelTest.result
+                          ? t("promptsPage.modelRespondedSuccessfully")
+                          : dirty
+                            ? t("promptsPage.waitUntilSavedBeforeTesting")
+                            : t("textModels.firstLoad")}
                   </p>
                 </SettingRow>
-              </details>
-            </fieldset>
-            <SettingRow title={t("common.model")} htmlFor="llm-picker">
-              <div className="space-y-3">
-                <fieldset disabled={controlsDisabled} className="space-y-3 disabled:opacity-60">
-                  <Select
-                    items={modelOptions}
-                    value={manual ? "manual" : `model:${draft.model}`}
-                    disabled={!isDesktop || busy || loading}
-                    onValueChange={(value) => {
-                      if (value === "manual") setManualModel(true);
-                      else if (value?.startsWith("model:")) {
-                        setManualModel(false);
-                        update({ model: value.slice(6) });
-                      }
-                    }}
-                  >
-                    <SelectTrigger
-                      id="llm-picker"
-                      className="data-[size=default]:h-9 w-full min-w-0 rounded-md bg-background"
-                      aria-describedby="llm-discovery-status"
-                    >
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent alignItemWithTrigger={false} align="start">
-                      <div className="p-1">
-                        {modelOptions.map((option) => (
-                          <SelectItem key={option.value} value={option.value}>
-                            {option.label}
-                          </SelectItem>
-                        ))}
-                      </div>
-                    </SelectContent>
-                  </Select>
-                  {manual && (
-                    <div className="space-y-2">
-                      <Label htmlFor="llm-model">{t("promptsPage.modelIdentifier")}</Label>
-                      <Input
-                        id="llm-model"
-                        maxLength={200}
-                        value={draft.model}
-                        placeholder={t("promptsPage.modelIDFromYourServer")}
-                        onChange={(event) => {
-                          setManualModel(true);
-                          update({ model: event.target.value });
+              </>
+            ) : (
+              <>
+                <SettingRow title={t("common.model")} htmlFor="llm-picker">
+                  <div className="space-y-3">
+                    <fieldset disabled={controlsDisabled} className="space-y-3 disabled:opacity-60">
+                      <Select
+                        items={modelOptions}
+                        value={manual ? "manual" : `model:${draft.model}`}
+                        disabled={!isDesktop || busy || loading}
+                        onValueChange={(value) => {
+                          if (value === "manual") setManualModel(true);
+                          else if (value?.startsWith("model:")) {
+                            setManualModel(false);
+                            update({ model: value.slice(6) });
+                          }
                         }}
-                      />
-                    </div>
-                  )}
-                </fieldset>
-                <div
-                  role="group"
-                  aria-label={t("promptsPage.connectionTest")}
-                  className="space-y-2"
-                >
-                  <div className="flex flex-wrap items-center gap-2">
-                    {modelTest.pending ? (
-                      <div className="flex flex-wrap items-center gap-3" role="status">
-                        <span className="text-sm">{t("promptsPage.testingModel")}</span>
-                        <Button variant="outline" size="sm" onClick={() => void modelTest.cancel()}>
-                          {t("promptsPage.cancelTest")}
-                        </Button>
-                      </div>
-                    ) : (
-                      <div className="flex flex-wrap items-center gap-3">
-                        <Button
-                          size="sm"
-                          disabled={controlsDisabled || dirty || !saved.enabled}
-                          onClick={() => void modelTest.request(backend.testTextModel)}
+                      >
+                        <SelectTrigger
+                          id="llm-picker"
+                          className="data-[size=default]:h-9 w-full min-w-0 rounded-md bg-background"
+                          aria-describedby="llm-discovery-status"
                         >
-                          {t("promptsPage.testModel")}
-                        </Button>
-                        {dirty && (
-                          <span className="text-xs text-muted-foreground">
-                            {t("promptsPage.waitUntilSavedBeforeTesting")}
-                          </span>
-                        )}
-                      </div>
-                    )}
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      disabled={controlsDisabled || discovery.phase === "checking"}
-                      onClick={() => void discovery.refresh()}
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent alignItemWithTrigger={false} align="start">
+                          <div className="p-1">
+                            {modelOptions.map((option) => (
+                              <SelectItem key={option.value} value={option.value}>
+                                {option.label}
+                              </SelectItem>
+                            ))}
+                          </div>
+                        </SelectContent>
+                      </Select>
+                      {manual && (
+                        <div className="space-y-2">
+                          <Label htmlFor="llm-model">{t("promptsPage.modelIdentifier")}</Label>
+                          <Input
+                            id="llm-model"
+                            maxLength={200}
+                            value={draft.model}
+                            placeholder={t("promptsPage.modelIDFromYourServer")}
+                            onChange={(event) => {
+                              setManualModel(true);
+                              update({ model: event.target.value });
+                            }}
+                          />
+                        </div>
+                      )}
+                    </fieldset>
+                    <div
+                      role="group"
+                      aria-label={t("promptsPage.connectionTest")}
+                      className="space-y-2"
                     >
-                      <RefreshCw
-                        className={`size-3.5 ${discovery.phase === "checking" ? "animate-spin motion-reduce:animate-none" : ""}`}
-                      />
-                      {t("promptsPage.refreshModels")}
-                    </Button>
+                      <div className="flex flex-wrap items-center gap-2">
+                        {modelTest.pending ? (
+                          <div className="flex flex-wrap items-center gap-3" role="status">
+                            <span className="text-sm">{t("promptsPage.testingModel")}</span>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => void modelTest.cancel()}
+                            >
+                              {t("promptsPage.cancelTest")}
+                            </Button>
+                          </div>
+                        ) : (
+                          <div className="flex flex-wrap items-center gap-3">
+                            <Button
+                              size="sm"
+                              disabled={controlsDisabled || dirty || !saved.enabled}
+                              onClick={() => void modelTest.request(backend.testTextModel)}
+                            >
+                              {t("promptsPage.testModel")}
+                            </Button>
+                            {dirty && (
+                              <span className="text-xs text-muted-foreground">
+                                {t("promptsPage.waitUntilSavedBeforeTesting")}
+                              </span>
+                            )}
+                          </div>
+                        )}
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={controlsDisabled || discovery.phase === "checking"}
+                          onClick={() => void discovery.refresh()}
+                        >
+                          <RefreshCw
+                            className={`size-3.5 ${discovery.phase === "checking" ? "animate-spin motion-reduce:animate-none" : ""}`}
+                          />
+                          {t("promptsPage.refreshModels")}
+                        </Button>
+                      </div>
+                      <p
+                        id="llm-discovery-status"
+                        hidden={modelTest.pending}
+                        role={
+                          modelTest.error
+                            ? undefined
+                            : discovery.phase === "error"
+                              ? "alert"
+                              : "status"
+                        }
+                        className={`text-xs leading-5 ${modelTest.error || discovery.phase === "error" ? "text-destructive" : "text-muted-foreground"}`}
+                      >
+                        {modelTest.error
+                          ? nativeText(modelTest.error)
+                          : modelTest.result
+                            ? t("promptsPage.modelRespondedSuccessfully")
+                            : discovery.phase === "checking"
+                              ? t("promptsPage.checkingServer")
+                              : discovery.phase === "error"
+                                ? discovery.error
+                                : discovery.phase === "ready"
+                                  ? discovery.models.length === 0
+                                    ? t("promptsPage.serverRespondedNoModelsListedDownloadOr")
+                                    : draft.model && !listed
+                                      ? t("promptsPage.serverRespondedThisModelIsNotListed")
+                                      : t("promptsPage.serverRespondedAvailable", {
+                                          count: discovery.models.length,
+                                        })
+                                  : t("promptsPage.checkingAvailableModels")}
+                      </p>
+                    </div>
                   </div>
-                  <p
-                    id="llm-discovery-status"
-                    hidden={modelTest.pending}
-                    role={
-                      modelTest.error ? undefined : discovery.phase === "error" ? "alert" : "status"
-                    }
-                    className={`text-xs leading-5 ${modelTest.error || discovery.phase === "error" ? "text-destructive" : "text-muted-foreground"}`}
-                  >
-                    {modelTest.error
-                      ? nativeText(modelTest.error)
-                      : modelTest.result
-                        ? t("promptsPage.modelRespondedSuccessfully")
-                        : discovery.phase === "checking"
-                          ? t("promptsPage.checkingServer")
-                          : discovery.phase === "error"
-                            ? discovery.error
-                            : discovery.phase === "ready"
-                              ? discovery.models.length === 0
-                                ? t("promptsPage.serverRespondedNoModelsListedDownloadOr")
-                                : draft.model && !listed
-                                  ? t("promptsPage.serverRespondedThisModelIsNotListed")
-                                  : t("promptsPage.serverRespondedAvailable", {
-                                      count: discovery.models.length,
-                                    })
-                              : t("promptsPage.checkingAvailableModels")}
-                  </p>
-                </div>
-              </div>
-            </SettingRow>
+                </SettingRow>
+                <SettingRow title={t("textModels.contextLength")}>
+                  <p className="text-sm text-muted-foreground">{t("textModels.externalContext")}</p>
+                </SettingRow>
+              </>
+            )}
           </section>
         </TabsContent>
         <TabsContent value="chains" keepMounted>
@@ -988,10 +1076,9 @@ export function PromptsPage() {
                     disabled={!refinementCurrent || isBusy(snapshot.status.phase)}
                     onClick={() =>
                       void refinement.request((id) =>
-                        backend.refinePrompt(
+                        backend.refinePromptWithConfig(
                           id,
-                          refining.endpoint,
-                          refining.model,
+                          refining.config,
                           refining.prompt.instruction,
                         ),
                       )

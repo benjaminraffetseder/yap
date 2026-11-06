@@ -16,39 +16,54 @@ const validName = (value: string, max: number) =>
   !/[\r\n\x00]/.test(value.trim());
 
 export function validateTextProcessing(value: TextProcessing): string {
-  try {
-    const raw = value.endpoint.trim();
-    const url = new URL(raw);
-    const authority = raw.match(/^https?:\/\/([^/]+)/)?.[1] ?? "";
-    const path = raw.slice(raw.indexOf(authority) + authority.length);
-    const host = authority.startsWith("[")
-      ? authority.slice(0, authority.indexOf("]") + 1)
-      : authority.split(":")[0];
-    const ipv4 = host.split(".");
-    const loopback =
-      host.toLowerCase() === "localhost" ||
-      (ipv4.length === 4 &&
-        ipv4[0] === "127" &&
-        ipv4.every((part) => /^(0|[1-9]\d{0,2})$/.test(part) && Number(part) <= 255)) ||
-      (host.startsWith("[") &&
-        (url.hostname === "[::1]" || /^\[::ffff:7f[0-9a-f]{2}:[0-9a-f]+\]$/i.test(url.hostname)));
-    const port = authority.startsWith("[")
-      ? authority.slice(authority.indexOf("]") + 1)
-      : authority.slice(host.length);
+  if (value.provider === "builtin") {
+    const max = value.model === "gemma-4-12b" ? 262144 : 131072;
+    if (!["gemma-4-e2b", "gemma-4-e4b", "gemma-4-12b"].includes(value.model))
+      return i18n.t("textModels.chooseModel");
+    const context = value.contextLength ?? 0;
     if (
-      !loopback ||
-      !["http:", "https:"].includes(url.protocol) ||
-      url.username ||
-      url.password ||
-      raw.includes("?") ||
-      raw.includes("#") ||
-      raw.includes("%") ||
-      raw.includes("\\") ||
-      path.replace(/\/+$/, "") !== "/v1" ||
-      (port && !/^:\d*$/.test(port)) ||
-      (port.length > 1 && (Number(port.slice(1)) < 1 || Number(port.slice(1)) > 65535))
+      context !== 0 &&
+      (!Number.isInteger(context) || context < 2048 || context > max || context % 1024 !== 0)
     )
-      return i18n.t("draftValidation.useAnHTTPSLoopbackURLEnding");
+      return i18n.t("textModels.invalidContext", {
+        max: max.toLocaleString(i18n.resolvedLanguage),
+      });
+  }
+  try {
+    if (value.provider !== "builtin") {
+      const raw = value.endpoint.trim();
+      const url = new URL(raw);
+      const authority = raw.match(/^https?:\/\/([^/]+)/)?.[1] ?? "";
+      const path = raw.slice(raw.indexOf(authority) + authority.length);
+      const host = authority.startsWith("[")
+        ? authority.slice(0, authority.indexOf("]") + 1)
+        : authority.split(":")[0];
+      const ipv4 = host.split(".");
+      const loopback =
+        host.toLowerCase() === "localhost" ||
+        (ipv4.length === 4 &&
+          ipv4[0] === "127" &&
+          ipv4.every((part) => /^(0|[1-9]\d{0,2})$/.test(part) && Number(part) <= 255)) ||
+        (host.startsWith("[") &&
+          (url.hostname === "[::1]" || /^\[::ffff:7f[0-9a-f]{2}:[0-9a-f]+\]$/i.test(url.hostname)));
+      const port = authority.startsWith("[")
+        ? authority.slice(authority.indexOf("]") + 1)
+        : authority.slice(host.length);
+      if (
+        !loopback ||
+        !["http:", "https:"].includes(url.protocol) ||
+        url.username ||
+        url.password ||
+        raw.includes("?") ||
+        raw.includes("#") ||
+        raw.includes("%") ||
+        raw.includes("\\") ||
+        path.replace(/\/+$/, "") !== "/v1" ||
+        (port && !/^:\d*$/.test(port)) ||
+        (port.length > 1 && (Number(port.slice(1)) < 1 || Number(port.slice(1)) > 65535))
+      )
+        return i18n.t("draftValidation.useAnHTTPSLoopbackURLEnding");
+    }
   } catch {
     return i18n.t("draftValidation.enterALocalServerURLSuchAs");
   }

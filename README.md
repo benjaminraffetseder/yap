@@ -42,6 +42,9 @@ On Windows 10/11 x64, [build from source](#build-from-source) and open
    supports 25 European languages with automatic detection (CC BY 4.0).
    [Moonshine](https://huggingface.co/moonshine-ai/models) V2 Tiny, Small, Medium,
    and Base are English-only options (MIT).
+   Setup also offers an optional Gemma text model for prompt-based cleanup,
+   summaries, title suggestions, and chat. Download one and choose **Use model**,
+   or choose **Skip for now** to finish with dictation only.
 2. Put the cursor in a text field in another app.
 3. Hold **Ctrl+Alt+Space**, speak, then release **Space**.
 
@@ -89,8 +92,14 @@ audio is removed after use, though a forced shutdown can leave files behind.
 History, retained recordings, and exported backups are **not encrypted**.
 On Windows, the data folder is `%APPDATA%\yap`.
 
-Optional text processing connects to a model server on localhost. Use a model
-that runs locally: Yap can't stop that server from forwarding requests elsewhere.
+Optional text processing can use Yap's built-in Gemma 4 E2B, E4B, or 12B models
+on Windows x64. Open **Models → Text models**, download one, and choose **Use model**.
+Yap installs its verified llama.cpp runtime automatically and runs inference locally.
+Set context length during setup or in **Prompts → Text model**; Automatic
+chooses a conservative default based on system memory.
+
+You can also connect to an external model server on localhost. Use a model that
+runs locally: Yap can't stop an external server from forwarding requests elsewhere.
 
 ## Build from source
 

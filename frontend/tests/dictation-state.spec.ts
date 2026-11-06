@@ -1865,12 +1865,15 @@ test("setup retries shortcut permission and still requires a real shortcut test"
   });
   await retry.click();
   await expect(retry).toBeHidden();
-  await expect(page.getByRole("button", { name: "Finish setup", exact: true })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Next", exact: true })).toBeDisabled();
   await page.evaluate(() => {
     window.dictationTest.snapshot.shortcutTested = true;
     window.dictationTest.callbacks["setup:changed"]();
   });
-  await expect(page.getByRole("button", { name: "Finish setup", exact: true })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "Next", exact: true })).toBeEnabled();
+  await page.getByRole("button", { name: "Next", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Add a text model (optional)" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Skip for now", exact: true })).toBeEnabled();
 });
 
 test("settings dialog keeps vertical categories beside content and preserves edits", async ({
@@ -4862,7 +4865,7 @@ for (const theme of ["dark", "light"] as const) {
     await expect(page.getByText("Last microphone test passed", { exact: true })).toBeVisible();
     await next.click();
     await expect(steps.locator('[aria-current="step"]')).toContainText("Shortcut");
-    const finish = page.getByRole("button", { name: "Finish setup", exact: true });
+    const finish = page.getByRole("button", { name: "Next", exact: true });
     await expect(finish).toBeDisabled();
     await page.getByLabel("Global shortcut", { exact: true }).fill("Ctrl+Shift+J");
     await expect(page.getByLabel("Saved shortcut: Ctrl+Alt+Space", { exact: true })).toBeVisible();
@@ -4890,6 +4893,8 @@ for (const theme of ["dark", "light"] as const) {
     });
     await expect(page.getByText("Shortcut test passed", { exact: true })).toBeVisible();
     await finish.click();
+    await expect(page.getByRole("heading", { name: "Add a text model (optional)" })).toBeVisible();
+    await page.getByRole("button", { name: "Skip for now", exact: true }).click();
     await expect(
       page.getByRole("region", { name: "Dictation recorder", exact: true }),
     ).toBeVisible();
@@ -5096,13 +5101,15 @@ test("first run guides installation, mic testing and shortcut verification", asy
   await page.getByRole("button", { name: "Stop test", exact: true }).click();
   await expect(page.getByText("Last microphone test passed", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Next", exact: true }).click();
-  await expect(page.getByRole("button", { name: "Finish setup" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Next", exact: true })).toBeDisabled();
   await page.evaluate(() => {
     window.dictationTest.snapshot.shortcutTested = true;
     window.dictationTest.callbacks["setup:changed"]();
   });
   await expect(page.getByText("Shortcut test passed", { exact: true })).toBeVisible();
-  await page.getByRole("button", { name: "Finish setup" }).click();
+  await page.getByRole("button", { name: "Next", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Add a text model (optional)" })).toBeVisible();
+  await page.getByRole("button", { name: "Skip for now", exact: true }).click();
   await expect(page.getByRole("region", { name: "Dictation recorder", exact: true })).toBeVisible();
   await expect
     .poll(() => page.evaluate(() => window.dictationTest.snapshot.history.length))

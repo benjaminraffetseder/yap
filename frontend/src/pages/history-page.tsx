@@ -5,8 +5,8 @@ import { DictationRow } from "@/components/dictation-row";
 import { PageHeading } from "@/components/page-heading";
 import { SessionTitleAction } from "@/components/session-title-action";
 import { TranscriptExportDialog } from "@/components/transcript-export-dialog";
-import { Button } from "@/components/ui/button";
 import { ActionMenu, ActionMenuItem } from "@/components/ui/action-menu";
+import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { toastManager } from "@/components/ui/toast";
@@ -426,7 +426,7 @@ function HistoryList({ viewToggle }: { viewToggle: ReactNode }) {
                 }}
               />
             </div>
-            {!deleted && <AudioImportButton />}
+            {!deleted && <AudioImportButton showDownloadProgress={false} />}
             {viewToggle}
           </div>
         </PageHeading>
