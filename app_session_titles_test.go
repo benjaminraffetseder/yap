@@ -31,7 +31,7 @@ func TestRenameSessionPreservesRecordingStateAndText(t *testing.T) {
 	if err != nil || page.Total != 1 {
 		t.Fatal("renamed dictation not searchable", page, err)
 	}
-	if !strings.HasPrefix(formatHistoryExport(page.Entries), "Planning notes\n") {
+	if !strings.HasPrefix(exportTranscriptText(page.Entries[0], "text"), "Planning notes\n") {
 		t.Fatal("export lost title")
 	}
 	if err := a.store.TrashSessions([]string{entry.ID}, time.Now()); err != nil {

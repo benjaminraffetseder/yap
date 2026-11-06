@@ -104,7 +104,7 @@ func TestManagementGuardsAndExportCorrections(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	text := formatHistoryExport(entries)
+	text := exportTranscriptText(entries[0], "text")
 	if !strings.Contains(text, "Edited final.") || strings.Contains(text, "original") || !strings.Contains(text, v.CreatedAt) {
 		t.Fatal("export lost corrections or recording metadata")
 	}

@@ -6,6 +6,7 @@ import { InferenceStats } from "@/components/inference-stats";
 import { MarkdownContent } from "@/components/markdown-content";
 import { ProcessingSelectItems } from "@/components/processing-select-items";
 import { CopyButton } from "@/components/copy-button";
+import { TranscriptExportDialog } from "@/components/transcript-export-dialog";
 import { Button } from "@/components/ui/button";
 import { ActionMenu, ActionMenuItem } from "@/components/ui/action-menu";
 import {
@@ -26,7 +27,7 @@ import {
 } from "@/components/ui/select";
 import { backend, isBusy, message, processingOptions, type GeneratedOutput } from "@/lib/backend";
 import { useTextRequest } from "@/lib/use-text-request";
-import { Loader2, RefreshCw, Sparkles, Trash2, Workflow } from "lucide-react";
+import { Download, Loader2, RefreshCw, Sparkles, Trash2, Workflow } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router";
 
@@ -51,6 +52,8 @@ export function GeneratedOutputs({
   const [error, setError] = useState("");
   const [reload, setReload] = useState(0);
   const [deleting, setDeleting] = useState<GeneratedOutput | null>(null);
+  const [exporting, setExporting] = useState<string | null>(null);
+  const outputActionsTrigger = useRef<HTMLButtonElement>(null);
   const [deletingNow, setDeletingNow] = useState(false);
   const [deleteError, setDeleteError] = useState("");
   const generation = useTextRequest();
@@ -344,7 +347,15 @@ export function GeneratedOutputs({
                 <RefreshCw aria-hidden="true" />
                 {t("generatedOutputs.regenerate")}
               </Button>
-              <ActionMenu label={t("uiPolish.outputActions")} disabled={disabled}>
+              <ActionMenu
+                triggerRef={outputActionsTrigger}
+                label={t("uiPolish.outputActions")}
+                disabled={disabled}
+              >
+                <ActionMenuItem disabled={disabled} onClick={() => setExporting(output.id)}>
+                  <Download aria-hidden="true" />
+                  {t("transcriptExport.exportThisOutput")}
+                </ActionMenuItem>
                 <ActionMenuItem
                   destructive
                   disabled={disabled}
@@ -361,6 +372,14 @@ export function GeneratedOutputs({
           )}
         </div>
       </div>
+      {exporting && (
+        <TranscriptExportDialog
+          returnFocus={outputActionsTrigger}
+          selection={{ sessionIds: [sessionID], allMatching: false, query: "" }}
+          outputID={exporting}
+          onClose={() => setExporting(null)}
+        />
+      )}
       {generation.pending && (
         <p role="status" className="flex items-center gap-2 text-sm text-muted-foreground">
           <Loader2 aria-hidden="true" className="size-4 animate-spin motion-reduce:animate-none" />

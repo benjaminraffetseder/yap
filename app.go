@@ -14,7 +14,6 @@ import (
 
 	"yap/internal/audio"
 	"yap/internal/cleanup"
-	"yap/internal/fileutil"
 	"yap/internal/indicator"
 	"yap/internal/inference/speech"
 	textmodel "yap/internal/inference/text"
@@ -1213,21 +1212,4 @@ func (a *App) GetAudio(id string) (string, error) {
 		return "", err
 	}
 	return "data:audio/wav;base64," + base64.StdEncoding.EncodeToString(data), nil
-}
-func (a *App) ExportSession(id string) error {
-	a.mu.Lock()
-	if err := a.historyAvailableLocked(); err != nil {
-		a.mu.Unlock()
-		return err
-	}
-	v, err := a.store.Session(id)
-	a.mu.Unlock()
-	if err != nil {
-		return err
-	}
-	path, err := a.saveFile("Export transcript", "dictation.txt", "Text", "*.txt")
-	if err != nil || path == "" {
-		return err
-	}
-	return fileutil.WriteAtomic(path, []byte(v.FinalTranscript+"\n"))
 }

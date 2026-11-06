@@ -15,7 +15,9 @@ Linux support is incomplete.
 
 - Hold-to-talk or toggle recording with a global shortcut.
 - Dictate in the background, with tray controls and a floating indicator.
-- Search, name, edit, copy, and export past transcripts.
+- Search, name, edit, copy, and export past transcripts as Markdown or plain text.
+- Export selected transcripts or all search matches, with optional separate files
+  for generated outputs, as a ZIP archive or folder.
 - Add names and preferred spellings to a custom vocabulary.
 - Switch dictation profiles with saved speech-model, language, cleanup, and prompt choices.
 - Choose profiles automatically per app, or cycle them with a global shortcut.

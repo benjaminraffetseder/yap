@@ -16,8 +16,7 @@ import {
   DismissLatestResult,
   EndShortcutCapture,
   ExportBackup,
-  ExportSession,
-  ExportSessions,
+  ExportTranscripts,
   GenerateSessionOutput,
   GenerateSessionTitle,
   GetAudio,
@@ -31,6 +30,7 @@ import {
   GetRevisions,
   GetSession,
   GetSessionOutputs,
+  GetTranscriptExportPreview,
   GetSnapshot,
   HomeResultAction,
   ImportAudio,
@@ -71,6 +71,13 @@ import {
   TestTextModel,
 } from "@bindings/yap/app";
 import type { Config } from "@bindings/yap/internal/inference/text/models";
+export type { TranscriptExportRequest, TranscriptExportPreview } from "@bindings/yap/models";
+export type TranscriptExportSelection = {
+  sessionIds: string[];
+  allMatching: boolean;
+  query: string;
+  excludedSessionIds?: string[];
+};
 export type DictationProfile = {
   id: string;
   name: string;
@@ -463,7 +470,14 @@ export const backend = {
   copy: CopyText,
   remove: DeleteSession,
   audio: GetAudio,
-  export: ExportSession,
+  exportTranscripts: ExportTranscripts,
+  exportPreview: async (selection: TranscriptExportSelection) => {
+    const result = await GetTranscriptExportPreview({
+      ...selection,
+      excludedSessionIds: selection.excludedSessionIds ?? [],
+    });
+    return { ...result, sessionIds: result.sessionIds ?? [], outputs: result.outputs ?? [] };
+  },
   saveTranscript: SaveTranscript,
   renameSession: RenameSession,
   generateSessionTitle: GenerateSessionTitle,
@@ -508,7 +522,6 @@ export const backend = {
   removeSessions: async (ids: string[]): Promise<void> => {
     return DeleteSessions(ids);
   },
-  exportSessions: ExportSessions,
   removeModel: RemoveModel,
   beginShortcutCapture: BeginShortcutCapture,
   endShortcutCapture: EndShortcutCapture,

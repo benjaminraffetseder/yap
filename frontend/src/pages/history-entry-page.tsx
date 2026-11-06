@@ -11,6 +11,7 @@ import { MarkdownContent } from "@/components/markdown-content";
 import { TextPanel } from "@/components/text-panel";
 import { TranscriptDiff } from "@/components/transcript-diff";
 import { TranscriptEditor } from "@/components/transcript-editor";
+import { TranscriptExportDialog } from "@/components/transcript-export-dialog";
 import { SessionTitleAction } from "@/components/session-title-action";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -52,6 +53,8 @@ function EntryDetail({ id }: { id: string }) {
   const title = useRef<HTMLHeadingElement>(null);
   const [deletingNow, setDeletingNow] = useState(false);
   const [deleteError, setDeleteError] = useState("");
+  const [exporting, setExporting] = useState(false);
+  const actionsTrigger = useRef<HTMLButtonElement>(null);
   const [audio, setAudio] = useState("");
   const [loadingAudio, setLoadingAudio] = useState(false);
   const playTrigger = useRef<HTMLButtonElement>(null);
@@ -232,11 +235,12 @@ function EntryDetail({ id }: { id: string }) {
                     )}
                   </Button>
 
-                  <ActionMenu disabled={unavailable} label={t("uiPolish.dictationActions")}>
-                    <ActionMenuItem
-                      disabled={unavailable}
-                      onClick={() => void run(() => backend.export(id), false)}
-                    >
+                  <ActionMenu
+                    triggerRef={actionsTrigger}
+                    disabled={unavailable}
+                    label={t("uiPolish.dictationActions")}
+                  >
+                    <ActionMenuItem disabled={unavailable} onClick={() => setExporting(true)}>
                       <Download aria-hidden="true" />
                       {t("historyEntryPage.export")}
                     </ActionMenuItem>
@@ -419,6 +423,13 @@ function EntryDetail({ id }: { id: string }) {
             </TabsContent>
           )}
         </Tabs>
+      )}
+      {exporting && (
+        <TranscriptExportDialog
+          returnFocus={actionsTrigger}
+          selection={{ sessionIds: [id], allMatching: false, query: "" }}
+          onClose={() => setExporting(false)}
+        />
       )}
       {editing && (
         <div className="min-w-0 sm:pl-11">

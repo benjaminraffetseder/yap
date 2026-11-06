@@ -1,6 +1,7 @@
 package fileutil
 
 import (
+	"io"
 	"os"
 	"path/filepath"
 )
@@ -8,6 +9,11 @@ import (
 // WriteAtomic preserves an existing destination until all writes and close succeed.
 func WriteAtomic(path string, data []byte) error {
 	return writeAtomic(path, func(f *os.File) error { _, err := f.Write(data); return err })
+}
+
+// WriteAtomicStream supports archives without buffering the compressed file.
+func WriteAtomicStream(path string, write func(io.Writer) error) error {
+	return writeAtomic(path, func(f *os.File) error { return write(f) })
 }
 
 func writeAtomic(path string, write func(*os.File) error) error {

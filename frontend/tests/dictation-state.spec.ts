@@ -15,6 +15,8 @@ import type {
   Status,
   TextProcessing,
   TextPrompt,
+  TranscriptExportSelection,
+  TranscriptExportRequest,
   VocabularyEntry,
 } from "../src/lib/backend";
 
@@ -3850,11 +3852,64 @@ async function installDictationFixture(page: Page) {
               );
               state.history();
             },
-            ExportSessions: async (ids: string[]) => {
-              state.exportedText = state.snapshot.history
-                .filter((entry) => ids.includes(entry.id))
-                .map((entry) => entry.finalTranscript)
-                .join("\n");
+            GetTranscriptExportPreview: async (selection: TranscriptExportSelection) => {
+              if (Reflect.get(window, "failExportPreview"))
+                throw new Error("Export preview failed");
+              const entries = state.snapshot.history.filter((entry) =>
+                selection.allMatching
+                  ? [entry.title ?? "", entry.rawTranscript, entry.finalTranscript].some((text) =>
+                      text.toLowerCase().includes(selection.query.toLowerCase()),
+                    )
+                  : selection.sessionIds?.includes(entry.id),
+              );
+              const included = entries.filter(
+                (entry) => !selection.excludedSessionIds?.includes(entry.id),
+              );
+              const outputs = state.outputs.filter((output) =>
+                included.some((entry) => entry.id === output.sessionId),
+              );
+              return {
+                sessionIds: included.map((entry) => entry.id),
+                outputCount: outputs.length,
+                outputs:
+                  entries.length === 1
+                    ? outputs.map((output) => ({
+                        id: output.id,
+                        name: output.prompt.name,
+                        createdAt: output.createdAt,
+                        chainName: output.chain?.name ?? "",
+                        step: output.chain?.step ?? 0,
+                        total: output.chain?.total ?? 0,
+                      }))
+                    : [],
+              };
+            },
+            ExportTranscripts: async (request: TranscriptExportRequest) => {
+              const requests = Reflect.get(window, "transcriptExportRequests") ?? [];
+              requests.push(structuredClone(request));
+              Reflect.set(window, "transcriptExportRequests", requests);
+              if (state.failSave) throw new Error("Export failed");
+              if (Reflect.get(window, "cancelExport")) return null;
+              const entries = state.snapshot.history.filter((entry) =>
+                request.sessionIds?.includes(entry.id),
+              );
+              const outputs = request.includeOutputs
+                ? state.outputs.filter(
+                    (output) =>
+                      entries.some((entry) => entry.id === output.sessionId) &&
+                      (!request.outputIds?.length || request.outputIds.includes(output.id)),
+                  )
+                : [];
+              state.exportedText = request.includeTranscript
+                ? entries.map((entry) => entry.finalTranscript).join("\n")
+                : outputs.map((output) => output.text).join("\n");
+              const transcripts = request.includeTranscript ? entries.length : 0;
+              return {
+                path: "C:/exports/yap-export",
+                files: transcripts + outputs.length,
+                transcripts,
+                outputs: outputs.length,
+              };
             },
             RemoveModel: async (id: string) => {
               if (state.failSave) throw new Error("Model removal failed");
@@ -4142,10 +4197,6 @@ async function installDictationFixture(page: Page) {
               if (!entry) throw new Error("This dictation no longer exists");
               entry.finalTranscript = text;
               state.history();
-            },
-            ExportSession: async (id: string) => {
-              state.exportedText =
-                state.snapshot.history.find((entry) => entry.id === id)?.finalTranscript ?? "";
             },
             CopyText: async (text: string) => {
               if (state.failClipboard) throw new Error("Clipboard unavailable");
@@ -6581,6 +6632,10 @@ test("saved transcript edits drive display, search, copy and export while keepin
     .poll(() => page.evaluate(() => window.dictationTest.snapshot.status.transcript))
     .toBe("Send PostgreSQL to Benji.\nThanks!");
   await detailAction(page, "Export");
+  await page
+    .getByRole("dialog", { name: "Export transcripts", exact: true })
+    .getByRole("button", { name: "Export", exact: true })
+    .click();
   await expect
     .poll(() => page.evaluate(() => window.dictationTest.exportedText))
     .toBe("Send PostgreSQL to Benji.\nThanks!");
@@ -6963,9 +7018,18 @@ test("History pages select and export only the current page, and recover after d
   await expect(page.getByText("50 selected", { exact: true })).toHaveCount(0);
   await page.getByRole("checkbox", { name: "Select page", exact: true }).check();
   await page.getByRole("button", { name: "Export selected", exact: true }).click();
+  await page
+    .getByRole("dialog", { name: "Export transcripts", exact: true })
+    .getByRole("button", { name: "Export", exact: true })
+    .click();
   await expect
     .poll(() => page.evaluate(() => window.dictationTest.exportedText))
     .toBe("Dictation 50\nDictation 51");
+  await page
+    .locator('[data-slot="toast"]')
+    .filter({ hasText: "2 files exported" })
+    .getByRole("button", { name: "Dismiss notification", exact: true })
+    .click();
   await page.evaluate(() => {
     window.dictationTest.failSave = true;
   });
@@ -8084,6 +8148,10 @@ test("Markdown formats transcriptions and outputs while copy, export and editing
     .poll(() => page.evaluate(() => window.dictationTest.snapshot.status.transcript))
     .toBe(source);
   await detailAction(page, "Export");
+  await page
+    .getByRole("dialog", { name: "Export transcripts", exact: true })
+    .getByRole("button", { name: "Export", exact: true })
+    .click();
   await expect.poll(() => page.evaluate(() => window.dictationTest.exportedText)).toBe(source);
   await page.getByRole("button", { name: "Edit transcript", exact: true }).click();
   await expect(page.getByRole("textbox", { name: "Editable text" })).toHaveValue(source);
@@ -11855,6 +11923,312 @@ test("UI polish changes navigate separate edits in long text without modifying e
     edited,
   );
 });
+
+async function transcriptExportScenario(page: Page) {
+  await page.addInitScript(() => {
+    const state = window.dictationTest;
+    state.snapshot.history = [
+      {
+        id: "export-one",
+        title: "Planning notes",
+        createdAt: "2026-11-06T10:00:00Z",
+        durationMs: 1200,
+        rawTranscript: "Original recognition",
+        finalTranscript: "Saved **transcript**.",
+        speechModel: "base",
+        language: "en",
+        audioPath: "",
+      },
+    ];
+    state.outputs = Array.from({ length: 3 }, (_, index) => ({
+      id: `export-output-${index}`,
+      sessionId: "export-one",
+      createdAt: `2026-11-06T11:0${index}:00Z`,
+      prompt: { id: "summary", name: "Summary", instruction: "Summarize" },
+      model: "local-model",
+      endpoint: "http://127.0.0.1:1234/v1",
+      input: "Saved **transcript**.",
+      text: `Saved output ${index}`,
+      ...(index === 2
+        ? {
+            chain: {
+              runId: "chain-run",
+              chainId: "chain",
+              name: "Meeting notes",
+              stepId: "first",
+              step: 1,
+              total: 2,
+              input: "transcript",
+              sourceOutputId: "",
+            },
+          }
+        : {}),
+    }));
+  });
+  await page.goto("/#/history/export-one");
+}
+
+test("transcript exports default to Markdown and let users choose separate output files and folders", async ({
+  page,
+}) => {
+  await transcriptExportScenario(page);
+  await detailAction(page, "Export");
+  const dialog = page.getByRole("dialog", { name: "Export transcripts", exact: true });
+  await expect(dialog.getByRole("combobox", { name: "Format", exact: true })).toContainText(
+    "Markdown (.md)",
+  );
+  await expect(dialog.getByRole("combobox", { name: "Save as", exact: true })).toContainText(
+    "Single file",
+  );
+  await expect(dialog.getByRole("checkbox", { name: /^Saved transcript/ })).toBeChecked();
+  await expect(
+    dialog.getByRole("checkbox", { name: /^Include generated outputs/ }),
+  ).not.toBeChecked();
+  await expect(dialog.getByRole("status")).toHaveText("1 transcript · 0 outputs · 1 file");
+  await dialog.getByRole("checkbox", { name: /^Include generated outputs/ }).check();
+  await expect(dialog.getByRole("combobox", { name: "Save as", exact: true })).toContainText(
+    "ZIP archive",
+  );
+  await expect(dialog.getByRole("status")).toHaveText("1 transcript · 3 outputs · 4 files");
+  const choices = dialog
+    .getByRole("group", { name: "Generated outputs", exact: true })
+    .getByRole("checkbox", { name: /^Summary/ });
+  await expect(choices).toHaveCount(3);
+  await expect(choices.nth(2)).toBeChecked();
+  await choices.nth(1).uncheck();
+  await expect(dialog.getByRole("status")).toHaveText("1 transcript · 2 outputs · 3 files");
+  await dialog.getByRole("combobox", { name: "Format", exact: true }).click();
+  await page.getByRole("option", { name: "Plain text (.txt)", exact: true }).click();
+  await dialog.getByRole("combobox", { name: "Save as", exact: true }).click();
+  await page.getByRole("option", { name: "Folder", exact: true }).click();
+  await dialog.getByRole("button", { name: "Export", exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  const request = await page.evaluate(() => Reflect.get(window, "transcriptExportRequests").at(-1));
+  expect(request).toEqual({
+    sessionIds: ["export-one"],
+    format: "text",
+    destination: "folder",
+    includeTranscript: true,
+    includeOutputs: true,
+    outputIds: ["export-output-0", "export-output-2"],
+  });
+  await expect(page.getByRole("button", { name: "Dictation actions", exact: true })).toBeFocused();
+});
+
+test("transcript exports require content and return to a direct file when only one file is selected", async ({
+  page,
+}) => {
+  await transcriptExportScenario(page);
+  await detailAction(page, "Export");
+  const dialog = page.getByRole("dialog", { name: "Export transcripts", exact: true });
+  const exportButton = dialog.getByRole("button", { name: "Export", exact: true });
+  await dialog.getByRole("checkbox", { name: /^Saved transcript/ }).uncheck();
+  await expect(exportButton).toBeDisabled();
+  await dialog.getByRole("checkbox", { name: /^Include generated outputs/ }).check();
+  await dialog.getByRole("checkbox", { name: "Select all saved outputs", exact: true }).uncheck();
+  await expect(exportButton).toBeDisabled();
+  await dialog
+    .getByRole("checkbox", { name: /^Summary/ })
+    .first()
+    .check();
+  await expect(exportButton).toBeEnabled();
+  await expect(dialog.getByRole("combobox", { name: "Save as", exact: true })).toContainText(
+    "Single file",
+  );
+  await expect(dialog.getByRole("status")).toHaveText("0 transcripts · 1 output · 1 file");
+  await exportButton.click();
+  await expect(dialog).toHaveCount(0);
+  expect(
+    await page.evaluate(() => Reflect.get(window, "transcriptExportRequests").at(-1)),
+  ).toMatchObject({
+    destination: "file",
+    includeTranscript: false,
+    includeOutputs: true,
+    outputIds: ["export-output-0"],
+  });
+});
+
+test("transcript exports select all search matches across pages and freeze the selected transcript IDs", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const state = window.dictationTest;
+    state.snapshot.history = Array.from({ length: 55 }, (_, index) => ({
+      id: `bulk-export-${index}`,
+      title: index === 54 ? "Unrelated note" : `Project note ${index}`,
+      createdAt: "2026-11-06T10:00:00Z",
+      durationMs: 1000,
+      rawTranscript: "Original",
+      finalTranscript: `Saved ${index}`,
+      speechModel: "base",
+      language: "en",
+      audioPath: "",
+    }));
+  });
+  await page.goto("/#/history?q=project");
+  await expect(page.getByText("Page 1 of 2", { exact: true })).toBeVisible();
+  await page.getByRole("checkbox", { name: "Select page", exact: true }).check();
+  await page
+    .getByRole("button", { name: "Select all 54 matching transcripts for export", exact: true })
+    .click();
+  await expect(page.getByText("54 selected for export", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Delete selected", exact: true })).toHaveCount(0);
+  await page.getByRole("checkbox", { name: "Select dictation 1", exact: true }).uncheck();
+  await expect(page.getByText("53 selected for export", { exact: true })).toBeVisible();
+  await expect(page.getByRole("checkbox", { name: "Select page", exact: true })).toHaveAttribute(
+    "aria-checked",
+    "mixed",
+  );
+  await page.getByRole("button", { name: "Next", exact: true }).click();
+  await expect(page.getByText("Page 2 of 2", { exact: true })).toBeVisible();
+  await expect(page.getByRole("checkbox", { name: "Select page", exact: true })).toBeChecked();
+  await expect(page.getByText("53 selected for export", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Export selected", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Export transcripts", exact: true });
+  await expect(dialog.getByRole("status")).toHaveText("53 transcripts · 0 outputs · 53 files");
+  await expect(dialog.getByRole("combobox", { name: "Save as", exact: true })).toContainText(
+    "ZIP archive",
+  );
+  await expect(dialog.getByRole("checkbox", { name: /^Include generated outputs/ })).toBeDisabled();
+  await page.evaluate(() => {
+    const state = window.dictationTest;
+    state.snapshot.history.push({ ...state.snapshot.history[0], id: "late-arrival" });
+    state.history();
+  });
+  await dialog.getByRole("button", { name: "Export", exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  const request = await page.evaluate(() => Reflect.get(window, "transcriptExportRequests").at(-1));
+  expect(request.sessionIds).toHaveLength(53);
+  expect(request.sessionIds).not.toContain("bulk-export-0");
+  expect(request.sessionIds).not.toContain("bulk-export-54");
+  expect(request.sessionIds).not.toContain("late-arrival");
+  expect(request.destination).toBe("zip");
+  await page.getByLabel("Search transcripts", { exact: true }).fill("unrelated");
+  await expect(page.getByRole("button", { name: "Export selected", exact: true })).toHaveCount(0);
+});
+
+test("transcript exports offer a direct export action for exactly the selected output", async ({
+  page,
+}) => {
+  await transcriptExportScenario(page);
+  await page.getByRole("tab", { name: "Outputs", exact: true }).click();
+  const region = page.getByRole("region", { name: "Generated outputs", exact: true });
+  await region.getByRole("button", { name: "Output actions", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Export this output…", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Export output", exact: true });
+  await expect(dialog.getByRole("status")).toHaveText("0 transcripts · 1 output · 1 file");
+  await expect(dialog.getByRole("checkbox")).toHaveCount(0);
+  await expect(dialog.getByText("Meeting notes · 1/2", { exact: true })).toBeVisible();
+  await dialog.getByRole("button", { name: "Export", exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  expect(
+    await page.evaluate(() => Reflect.get(window, "transcriptExportRequests").at(-1)),
+  ).toMatchObject({
+    destination: "file",
+    includeTranscript: false,
+    includeOutputs: true,
+    outputIds: ["export-output-2"],
+  });
+  await expect(region.getByRole("button", { name: "Output actions", exact: true })).toBeFocused();
+});
+
+test("transcript exports recover from preview and write failures and preserve choices after native cancellation", async ({
+  page,
+}) => {
+  await transcriptExportScenario(page);
+  await page.evaluate(() => Reflect.set(window, "failExportPreview", true));
+  await detailAction(page, "Export");
+  const dialog = page.getByRole("dialog", { name: "Export transcripts", exact: true });
+  await expect(dialog.getByRole("alert")).toContainText("Export preview failed");
+  await expect(dialog.getByRole("button", { name: "Export", exact: true })).toBeDisabled();
+  await page.evaluate(() => Reflect.set(window, "failExportPreview", false));
+  await dialog.getByRole("button", { name: "Retry", exact: true }).click();
+  await dialog.getByRole("checkbox", { name: /^Include generated outputs/ }).check();
+  await dialog
+    .getByRole("checkbox", { name: /^Summary/ })
+    .first()
+    .uncheck();
+  await page.evaluate(() => Reflect.set(window, "cancelExport", true));
+  await dialog.getByRole("button", { name: "Export", exact: true }).click();
+  await expect(dialog.getByRole("button", { name: "Export", exact: true })).toBeEnabled();
+  await expect(dialog.getByRole("status")).toHaveText("1 transcript · 2 outputs · 3 files");
+  await expect(dialog.getByRole("checkbox", { name: /^Summary/ }).first()).not.toBeChecked();
+  await expect(
+    page.locator('[data-slot="toast"]').filter({ hasText: "files exported" }),
+  ).toHaveCount(0);
+  await page.evaluate(() => {
+    Reflect.set(window, "cancelExport", false);
+    window.dictationTest.failSave = true;
+  });
+  await dialog.getByRole("button", { name: "Export", exact: true }).click();
+  await expect(dialog.getByRole("alert")).toHaveText("Export failed");
+  await page.evaluate(() => {
+    window.dictationTest.failSave = false;
+  });
+  await dialog.getByRole("button", { name: "Export", exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(
+    page.locator('[data-slot="toast"]').filter({ hasText: "3 files exported" }),
+  ).toBeVisible();
+});
+
+for (const language of ["en", "de"] as const) {
+  test(`transcript exports keep long output names and controls reachable at enlarged text ${language}`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 760, height: 560 });
+    await transcriptExportScenario(page);
+    await page.evaluate((language) => {
+      localStorage.setItem("desktop-language", language);
+    }, language);
+    await page.reload();
+    await page.evaluate(() => {
+      document.documentElement.style.fontSize = "200%";
+      window.dictationTest.outputs[0].prompt.name = "VeryLongOutputName".repeat(30);
+      window.dictationTest.history();
+    });
+    await page
+      .getByRole("button", {
+        name: language === "en" ? "Dictation actions" : de["uiPolish.dictationActions"],
+        exact: true,
+      })
+      .click();
+    await page
+      .getByRole("menuitem", {
+        name: language === "en" ? "Export" : de["historyEntryPage.export"],
+        exact: true,
+      })
+      .click();
+    const dialog = page.getByRole("dialog", {
+      name: language === "en" ? "Export transcripts" : "Transkripte exportieren",
+      exact: true,
+    });
+    await dialog
+      .getByRole("checkbox", {
+        name:
+          language === "en" ? /^Include generated outputs/ : /^Generierte Ausgaben einschließen/,
+      })
+      .check();
+    const exportButton = dialog.getByRole("button", {
+      name: language === "en" ? "Export" : de["historyEntryPage.export"],
+      exact: true,
+    });
+    await exportButton.focus();
+    await expect(exportButton).toBeInViewport();
+    expect(await dialog.evaluate((node) => node.scrollWidth <= node.clientWidth + 1)).toBe(true);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+      true,
+    );
+    await page.keyboard.press("Escape");
+    await expect(dialog).toHaveCount(0);
+    await expect(
+      page.getByRole("button", {
+        name: language === "en" ? "Dictation actions" : de["uiPolish.dictationActions"],
+        exact: true,
+      }),
+    ).toBeFocused();
+  });
+}
 
 test("UI polish setup support links clear the sticky footer at normal and enlarged text", async ({
   page,

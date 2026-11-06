@@ -5,13 +5,21 @@ import { AudioImportButton } from "@/components/audio-import-button";
 import { useDictation } from "@/components/dictation-provider";
 import { DictationRow } from "@/components/dictation-row";
 import { SessionTitleAction } from "@/components/session-title-action";
+import { TranscriptExportDialog } from "@/components/transcript-export-dialog";
 import { PageHeading } from "@/components/page-heading";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { toastManager } from "@/components/ui/toast";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { backend, isDesktop, message, type HistoryPageResult, type Session } from "@/lib/backend";
+import {
+  backend,
+  isDesktop,
+  message,
+  type HistoryPageResult,
+  type Session,
+  type TranscriptExportSelection,
+} from "@/lib/backend";
 import { deleteTranscriptions } from "@/lib/delete-transcriptions";
 import { Download, History, RotateCcw, Search, Trash2, X } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
@@ -128,6 +136,8 @@ function HistoryList({ viewToggle }: { viewToggle: ReactNode }) {
   const renamed = useRef<string | null>(null);
   const selectPage = useRef<HTMLElement>(null);
   const [selected, setSelected] = useState<string[]>([]);
+  const [allMatching, setAllMatching] = useState(false);
+  const [excluded, setExcluded] = useState<string[]>([]);
   const selectionBar = useRef<HTMLElement>(null);
   useLayoutEffect(() => {
     const node = selectionBar.current;
@@ -144,10 +154,11 @@ function HistoryList({ viewToggle }: { viewToggle: ReactNode }) {
       observer.disconnect();
       document.documentElement.style.removeProperty("--history-selection-height");
     };
-  }, [selected.length]);
+  }, [selected.length, allMatching, excluded.length]);
   const [deletingNow, setDeletingNow] = useState(false);
   const [deleteError, setDeleteError] = useState("");
-  const [exporting, setExporting] = useState(false);
+  const [exportSelection, setExportSelection] = useState<TranscriptExportSelection | null>(null);
+  const exportTrigger = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     if (!isDesktop) return;
@@ -164,6 +175,7 @@ function HistoryList({ viewToggle }: { viewToggle: ReactNode }) {
             return;
           }
           setResult(value);
+          if (!value.total) setAllMatching(false);
           const ids = new Set(value.entries.map((entry) => entry.id));
           setSelected((old) => old.filter((id) => ids.has(id)));
           setLoading(false);
@@ -182,6 +194,10 @@ function HistoryList({ viewToggle }: { viewToggle: ReactNode }) {
   }, [query, page, deleted, reload, snapshot.history]);
 
   const { entries, total, pageSize } = result;
+  const selectedOnPage = entries.filter((entry) =>
+    allMatching ? !excluded.includes(entry.id) : selected.includes(entry.id),
+  ).length;
+  const selectionCount = allMatching ? Math.max(0, total - excluded.length) : selected.length;
   useEffect(() => {
     if (loading || !renamed.current) return;
     const id = renamed.current;
@@ -195,10 +211,10 @@ function HistoryList({ viewToggle }: { viewToggle: ReactNode }) {
     (trigger ?? searchInput.current)?.focus({ preventScroll: true });
   }, [entries, loading]);
   const pages = Math.max(1, Math.ceil(total / pageSize));
-  const unavailable = !isDesktop || loading || !!error || deletingNow || exporting;
+  const unavailable = !isDesktop || loading || !!error || deletingNow || !!exportSelection;
   function changePage(next: number) {
     setLoading(true);
-    setSelected([]);
+    if (!allMatching) setSelected([]);
     setPage(next);
   }
   async function remove(ids: string[]) {
@@ -261,10 +277,22 @@ function HistoryList({ viewToggle }: { viewToggle: ReactNode }) {
       setDeletingNow(false);
     }
   }
-  async function exportSelected() {
-    setExporting(true);
-    await run(() => backend.exportSessions(selected), false);
-    setExporting(false);
+  function exportSelected() {
+    setExportSelection({
+      sessionIds: allMatching ? [] : selected,
+      allMatching,
+      query: allMatching ? query : "",
+      excludedSessionIds: allMatching ? excluded : [],
+    });
+  }
+  function changeExportExclusions(next: string[]) {
+    if (next.length >= total) {
+      setAllMatching(false);
+      setSelected([]);
+      setExcluded([]);
+    } else {
+      setExcluded(next);
+    }
   }
   return (
     <div className="space-y-7 pb-32">
@@ -294,6 +322,8 @@ function HistoryList({ viewToggle }: { viewToggle: ReactNode }) {
                 onChange={(event) => {
                   setLoading(true);
                   setSelected([]);
+                  setAllMatching(false);
+                  setExcluded([]);
                   setParams(
                     {
                       ...(deleted ? { view: "deleted" } : {}),
@@ -345,15 +375,44 @@ function HistoryList({ viewToggle }: { viewToggle: ReactNode }) {
               <Checkbox
                 ref={selectPage}
                 disabled={unavailable}
-                checked={entries.every((entry) => selected.includes(entry.id))}
-                indeterminate={selected.length > 0 && selected.length < entries.length}
-                onCheckedChange={(checked) =>
-                  setSelected(checked ? entries.map((entry) => entry.id) : [])
-                }
+                checked={selectedOnPage === entries.length}
+                indeterminate={selectedOnPage > 0 && selectedOnPage < entries.length}
+                onCheckedChange={(checked) => {
+                  if (allMatching) {
+                    const pageIds = new Set(entries.map((entry) => entry.id));
+                    changeExportExclusions(
+                      checked
+                        ? excluded.filter((id) => !pageIds.has(id))
+                        : [...new Set([...excluded, ...pageIds])],
+                    );
+                    return;
+                  }
+                  setAllMatching(false);
+                  setSelected(checked ? entries.map((entry) => entry.id) : []);
+                }}
               />
               {t("historyPage.selectPage")}
             </label>
           )}
+          {!deleted &&
+            !allMatching &&
+            total > entries.length &&
+            entries.length > 0 &&
+            entries.every((entry) => selected.includes(entry.id)) && (
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-auto max-w-full justify-start whitespace-normal text-left"
+                disabled={unavailable}
+                onClick={() => {
+                  setAllMatching(true);
+                  setSelected([]);
+                  setExcluded([]);
+                }}
+              >
+                {t("transcriptExport.selectAllMatching", { count: total })}
+              </Button>
+            )}
         </div>
       </div>
       {!entries.length && !loading && !error ? (
@@ -405,11 +464,22 @@ function HistoryList({ viewToggle }: { viewToggle: ReactNode }) {
                       label: t("historyPage.selectDictation", {
                         index: page * pageSize + index + 1,
                       }),
-                      checked: selected.includes(entry.id),
-                      onCheckedChange: (checked) =>
+                      checked: allMatching
+                        ? !excluded.includes(entry.id)
+                        : selected.includes(entry.id),
+                      onCheckedChange: (checked) => {
+                        if (allMatching) {
+                          changeExportExclusions(
+                            checked
+                              ? excluded.filter((id) => id !== entry.id)
+                              : [...new Set([...excluded, entry.id])],
+                          );
+                          return;
+                        }
                         setSelected((old) =>
                           checked ? [...old, entry.id] : old.filter((id) => id !== entry.id),
-                        ),
+                        );
+                      },
                     }}
                     {...(deleted
                       ? {
@@ -450,7 +520,7 @@ function HistoryList({ viewToggle }: { viewToggle: ReactNode }) {
           </Button>
         </nav>
       )}
-      {!!selected.length && (
+      {selectionCount > 0 && (
         <div className="pointer-events-none fixed right-0 bottom-[calc(1.25rem+env(safe-area-inset-bottom))] left-[var(--sidebar-width)] z-30 flex justify-center px-3 sm:px-6">
           <section
             aria-label={t("historyPage.selectionActions")}
@@ -462,7 +532,9 @@ function HistoryList({ viewToggle }: { viewToggle: ReactNode }) {
               role="status"
               className="px-2 text-xs whitespace-nowrap text-muted-foreground tabular-nums"
             >
-              {t("historyPage.selectedCount", { count: selected.length })}
+              {allMatching
+                ? t("transcriptExport.selectedForExport", { count: selectionCount })
+                : t("historyPage.selectedCount", { count: selected.length })}
             </p>
             <div className="col-span-2 row-start-2 flex flex-wrap items-center justify-center gap-1 sm:flex-nowrap">
               {!deleted && (
@@ -470,35 +542,38 @@ function HistoryList({ viewToggle }: { viewToggle: ReactNode }) {
                   size="sm"
                   variant="ghost"
                   aria-label={t("historyPage.exportSelected")}
+                  ref={exportTrigger}
                   className="text-xs sm:text-sm"
                   disabled={unavailable}
-                  onClick={() => void exportSelected()}
+                  onClick={exportSelected}
                 >
                   <Download aria-hidden="true" className="size-3.5" />
                   {t("historyEntryPage.export")}
                 </Button>
               )}
-              <Button
-                size="sm"
-                variant="ghost"
-                aria-label={
-                  deleted ? t("historyPage.restoreSelected") : t("historyPage.deleteSelected")
-                }
-                className={
-                  deleted
-                    ? "text-xs sm:text-sm"
-                    : "text-xs text-destructive hover:bg-destructive/10 hover:text-destructive sm:text-sm"
-                }
-                disabled={unavailable}
-                onClick={() => void (deleted ? restore(selected) : remove(selected))}
-              >
-                {deleted ? (
-                  <RotateCcw aria-hidden="true" className="size-3.5" />
-                ) : (
-                  <Trash2 aria-hidden="true" className="size-3.5" />
-                )}
-                {deleted ? t("historyPage.restore") : t("common.delete")}
-              </Button>
+              {!allMatching && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  aria-label={
+                    deleted ? t("historyPage.restoreSelected") : t("historyPage.deleteSelected")
+                  }
+                  className={
+                    deleted
+                      ? "text-xs sm:text-sm"
+                      : "text-xs text-destructive hover:bg-destructive/10 hover:text-destructive sm:text-sm"
+                  }
+                  disabled={unavailable}
+                  onClick={() => void (deleted ? restore(selected) : remove(selected))}
+                >
+                  {deleted ? (
+                    <RotateCcw aria-hidden="true" className="size-3.5" />
+                  ) : (
+                    <Trash2 aria-hidden="true" className="size-3.5" />
+                  )}
+                  {deleted ? t("historyPage.restore") : t("common.delete")}
+                </Button>
+              )}
               {deleted && (
                 <Button
                   size="sm"
@@ -521,9 +596,11 @@ function HistoryList({ viewToggle }: { viewToggle: ReactNode }) {
                     variant="ghost"
                     aria-label={t("historyPage.clearSelection")}
                     className="col-start-2 row-start-1 text-muted-foreground"
-                    disabled={deletingNow || exporting}
+                    disabled={deletingNow || !!exportSelection}
                     onClick={() => {
                       setSelected([]);
+                      setAllMatching(false);
+                      setExcluded([]);
                       selectPage.current?.focus({ preventScroll: true });
                     }}
                   />
@@ -535,6 +612,13 @@ function HistoryList({ viewToggle }: { viewToggle: ReactNode }) {
             </Tooltip>
           </section>
         </div>
+      )}
+      {exportSelection && (
+        <TranscriptExportDialog
+          returnFocus={exportTrigger}
+          selection={exportSelection}
+          onClose={() => setExportSelection(null)}
+        />
       )}
     </div>
   );

@@ -3,11 +3,8 @@ package main
 import (
 	"database/sql"
 	"errors"
-	"fmt"
-	"strings"
 	"time"
 
-	"yap/internal/fileutil"
 	"yap/internal/storage"
 )
 
@@ -118,35 +115,6 @@ func (a *App) scheduleHistoryCleanupLocked() {
 		}
 		a.scheduleHistoryCleanupLocked()
 	})
-}
-
-func formatHistoryExport(entries []storage.Session) string {
-	var text strings.Builder
-	for _, entry := range entries {
-		if entry.Title != "" {
-			fmt.Fprintf(&text, "%s\n", entry.Title)
-		}
-		fmt.Fprintf(&text, "%s · %s · %s\n%s\n\n", entry.CreatedAt, entry.SpeechModel, entry.Language, entry.FinalTranscript)
-	}
-	return text.String()
-}
-
-func (a *App) ExportSessions(ids []string) error {
-	a.mu.Lock()
-	if err := a.historyAvailableLocked(); err != nil {
-		a.mu.Unlock()
-		return err
-	}
-	entries, err := a.store.SelectedSessions(ids)
-	a.mu.Unlock()
-	if err != nil {
-		return err
-	}
-	path, err := a.saveFile("Export selected dictations", "yap-history.txt", "Text", "*.txt")
-	if err != nil || path == "" {
-		return err
-	}
-	return fileutil.WriteAtomic(path, []byte(formatHistoryExport(entries)))
 }
 
 // Retention failures must be visible without turning a saved dictation into a

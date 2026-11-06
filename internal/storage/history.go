@@ -53,8 +53,28 @@ func (s *Store) SearchRecentlyDeleted(query string, page int) (HistoryPage, erro
 
 func (s *Store) searchHistory(query string, page int, deleted bool) (HistoryPage, error) {
 	out := HistoryPage{Entries: []Session{}, Page: page, PageSize: HistoryPageSize}
-	if page < 0 || page > 1000000 || len(query) > 1000 {
+	if page < 0 || page > 1000000 {
 		return out, errors.New("invalid History search or page")
+	}
+	err := s.visitHistory(query, deleted, func(v Session) {
+		if out.Total >= page*HistoryPageSize && len(out.Entries) < HistoryPageSize {
+			out.Entries = append(out.Entries, v)
+		}
+		out.Total++
+	})
+	return out, err
+}
+
+// MatchingHistoryIDs uses the same search and ordering as the paginated list.
+func (s *Store) MatchingHistoryIDs(query string) ([]string, error) {
+	ids := []string{}
+	err := s.visitHistory(query, false, func(v Session) { ids = append(ids, v.ID) })
+	return ids, err
+}
+
+func (s *Store) visitHistory(query string, deleted bool, visit func(Session)) error {
+	if len(query) > 1000 {
+		return errors.New("invalid History search or page")
 	}
 	filter, order := "d.id IS NULL", "r.created_at"
 	if deleted {
@@ -63,30 +83,27 @@ func (s *Store) searchHistory(query string, page int, deleted bool) (HistoryPage
 	rows, err := s.db.Query(`SELECT r.id,r.created_at,r.duration_ms,r.transcript,r.model,r.language,r.audio_path,COALESCE(o.transcript,r.transcript),COALESCE(d.deleted_at,''),` + sessionTitleColumn + `,` + speechStatsColumn + `
 		FROM recordings r LEFT JOIN recording_outputs o ON r.id=o.id LEFT JOIN deleted_recordings d ON d.id=r.id WHERE ` + filter + ` ORDER BY ` + order + ` COLLATE yap_datetime DESC,r.id DESC`)
 	if err != nil {
-		return out, err
+		return err
 	}
 	defer rows.Close()
 	query = strings.ToLower(query)
 	for rows.Next() {
 		var v Session
 		if err := scanSession(rows, &v, true); err != nil {
-			return out, err
+			return err
 		}
 		if query != "" && !strings.Contains(strings.ToLower(v.Title), query) && !strings.Contains(strings.ToLower(v.RawTranscript), query) && !strings.Contains(strings.ToLower(v.FinalTranscript), query) {
 			continue
 		}
-		if out.Total >= page*HistoryPageSize && len(out.Entries) < HistoryPageSize {
-			out.Entries = append(out.Entries, v)
-		}
-		out.Total++
+		visit(v)
 	}
-	return out, rows.Err()
+	return rows.Err()
 }
 
 // Resolve the entire selection before export. The app serializes reads and writes.
 func (s *Store) SelectedSessions(ids []string) ([]Session, error) {
-	if len(ids) == 0 || len(ids) > HistoryPageSize {
-		return nil, errors.New("select 1–50 dictations")
+	if len(ids) == 0 {
+		return nil, errors.New("select at least one dictation")
 	}
 	seen, out := map[string]bool{}, []Session{}
 	for _, id := range ids {

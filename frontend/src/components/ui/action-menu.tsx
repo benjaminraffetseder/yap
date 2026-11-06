@@ -1,7 +1,7 @@
 import { Menu } from "@base-ui/react/menu";
 import { Ellipsis } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import type { ReactNode } from "react";
+import type { ReactNode, Ref } from "react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -10,16 +10,19 @@ export function ActionMenu({
   label,
   disabled,
   text,
+  triggerRef,
 }: {
   children: ReactNode;
   label?: string;
   disabled?: boolean;
   text?: string;
+  triggerRef?: Ref<HTMLButtonElement>;
 }) {
   const { t } = useTranslation();
   return (
     <Menu.Root>
       <Menu.Trigger
+        ref={triggerRef}
         disabled={disabled}
         aria-label={label ?? t("uiPolish.moreActions")}
         title={text ? undefined : (label ?? t("uiPolish.moreActions"))}
