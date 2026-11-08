@@ -297,7 +297,7 @@ async function selectFirstPassage(page: Page) {
   await page.getByRole("button", { name: "Ask about selection", exact: true }).click();
 }
 
-test("floating chat preserves the source layout, links output citations, and survives navigation", async ({
+test("docked chat shares space with the source, links output citations, and survives navigation", async ({
   page,
 }, testInfo) => {
   await page.setViewportSize({ width: 1440, height: 1000 });
@@ -310,9 +310,10 @@ test("floating chat preserves the source layout, links output citations, and sur
   const panel = page.getByRole("region", { name: "Chat", exact: true });
   const left = (await source.boundingBox())!,
     right = (await panel.boundingBox())!;
-  expect(left).toEqual(before);
+  expect(left.width).toBeLessThan(before.width);
+  expect(left.x + left.width).toBeLessThanOrEqual(right.x);
   expect(right.x + right.width).toBeLessThanOrEqual(1440);
-  expect(await panel.evaluate((node) => getComputedStyle(node).position)).toBe("fixed");
+  expect(await panel.evaluate((node) => getComputedStyle(node).position)).toBe("static");
   await page.evaluate(() => {
     Reflect.get(window, "chatTest").defer = true;
   });
@@ -330,6 +331,7 @@ test("floating chat preserves the source layout, links output citations, and sur
     .poll(() => page.evaluate(() => Reflect.get(window, "chatTest").clipboard))
     .toBe("Friday is the deadline.");
   await panel.getByRole("button", { name: "Close chat", exact: true }).click();
+  await expect(source).toHaveJSProperty("clientWidth", Math.round(before.width));
   await page.getByRole("tab", { name: "Outputs", exact: true }).click();
   await page
     .getByRole("tabpanel", { name: "Outputs", exact: true })
@@ -406,6 +408,11 @@ test("stopping, retrying, source updates, and clearing keep chat usable at small
   await scenario(page);
   await openChat(page);
   const panel = page.getByRole("region", { name: "Chat", exact: true });
+  const transcriptBounds = (await page
+    .locator('[data-slot="transcription-scroll-pane"]')
+    .boundingBox())!;
+  const chatBounds = (await panel.boundingBox())!;
+  expect(transcriptBounds.y + transcriptBounds.height).toBeLessThanOrEqual(chatBounds.y);
   await page.evaluate(() => {
     Reflect.get(window, "chatTest").defer = true;
   });
@@ -462,7 +469,7 @@ test("Markdown selections retain source formatting and editor activity blocks ap
   await expect(page.locator('[data-slot="transcript-editor"]')).toBeVisible();
 });
 
-test("long transcripts keep the chat panel in view and opening a narrow chat focuses its composer", async ({
+test("transcript and conversation scroll independently and a narrow chat focuses its composer", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1440, height: 1000 });
@@ -477,11 +484,48 @@ test("long transcripts keep the chat panel in view and opening a narrow chat foc
   );
   await openChat(page);
   const panel = page.getByRole("region", { name: "Chat", exact: true });
-  await page.evaluate(() => window.scrollTo(0, 1100));
-  await expect(panel).toBeInViewport();
+  const transcript = page.locator('[data-slot="transcription-scroll-pane"]');
+  const conversation = panel.getByRole("log");
+  const composer = panel.getByRole("textbox", { name: "Message", exact: true });
   const bounds = (await panel.boundingBox())!;
-  expect(bounds.y).toBeGreaterThanOrEqual(0);
-  expect(bounds.y).toBeLessThan(120);
+  await expect
+    .poll(() => transcript.evaluate((node) => node.scrollHeight > node.clientHeight))
+    .toBe(true);
+  await transcript.evaluate((node) => {
+    node.scrollTop = node.scrollHeight;
+  });
+  await expect(
+    transcript
+      .getByRole("tabpanel", { name: "Transcription", exact: true })
+      .getByText("Paragraph 79:", { exact: false }),
+  ).toBeInViewport();
+  await expect(composer).toBeInViewport();
+  expect(await panel.boundingBox()).toEqual(bounds);
+  expect(await page.evaluate(() => window.scrollY)).toBe(0);
+  await page.evaluate(() => {
+    Reflect.get(window, "chatTest").reply = Array.from(
+      { length: 60 },
+      (_, i) => `Reply paragraph ${i}: a detailed answer about the transcription.`,
+    ).join("\n\n");
+  });
+  await composer.fill("Give me a detailed answer");
+  await panel.getByRole("button", { name: "Send", exact: true }).click();
+  await expect
+    .poll(() => conversation.evaluate((node) => node.scrollHeight > node.clientHeight))
+    .toBe(true);
+  await conversation.evaluate((node) => {
+    node.scrollTop = 0;
+  });
+  const transcriptScroll = await transcript.evaluate((node) => node.scrollTop);
+  await conversation.evaluate((node) => {
+    node.scrollTop = node.scrollHeight;
+  });
+  expect(await transcript.evaluate((node) => node.scrollTop)).toBe(transcriptScroll);
+  await expect(composer).toBeInViewport();
+  expect(await panel.boundingBox()).toEqual(bounds);
+  await transcript.evaluate((node) => {
+    node.scrollTop = 0;
+  });
   await panel.getByRole("button", { name: "Close chat", exact: true }).click();
   await page.setViewportSize({ width: 760, height: 740 });
   await page.getByRole("button", { name: "Chat", exact: true }).click();
@@ -602,6 +646,7 @@ test("grouped citations link to each source and action controls stay reachable w
   await page.evaluate(() => {
     document.documentElement.style.fontSize = "200%";
   });
+  await panel.scrollIntoViewIfNeeded();
   await expect(panel.getByRole("button", { name: "Send", exact: true })).toBeInViewport();
   await expect(
     panel.getByRole("button", { name: "Record a voice message", exact: true }),
@@ -615,5 +660,5 @@ test("grouped citations link to each source and action controls stay reachable w
   const sidebarBounds = (await page.locator("#app-sidebar").boundingBox())!;
   expect(panelBounds.x).toBeGreaterThanOrEqual(sidebarBounds.x + sidebarBounds.width);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-  await page.screenshot({ path: testInfo.outputPath("chat-floating-narrow-dark.png") });
+  await page.screenshot({ path: testInfo.outputPath("chat-docked-narrow-dark.png") });
 });

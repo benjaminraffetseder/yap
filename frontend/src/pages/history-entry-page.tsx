@@ -1,32 +1,32 @@
-import { nativeText } from "@/i18n/native-text";
-import i18n from "@/i18n";
-import { useTranslation } from "react-i18next";
-import { CopyButton } from "@/components/copy-button";
-import { ActionMenu, ActionMenuItem } from "@/components/ui/action-menu";
 import { AudioPlayer } from "@/components/audio-player";
+import { ChatSourceText } from "@/components/chat-source-text";
+import { CopyButton } from "@/components/copy-button";
 import { useDictation } from "@/components/dictation-provider";
 import { GeneratedOutputs } from "@/components/generated-outputs";
 import { InferenceStats } from "@/components/inference-stats";
-import { ChatSourceText } from "@/components/chat-source-text";
-import { TranscriptionChat, type ChatSelection } from "@/components/transcription-chat";
+import { SessionTitleAction } from "@/components/session-title-action";
 import { TextPanel } from "@/components/text-panel";
 import { TranscriptDiff } from "@/components/transcript-diff";
 import { TranscriptEditor } from "@/components/transcript-editor";
 import { TranscriptExportDialog } from "@/components/transcript-export-dialog";
-import { SessionTitleAction } from "@/components/session-title-action";
+import { TranscriptionChat, type ChatSelection } from "@/components/transcription-chat";
+import { ActionMenu, ActionMenuItem } from "@/components/ui/action-menu";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import i18n from "@/i18n";
+import { nativeText } from "@/i18n/native-text";
 import {
   backend,
   duration,
   isDesktop,
   message,
-  type Session,
   type ChatReference,
   type GeneratedOutput,
+  type Session,
 } from "@/lib/backend";
-import { deleteTranscriptions } from "@/lib/delete-transcriptions";
 import { referenceRanges } from "@/lib/chat-references";
+import { deleteTranscriptions } from "@/lib/delete-transcriptions";
+import { cn } from "@/lib/utils";
 import {
   ArrowLeft,
   AudioLines,
@@ -39,7 +39,8 @@ import {
   Sparkles,
   Trash2,
 } from "lucide-react";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
+import { useTranslation } from "react-i18next";
 import { Link, useLocation, useNavigate, useParams } from "react-router";
 
 export function HistoryEntryPage() {
@@ -187,10 +188,21 @@ function EntryDetail({ id }: { id: string }) {
       : firstLine;
   return (
     <div
-      className="@container/chat-detail space-y-4"
-      style={audio ? { paddingBottom: playerHeight } : undefined}
+      data-chat-open={chatOpen || undefined}
+      className={cn(
+        "@container/chat-detail space-y-4",
+        chatOpen && "flex flex-col gap-4 space-y-0 lg:min-h-0 lg:flex-1",
+      )}
+      style={
+        audio
+          ? ({
+              paddingBottom: playerHeight,
+              "--recording-player-height": `${playerHeight}px`,
+            } as CSSProperties)
+          : undefined
+      }
     >
-      <header className="group @container/detail">
+      <header className="group @container/detail shrink-0">
         <div className="flex min-w-0 items-start gap-[12px]">
           <Link
             to={back}
@@ -399,8 +411,22 @@ function EntryDetail({ id }: { id: string }) {
           {referenceNotice}
         </p>
       )}
-      <div className="min-w-0">
-        <div className="min-w-0">
+      <div
+        data-slot="transcription-workspace"
+        className={cn(
+          "min-w-0",
+          chatOpen &&
+            "grid min-h-0 gap-4 lg:flex-1 lg:grid-cols-[minmax(0,1fr)_clamp(20rem,32%,26rem)]",
+        )}
+      >
+        <div
+          data-slot="transcription-scroll-pane"
+          className={cn(
+            "min-w-0",
+            chatOpen &&
+              "max-h-[40dvh] min-h-0 overflow-y-auto overscroll-contain pr-3 lg:max-h-none lg:pb-4",
+          )}
+        >
           {readingSelection && !editing && (
             <div className="mb-3 flex flex-wrap items-center gap-2 sm:pl-11">
               <Button size="sm" variant="outline" onClick={askSelection}>
@@ -572,33 +598,31 @@ function EntryDetail({ id }: { id: string }) {
           )}
         </div>
         {entry && chatInitialized && (
-          <div>
-            <TranscriptionChat
-              session={entry}
-              open={chatOpen}
-              editing={!!editing}
-              source={chatSource}
-              onSource={setChatSource}
-              selection={chatSelection}
-              onClearSelection={() => setChatSelection(null)}
-              output={chatOutput}
-              onClearOutput={() => setChatOutput(null)}
-              onHighlight={(source, references) => {
-                setHighlights({ source, references });
-                if (references.length) {
-                  setActiveTab(source === "original" ? "original" : "transcription");
-                }
-              }}
-              onClose={() => {
-                setChatOpen(false);
-                requestAnimationFrame(() => chatTrigger.current?.focus());
-              }}
-              onApplied={() => {
-                setReload((old) => old + 1);
-                void run(refresh, false);
-              }}
-            />
-          </div>
+          <TranscriptionChat
+            session={entry}
+            open={chatOpen}
+            editing={!!editing}
+            source={chatSource}
+            onSource={setChatSource}
+            selection={chatSelection}
+            onClearSelection={() => setChatSelection(null)}
+            output={chatOutput}
+            onClearOutput={() => setChatOutput(null)}
+            onHighlight={(source, references) => {
+              setHighlights({ source, references });
+              if (references.length) {
+                setActiveTab(source === "original" ? "original" : "transcription");
+              }
+            }}
+            onClose={() => {
+              setChatOpen(false);
+              requestAnimationFrame(() => chatTrigger.current?.focus());
+            }}
+            onApplied={() => {
+              setReload((old) => old + 1);
+              void run(refresh, false);
+            }}
+          />
         )}
       </div>
       {audio && (

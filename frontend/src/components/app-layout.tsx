@@ -1,5 +1,3 @@
-import { nativeText } from "@/i18n/native-text";
-import { useTranslation } from "react-i18next";
 import { AudioDropImport } from "@/components/audio-drop-import";
 import { CommandMenu } from "@/components/command-menu";
 import { useDictation } from "@/components/dictation-provider";
@@ -9,6 +7,7 @@ import { RecoveryActions } from "@/components/recovery-actions";
 import { Button } from "@/components/ui/button";
 import { toastManager } from "@/components/ui/toast";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { nativeText } from "@/i18n/native-text";
 import { backend, backendVersionMismatchMessage, isDesktop } from "@/lib/backend";
 import { cn } from "@/lib/utils";
 import { Events } from "@wailsio/runtime";
@@ -30,6 +29,7 @@ import {
   type CSSProperties,
   type Ref,
 } from "react";
+import { useTranslation } from "react-i18next";
 import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router";
 
 export function AppLayout({ saveNoticeRef }: { saveNoticeRef?: Ref<HTMLDivElement> }) {
@@ -114,7 +114,10 @@ export function AppLayout({ saveNoticeRef }: { saveNoticeRef?: Ref<HTMLDivElemen
   return (
     <TooltipProvider delay={250}>
       <div
-        className={cn("group/layout flex", homeSurface ? "h-dvh overflow-hidden" : "min-h-screen")}
+        className={cn(
+          "group/layout flex lg:has-[[data-chat-open]]:h-dvh lg:has-[[data-chat-open]]:overflow-hidden",
+          homeSurface ? "h-dvh overflow-hidden" : "min-h-screen",
+        )}
         style={
           {
             "--sidebar-width": sidebarWidth,
@@ -184,13 +187,16 @@ export function AppLayout({ saveNoticeRef }: { saveNoticeRef?: Ref<HTMLDivElemen
         </aside>
         <main
           id="main-content"
-          className={cn("min-w-0 flex-1", homeSurface && "flex min-h-0 flex-col")}
+          className={cn(
+            "min-w-0 flex-1 lg:has-[[data-chat-open]]:flex lg:has-[[data-chat-open]]:min-h-0 lg:has-[[data-chat-open]]:flex-col",
+            homeSurface && "flex min-h-0 flex-col",
+          )}
         >
           <div
             className={
               homeSurface
                 ? "flex min-h-0 flex-1 flex-col"
-                : "mx-auto max-w-5xl px-[clamp(1rem,4vw,1.5rem)] py-8 lg:px-[clamp(1rem,4vw,2.5rem)]"
+                : "mx-auto max-w-5xl px-[clamp(1rem,4vw,1.5rem)] py-8 lg:px-[clamp(1rem,4vw,2.5rem)] lg:has-[[data-chat-open]]:mx-0 lg:has-[[data-chat-open]]:flex lg:has-[[data-chat-open]]:min-h-0 lg:has-[[data-chat-open]]:max-w-none lg:has-[[data-chat-open]]:flex-1 lg:has-[[data-chat-open]]:flex-col"
             }
           >
             <div

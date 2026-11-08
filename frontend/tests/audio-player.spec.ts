@@ -300,6 +300,35 @@ test("closing player stops audio, restores focus and lets the recording reopen",
   await expect(player(page).getByRole("button", { name: "Pause recording" })).toBeVisible();
 });
 
+for (const width of [1280, 760]) {
+  test(`docked chat stays above the recording controls at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 740 });
+    await scenario(page);
+    await page.evaluate(() => {
+      Reflect.get(window, "mockBackend").main.App.GetSessionChat = async () => ({
+        sessionId: "recording",
+        messages: [],
+        sources: [],
+        summary: "",
+        compactedThrough: 0,
+      });
+    });
+    await openPlayer(page);
+    await page.getByRole("button", { name: "Chat", exact: true }).click();
+    const chat = page.getByRole("region", { name: "Chat", exact: true });
+    const composer = chat.getByRole("textbox", { name: "Message", exact: true });
+    await expect(composer).toBeInViewport();
+    const chatBounds = (await chat.boundingBox())!;
+    const playerBounds = (await player(page).boundingBox())!;
+    expect(chatBounds.y + chatBounds.height).toBeLessThanOrEqual(playerBounds.y);
+    const closeChat = chat.getByRole("button", { name: "Close chat", exact: true });
+    await expect(closeChat).toBeInViewport();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+      true,
+    );
+  });
+}
+
 test("close stays reachable beside the minimized import queue", async ({ page }) => {
   await page.setViewportSize({ width: 760, height: 560 });
   await scenario(page);

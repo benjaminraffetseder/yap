@@ -45,16 +45,14 @@ import {
   FilePenLine,
   Highlighter,
   Loader2,
-  MessageSquare,
   Mic,
-  Minus,
+  PanelRightClose,
   RotateCcw,
   Save,
   Square,
   X,
 } from "lucide-react";
 import { Fragment, useEffect, useRef, useState, type ComponentProps } from "react";
-import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router";
 
@@ -172,6 +170,7 @@ export function TranscriptionChat({
       return;
     }
     const frame = requestAnimationFrame(() => {
+      root.current?.scrollIntoView({ block: "nearest", behavior: "instant" });
       if (input.current?.disabled) root.current?.focus({ preventScroll: true });
       else input.current?.focus({ preventScroll: true });
     });
@@ -394,7 +393,7 @@ export function TranscriptionChat({
     !invalidSelection;
   const last = chat.messages.at(-1);
 
-  return createPortal(
+  return (
     <section
       ref={root}
       tabIndex={-1}
@@ -402,7 +401,7 @@ export function TranscriptionChat({
       data-slot="chat-pane"
       hidden={!open}
       aria-label={t("chat.title")}
-      className="fixed top-24 right-3 z-40 flex h-[min(38rem,calc(100dvh-7rem))] max-h-[calc(100dvh-7rem)] w-96 max-w-[calc(100vw-var(--sidebar-width,0px)-1.5rem)] min-h-0 flex-col overflow-hidden rounded-xl border bg-popover text-popover-foreground shadow-lg [@media(max-height:640px)]:top-3 [@media(max-height:640px)]:h-[calc(100dvh-1.5rem)] [@media(max-height:640px)]:max-h-[calc(100dvh-1.5rem)]"
+      className="flex h-[min(38rem,calc(100dvh-var(--recording-player-height,0px)-1.5rem))] min-h-0 min-w-0 scroll-mb-[var(--recording-player-height,0px)] flex-col overflow-hidden rounded-xl border bg-card text-card-foreground lg:h-full"
       onKeyDown={(event) => {
         if (sourceEscape.current === event.nativeEvent) return;
         if (
@@ -424,13 +423,6 @@ export function TranscriptionChat({
       }}
     >
       <header className="flex min-h-10 shrink-0 items-center gap-1 border-b px-2 py-1">
-        <MessageSquare
-          aria-hidden="true"
-          className="ml-0.5 size-3.5 shrink-0 text-muted-foreground"
-        />
-        <h2 className="shrink-0 text-xs font-semibold" title={snapshot.textProcessing.model}>
-          {t("chat.title")}
-        </h2>
         <Select
           open={sourceMenuOpen}
           onOpenChange={(next, details) => {
@@ -457,7 +449,7 @@ export function TranscriptionChat({
             id="chat-source"
             aria-label={t("chat.source")}
             size="sm"
-            className="ml-1 min-w-0 flex-1 border-transparent bg-transparent px-1.5 text-xs shadow-none dark:bg-transparent"
+            className="min-w-0 flex-1 border-transparent bg-transparent px-1.5 text-xs shadow-none dark:bg-transparent"
           >
             <SelectValue />
           </SelectTrigger>
@@ -474,7 +466,7 @@ export function TranscriptionChat({
           <RotateCcw />
         </ChatAction>
         <ChatAction label={t("chat.close")} onClick={onClose}>
-          <Minus />
+          <PanelRightClose />
         </ChatAction>
       </header>
       {(sourceChanged || chat.compactedThrough > 0) && (
@@ -838,7 +830,6 @@ export function TranscriptionChat({
           </DialogContent>
         </Dialog>
       )}
-    </section>,
-    document.getElementById("main-content") ?? document.body,
+    </section>
   );
 }
