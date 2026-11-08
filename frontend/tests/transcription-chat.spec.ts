@@ -9,6 +9,7 @@ import type {
   Snapshot,
 } from "../src/lib/backend";
 import { referenceRanges } from "../src/lib/chat-references";
+import { openSelectionMenu } from "./transcript-menu";
 
 async function scenario(page: Page) {
   await page.addInitScript(() => {
@@ -294,7 +295,8 @@ async function selectFirstPassage(page: Page) {
       selection.addRange(range);
       node.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
     });
-  await page.getByRole("button", { name: "Ask about selection", exact: true }).click();
+  await openSelectionMenu(page);
+  await page.getByRole("menuitem", { name: "Ask about selection", exact: true }).click();
 }
 
 test("docked chat shares space with the source, links output citations, and survives navigation", async ({

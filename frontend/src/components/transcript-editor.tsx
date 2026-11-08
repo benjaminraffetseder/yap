@@ -1,13 +1,12 @@
-import { nativeText } from "@/i18n/native-text";
-import { useTranslation } from "react-i18next";
 import { AutoSaveStatus } from "@/components/auto-save-status";
 import { useDictation } from "@/components/dictation-provider";
 import { RevisionHistory } from "@/components/revision-history";
 import { TextPanel } from "@/components/text-panel";
+import { TranscriptContextMenu } from "@/components/transcript-context-menu";
 import { TranscriptDiff } from "@/components/transcript-diff";
 import { TranscriptProcessor } from "@/components/transcript-processor";
-import { Button } from "@/components/ui/button";
 import { ActionMenu, ActionMenuItem } from "@/components/ui/action-menu";
+import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
@@ -19,10 +18,12 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { nativeText } from "@/i18n/native-text";
 import { backend, isBusy, isDesktop, message, type Session } from "@/lib/backend";
 import { useAutoSave } from "@/lib/use-auto-save";
 import { useSavedDraft } from "@/lib/use-saved-draft";
 import { useEffect, useRef, useState, type RefObject } from "react";
+import { useTranslation } from "react-i18next";
 import { Link } from "react-router";
 
 function fitTranscript(field: HTMLTextAreaElement) {
@@ -49,7 +50,6 @@ export function TranscriptEditor({
   const [closing, setClosing] = useState(false);
   const [history, setHistory] = useState(false);
   const [error, setError] = useState("");
-  const [selection, setSelection] = useState("");
   const [term, setTerm] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
   const [notice, setNotice] = useState("");
@@ -162,20 +162,6 @@ export function TranscriptEditor({
           >
             {t("transcriptEditor.processText")}
           </Button>
-          {selection && (
-            <Button
-              size="sm"
-              variant="outline"
-              className="h-auto min-h-8 max-w-full text-left whitespace-normal"
-              disabled={!isDesktop || !selection || saving || busy}
-              onClick={() => {
-                setNotice("");
-                setTerm(selection);
-              }}
-            >
-              {t("transcriptEditor.addToVocabulary")}
-            </Button>
-          )}
           <Button
             size="sm"
             variant={compare ? "secondary" : "ghost"}
@@ -200,44 +186,46 @@ export function TranscriptEditor({
             >
               {t("transcriptEditor.yourDraft")}
             </Label>
-            <textarea
-              ref={input}
-              id="transcript-editor"
-              value={text}
-              disabled={closing}
-              maxLength={100000}
-              rows={12}
-              aria-label={t("transcriptEditor.editableText")}
-              aria-invalid={!!error}
-              aria-describedby={error ? "transcript-save-error" : undefined}
-              className="min-h-80 w-full resize-none overflow-hidden rounded-lg border border-input bg-card/30 px-4 py-3 text-base leading-7 outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30 disabled:opacity-60"
-              onChange={(event) => {
-                setText(event.target.value);
-                setSelection("");
+            <TranscriptContextMenu
+              text={text}
+              returnFocus={input}
+              disabled={busy || saving || closing}
+              onApply={(value) => {
+                setText(value);
+                setNotice(t("transcriptEditor.resultAppliedChangesSaveAutomatically"));
+                return true;
               }}
-              onSelect={(event) => {
-                const field = event.currentTarget;
-                const selected = field.value.slice(field.selectionStart, field.selectionEnd).trim();
-                setSelection(
-                  selected &&
-                    Array.from(selected).length <= 80 &&
-                    // eslint-disable-next-line no-control-regex -- reject control characters in vocabulary selections
-                    !/[\u0000-\u001f\u007f-\u009f]/.test(selected)
-                    ? selected
-                    : "",
-                );
+              onAddToVocabulary={(selected) => {
+                setNotice("");
+                setTerm(selected);
               }}
-              onKeyDown={(event) => {
-                if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
-                  event.preventDefault();
-                  void autoSave.retry();
-                }
-                if (event.key === "Escape") {
-                  event.preventDefault();
-                  void close();
-                }
-              }}
-            />
+            >
+              <textarea
+                ref={input}
+                id="transcript-editor"
+                value={text}
+                disabled={closing}
+                maxLength={100000}
+                rows={12}
+                aria-label={t("transcriptEditor.editableText")}
+                aria-invalid={!!error}
+                aria-describedby={error ? "transcript-save-error" : undefined}
+                className="min-h-80 w-full resize-none overflow-hidden rounded-lg border border-input bg-card/30 px-4 py-3 text-base leading-7 outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30 disabled:opacity-60"
+                onChange={(event) => {
+                  setText(event.target.value);
+                }}
+                onKeyDown={(event) => {
+                  if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
+                    event.preventDefault();
+                    void autoSave.retry();
+                  }
+                  if (event.key === "Escape") {
+                    event.preventDefault();
+                    void close();
+                  }
+                }}
+              />
+            </TranscriptContextMenu>
             {error && (
               <p id="transcript-save-error" role="alert" className="text-sm text-destructive">
                 {nativeText(error)}
@@ -249,7 +237,7 @@ export function TranscriptEditor({
               </p>
             )}
             <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-2 text-xs text-muted-foreground">
-              {!selection && <p>{t("transcriptEditor.selectANameOrTermInThe")}</p>}
+              <p>{t("transcriptEditor.selectANameOrTermInThe")}</p>
               <span className="ml-auto tabular-nums">
                 {t("transcriptEditor.wordCount", {
                   count: text.trim().split(/\s+/).filter(Boolean).length,
@@ -332,7 +320,6 @@ export function TranscriptEditor({
               onCancel={() => setProcessing(false)}
               onUse={(result) => {
                 setText(result);
-                setSelection("");
                 setProcessing(false);
                 setNotice(t("transcriptEditor.resultAppliedChangesSaveAutomatically"));
               }}

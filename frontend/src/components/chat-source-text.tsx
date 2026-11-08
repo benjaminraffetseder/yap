@@ -70,11 +70,9 @@ function sourceSpans(text: string, ranges: SourceRange[]) {
 export function ChatSourceText({
   text,
   references,
-  onSelection,
 }: {
   text: string;
   references: ChatReference[];
-  onSelection: (text: string) => void;
 }) {
   const root = useRef<HTMLDivElement>(null);
   const ranges = referenceRanges(text, references);
@@ -83,48 +81,8 @@ export function ChatSourceText({
     if (references.length)
       root.current?.querySelector("mark")?.scrollIntoView({ block: "center", behavior: "instant" });
   }, [rangeKey, references.length]);
-  function readSelection() {
-    const selection = window.getSelection();
-    if (
-      !selection ||
-      !selection.rangeCount ||
-      selection.isCollapsed ||
-      !root.current?.contains(selection.anchorNode) ||
-      !root.current.contains(selection.focusNode)
-    )
-      return;
-    const range = selection.getRangeAt(0);
-    let from: number | undefined, to: number | undefined;
-    for (const span of root.current.querySelectorAll<HTMLElement>("[data-source-start]")) {
-      if (!range.intersectsNode(span)) continue;
-      const bounds = document.createRange();
-      bounds.selectNodeContents(span);
-      const clipped = range.cloneRange();
-      if (clipped.compareBoundaryPoints(Range.START_TO_START, bounds) < 0)
-        clipped.setStart(bounds.startContainer, bounds.startOffset);
-      if (clipped.compareBoundaryPoints(Range.END_TO_END, bounds) > 0)
-        clipped.setEnd(bounds.endContainer, bounds.endOffset);
-      if (!clipped.toString()) continue;
-      const prefix = bounds.cloneRange();
-      prefix.setEnd(clipped.startContainer, clipped.startOffset);
-      const start = Number(span.dataset.sourceStart),
-        end = Number(span.dataset.sourceEnd);
-      const literal = span.dataset.sourceLiteral === "true";
-      from ??= literal ? start + prefix.toString().length : start;
-      to = literal ? start + prefix.toString().length + clipped.toString().length : end;
-    }
-    const selected =
-      from !== undefined && to !== undefined ? text.slice(from, to) : selection.toString();
-    if (selected.trim() && text.includes(selected)) onSelection(selected);
-  }
   return (
-    <div
-      ref={root}
-      onMouseUp={readSelection}
-      onKeyUp={readSelection}
-      onTouchEnd={readSelection}
-      data-slot="chat-source-text"
-    >
+    <div ref={root} data-slot="chat-source-text">
       <MarkdownContent className="text-base leading-7" rehypePlugins={[sourceSpans(text, ranges)]}>
         {text}
       </MarkdownContent>

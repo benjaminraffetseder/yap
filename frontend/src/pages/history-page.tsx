@@ -1,5 +1,6 @@
 import { AudioImportButton } from "@/components/audio-import-button";
 import { BulkTextDialog } from "@/components/bulk-text-dialog";
+import { CopyButton } from "@/components/copy-button";
 import { useDictation } from "@/components/dictation-provider";
 import { DictationRow } from "@/components/dictation-row";
 import { PageHeading } from "@/components/page-heading";
@@ -525,23 +526,33 @@ function HistoryList({ viewToggle }: { viewToggle: ReactNode }) {
                   <DictationRow
                     key={entry.id}
                     entry={entry}
+                    query={query}
                     disabled={unavailable}
                     action={
                       !deleted && (
-                        <SessionTitleAction
-                          contextual
-                          entry={entry}
-                          context={
-                            entry.title ||
-                            (entry.finalTranscript ?? entry.rawTranscript).slice(0, 80)
-                          }
-                          disabled={unavailable}
-                          onSaved={() => {
-                            renamed.current = entry.id;
-                            setReload((value) => value + 1);
-                            void run(refresh, false);
-                          }}
-                        />
+                        <div className="flex items-center gap-1">
+                          <CopyButton
+                            text={entry.finalTranscript ?? entry.rawTranscript}
+                            label={t("historyPage.copyDictation")}
+                            iconOnly
+                            variant="ghost"
+                            disabled={unavailable}
+                          />
+                          <SessionTitleAction
+                            contextual
+                            entry={entry}
+                            context={
+                              entry.title ||
+                              (entry.finalTranscript ?? entry.rawTranscript).slice(0, 80)
+                            }
+                            disabled={unavailable}
+                            onSaved={() => {
+                              renamed.current = entry.id;
+                              setReload((value) => value + 1);
+                              void run(refresh, false);
+                            }}
+                          />
+                        </div>
                       )
                     }
                     selection={{

@@ -188,7 +188,10 @@ location and turn **Launch at login** off and on again.
 ## History and vocabulary
 
 History lets you search titles, original and edited text, open a dictation, and copy or
-export it. Select entries to export or delete several at once. Deletion moves
+export it. Each History row has a **Copy dictation** button for copying the saved
+result without opening it. Search previews show the matching passage and highlight
+the search text; matches found only in the original recognition are labeled.
+Select entries to export or delete several at once. Deletion moves
 dictations to **History → Recently Deleted** immediately, with an **Undo** toast.
 Restore them individually or in a selection for 30 days, or choose **Delete
 permanently** to remove an entry right away. **Delete selected permanently**
@@ -231,8 +234,20 @@ transcription. It opens an inline editor; **Compare with original** shows a read
 reference alongside the draft where space allows. Edits save after a short pause;
 **Done** or Escape in the text field also saves before closing. Empty text is never
 saved. Ctrl/Cmd+Enter saves immediately and keeps the editor open. To reuse a
-corrected spelling, select a name or phrase and choose **Add to vocabulary**;
+corrected spelling, select a name or phrase, right-click, and choose **Add to vocabulary**;
 the transcript continues to save automatically.
+
+To fix a spelling, select a word or short phrase, right-click, and choose **Correct and remember**.
+Enter the correct spelling and choose **Apply correction**. **Remember for future
+dictations** saves the selected spelling as an alias, adding it to an existing term
+when that preferred spelling is already in Vocabulary. Uncheck it for a correction
+that only applies to this text. The action is available while reading or editing a
+History transcript and on Home's transcript result or editor. Home editor corrections
+remain drafts until **Apply changes**; History editor corrections save automatically.
+Original recognition is preserved, and older dictations are not changed.
+The same context menu offers **Copy selection**, and History readers offer **Ask about
+selection** to open chat with that passage. In an editor, **Shift+F10** opens the menu
+for the highlighted text. Closing a menu or correction dialog keeps your scroll position.
 
 Vocabulary entries have a preferred spelling and optional aliases. For example,
 `postgres` can map to `PostgreSQL`. Matching uses whole words or phrases, not

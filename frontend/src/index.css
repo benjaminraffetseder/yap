@@ -308,6 +308,11 @@
 }
 
 @media (forced-colors: none) {
+  ::selection {
+    background-color: var(--primary);
+    color: var(--primary-foreground);
+  }
+
   [data-slot="settings-scroll-pane"],
   [data-slot="error-cause"] {
     scrollbar-gutter: stable;

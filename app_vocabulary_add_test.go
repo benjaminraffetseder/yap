@@ -134,6 +134,38 @@ func TestVocabularyResponsesDoNotShareApplicationMemory(t *testing.T) {
 	}
 }
 
+func TestVocabularyCorrectionMergesAliasesAndPreservesStateOnConflict(t *testing.T) {
+	a := testApp(t)
+	entries := []vocabulary.Entry{
+		{ID: "name", Canonical: "John", Aliases: []string{"jon"}, Enabled: false},
+		{ID: "other", Canonical: "Other", Aliases: []string{"taken"}, Enabled: true},
+	}
+	if _, err := a.SaveVocabulary(entries); err != nil {
+		t.Fatal(err)
+	}
+	got, err := a.AddVocabularyTerm(" John ", []string{"JON", "john", " jonn "})
+	if err != nil || len(got) != 2 || got[0].ID != "name" || !got[0].Enabled || !reflect.DeepEqual(got[0].Aliases, []string{"jon", "jonn"}) || !reflect.DeepEqual(got[1], entries[1]) {
+		t.Fatalf("correction did not merge aliases: %+v %v", got, err)
+	}
+	if _, err := a.AddVocabularyTerm("John", []string{"new alias", "taken"}); err == nil {
+		t.Fatal("accepted an alias owned by another term")
+	}
+	persisted, err := a.store.Vocabulary()
+	if err != nil || !reflect.DeepEqual(got, persisted) || !reflect.DeepEqual(got, a.vocabulary) {
+		t.Fatal("failed merge changed the saved or in-memory vocabulary", persisted, err)
+	}
+	for i := len(got); i < 100; i++ {
+		got = append(got, vocabulary.Entry{ID: fmt.Sprint(i), Canonical: fmt.Sprintf("term%d", i), Enabled: true})
+	}
+	if _, err := a.SaveVocabulary(got); err != nil {
+		t.Fatal(err)
+	}
+	merged, err := a.AddVocabularyTerm("John", []string{"jonnn"})
+	if err != nil || len(merged) != 100 || len(merged[0].Aliases) != 3 {
+		t.Fatalf("existing term could not be corrected at the term limit: %+v %v", merged, err)
+	}
+}
+
 func TestConcurrentVocabularyAddsKeepBothTerms(t *testing.T) {
 	a := testApp(t)
 	var wg sync.WaitGroup
@@ -162,7 +194,7 @@ func TestInvalidVocabularyAddsLeaveSavedStateIntact(t *testing.T) {
 		canonical string
 		aliases   []string
 	}{
-		{"YAP", nil}, {"Other", []string{"yapp"}}, {" ", nil}, {"line\nbreak", nil}, {"Other", make([]string, 11)},
+		{"Other", []string{"yapp"}}, {" ", nil}, {"line\nbreak", nil}, {"Other", make([]string, 11)},
 	} {
 		if _, err := a.AddVocabularyTerm(test.canonical, test.aliases); err == nil {
 			t.Errorf("accepted invalid term: %+v", test)

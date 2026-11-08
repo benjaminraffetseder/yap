@@ -19,6 +19,7 @@ import type {
   TranscriptExportSelection,
   VocabularyEntry,
 } from "../src/lib/backend";
+import { openSelectionMenu } from "./transcript-menu";
 
 function activeDialog(page: Page) {
   return page
@@ -7052,13 +7053,14 @@ test("a selected correction adds a confirmed term without saving the transcript 
   page,
 }) => {
   const input = await openCorrectionEditor(page);
-  const add = page.getByRole("button", {
+  const add = page.getByRole("menuitem", {
     name: "Add to vocabulary",
     exact: true,
   });
   await expect(add).toHaveCount(0);
   await input.press("Home");
   await input.press("Control+Shift+ArrowRight");
+  await openSelectionMenu(page);
   await expect(add).toBeEnabled();
   await add.click();
   const term = page.getByRole("dialog", {
@@ -7123,7 +7125,8 @@ test("term save failures and conflicts preserve both drafts for retry", async ({
   const input = await openCorrectionEditor(page);
   await input.press("Home");
   await input.press("Control+Shift+ArrowRight");
-  await page.getByRole("button", { name: "Add to vocabulary", exact: true }).click();
+  await openSelectionMenu(page);
+  await page.getByRole("menuitem", { name: "Add to vocabulary", exact: true }).click();
   const term = page.getByRole("dialog", { name: "Add to vocabulary" });
   const aliases = term.getByLabel("Aliases (comma-separated)");
   await aliases.fill("postgres");
@@ -7159,7 +7162,8 @@ test("Cancel and Escape return from vocabulary confirmation without losing edits
   for (const cancelWithEscape of [false, true]) {
     await input.press("Home");
     await input.press("Control+Shift+ArrowRight");
-    await page.getByRole("button", { name: "Add to vocabulary", exact: true }).click();
+    await openSelectionMenu(page);
+    await page.getByRole("menuitem", { name: "Add to vocabulary", exact: true }).click();
     const term = page.getByRole("dialog", { name: "Add to vocabulary" });
     await term.getByLabel("Preferred spelling", { exact: true }).fill("Discarded");
     await page.mouse.click(5, 5);
@@ -7184,7 +7188,7 @@ test("vocabulary selection rejects multiline or oversized terms and respects act
   page,
 }) => {
   const input = await openCorrectionEditor(page);
-  const add = page.getByRole("button", {
+  const add = page.getByRole("menuitem", {
     name: "Add to vocabulary",
     exact: true,
   });
@@ -7196,6 +7200,7 @@ test("vocabulary selection rejects multiline or oversized terms and respects act
   await expect(add).toHaveCount(0);
   await input.fill("PostgreSQL");
   await input.press("Control+A");
+  await openSelectionMenu(page);
   await expect(add).toBeEnabled();
   await add.click();
   const term = page.getByRole("dialog", { name: "Add to vocabulary" });

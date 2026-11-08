@@ -1,5 +1,6 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 import type { HomeResult, Snapshot } from "../src/lib/backend";
+import { openSelectionMenu } from "./transcript-menu";
 
 test("Home recorder stays anchored when a result arrives", async ({ page }) => {
   await scenario(page);
@@ -434,6 +435,24 @@ async function scenario(page: Page, saved = true) {
       };
       window.homeResultsTest = state;
       const methods = {
+        AddVocabularyTerm: async (canonical: string, aliases: string[]) => {
+          if (state.fail === "vocabulary") throw new Error("Synthetic vocabulary failure");
+          const entries = state.snapshot.vocabulary;
+          const existing = entries.find((entry) => entry.canonical === canonical);
+          if (existing) existing.aliases = [...new Set([...existing.aliases, ...aliases])];
+          else entries.push({ id: `term-${entries.length}`, canonical, aliases, enabled: true });
+          callbacks["setup:changed"]?.();
+          return structuredClone(entries);
+        },
+        CopyText: async (text: string) => {
+          state.clipboard = text;
+        },
+        SaveTranscript: async (_id: string, text: string) => {
+          state.result!.session.finalTranscript = text;
+          state.result!.text = text;
+          state.result!.revision += ":edited";
+          state.emit();
+        },
         GetSnapshot: async () => structuredClone(state.snapshot),
         GetHomeResult: async () => {
           if (state.failRead) throw new Error("Synthetic read failure");
@@ -533,6 +552,299 @@ async function scenario(page: Page, saved = true) {
   await expect(page.getByRole("heading", { name: "Latest result", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Edit result", exact: true })).toBeEnabled();
 }
+
+async function selectWord(reader: Locator, word: string, occurrence = 0) {
+  await reader.evaluate(
+    (root, { word, occurrence }) => {
+      const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+      while (walker.nextNode()) {
+        const node = walker.currentNode;
+        const text = node.textContent ?? "";
+        for (let at = text.indexOf(word); at >= 0; at = text.indexOf(word, at + word.length)) {
+          if (occurrence-- !== 0) continue;
+          const range = document.createRange();
+          range.setStart(node, at);
+          range.setEnd(node, at + word.length);
+          const selection = window.getSelection()!;
+          selection.removeAllRanges();
+          selection.addRange(range);
+          root.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
+          return;
+        }
+      }
+      throw new Error("Word not found");
+    },
+    { word, occurrence },
+  );
+}
+
+test("correct and remember changes the selected Home occurrence and preserves recognition", async ({
+  page,
+}) => {
+  await scenario(page);
+  await page.evaluate(() => {
+    const result = window.homeResultsTest.result!;
+    result.text =
+      result.session.finalTranscript =
+      result.session.rawTranscript =
+        "Jon called Jon today.";
+    window.homeResultsTest.emit();
+  });
+  const reader = page.getByLabel("Result text", { exact: true });
+  await expect(reader).toHaveText("Jon called Jon today.");
+  await selectWord(reader, "Jon", 1);
+  await openSelectionMenu(page);
+  await page.getByRole("menuitem", { name: "Correct and remember", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Correct and remember" });
+  await dialog.getByLabel("Correct spelling", { exact: true }).fill("John");
+  await dialog.getByRole("button", { name: "Apply correction" }).click();
+  await expect(reader).toHaveText("Jon called John today.");
+  expect(await page.evaluate(() => window.homeResultsTest.snapshot.vocabulary[0])).toMatchObject({
+    canonical: "John",
+    aliases: ["Jon"],
+  });
+  expect(await page.evaluate(() => window.homeResultsTest.result!.session.rawTranscript)).toBe(
+    "Jon called Jon today.",
+  );
+  expect(await page.evaluate(() => window.homeResultsTest.clipboard)).toBe("");
+});
+
+test("one-time corrections stay in the Home draft until Apply changes", async ({ page }) => {
+  await scenario(page, false);
+  await page.getByRole("button", { name: "Edit result", exact: true }).click();
+  const editor = page.getByRole("region", { name: "Edit result", exact: true });
+  const input = editor.getByLabel("Your text", { exact: true });
+  await input.fill("Jon called today.");
+  await input.press("Home");
+  await input.press("Control+Shift+ArrowRight");
+  await openSelectionMenu(page);
+  await page.getByRole("menuitem", { name: "Correct and remember", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Correct and remember" });
+  await dialog.getByLabel("Correct spelling", { exact: true }).fill("John");
+  await dialog.getByRole("checkbox", { name: "Remember for future dictations" }).uncheck();
+  await dialog.getByRole("button", { name: "Apply correction" }).click();
+  await expect(input).toHaveValue("John called today.");
+  await expect(input).toBeFocused();
+  expect(await page.evaluate(() => window.homeResultsTest.calls)).toEqual([]);
+  expect(await page.evaluate(() => window.homeResultsTest.snapshot.vocabulary)).toEqual([]);
+  await editor.getByRole("button", { name: "Apply changes" }).click();
+  await expect(page.getByLabel("Result text", { exact: true })).toHaveText("John called today.");
+  expect(await page.evaluate(() => window.homeResultsTest.result!.saved)).toBe(false);
+});
+
+test("correction errors, cancellation and stale results keep the original text", async ({
+  page,
+}) => {
+  await scenario(page);
+  const reader = page.getByLabel("Result text", { exact: true });
+  await selectWord(reader, "tomorrow");
+  await openSelectionMenu(page);
+  await page.getByRole("menuitem", { name: "Correct and remember", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Correct and remember" });
+  await dialog.getByLabel("Correct spelling", { exact: true }).fill("today");
+  await page.evaluate(() => {
+    window.homeResultsTest.fail = "vocabulary";
+  });
+  await dialog.getByRole("button", { name: "Apply correction" }).click();
+  await expect(dialog.getByRole("alert")).toContainText("Synthetic vocabulary failure");
+  await expect(reader).toContainText("tomorrow");
+  await page.keyboard.press("Escape");
+  await expect(dialog).toHaveCount(0);
+  expect(await page.evaluate(() => window.homeResultsTest.calls)).toEqual([]);
+  await page.getByRole("button", { name: "Edit result", exact: true }).click();
+  const editor = page.getByRole("region", { name: "Edit result", exact: true });
+  const input = editor.getByLabel("Your text", { exact: true });
+  await input.press("Home");
+  await input.press("Control+Shift+ArrowRight");
+  await openSelectionMenu(page);
+  await page.getByRole("menuitem", { name: "Correct and remember", exact: true }).click();
+  await page.keyboard.press("Escape");
+  await expect(editor).toBeVisible();
+  await expect(dialog).toHaveCount(0);
+  await expect(input).toBeFocused();
+  await openSelectionMenu(page);
+  await page.getByRole("menuitem", { name: "Correct and remember", exact: true }).click();
+  await page.evaluate(() => {
+    window.homeResultsTest.result!.revision += ":newer";
+    window.homeResultsTest.emit();
+  });
+  await expect(dialog.getByRole("button", { name: "Apply correction" })).toBeDisabled();
+});
+
+test("History editor autosaves a remembered correction without changing original recognition", async ({
+  page,
+}) => {
+  await scenario(page);
+  await page.evaluate(() => {
+    const result = window.homeResultsTest.result!;
+    result.text =
+      result.session.finalTranscript =
+      result.session.rawTranscript =
+        "Jon called today.";
+    window.homeResultsTest.emit();
+  });
+  await page.getByRole("link", { name: "History", exact: true }).click();
+  await page.locator("article").getByRole("link").click();
+  await page.getByRole("button", { name: "Edit transcript", exact: true }).click();
+  const input = page.getByRole("textbox", { name: "Editable text", exact: true });
+  await input.press("Home");
+  await input.press("Control+Shift+ArrowRight");
+  await openSelectionMenu(page);
+  await page.getByRole("menuitem", { name: "Correct and remember", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Correct and remember" });
+  await dialog.getByLabel("Correct spelling", { exact: true }).fill("John");
+  await dialog.getByRole("button", { name: "Apply correction" }).click();
+  await expect(input).toHaveValue("John called today.");
+  await expect(input).toBeFocused();
+  await expect
+    .poll(() => page.evaluate(() => window.homeResultsTest.result!.text))
+    .toBe("John called today.");
+  expect(await page.evaluate(() => window.homeResultsTest.result!.session.rawTranscript)).toBe(
+    "Jon called today.",
+  );
+});
+
+test("History reading corrects Markdown at its source offsets", async ({ page }) => {
+  await scenario(page);
+  await page.evaluate(() => {
+    const result = window.homeResultsTest.result!;
+    result.text =
+      result.session.finalTranscript =
+      result.session.rawTranscript =
+        "Jon called **Jon** today.";
+    window.homeResultsTest.emit();
+  });
+  await page.getByRole("link", { name: "History", exact: true }).click();
+  await page.locator("article").getByRole("link").click();
+  await selectWord(page.locator('[data-slot="chat-source-text"]').first(), "Jon", 1);
+  await openSelectionMenu(page);
+  await page.getByRole("menuitem", { name: "Correct and remember", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Correct and remember" });
+  await dialog.getByLabel("Correct spelling", { exact: true }).fill("John");
+  await dialog.getByRole("button", { name: "Apply correction" }).click();
+  await expect(page.locator('[data-slot="chat-source-text"]').first()).toContainText(
+    "Jon called John today.",
+  );
+  expect(await page.evaluate(() => window.homeResultsTest.result!.text)).toBe(
+    "Jon called **John** today.",
+  );
+  expect(await page.evaluate(() => window.homeResultsTest.result!.session.rawTranscript)).toBe(
+    "Jon called **Jon** today.",
+  );
+  await expect(dialog).toHaveCount(0);
+  await page.evaluate(() => {
+    const result = window.homeResultsTest.result!;
+    result.text = result.session.finalTranscript = "Jon &amp; Sara.";
+    window.homeResultsTest.emit();
+  });
+  const source = page.locator('[data-slot="chat-source-text"]').first();
+  await expect(source).toHaveText("Jon & Sara.");
+  await selectWord(source, "Jon");
+  await openSelectionMenu(page);
+  await expect(
+    page.getByRole("menuitem", { name: "Correct and remember", exact: true }),
+  ).toHaveCount(0);
+  await page.getByRole("menuitem", { name: "Copy selection", exact: true }).click();
+  expect(await page.evaluate(() => window.homeResultsTest.clipboard)).toBe("Jon");
+});
+
+test("right-click actions stay beside a scrolled selection and preserve the reading position", async ({
+  page,
+}) => {
+  await scenario(page);
+  await page.evaluate(() => {
+    const result = window.homeResultsTest.result!;
+    result.text = result.session.finalTranscript = Array.from(
+      { length: 60 },
+      (_, i) => `Paragraph ${i + 1}: please call Jon about the notes.`,
+    ).join("\n\n");
+    window.homeResultsTest.emit();
+  });
+  const reader = page.getByLabel("Result text", { exact: true });
+  await expect(reader).toContainText("Paragraph 60");
+  expect(await reader.evaluate((node) => getComputedStyle(node).userSelect)).toBe("text");
+  const pane = page.locator('[data-slot="home-result-panel"] [role="tabpanel"]').first();
+  await pane.evaluate((node) => {
+    node.scrollTop = node.scrollHeight;
+  });
+  const scroll = await pane.evaluate((node) => node.scrollTop);
+  await selectWord(reader, "Jon", 59);
+  await expect(page.getByRole("button", { name: "Correct and remember", exact: true })).toHaveCount(
+    0,
+  );
+  await openSelectionMenu(page);
+  await expect(
+    page.getByRole("menuitem", { name: "Correct and remember", exact: true }),
+  ).toBeInViewport();
+  await page.getByRole("menuitem", { name: "Correct and remember", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Correct and remember" });
+  await expect(dialog.getByLabel("Correct spelling", { exact: true })).toHaveValue("Jon");
+  await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  expect(await pane.evaluate((node) => node.scrollTop)).toBe(scroll);
+});
+
+test("editor context menus support keyboard access, long copies, and native menus without a selection", async ({
+  page,
+}) => {
+  await scenario(page, false);
+  await page.getByRole("button", { name: "Edit result", exact: true }).click();
+  const editor = page.getByRole("region", { name: "Edit result", exact: true });
+  const input = editor.getByLabel("Your text", { exact: true });
+  const text = "A long selected passage. ".repeat(8) + "\nA second paragraph.";
+  await input.fill(text);
+  await input.press("End");
+  expect(
+    await input.evaluate((node) => {
+      const event = new MouseEvent("contextmenu", { bubbles: true, cancelable: true });
+      node.dispatchEvent(event);
+      return event.defaultPrevented;
+    }),
+  ).toBe(false);
+  await expect(page.getByRole("menu")).toHaveCount(0);
+  await input.press("Control+A");
+  await input.press("Shift+F10");
+  await expect(page.getByRole("menu")).toBeVisible();
+  await expect(
+    page.getByRole("menuitem", { name: "Correct and remember", exact: true }),
+  ).toHaveCount(0);
+  await page.getByRole("menuitem", { name: "Copy selection", exact: true }).click();
+  expect(await page.evaluate(() => window.homeResultsTest.clipboard)).toBe(text);
+  await expect(input).toHaveValue(text);
+  expect(await page.evaluate(() => window.homeResultsTest.calls)).toEqual([]);
+});
+
+test("History rows reveal search matches and copy the complete edited transcript", async ({
+  page,
+}) => {
+  await scenario(page);
+  const text =
+    "Unrelated opening. ".repeat(40) + "Call John tomorrow. " + "More notes. ".repeat(30);
+  await page.evaluate((text) => {
+    const result = window.homeResultsTest.result!;
+    result.text = result.session.finalTranscript = text;
+    result.session.rawTranscript = "Call Jon tomorrow.";
+    result.session.title = "Meeting notes";
+    window.homeResultsTest.emit();
+  }, text);
+  await page.goto("/#/history?q=John");
+  const row = page.locator("article").first();
+  await expect(row.locator("mark")).toHaveText("John");
+  const snippet = row.locator("p").nth(1);
+  expect((await snippet.textContent())!.startsWith("…")).toBe(true);
+  expect((await snippet.textContent())!.length).toBeLessThan(240);
+  await row.getByRole("button", { name: "Copy dictation", exact: true }).click();
+  expect(await page.evaluate(() => window.homeResultsTest.clipboard)).toBe(text);
+  await expect(page).toHaveURL(/history\?q=John$/);
+  await page.setViewportSize({ width: 360, height: 640 });
+  await expect(row.locator("mark")).toBeInViewport();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(360);
+  await page.goto("/#/history?q=Jon");
+  await expect(row).toContainText("Original recognition");
+  await expect(row.locator("mark")).toHaveText("Jon");
+  await row.getByRole("button", { name: "Copy dictation", exact: true }).click();
+  expect(await page.evaluate(() => window.homeResultsTest.clipboard)).toBe(text);
+});
 
 test("saved edits submit explicitly, cancel without writes, return focus and keep provenance", async ({
   page,

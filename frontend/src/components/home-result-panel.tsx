@@ -1,10 +1,7 @@
-import { nativeText } from "@/i18n/native-text";
-import { useTranslation } from "react-i18next";
-import i18n from "@/i18n";
 import { useDictation } from "@/components/dictation-provider";
-import { MarkdownContent } from "@/components/markdown-content";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { InferenceStats } from "@/components/inference-stats";
+import { MarkdownContent } from "@/components/markdown-content";
+import { TranscriptContextMenu } from "@/components/transcript-context-menu";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -13,10 +10,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import i18n from "@/i18n";
+import { nativeText } from "@/i18n/native-text";
 import { backend, isBusy, isDesktop, type HomeResult } from "@/lib/backend";
 import { useSavedDraft } from "@/lib/use-saved-draft";
 import { Check, Copy, Loader2, Pencil, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Link } from "react-router";
 
 function recoveryWarning(result: HomeResult) {
@@ -59,6 +60,7 @@ export function HomeResultPanel({
   const request = useRef(0);
   const actionPending = useRef(false);
   const editTrigger = useRef<HTMLButtonElement>(null);
+  const reading = useRef<HTMLDivElement>(null);
   const current = useRef(result);
   const busy = loading || isBusy(snapshot.status.phase);
   const latestBusy = useRef(busy);
@@ -447,18 +449,27 @@ export function HomeResultPanel({
             value="result"
             className="box-content min-h-[3.5rem] flex-1 scroll-mt-24 overflow-y-auto px-5 py-4 [contain:size] @max-[20rem]/home-result:px-4 @max-[20rem]/home-result:py-[12px] @max-[12rem]/home-result:px-[16px] sm:px-7"
           >
-            <div
-              id="home-result-text"
-              tabIndex={0}
-              aria-label={t("homeResultPanel.resultText")}
-              className="max-w-[72ch] rounded-sm text-base leading-7 outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            <TranscriptContextMenu
+              key={`${result.session.id}:${result.revision}`}
+              text={result.text}
+              returnFocus={reading}
+              disabled={unavailable}
+              onApply={!result.outputId ? (text) => act(result, "edit", text) : undefined}
             >
-              {result.outputId ? (
-                <MarkdownContent className="text-base leading-7">{result.text}</MarkdownContent>
-              ) : (
-                <p className="whitespace-pre-wrap break-words">{result.text}</p>
-              )}
-            </div>
+              <div
+                id="home-result-text"
+                ref={reading}
+                tabIndex={0}
+                aria-label={t("homeResultPanel.resultText")}
+                className="max-w-[72ch] rounded-sm text-base leading-7 outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                {result.outputId ? (
+                  <MarkdownContent className="text-base leading-7">{result.text}</MarkdownContent>
+                ) : (
+                  <p className="whitespace-pre-wrap break-words">{result.text}</p>
+                )}
+              </div>
+            </TranscriptContextMenu>
           </TabsContent>
           <TabsContent
             value="outputs"
@@ -580,6 +591,7 @@ function HomeResultEditor({
     [result.session.id, result.revision, result.text],
   );
   const [draft, setDraft, draftState] = useSavedDraft("home-result-edit", baseline);
+  const [correctionOpen, setCorrectionOpen] = useState(false);
   const sameResult = draft[0] === result.session.id && draft[1] === result.revision;
   const text = sameResult ? draft[2] : result.text;
   // Keep the draft across navigation, but never reuse it for another result or revision.
@@ -620,6 +632,12 @@ function HomeResultEditor({
       aria-describedby={describedBy}
       className="flex min-h-min flex-1 flex-col"
       onKeyDown={(event) => {
+        if (
+          correctionOpen ||
+          event.defaultPrevented ||
+          !event.currentTarget.contains(event.target as Node)
+        )
+          return;
         if (
           event.key === "Escape" &&
           !pending &&
@@ -667,34 +685,47 @@ function HomeResultEditor({
         <label htmlFor="home-result-draft" className="sr-only">
           {t("homeResultPanel.yourText")}
         </label>
-        <textarea
-          ref={input}
-          id="home-result-draft"
-          value={text}
-          rows={7}
-          disabled={pending}
-          aria-describedby={describedBy}
-          className="min-h-[3.5rem] w-full max-w-[calc(72ch+2rem+2px)] flex-1 resize-none rounded-lg border bg-transparent px-4 py-3 text-base leading-7 outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60"
-          onChange={(event) => setText(event.target.value)}
-          onCompositionStart={() => {
-            composing.current = true;
+        <TranscriptContextMenu
+          text={text}
+          returnFocus={input}
+          disabled={busy || pending || stale || readFailed}
+          onDialogOpenChange={setCorrectionOpen}
+          onApply={(value) => {
+            setText(value);
+            return true;
           }}
-          onCompositionEnd={() => {
-            composing.current = false;
-          }}
-          onKeyDown={(event) => {
-            if (
-              event.key === "Enter" &&
-              (event.ctrlKey || event.metaKey) &&
-              !event.nativeEvent.isComposing &&
-              !composing.current &&
-              event.keyCode !== 229
-            ) {
-              event.preventDefault();
-              if (!busy && !invalid && !stale && text !== result.text) void submit();
-            }
-          }}
-        />
+        >
+          <textarea
+            ref={input}
+            id="home-result-draft"
+            value={text}
+            rows={7}
+            disabled={pending}
+            aria-describedby={describedBy}
+            className="min-h-[3.5rem] w-full max-w-[calc(72ch+2rem+2px)] flex-1 resize-none rounded-lg border bg-transparent px-4 py-3 text-base leading-7 outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60"
+            onChange={(event) => {
+              setText(event.target.value);
+            }}
+            onCompositionStart={() => {
+              composing.current = true;
+            }}
+            onCompositionEnd={() => {
+              composing.current = false;
+            }}
+            onKeyDown={(event) => {
+              if (
+                event.key === "Enter" &&
+                (event.ctrlKey || event.metaKey) &&
+                !event.nativeEvent.isComposing &&
+                !composing.current &&
+                event.keyCode !== 229
+              ) {
+                event.preventDefault();
+                if (!busy && !invalid && !stale && text !== result.text) void submit();
+              }
+            }}
+          />
+        </TranscriptContextMenu>
         {(stale || readFailed || busy) && (
           <p
             id="home-result-edit-state"

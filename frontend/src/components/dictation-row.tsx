@@ -1,12 +1,13 @@
-import { useTranslation } from "react-i18next";
-import i18n from "@/i18n";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import i18n from "@/i18n";
 import { duration, type Session } from "@/lib/backend";
+import { historySearchPreview, searchRanges } from "@/lib/history-search";
 import { ChevronRight, RotateCcw, Trash2 } from "lucide-react";
-import { Link } from "react-router";
 import type { ReactNode } from "react";
+import { useTranslation } from "react-i18next";
+import { Link } from "react-router";
 
 function speechModelLabel(model: string) {
   const match = /^(?:ggml-)?(tiny|base|small)(\.en)?(?:\.bin)?$/i.exec(model);
@@ -21,6 +22,7 @@ type DictationRowProps = {
   showDate?: boolean;
   inset?: boolean;
   action?: ReactNode;
+  query?: string;
   selection?: {
     label: string;
     checked: boolean;
@@ -46,20 +48,26 @@ export function DictationRow({
   inset = true,
   action,
   selection,
+  query = "",
 }: DictationRowProps) {
   const { t } = useTranslation();
-  const text = entry.finalTranscript ?? entry.rawTranscript;
+  const preview = historySearchPreview(entry, query);
   const content = (
     <div className="min-w-0 flex-1 space-y-2.5">
       {entry.title && (
         <p className="line-clamp-2 break-words text-[0.9375rem] leading-6 font-medium">
-          {entry.title}
+          <SearchHighlight text={entry.title} query={query} />
         </p>
       )}
       <p
-        className={`${entry.title ? "line-clamp-1 text-sm text-muted-foreground" : "line-clamp-2 text-[0.9375rem]"} break-words leading-6`}
+        className={`${entry.title && !query ? "line-clamp-1 text-sm text-muted-foreground" : "line-clamp-2 text-[0.9375rem]"} break-words leading-6`}
       >
-        {text}
+        {preview.original && (
+          <span className="mr-1 text-xs font-medium text-muted-foreground">
+            {t("historyPage.originalMatch")}:{" "}
+          </span>
+        )}
+        <SearchHighlight text={preview.text} query={query} />
       </p>
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs text-muted-foreground">
         {deleted ? (
@@ -96,7 +104,7 @@ export function DictationRow({
   return (
     <article
       data-selected={selection?.checked || undefined}
-      className="group flex flex-wrap items-stretch border-b last:border-b-0 transition-colors hover:bg-accent/35 data-[selected=true]:bg-primary/8"
+      className="@container/dictation-row group flex flex-wrap items-stretch border-b last:border-b-0 transition-colors hover:bg-accent/35 data-[selected=true]:bg-primary/8"
     >
       {selection && (
         <label className="flex w-11 shrink-0 cursor-pointer items-start justify-center pt-5 sm:w-14">
@@ -126,7 +134,11 @@ export function DictationRow({
       ) : (
         <div className={`min-w-0 flex-1 py-4 pr-3 ${selection ? "" : "pl-5"}`}>{content}</div>
       )}
-      {action && <div className="flex shrink-0 items-center pr-3">{action}</div>}
+      {action && (
+        <div className="flex shrink-0 items-center pr-3 @max-[20rem]/dictation-row:ml-auto @max-[20rem]/dictation-row:basis-full @max-[20rem]/dictation-row:justify-end @max-[20rem]/dictation-row:pb-2">
+          {action}
+        </div>
+      )}
       {deleted && (
         <div className="ml-auto flex max-w-full flex-wrap items-center justify-end gap-2 self-center px-3 pb-3 sm:py-3 sm:pr-5">
           <Tooltip>
@@ -166,5 +178,25 @@ export function DictationRow({
         </div>
       )}
     </article>
+  );
+}
+
+function SearchHighlight({ text, query }: { text: string; query: string }) {
+  const ranges = searchRanges(text, query);
+  let cursor = 0;
+  return (
+    <>
+      {ranges.map(({ start, end }) => {
+        const before = text.slice(cursor, start);
+        cursor = end;
+        return (
+          <span key={start}>
+            {before}
+            <mark className="rounded-sm bg-primary/20 text-inherit">{text.slice(start, end)}</mark>
+          </span>
+        );
+      })}
+      {text.slice(cursor)}
+    </>
   );
 }

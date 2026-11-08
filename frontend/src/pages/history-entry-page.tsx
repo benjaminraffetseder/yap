@@ -6,6 +6,7 @@ import { GeneratedOutputs } from "@/components/generated-outputs";
 import { InferenceStats } from "@/components/inference-stats";
 import { SessionTitleAction } from "@/components/session-title-action";
 import { TextPanel } from "@/components/text-panel";
+import { TranscriptContextMenu } from "@/components/transcript-context-menu";
 import { TranscriptDiff } from "@/components/transcript-diff";
 import { TranscriptEditor } from "@/components/transcript-editor";
 import { TranscriptExportDialog } from "@/components/transcript-export-dialog";
@@ -18,6 +19,7 @@ import { nativeText } from "@/i18n/native-text";
 import {
   backend,
   duration,
+  isBusy,
   isDesktop,
   message,
   type ChatReference,
@@ -76,7 +78,6 @@ function EntryDetail({ id }: { id: string }) {
   const [chatInitialized, setChatInitialized] = useState(false);
   const [chatSource, setChatSource] = useState<"transcript" | "original">("transcript");
   const [chatSelection, setChatSelection] = useState<ChatSelection | null>(null);
-  const [readingSelection, setReadingSelection] = useState<ChatSelection | null>(null);
   const [chatOutput, setChatOutput] = useState<GeneratedOutput | null>(null);
   const [highlights, setHighlights] = useState<{
     source: "transcript" | "original";
@@ -88,11 +89,9 @@ function EntryDetail({ id }: { id: string }) {
     setChatInitialized(true);
     setChatOpen(true);
   }
-  function askSelection() {
-    if (!readingSelection) return;
-    setChatSource(readingSelection.source);
-    setChatSelection(readingSelection);
-    setReadingSelection(null);
+  function askSelection(source: "transcript" | "original", text: string) {
+    setChatSource(source);
+    setChatSelection({ source, text });
     openChat();
   }
   const editTrigger = useRef<HTMLButtonElement>(null);
@@ -427,17 +426,6 @@ function EntryDetail({ id }: { id: string }) {
               "max-h-[40dvh] min-h-0 overflow-y-auto overscroll-contain pr-3 lg:max-h-none lg:pb-4",
           )}
         >
-          {readingSelection && !editing && (
-            <div className="mb-3 flex flex-wrap items-center gap-2 sm:pl-11">
-              <Button size="sm" variant="outline" onClick={askSelection}>
-                <MessageSquare aria-hidden="true" className="size-3.5" />
-                {t("chat.askSelection")}
-              </Button>
-              <Button size="sm" variant="ghost" onClick={() => setReadingSelection(null)}>
-                {t("common.cancel")}
-              </Button>
-            </div>
-          )}
           {highlights.references.length > 0 && (
             <div className="mb-3 sm:pl-11">
               <Button
@@ -510,11 +498,27 @@ function EntryDetail({ id }: { id: string }) {
                       : t("historyEntryPage.savedTranscription"),
                   })}
                 >
-                  <ChatSourceText
+                  <TranscriptContextMenu
                     text={text}
-                    references={highlights.source === "transcript" ? highlights.references : []}
-                    onSelection={(text) => setReadingSelection({ text, source: "transcript" })}
-                  />
+                    disabled={unavailable || isBusy(snapshot.status.phase)}
+                    onApply={async (value) => {
+                      await backend.saveTranscript(id, value);
+                      setReload((old) => old + 1);
+                      void run(refresh, false);
+                      return true;
+                    }}
+                    onAskSelection={(selected) => askSelection("transcript", selected)}
+                  >
+                    <div
+                      tabIndex={0}
+                      className="rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    >
+                      <ChatSourceText
+                        text={text}
+                        references={highlights.source === "transcript" ? highlights.references : []}
+                      />
+                    </div>
+                  </TranscriptContextMenu>
                 </TextPanel>
               </TabsContent>
               <TabsContent value="original" keepMounted>
@@ -524,11 +528,20 @@ function EntryDetail({ id }: { id: string }) {
                   kind="source"
                   description={t("historyEntryPage.fromTheRecordingReadOnly")}
                 >
-                  <ChatSourceText
+                  <TranscriptContextMenu
                     text={entry.rawTranscript}
-                    references={highlights.source === "original" ? highlights.references : []}
-                    onSelection={(text) => setReadingSelection({ text, source: "original" })}
-                  />
+                    onAskSelection={(selected) => askSelection("original", selected)}
+                  >
+                    <div
+                      tabIndex={0}
+                      className="rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    >
+                      <ChatSourceText
+                        text={entry.rawTranscript}
+                        references={highlights.source === "original" ? highlights.references : []}
+                      />
+                    </div>
+                  </TranscriptContextMenu>
                 </TextPanel>
               </TabsContent>
               <TabsContent value="outputs" keepMounted>

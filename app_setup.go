@@ -2,11 +2,13 @@ package main
 
 import (
 	"errors"
+	"strings"
 	"time"
 
-	"github.com/google/uuid"
 	"yap/internal/inference/speech"
 	"yap/internal/vocabulary"
+
+	"github.com/google/uuid"
 )
 
 func (a *App) SaveVocabulary(entries []vocabulary.Entry) ([]vocabulary.Entry, error) {
@@ -15,11 +17,32 @@ func (a *App) SaveVocabulary(entries []vocabulary.Entry) ([]vocabulary.Entry, er
 	return a.saveVocabularyLocked(entries)
 }
 
-// Append against the current vocabulary, not a possibly stale webview snapshot.
+// Add or merge against the current vocabulary, not a stale webview snapshot.
 func (a *App) AddVocabularyTerm(canonical string, aliases []string) ([]vocabulary.Entry, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	entries := append([]vocabulary.Entry{}, a.vocabulary...)
+	for i, entry := range entries {
+		if strings.EqualFold(entry.Canonical, strings.TrimSpace(canonical)) {
+			// Repeated corrections add aliases to the current term, including at
+			// the term limit. Clone its slice so failed saves cannot mutate it.
+			entries[i].Canonical = canonical
+			merged := append([]string{}, entry.Aliases...)
+			for _, alias := range aliases {
+				alias = strings.TrimSpace(alias)
+				found := strings.EqualFold(alias, strings.TrimSpace(canonical))
+				for _, existing := range merged {
+					found = found || strings.EqualFold(alias, existing)
+				}
+				if !found {
+					merged = append(merged, alias)
+				}
+			}
+			entries[i].Aliases = merged
+			entries[i].Enabled = true
+			return a.saveVocabularyLocked(entries)
+		}
+	}
 	entries = append(entries, vocabulary.Entry{ID: uuid.NewString(), Canonical: canonical, Aliases: aliases, Enabled: true})
 	return a.saveVocabularyLocked(entries)
 }
