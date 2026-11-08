@@ -37,7 +37,7 @@ func (a *App) ServiceStartup(ctx context.Context, _ application.ServiceOptions) 
 		History:     func() { a.openDesktopPage("/history") },
 		Settings:    func() { a.openDesktopPage("/settings") },
 		FixShortcut: a.openShortcutSettings,
-	}, trayIcon)
+	}, appIcon)
 	if err != nil {
 		a.status.TrayError = "Background controls unavailable: " + err.Error()
 	}

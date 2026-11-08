@@ -17,7 +17,7 @@ import (
 var assets embed.FS
 
 //go:embed build/appicon.png
-var trayIcon []byte
+var appIcon []byte
 
 func main() {
 	if handled, err := speech.RunWorker(os.Args[1:]); handled {
@@ -30,6 +30,7 @@ func main() {
 	service := NewApp()
 	app := application.New(application.Options{
 		Name:           "Yap",
+		Icon:           appIcon,
 		Mac:            application.MacOptions{ApplicationShouldTerminateAfterLastWindowClosed: true},
 		Windows:        indicator.WindowsOptions(),
 		Services:       []application.Service{application.NewService(service)},

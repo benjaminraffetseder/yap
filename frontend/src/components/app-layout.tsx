@@ -1,3 +1,4 @@
+import appIcon from "@/assets/app-icon.svg";
 import { AudioDropImport } from "@/components/audio-drop-import";
 import { CommandMenu } from "@/components/command-menu";
 import { useDictation } from "@/components/dictation-provider";
@@ -11,15 +12,7 @@ import { nativeText } from "@/i18n/native-text";
 import { backend, backendVersionMismatchMessage, isDesktop } from "@/lib/backend";
 import { cn } from "@/lib/utils";
 import { Events } from "@wailsio/runtime";
-import {
-  AudioLines,
-  BookOpen,
-  HardDriveDownload,
-  History,
-  Mic,
-  Settings2,
-  Sparkles,
-} from "lucide-react";
+import { BookOpen, HardDriveDownload, History, Mic, Settings2, Sparkles } from "lucide-react";
 import {
   Fragment,
   useEffect,
@@ -147,7 +140,14 @@ export function AppLayout({ saveNoticeRef }: { saveNoticeRef?: Ref<HTMLDivElemen
               )}
               aria-label={t("appLayout.yapHome")}
             >
-              <AudioLines className="size-5 text-primary" aria-hidden="true" />
+              <img
+                src={appIcon}
+                className="size-8"
+                width={32}
+                height={32}
+                alt=""
+                aria-hidden="true"
+              />
             </Link>
           </div>
           <nav aria-label={t("appLayout.mainNavigation")} className="flex flex-1 flex-col gap-1">
