@@ -32,7 +32,7 @@ export default defineConfig(({ mode }) => ({
   ],
   // Match Tailwind 4's supported engines and the macOS 13.3 WebKit minimum.
   build: {
-    rollupOptions: {
+    rolldownOptions: {
       input: {
         main: fileURLToPath(new URL("./index.html", import.meta.url)),
         indicator: fileURLToPath(new URL("./indicator.html", import.meta.url)),

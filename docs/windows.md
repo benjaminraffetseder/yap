@@ -6,8 +6,8 @@ executable; you don't need an installer or signing tools to run it.
 ## Requirements
 
 - Go 1.26 or newer.
-- Node 22.12 or newer, with npm.
-- Wails CLI 3.0.0.
+- Node 22.22 or newer, with npm.
+- Wails CLI 3.1.0.
 - Microsoft Edge WebView2 Runtime.
 
 A C compiler isn't required. SQLite uses a pure-Go driver, and speech recognition
@@ -18,7 +18,7 @@ runs through a separate Whisper executable downloaded during model setup.
 From a clone of this repository:
 
 ```powershell
-go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0
+go install github.com/wailsapp/wails/v3/cmd/wails3@v3.1.0
 wails3 doctor
 wails3 build
 .\build\bin\yap.exe

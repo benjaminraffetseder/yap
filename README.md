@@ -103,13 +103,13 @@ runs locally: Yap can't stop an external server from forwarding requests elsewhe
 
 ## Build from source
 
-For Windows, you'll need Go **1.26+**, Node **22.12+**, Wails CLI **3.0.0**,
+For Windows, you'll need Go **1.26+**, Node **22.22+**, Wails CLI **3.1.0**,
 and WebView2. A C compiler isn't needed for the Windows build.
 
 ```powershell
 git clone https://github.com/benjaminraffetseder/yap.git
 cd yap
-go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0
+go install github.com/wailsapp/wails/v3/cmd/wails3@v3.1.0
 wails3 build
 ```
 

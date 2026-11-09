@@ -1,7 +1,7 @@
 # Wails v3 migration
 
-Yap uses Wails **v3.0.0** and `@wailsio/runtime` **3.0.0**. Install the matching
-CLI with `go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0`.
+Yap uses Wails **v3.1.0** and `@wailsio/runtime` **3.1.0**. Install the matching
+CLI with `go install github.com/wailsapp/wails/v3/cmd/wails3@v3.1.0`.
 The [official migration guide](https://v3.wails.io/migration/v2-to-v3/) describes
 the framework changes.
 
@@ -70,9 +70,9 @@ independently of the application's context providers.
 Browser tests use the actual v3 runtime and named bindings through a test-only
 in-memory transport. The production bundle does not load that transport.
 
-The Go module and JavaScript runtime are both pinned to the latest stable
-v3.0.0 release checked during this migration. There was no external tray module
-to remove from `go.mod`; `internal/tray` now only adapts Yap's menu state to Wails.
+The Go module and JavaScript runtime are both pinned to the stable v3.1.0
+release. There was no external tray module to remove from `go.mod`;
+`internal/tray` now only adapts Yap's menu state to Wails.
 The remaining direct native dependencies still have active uses:
 
 - `golang.design/x/hotkey` supplies ordered key-down and key-up events for

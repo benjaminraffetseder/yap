@@ -5777,7 +5777,7 @@ test("saved outputs retain their recipes, regenerate as new versions and leave e
     .poll(() => page.evaluate(() => window.dictationTest.snapshot.status.transcript))
     .toBe("Compare the new model's recognition of names and technical terms.");
   await expect(copyOutput.locator("svg.lucide-check")).toBeVisible();
-  expect(await copyOutput.boundingBox()).toEqual(copyBounds);
+  await expect.poll(() => copyOutput.boundingBox()).toEqual(copyBounds);
   await page.getByRole("button", { name: "Edit transcript", exact: true }).click();
   await page
     .getByRole("textbox", { name: "Editable text", exact: true })

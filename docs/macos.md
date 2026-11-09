@@ -11,10 +11,10 @@ system WebKit. Installing a newer standalone browser doesn't update Yap's webvie
 ## Build with Wails
 
 Use a Mac with Xcode Command Line Tools (`xcode-select --install`), Go 1.26.x,
-Node 22.12+, and Wails 3.0.0. From a clone of the repository:
+Node 22.22+, and Wails 3.1.0. From a clone of the repository:
 
 ```bash
-go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0
+go install github.com/wailsapp/wails/v3/cmd/wails3@v3.1.0
 export MACOSX_DEPLOYMENT_TARGET=13.3
 export CGO_CFLAGS="${CGO_CFLAGS:-} -mmacosx-version-min=13.3"
 export CGO_LDFLAGS="${CGO_LDFLAGS:-} -mmacosx-version-min=13.3"
@@ -43,7 +43,7 @@ Use the checked-in packaging script to include **Whisper and FFmpeg**. End users
 won't need Homebrew or a separately installed runtime. Speech models are still
 downloaded in Yap during setup.
 
-On a Mac, install Xcode Command Line Tools, Go 1.26.x, Node 22.12+, and CMake.
+On a Mac, install Xcode Command Line Tools, Go 1.26.x, Node 22.22+, and CMake.
 For example, with Homebrew already installed, `brew install cmake` supplies CMake.
 The script uses the pinned Wails CLI and installs it into its temporary build directory.
 Use a checkout path without spaces (required by FFmpeg's build system).

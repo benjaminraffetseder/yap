@@ -3,6 +3,14 @@
 Yap has a Go backend and a React 19/TypeScript frontend, connected by Wails v3.
 The UI uses Tailwind v4 and shadcn/ui with Base UI components.
 
+TypeScript is kept on 6.0.x while the latest `typescript-eslint` requires
+TypeScript below 6.1. Upgrade both together when TypeScript 7 support is available.
+
+Playwright stays pinned to 1.62.1. The bundled Chromium versions in Playwright
+1.63.0, 1.64.1, and 1.65.0 leave notification timers paused after keyboard focus
+returns to the page in the microphone-error test. Recheck that scenario before
+upgrading the test runner.
+
 ## Running locally
 
 See the [README](../README.md#build-from-source) for tool versions. From the repo

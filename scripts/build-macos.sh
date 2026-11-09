@@ -17,7 +17,7 @@ for tool in go npm node cmake make xcrun curl shasum ditto codesign otool plutil
   if ! command -v "$tool" >/dev/null 2>&1; then printf 'Missing tool: %s. See docs/macos.md.\n' "$tool" >&2; exit 1; fi
 done
 xcrun --find clang >/dev/null
-node -e 'const [major, minor] = process.versions.node.split(".").map(Number); if (major < 22 || (major === 22 && minor < 12)) { console.error("Use Node 22.12 or newer."); process.exit(1); }'
+node -e 'const [major, minor] = process.versions.node.split(".").map(Number); if (major < 22 || (major === 22 && minor < 22)) { console.error("Use Node 22.22 or newer."); process.exit(1); }'
 case "$(go env GOVERSION)" in
   go1.26.*) ;;
   *) printf '%s\n' 'Use the project-tested Go 1.26.x toolchain. See docs/macos.md.' >&2; exit 1 ;;
@@ -107,7 +107,7 @@ for architecture in "${architectures[@]}"; do
 done
 
 # Use the project-pinned CLI without requiring a globally installed Wails.
-GOBIN="$work/wails-bin" go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0
+GOBIN="$work/wails-bin" go install github.com/wailsapp/wails/v3/cmd/wails3@v3.1.0
 export PATH="$work/wails-bin:$PATH"
 if [[ "$target" == universal ]]; then
   wails3 build GOOS=darwin ARCH=amd64 BIN_DIR="$work/app-amd64"
