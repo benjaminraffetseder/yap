@@ -298,6 +298,88 @@ func TestBackupKeepsConflictsAndPreferencesOptional(t *testing.T) {
 	}
 }
 
+func TestBackupRestoreSkipsTrashedParentsAndTheirContent(t *testing.T) {
+	source, path := backupFixture(t)
+	entry, err := source.Session("source")
+	if err != nil {
+		t.Fatal(err)
+	}
+	chatSource := NewChatSource("transcript", entry.FinalTranscript)
+	chat := Chat{SessionID: entry.ID, Sources: []ChatSource{chatSource}, Messages: []ChatMessage{}}
+	for _, role := range []string{"user", "assistant"} {
+		chat.Messages = append(chat.Messages, ChatMessage{ID: role, Role: role, Content: "Archived conversation.", SourceID: chatSource.ID, State: "complete", CreatedAt: time.Now().UTC().Format(time.RFC3339Nano)})
+	}
+	if err := source.SaveChat(chat); err != nil {
+		t.Fatal(err)
+	}
+	newEntry := NewSession("new", 1000, "Unrelated new dictation.", "tiny", "en", "")
+	if err := source.Add(newEntry); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := source.ExportBackup(context.Background(), path, false); err != nil {
+		t.Fatal(err)
+	}
+	archive, err := ReadBackup(context.Background(), path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer archive.Close()
+	for _, deleted := range []bool{false, true} {
+		t.Run(map[bool]string{false: "active duplicate", true: "trashed duplicate"}[deleted], func(t *testing.T) {
+			dest := backupStore(t)
+			local := entry
+			local.AudioPath, local.FinalTranscript = "", "Keep the local correction."
+			if err := dest.Add(local); err != nil {
+				t.Fatal(err)
+			}
+			if deleted {
+				if err := dest.TrashSessions([]string{local.ID}, time.Now()); err != nil {
+					t.Fatal(err)
+				}
+			}
+			before, err := dest.sessionIncludingDeleted(local.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			wantContent, wantSkipped := 1, 0
+			if deleted {
+				wantContent, wantSkipped = 0, 1
+			}
+			preview, err := dest.PreviewBackup(context.Background(), archive)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if preview.Sessions != 1 || preview.DuplicateSessions != 1 || preview.Outputs != wantContent || preview.DuplicateOutputs != wantSkipped || preview.Chats != wantContent || preview.SkippedChats != wantSkipped {
+				t.Errorf("preview counted content for an unavailable parent: %+v", preview)
+			}
+			result, err := dest.RestoreBackup(context.Background(), archive, false)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if result.Summary != preview {
+				t.Fatalf("restore differed from preview: %+v versus %+v", result.Summary, preview)
+			}
+			if got, err := dest.sessionIncludingDeleted(local.ID); err != nil || got != before {
+				t.Fatalf("restore changed the existing dictation or its deletion: %+v %v", got, err)
+			}
+			if got, err := dest.Session(newEntry.ID); err != nil || got != newEntry {
+				t.Fatalf("unrelated dictation was not restored: %+v %v", got, err)
+			}
+			if deleted {
+				if err := dest.RestoreSessions([]string{local.ID}, time.Now()); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if outputs, err := dest.GeneratedOutputs(local.ID); err != nil || len(outputs) != wantContent {
+				t.Fatalf("wrong outputs after restore: %+v %v", outputs, err)
+			}
+			if got, err := dest.Chat(local.ID); err != nil || len(got.Messages) != 2*wantContent {
+				t.Fatalf("wrong chat after restore: %+v %v", got, err)
+			}
+		})
+	}
+}
+
 func TestBackupRestoreRollsBackDatabaseAndAudio(t *testing.T) {
 	source, path := backupFixture(t)
 	if _, err := source.ExportBackup(context.Background(), path, true); err != nil {

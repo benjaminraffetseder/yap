@@ -639,14 +639,16 @@ func planBackup(ctx context.Context, tx *sql.Tx, b *BackupArchive) (p restorePla
 	parents := map[string]bool{}
 	for _, v := range b.manifest.Sessions {
 		var existing Session
-		e := tx.QueryRowContext(ctx, "SELECT id,created_at,duration_ms,transcript,model,language FROM recordings WHERE id=?", v.ID).Scan(&existing.ID, &existing.CreatedAt, &existing.DurationMS, &existing.RawTranscript, &existing.SpeechModel, &existing.Language)
+		var deleted bool
+		e := tx.QueryRowContext(ctx, `SELECT r.id,r.created_at,r.duration_ms,r.transcript,r.model,r.language,
+			EXISTS (SELECT 1 FROM deleted_recordings d WHERE d.id=r.id) FROM recordings r WHERE r.id=?`, v.ID).Scan(&existing.ID, &existing.CreatedAt, &existing.DurationMS, &existing.RawTranscript, &existing.SpeechModel, &existing.Language, &deleted)
 		if e != nil && !errors.Is(e, sql.ErrNoRows) {
 			return p, e
 		}
 		if e == nil {
 			p.summary.DuplicateSessions++
-			// A collision from a different dictation cannot attach foreign outputs.
-			parents[v.ID] = existing.CreatedAt == v.CreatedAt && existing.DurationMS == v.DurationMS && existing.RawTranscript == v.RawTranscript && existing.SpeechModel == v.SpeechModel && existing.Language == v.Language
+			// Deleted dictations and collisions cannot receive archived outputs or chats.
+			parents[v.ID] = !deleted && existing.CreatedAt == v.CreatedAt && existing.DurationMS == v.DurationMS && existing.RawTranscript == v.RawTranscript && existing.SpeechModel == v.SpeechModel && existing.Language == v.Language
 			continue
 		}
 		parents[v.ID] = true

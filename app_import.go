@@ -20,7 +20,7 @@ func (a *App) importAvailableLocked() error {
 	if err := a.available(); err != nil {
 		return err
 	}
-	return speech.Validate(speech.Options{Executable: a.settings.WhisperPath, Model: a.settings.ModelPath})
+	return speech.Validate(speech.Options{Executable: a.settings.WhisperPath, Model: a.settings.ModelPath, Language: a.settings.Language})
 }
 
 func (a *App) ImportAudio() error {

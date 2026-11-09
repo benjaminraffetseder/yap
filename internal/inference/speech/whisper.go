@@ -60,7 +60,13 @@ func Validate(opts Options) error {
 	if err := ValidateRuntimeFor(opts); err != nil {
 		return err
 	}
-	return ValidateModel(opts.Model)
+	if err := ValidateModel(opts.Model); err != nil {
+		return err
+	}
+	if Kind(opts.Model) == "moonshine" && opts.Language != "" && opts.Language != "auto" && opts.Language != "en" {
+		return fmt.Errorf("this Moonshine model supports English only; choose English or Auto in Settings, or select a multilingual model")
+	}
+	return nil
 }
 func (Whisper) Transcribe(ctx context.Context, audio string, opts Options) (string, error) {
 	if err := Validate(opts); err != nil {

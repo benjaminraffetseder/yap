@@ -126,9 +126,6 @@ func (Local) Transcribe(ctx context.Context, audio string, opts Options) (string
 	if err := Validate(opts); err != nil {
 		return "", err
 	}
-	if Kind(opts.Model) == "moonshine" && opts.Language != "" && opts.Language != "auto" && opts.Language != "en" {
-		return "", fmt.Errorf("this Moonshine model supports English only; choose English or Auto in Settings, or select a multilingual model")
-	}
 	dir, err := os.MkdirTemp("", "yap-transcript-")
 	if err != nil {
 		return "", err

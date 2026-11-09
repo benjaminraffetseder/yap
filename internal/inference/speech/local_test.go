@@ -65,6 +65,14 @@ func TestMoonshineLanguageAndIncompleteModel(t *testing.T) {
 	path := RuntimePath(dir, "moonshine")
 	os.MkdirAll(filepath.Dir(path), 0700)
 	os.WriteFile(path, []byte("runtime"), 0600)
+	for _, language := range []string{"", "auto", "en"} {
+		if err := Validate(Options{Model: model, Language: language}); err != nil {
+			t.Fatalf("rejected supported Moonshine language %q: %v", language, err)
+		}
+	}
+	if err := Validate(Options{Model: model, Language: "de"}); err == nil {
+		t.Fatal("preflight accepted German for English-only model")
+	}
 	if _, err := (Local{}).Transcribe(context.Background(), "unused.wav", Options{Model: model, Language: "de"}); err == nil {
 		t.Fatal("accepted German for English-only model")
 	}

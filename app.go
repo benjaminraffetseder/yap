@@ -647,7 +647,7 @@ func (a *App) start(external bool) error {
 	if err != nil {
 		return err
 	}
-	if err := speech.Validate(speech.Options{Executable: settings.WhisperPath, Model: settings.ModelPath}); err != nil {
+	if err := speech.Validate(speech.Options{Executable: settings.WhisperPath, Model: settings.ModelPath, Language: settings.Language}); err != nil {
 		return err
 	}
 	file, path, err := a.store.CreateRecording()

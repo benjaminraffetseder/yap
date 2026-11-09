@@ -49,7 +49,7 @@ func (a *App) StartChatVoice(requestID, sessionID string) error {
 		return err
 	}
 	settings := a.settings
-	if err := speech.Validate(speech.Options{Executable: settings.WhisperPath, Model: settings.ModelPath}); err != nil {
+	if err := speech.Validate(speech.Options{Executable: settings.WhisperPath, Model: settings.ModelPath, Language: settings.Language}); err != nil {
 		return err
 	}
 	file, path, err := a.store.CreateRecording()
