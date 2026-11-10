@@ -16,8 +16,8 @@ type runtimeTransport func(*http.Request) (*http.Response, error)
 func (f runtimeTransport) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
 
 func TestRuntimeInstallRejectsRedirectedStorageBeforeDownload(t *testing.T) {
-	if runtime.GOOS != "windows" || runtime.GOARCH != "amd64" {
-		t.Skip("automatic runtime installation is Windows x64 only")
+	if _, ok := whisperRuntimes[runtime.GOOS+"/"+runtime.GOARCH]; !ok {
+		t.Skip("no managed runtime for this platform")
 	}
 	for _, installed := range []bool{false, true} {
 		t.Run(map[bool]string{false: "fresh", true: "installed"}[installed], func(t *testing.T) {
@@ -25,7 +25,7 @@ func TestRuntimeInstallRejectsRedirectedStorageBeforeDownload(t *testing.T) {
 			if err := os.Symlink(outside, filepath.Join(dir, "runtime")); err != nil {
 				t.Skipf("symlinks unavailable: %v", err)
 			}
-			archive := filepath.Join(outside, "whisper.zip")
+			archive := filepath.Join(outside, "whisper.archive")
 			if err := os.WriteFile(archive, []byte("external archive"), 0600); err != nil {
 				t.Fatal(err)
 			}
@@ -34,7 +34,7 @@ func TestRuntimeInstallRejectsRedirectedStorageBeforeDownload(t *testing.T) {
 				if err := os.Mkdir(root, 0700); err != nil {
 					t.Fatal(err)
 				}
-				if err := os.WriteFile(filepath.Join(root, "whisper-cli.exe"), []byte("external executable"), 0600); err != nil {
+				if err := os.WriteFile(filepath.Join(root, whisperExecutableName()), []byte("external executable"), 0600); err != nil {
 					t.Fatal(err)
 				}
 			}
@@ -94,15 +94,15 @@ func runtimeFixture(t *testing.T, files map[string]string) (string, string, stri
 }
 
 func TestRuntimeRepairReplacesIncompleteInstallation(t *testing.T) {
-	dir, dest, archive := runtimeFixture(t, map[string]string{"bin/whisper-cli.exe": "new executable", "bin/whisper.dll": "new library"})
+	dir, dest, archive := runtimeFixture(t, map[string]string{"bin/" + whisperExecutableName(): "new executable", "bin/whisper.dll": "new library"})
 	if RuntimePath(dir) != "" {
 		t.Fatal("fixture is not incomplete")
 	}
-	path, err := installRuntimeArchive(context.Background(), dir, archive)
+	path, err := installRuntimeArchive(context.Background(), dir, archive, false)
 	if err != nil {
 		t.Fatalf("repair failed: %v", err)
 	}
-	if path != filepath.Join(dest, "bin", "whisper-cli.exe") {
+	if path != filepath.Join(dest, "bin", whisperExecutableName()) {
 		t.Fatalf("wrong executable: %s", path)
 	}
 	if got, err := os.ReadFile(path); err != nil || string(got) != "new executable" {
@@ -118,10 +118,10 @@ func TestRuntimeRepairReplacesIncompleteInstallation(t *testing.T) {
 }
 
 func TestInvalidRuntimeArchivePreservesInstallation(t *testing.T) {
-	for _, files := range []map[string]string{{"library.dll": "no executable"}, {"whisper-cli.exe": ""}, {"../whisper-cli.exe": "escape"}} {
+	for _, files := range []map[string]string{{"library.dll": "no executable"}, {whisperExecutableName(): ""}, {"../whisper-cli.exe": "escape"}} {
 		t.Run("invalid", func(t *testing.T) {
 			dir, dest, archive := runtimeFixture(t, files)
-			if _, err := installRuntimeArchive(context.Background(), dir, archive); err == nil {
+			if _, err := installRuntimeArchive(context.Background(), dir, archive, false); err == nil {
 				t.Fatal("accepted invalid runtime")
 			}
 			if got, err := os.ReadFile(filepath.Join(dest, "remaining-library.dll")); err != nil || string(got) != "old" {
@@ -137,7 +137,7 @@ func TestRuntimePublicationFailureRestoresPreviousDirectory(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = os.WriteFile(filepath.Join(temp, "whisper-cli.exe"), []byte("new"), 0600); err != nil {
+	if err = os.WriteFile(filepath.Join(temp, whisperExecutableName()), []byte("new"), 0600); err != nil {
 		t.Fatal(err)
 	}
 	failure := errors.New("replacement is locked")
@@ -153,7 +153,7 @@ func TestRuntimePublicationFailureRestoresPreviousDirectory(t *testing.T) {
 	if got, err := os.ReadFile(filepath.Join(dest, "remaining-library.dll")); err != nil || string(got) != "old" {
 		t.Fatalf("rollback damaged runtime: %q %v", got, err)
 	}
-	if _, err := os.Stat(filepath.Join(temp, "whisper-cli.exe")); err != nil {
+	if _, err := os.Stat(filepath.Join(temp, whisperExecutableName())); err != nil {
 		t.Fatalf("replacement not preserved: %v", err)
 	}
 }
@@ -184,7 +184,7 @@ func TestRuntimeCancellationRestoresStagedInstallation(t *testing.T) {
 func TestRuntimeRepairRejectsRedirectedStorage(t *testing.T) {
 	for _, redirectRoot := range []bool{false, true} {
 		t.Run(map[bool]string{false: "installation", true: "storage"}[redirectRoot], func(t *testing.T) {
-			dir, dest, archive := runtimeFixture(t, map[string]string{"whisper-cli.exe": "new"})
+			dir, dest, archive := runtimeFixture(t, map[string]string{whisperExecutableName(): "new"})
 			outside := t.TempDir()
 			if err := os.WriteFile(filepath.Join(outside, "keep.txt"), []byte("keep"), 0600); err != nil {
 				t.Fatal(err)
@@ -198,7 +198,7 @@ func TestRuntimeRepairRejectsRedirectedStorage(t *testing.T) {
 			if err := os.Symlink(outside, dest); err != nil {
 				t.Skipf("symlinks unavailable: %v", err)
 			}
-			if _, err := installRuntimeArchive(context.Background(), dir, archive); err == nil {
+			if _, err := installRuntimeArchive(context.Background(), dir, archive, false); err == nil {
 				t.Fatal("replaced redirected runtime")
 			}
 			if got, err := os.ReadFile(filepath.Join(outside, "keep.txt")); err != nil || string(got) != "keep" {
@@ -212,15 +212,15 @@ func TestRuntimeRepairRejectsRedirectedStorage(t *testing.T) {
 }
 
 func TestRuntimeArchiveCanCreateFreshInstallation(t *testing.T) {
-	dir, dest, archive := runtimeFixture(t, map[string]string{"whisper-cli.exe": "fresh"})
+	dir, dest, archive := runtimeFixture(t, map[string]string{whisperExecutableName(): "fresh"})
 	if err := os.Rename(dest, filepath.Join(dir, "old-fixture")); err != nil {
 		t.Fatal(err)
 	}
-	path, err := installRuntimeArchive(context.Background(), dir, archive)
+	path, err := installRuntimeArchive(context.Background(), dir, archive, false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if path != filepath.Join(dest, "whisper-cli.exe") {
+	if path != filepath.Join(dest, whisperExecutableName()) {
 		t.Fatalf("wrong executable: %s", path)
 	}
 }

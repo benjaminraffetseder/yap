@@ -14,8 +14,6 @@ import (
 
 const exNoActivate = 0x08000000
 
-type point struct{ X, Y int32 }
-
 var (
 	indicatorUser32   = windows.NewLazySystemDLL("user32.dll")
 	isIconic          = indicatorUser32.NewProc("IsIconic")
@@ -40,6 +38,10 @@ func configureOptions(o *application.WebviewWindowOptions) {
 	// Wails treats ExStyle as a replacement for its defaults, not extra flags.
 	o.Windows = application.WindowsWindow{ExStyle: exNoActivate | w32.WS_EX_TOOLWINDOW | w32.WS_EX_TOPMOST, HiddenOnTaskbar: true, DisableFramelessWindowDecorations: true, DisableMenu: true}
 }
+
+func checkSupport() error { return nil }
+
+func (p *platformWindow) show() { p.window.Show() }
 
 type platformWindow struct {
 	app                         *application.App

@@ -9,7 +9,9 @@ the framework changes.
 port 9245 and rebuilds the backend with the `dev` tag. Release builds use the
 `production` tag and retain the single-instance application identity
 `com.yap.desktop`; development builds keep their own process. On macOS,
-`wails3 package` creates `build/bin/yap.app`.
+`wails3 package` creates `build/bin/yap.app`. On Linux, `wails3 build` creates
+`build/bin/yap`, and `wails3 package` creates a Debian package with the launcher,
+scalable app icon, and native dependencies; see [Linux packaging](linux.md#package-and-install).
 
 The root and platform Taskfiles replace the v2 build configuration. Build
 metadata and development settings live in `build/config.yml`. Native Windows
@@ -24,20 +26,23 @@ application shutdown releases the existing native integrations and storage.
 The `ShouldQuit` gate cancels and drains workers asynchronously before native
 shutdown, keeping the UI loop available for pending clipboard and window calls.
 
-System tray menus use Wails' `SystemTray` and `Menu` APIs on Windows and macOS.
+System tray menus use Wails' `SystemTray` and `Menu` APIs on Windows, macOS, and
+Linux.
 The former Win32 message loop, notification-icon code, and AppKit delegate
 replacement have been removed. The tray is configured during service startup
 before Wails starts its native resources. Menu state updates are coalesced on
 the main thread; queued updates become no-ops after shutdown. Window close
-hides to the tray on both platforms, while application Quit still exits.
+hides to the tray when native tray controls are available, while application
+Quit still exits.
 Dock reopen uses Wails' application event to restore the main window even while
 the recording indicator is visible. Its hook prevents the default Dock handler
 from reopening an idle indicator alongside the main window.
-Linux keeps its existing close-as-exit behavior until native tray availability
-and fallback behavior can be verified on a Linux desktop.
+Linux uses StatusNotifierItem with a desktop tray host. GNOME needs AppIndicator
+support; if no host is available, closing the window exits Yap. See
+[Linux system tray setup](linux.md#system-tray).
 
 The floating indicator is a separate, always-on-top, frameless Wails webview on
-Windows and macOS. `frontend/indicator.html` mounts a dedicated React component
+Windows, macOS, and Linux. `frontend/indicator.html` mounts a dedicated React component
 that reuses the application's shadcn buttons and theme. It does not mount the
 main React app, duplicate its effects, or receive transcript
 contents. The existing Go presentation rules still own labels, actions, elapsed
@@ -50,9 +55,10 @@ Small platform helpers preserve non-activation and saved geometry. Windows uses
 `WS_EX_NOACTIVATE`, explicit topmost/tool-window flags and activation/focus
 guards for the indicator and its hosted webview; macOS uses a non-activating
 Wails panel with key-window suppression. Pointer dragging avoids Wails' Windows
-native move loop, which explicitly sets focus. Both platforms clamp saved
-positions to the available work area. Existing Windows `indicator-position.json`
-coordinates and the macOS `YapDictationIndicator` frame preference are retained.
+native move loop, which explicitly sets focus. Linux maps a non-activating X11
+or XWayland surface while leaving the main window's display backend unchanged.
+Saved positions are clamped to the available work area. Windows and Linux use
+`indicator-position.json`; macOS retains the `YapDictationIndicator` frame preference.
 Ordinary refreshes keep the macOS panel on its current monitor; initial placement
 can select the monitor under the mouse until the user saves a position by dragging.
 The former GDI and AppKit control rendering and separate native message loop have
@@ -76,16 +82,18 @@ release. There was no external tray module to remove from `go.mod`;
 The remaining direct native dependencies still have active uses:
 
 - `golang.design/x/hotkey` supplies ordered key-down and key-up events for
-  hold-to-talk. Wails' global shortcut registration supplies a press callback,
-  so it cannot replace the release handling.
+  hold-to-talk on Windows, macOS, and X11. Wayland uses the desktop Global
+  Shortcuts portal's press/release events. Wails' global shortcut registration
+  supplies a press callback, so it cannot replace release handling.
 - `github.com/ebitengine/purego` loads the native speech inference runtime.
 - `golang.org/x/sys` remains in use for audio, storage, paste, and other native
   integrations.
 
 Launch-at-login registrations retain their existing Windows registry value and
 macOS LaunchAgent identity. Adopting Wails' autostart manager would require a
-separate registration migration to prevent duplicate launches. Neither the
-floating indicator nor autostart adds a removable third-party Go dependency.
+separate registration migration to prevent duplicate launches. Linux uses an
+XDG autostart entry at `~/.config/autostart/com.yap.desktop.desktop` by default.
+Neither the floating indicator nor autostart adds a removable third-party Go dependency.
 
 This migration does not change the database schema, settings format, model
 directories, backups, recordings, or application data directory. On Windows that
@@ -97,8 +105,9 @@ v2.16.0 CLI, and run `wails build` to regenerate the v2 frontend bridge and
 executable. No data conversion is required. Avoid running both versions at once;
 they share the same storage and hotkeys.
 
-Native macOS and Linux compilation and desktop checks still require those
-platforms. Windows installer packaging and signing remain in the separate
+Linux production builds and desktop operation have been tested on Ubuntu x64
+with GNOME Wayland. Native macOS compilation and desktop checks still require a
+Mac. Windows installer packaging and signing remain in the separate
 release setup. The local Windows helpers now read `build/windows/info.json`,
 call `wails3 build`, and invoke NSIS explicitly. Their installer checks both
 the v3 and legacy v2 mutex names before replacing an installed application.

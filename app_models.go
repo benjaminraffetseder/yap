@@ -19,7 +19,7 @@ func (a *App) InstallTextModel(id string) error {
 		return errors.New("unknown text model")
 	}
 	if !models.TextRuntimeAvailable() {
-		return errors.New("built-in text models currently require Windows x64")
+		return errors.New("built-in text models require Windows x64 or Linux x64/arm64")
 	}
 	if engine, ok := a.textEngine.(interface{ Release() }); ok {
 		engine.Release()

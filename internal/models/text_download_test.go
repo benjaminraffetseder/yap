@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -111,7 +112,7 @@ func TestTextDownloadRejectsWrongRangesAndChecksums(t *testing.T) {
 
 func TestTextRuntimeDownloadIntegration(t *testing.T) {
 	if os.Getenv("YAP_TEXT_RUNTIME_INTEGRATION") != "1" {
-		t.Skip("set YAP_TEXT_RUNTIME_INTEGRATION=1 to download and validate app-local Windows runtimes")
+		t.Skip("set YAP_TEXT_RUNTIME_INTEGRATION=1 to download and validate managed text runtimes")
 	}
 	dir := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(dir, "runtime"), 0700); err != nil {
@@ -122,7 +123,7 @@ func TestTextRuntimeDownloadIntegration(t *testing.T) {
 	}
 	for _, backend := range []string{"cpu", "vulkan"} {
 		path := TextRuntimePath(dir, backend)
-		if !textRuntimeHasCRT(path) {
+		if runtime.GOOS == "windows" && !textRuntimeHasCRT(path) {
 			t.Fatal("runtime depends on a system-wide C++ redistributable", backend)
 		}
 		if err := checkNativeRuntime(context.Background(), path, "text"); err != nil {

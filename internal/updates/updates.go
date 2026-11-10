@@ -6,7 +6,9 @@ package updates
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -27,6 +29,8 @@ type Status struct {
 	Notes          string `json:"notes"`
 	Error          string `json:"error"`
 	Message        string `json:"message"`
+	ManualInstall  bool   `json:"manualInstall"`
+	DownloadURL    string `json:"downloadURL,omitempty"`
 }
 
 // Engine is implemented by application.App.Updater.
@@ -40,6 +44,7 @@ type Engine interface {
 // Cached status is for display only. It is never reused as a Wails release or
 // installation target. CurrentVersion also distinguishes the legacy cache.
 type cache struct {
+	Platform       string    `json:"platform"`
 	Repository     string    `json:"repository"`
 	CurrentVersion string    `json:"currentVersion"`
 	LastAttempt    time.Time `json:"lastAttempt"`
@@ -47,23 +52,29 @@ type cache struct {
 }
 
 type Checker struct {
-	mu     sync.Mutex
-	engine Engine
-	path   string
-	now    func() time.Time
-	cached cache
-	status Status
+	goos, goarch string
+	mu           sync.Mutex
+	engine       Engine
+	path         string
+	now          func() time.Time
+	cached       cache
+	status       Status
 }
 
 func New(current, repository, cachePath string, engine Engine) *Checker {
+	return NewForPlatform(current, repository, cachePath, engine, runtime.GOOS, runtime.GOARCH)
+}
+
+func NewForPlatform(current, repository, cachePath string, engine Engine, goos, goarch string) *Checker {
 	c := &Checker{
+		goos: goos, goarch: goarch,
 		engine: engine, path: cachePath, now: time.Now,
-		cached: cache{Repository: repository, CurrentVersion: current},
-		status: Status{CurrentVersion: current, Supported: true, Configured: repository != ""},
+		cached: cache{Platform: goos + "/" + goarch, Repository: repository, CurrentVersion: current},
+		status: Status{CurrentVersion: current, Supported: Supported(goos, goarch), Configured: repository != "", ManualInstall: goos == "linux"},
 	}
 	if data, err := os.ReadFile(cachePath); err == nil {
 		var saved cache
-		if json.Unmarshal(data, &saved) == nil && saved.Repository == repository && saved.CurrentVersion == current {
+		if json.Unmarshal(data, &saved) == nil && saved.Platform == c.cached.Platform && saved.Repository == repository && saved.CurrentVersion == current {
 			c.cached.LastAttempt = saved.LastAttempt
 			c.status.LatestVersion, c.status.Notes = saved.Status.LatestVersion, saved.Status.Notes
 			c.status.Available, c.status.CheckedAt = saved.Status.Available, saved.Status.CheckedAt
@@ -89,7 +100,7 @@ func (c *Checker) Status() Status {
 func (c *Checker) Check(ctx context.Context, manual bool) Status {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if !c.status.Configured {
+	if !c.status.Supported || !c.status.Configured {
 		return c.status
 	}
 	now := c.now()
@@ -106,9 +117,16 @@ func (c *Checker) Check(ctx context.Context, manual bool) Status {
 		c.status.CheckedAt = now.UTC().Format(time.RFC3339)
 		c.status.Available = release != nil
 		c.status.LatestVersion, c.status.Notes = "", ""
+		c.status.DownloadURL = ""
 		if release != nil {
 			c.status.LatestVersion = release.Version
 			c.status.Notes = release.Notes
+			if c.status.ManualInstall {
+				c.status.DownloadURL, err = packageDownloadURL(c.cached.Repository, release, c.goos, c.goarch)
+				if err != nil {
+					c.status.Available, c.status.Error = false, err.Error()
+				}
+			}
 			if len(c.status.Notes) > 8000 {
 				c.status.Notes = strings.ToValidUTF8(c.status.Notes[:7996], "") + "\n…"
 			}
@@ -125,6 +143,9 @@ func (c *Checker) Check(ctx context.Context, manual bool) Status {
 // Install deliberately rechecks the provider rather than using cached metadata.
 // The Wails window owns progress, errors, retries, and Restart & Apply.
 func (c *Checker) Install(ctx context.Context) error {
+	if c.status.ManualInstall {
+		return errors.New("install Debian updates with the system package manager")
+	}
 	err := c.engine.CheckAndInstall(ctx)
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -142,6 +163,9 @@ func (c *Checker) Install(ctx context.Context) error {
 }
 
 func (c *Checker) Restart(ctx context.Context) error {
+	if c.status.ManualInstall {
+		return errors.New("Debian updates cannot restart through the Wails updater")
+	}
 	return c.engine.Restart(ctx)
 }
 

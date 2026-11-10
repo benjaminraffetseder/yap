@@ -3,19 +3,33 @@
 package platform
 
 import (
+	"context"
 	"fmt"
 	"golang.design/x/hotkey"
+	"sync"
 )
 
 type Shortcut struct {
-	key  *hotkey.Hotkey
-	stop chan struct{}
+	key         *hotkey.Hotkey
+	stop        chan struct{}
+	closePortal func()
+	done        chan struct{}
+	finishOnce  sync.Once
+	failureMu   sync.Mutex
+	failure     error
 }
 
 func Register(value string, down, up func()) (*Shortcut, error) {
+	return RegisterContext(context.Background(), value, down, up)
+}
+
+func RegisterContext(ctx context.Context, value string, down, up func()) (*Shortcut, error) {
 	mods, key, err := ParseShortcut(value)
 	if err != nil {
 		return nil, err
+	}
+	if shortcut, err := registerWaylandShortcutContext(ctx, value, down, up); shortcut != nil || err != nil {
+		return shortcut, err
 	}
 	m := []hotkey.Modifier{}
 	for _, v := range mods {
@@ -85,4 +99,33 @@ func dispatchShortcutEvents(presses, releases <-chan hotkey.Event, stop <-chan s
 		}
 	}
 }
-func (s *Shortcut) Close() { close(s.stop); s.key.Unregister() }
+func (s *Shortcut) Close() {
+	if s.closePortal != nil {
+		s.closePortal()
+		return
+	}
+	close(s.stop)
+	s.key.Unregister()
+}
+
+// Done closes when a portal registration is retired or becomes unavailable.
+// Native registrations without asynchronous lifecycle events return nil.
+func (s *Shortcut) Done() <-chan struct{} { return s.done }
+
+func (s *Shortcut) Err() error {
+	s.failureMu.Lock()
+	defer s.failureMu.Unlock()
+	return s.failure
+}
+
+func (s *Shortcut) finish(err error) {
+	if s.done == nil {
+		return
+	}
+	s.finishOnce.Do(func() {
+		s.failureMu.Lock()
+		s.failure = err
+		s.failureMu.Unlock()
+		close(s.done)
+	})
+}

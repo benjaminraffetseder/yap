@@ -60,7 +60,15 @@ if (methods) {
       Reflect.get((await methods.GetSnapshot()) as object, "vocabulary");
 
   setTransport({
-    async call(objectID, _method, _windowName, args) {
+    async call(objectID, method, _windowName, args) {
+      // Complete the native Wails WindowFilesDropped round trip.
+      if (objectID === 6 && method === 50) {
+        Reflect.get(window, "_wails").dispatchWailsEvent({
+          name: "audio:files-dropped",
+          data: args.filenames,
+        });
+        return;
+      }
       if (objectID === 3) return events?.emit?.(args.name, args.data) ?? false;
       if (objectID === 1) {
         if (!(await events?.ClipboardSetText?.(args.text)))

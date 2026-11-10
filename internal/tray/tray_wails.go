@@ -1,4 +1,4 @@
-//go:build windows || darwin
+//go:build windows || darwin || linux
 
 package tray
 
@@ -37,17 +37,27 @@ func New(app *application.App, actions Actions, icon []byte) (Controller, error)
 	if _, err := png.DecodeConfig(bytes.NewReader(icon)); err != nil {
 		return nil, fmt.Errorf("invalid tray PNG: %w", err)
 	}
+	if err := checkTraySupport(); err != nil {
+		return nil, err
+	}
 	t := newWailsTray(actions, application.InvokeAsync)
 	item := app.SystemTray.New().SetIcon(icon).SetMenu(t.menu)
+	if runtime.GOOS == "linux" {
+		item.SetLabel("Yap")
+	}
 	item.SetTooltip("Yap — Set up a speech model")
-	if runtime.GOOS == "windows" {
+	if runtime.GOOS == "windows" || runtime.GOOS == "linux" {
 		item.OnClick(func() { t.dispatch(showAction) })
 		item.OnDoubleClick(func() { t.dispatch(showAction) })
 	}
 	// macOS uses Wails' default left-click menu. Right-click menus are native
-	// on both platforms; the main window keeps its normal desktop position.
+	// on all three platforms; the main window keeps its normal desktop position.
 	t.refresh = func(s State) {
-		t.menu.Update()
+		// Linux tray item setters publish D-Bus updates directly. Menu.Update
+		// rebuilds a GTK menu and replaces those StatusNotifier item bindings.
+		if runtime.GOOS != "linux" {
+			t.menu.Update()
+		}
 		item.SetTooltip("Yap — " + presentation(s).status)
 	}
 	t.destroy = func() {

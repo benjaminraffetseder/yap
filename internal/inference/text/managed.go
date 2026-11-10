@@ -79,7 +79,7 @@ func (m *Managed) connection(ctx context.Context, c Config) (Config, error) {
 		return c, nil
 	}
 	if !models.TextRuntimeAvailable() {
-		return c, errors.New("built-in text models currently require Windows x64; choose an external server")
+		return c, errors.New("built-in text models require Windows x64 or Linux x64/arm64; choose an external server")
 	}
 	length := c.ContextLength
 	if length == 0 {

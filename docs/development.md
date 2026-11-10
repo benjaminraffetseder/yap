@@ -43,7 +43,7 @@ shortcuts through Wails. Use the desktop app to test those.
 | `internal/platform`  | Global shortcuts and text insertion                                         |
 | `internal/tray`      | Wails v3 system tray menu and recording-state adapter                       |
 | `internal/indicator` | Frameless Wails indicator, presentation and platform focus/geometry helpers |
-| `internal/startup`   | Existing launch-at-login registrations                                      |
+| `internal/startup`   | Platform launch-at-login registrations, including XDG autostart on Linux    |
 | `internal/inference` | Whisper CLI and local text-server clients                                   |
 | `internal/models`    | Model/runtime downloads and verification                                    |
 | `internal/storage`   | SQLite, history, retention, and backups                                     |
@@ -54,8 +54,8 @@ The [frontend code map](../frontend/src/README.md) lists domain ownership and
 shared folders. Components and hooks for a product area live together under
 `frontend/src/features/<domain>`; cross-domain UI and hooks have shared folders.
 
-Keep platform-specific code in the existing `_windows`, `_darwin`, and `_other`
-files with matching build tags. Bound Go structs use camelCase JSON fields.
+Keep platform-specific code in the existing `_windows`, `_darwin`, `_linux`, and
+`_other` files with matching build tags. Bound Go structs use camelCase JSON fields.
 Wails generates `frontend/bindings`; don't edit it by hand.
 
 The main UI and floating indicator are separate Vite entry points. Keep the
@@ -209,7 +209,9 @@ navigation and reconcile with saved changes through one owner.
 The tracked files in `build/` are inputs to Wails: the icons, Windows manifest
 and version metadata, and macOS plists and entitlements. Keep them in the repo;
 `wails3 build` uses them directly. The Mac plists include the microphone permission
-description and minimum OS version.
+description and minimum OS version. The Linux launcher uses the same application
+identity as the shortcut and clipboard portals. `wails3 package` builds a Debian
+package on Linux; see [Linux packaging](linux.md#package-and-install).
 
 Generated output under `build/bin`, Wails-generated installer files, and local
 release tooling are ignored. `scripts/` contains only local release helpers and
@@ -244,29 +246,47 @@ ID, then run `go test . -run '^TestChatLiveLocalModel$' -v -count=1` from the re
 root. It uses synthetic history in a temporary database to check source updates,
 passage references, and conversation compaction without changing app settings.
 
-To smoke-test a built-in Gemma model on Windows x64, set `YAP_GEMMA_INTEGRATION`
+To smoke-test a built-in Gemma model on Windows x64 or Linux x64/arm64, set
+`YAP_GEMMA_INTEGRATION`
 to `gemma-4-e2b`, `gemma-4-e4b`, or `gemma-4-12b`, then run
 `go test ./internal/inference/text -run '^TestManagedGemmaIntegration$' -v -count=1 -timeout 20m`.
 It downloads the pinned runtime and model into temporary storage, verifies hashes,
-and checks completion, streaming chat, and context-length reloads. The model
+and checks completion, streaming chat, context-length reloads, and explicit CPU
+inference. Set `YAP_GEMMA_INTEGRATION_DIR` to reuse verified downloads in a
+dedicated directory; pointing it at Yap's data directory makes the model
+available in the app without changing settings. The model
 downloads are several GB; normal tests use a small real child-process fixture.
 Set `YAP_TEXT_RUNTIME_INTEGRATION=1` and run
 `go test ./internal/models -run '^TestTextRuntimeDownloadIntegration$' -v -count=1`
-to validate the runtime packages and app-local C++ libraries without model downloads.
+to validate the runtime packages (and app-local C++ libraries on Windows)
+without model downloads.
 
-Native and download tests are opt-in. Run them from the repo root on Windows:
+Native and download tests are opt-in. Run them from the repo root on the platform
+named below; desktop smoke tests exercise live native integrations:
 
-| Environment variable       | Command                                                                    | What it exercises                                                                                       |
-| -------------------------- | -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| `YAP_INDICATOR_SMOKE=1`    | `go test ./internal/indicator -run '^TestNativeIndicator' -v -count=1`     | Build the frontend first; real Wails window, controls, focus, dragging and saved geometry on Windows    |
-| `YAP_SHUTDOWN_SMOKE=1`     | `go test . -run '^TestNativeShutdown$' -v -count=1 -timeout 15s`           | Wails quits while a worker holds the app mutex and awaits the UI thread, without changing the clipboard |
-| `YAP_TRAY_SMOKE=1`         | `go test ./internal/tray -run '^TestNativeTray$' -v -count=1 -timeout 35s` | Wails native tray lifecycle and menu-state updates                                                      |
-| `YAP_INTEGRATION=1`        | `go test ./internal/models -run TestRealWhisper -v -count=1`               | Downloads Whisper and Tiny, then transcribes a sample                                                   |
-| `YAP_FFMPEG_INTEGRATION=1` | `go test ./internal/models -run TestFFmpegDownloadIntegration -v -count=1` | Downloads and verifies the pinned FFmpeg archive                                                        |
+| Environment variable | Command | What it exercises |
+| --- | --- | --- |
+| `YAP_INDICATOR_SMOKE=1` | `go test ./internal/indicator -run '^TestNativeIndicator' -v -count=1` | Build the frontend first; real Wails window, controls, focus, dragging and saved geometry on Windows |
+| `YAP_INDICATOR_SMOKE=1` | `go test ./internal/indicator -run '^TestNativeIndicatorLinux$' -v -count=1 -timeout 30s` | Linux Wails/WebKit indicator, non-activating X11/XWayland surface, controls, dismissal, and repeated recordings; build the frontend first |
+| `YAP_SHUTDOWN_SMOKE=1` | `go test . -run '^TestNativeShutdown$' -v -count=1 -timeout 15s` | Wails quits while a worker holds the app mutex and awaits the UI thread, without changing the clipboard |
+| `YAP_TRAY_SMOKE=1` | `go test ./internal/tray -run '^TestNativeTray$' -v -count=1 -timeout 35s` | Wails native tray lifecycle and menu-state updates |
+| `YAP_TRAY_SMOKE=1` | `go test ./internal/tray -run '^TestNativeLinuxTray$' -v -count=1 -timeout 25s` | Linux StatusNotifier registration, D-Bus menu updates, native clicks, and cleanup; requires a desktop tray host |
+| `YAP_INTEGRATION=1` | `go test ./internal/models -run TestRealWhisper -v -count=1` | Downloads Whisper and Tiny, then transcribes a sample |
+| `YAP_NATIVE_INTEGRATION=1` | `go test ./internal/models -run '^TestRealNativeModels$' -v -count=1 -timeout 25m` | Downloads and transcribes with all Moonshine models and NVIDIA Parakeet; checks cancellation |
+| `YAP_FFMPEG_INTEGRATION=1` | `go test ./internal/models -run TestFFmpegDownloadIntegration -v -count=1` | Downloads and verifies the pinned FFmpeg archive |
 
 In PowerShell, set the variable with `$env:YAP_TRAY_SMOKE = '1'` and remove it
 afterward with `Remove-Item Env:YAP_TRAY_SMOKE` (substitute the variable you need).
 Leave these unset for normal unit tests.
 
 The [Mac notes](macos.md#testing-on-a-mac) list the checks that still need a Mac.
-Installer packaging belongs to the separate release setup and is not included here.
+The [Linux notes](linux.md) cover native dependencies, Debian packaging, autostart,
+portal behavior, and speech-runtime checks. Windows installer packaging belongs
+to the separate release setup.
+
+Linux startup, package selection, worker cleanup, focus checks, and portal lifecycle
+regressions run in the normal Go suite. Portal tests use a private D-Bus session;
+backend tests replace shortcut registration so test runs never ask for desktop
+permissions. Run `go test -race . ./internal/platform ./internal/startup ./internal/process ./internal/updates`
+for the permission/cancellation and lifecycle checks. The desktop app has also
+been tested interactively on Ubuntu x64 with GNOME Wayland.

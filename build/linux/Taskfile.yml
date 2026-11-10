@@ -11,3 +11,8 @@ tasks:
       CGO_ENABLED: '1'
   run:
     cmds: ['"{{.BIN_DIR}}/{{.APP_NAME}}"']
+  package:
+    desc: Build a Debian package with native library and desktop dependencies
+    cmds:
+      - task: build
+      - go run ./build/linux -binary "{{.BIN_DIR}}/{{.APP_NAME}}" -output "{{.BIN_DIR}}"

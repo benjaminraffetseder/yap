@@ -138,9 +138,11 @@ On each card under **Settings → Profiles**, choose **Add app**
 and pick an open application. Assigned apps appear as badges on the card and save
 immediately; select a badge's remove button to unassign it. Each app belongs to one
 profile, and picking an app that another profile uses moves it. Open the target app
-first if it isn't listed. Windows rules identify the executable name; macOS rules
-identify its bundle ID. Rules cover the entire application, including every tab in a
-browser. Automatic app identification requires Windows or a native macOS build.
+first if it isn't listed. Windows and Linux rules identify the executable name;
+macOS rules identify its bundle ID. Rules cover the entire application, including
+every tab in a browser. On Linux, app detection uses xdotool on X11 and the desktop
+accessibility service on Wayland. Apps that do not expose their windows through
+that service use the manually selected profile. See [Linux desktop integration](linux.md#desktop-integration).
 
 When you start dictation with the global recording shortcut, Yap uses the focused
 app's profile for that recording. The profile name appears in Dictate and the
@@ -173,12 +175,17 @@ Use **Record shortcut** under **Settings → Dictation → Shortcuts**, then cho
 **Use shortcut**.
 Supported combinations use Ctrl, Alt, or Shift with Space, A–Z, or F1–F12.
 Windows/Command and AltGr aren't supported. If another app has claimed the
-shortcut, choose another; the microphone button still works.
+shortcut, choose another; the microphone button still works. On Linux Wayland,
+approve the combination in the desktop's Global Shortcuts dialog if prompted.
+The first clipboard/paste request also needs **Allow Remote Interaction → Share**;
+Yap reuses that permission for subsequent dictations.
 
 ### Running in the background
 
 Closing the window hides Yap to the tray or Mac menu bar. Use **Open Yap** to
-bring it back and **Quit Yap** to exit.
+bring it back and **Quit Yap** to exit. On Linux, a StatusNotifier tray host is
+required; GNOME needs AppIndicator support. Without a tray host, closing the
+window exits Yap. See [Linux system tray setup](linux.md#system-tray).
 
 **Launch at login** and **Start in tray / menu bar** are under **Settings → General → Startup**.
 Both are off by default. They apply to packaged builds; development builds stay
@@ -504,8 +511,9 @@ servers that omit metrics show those values as unavailable.
 ## Storage and backups
 
 Yap stores its database, models, runtimes, and recordings in the OS user
-configuration folder: `%APPDATA%\yap` on Windows or
-`~/Library/Application Support/yap` on macOS.
+configuration folder: `%APPDATA%\yap` on Windows,
+`~/Library/Application Support/yap` on macOS, and `$XDG_CONFIG_HOME/yap`
+(or `~/.config/yap` when unset) on Linux.
 
 Audio retention is off by default. History retention defaults to **Keep forever**;
 you can choose 7, 30, or 90 days under **Settings → History & data → History retention**.
@@ -517,7 +525,7 @@ you want to keep first.
 
 In Models, switch away from a model before removing it. Yap only removes managed
 downloads, not custom files. **Repair & use** replaces a damaged model;
-**Check & repair runtime** checks the managed Windows runtime.
+**Check & repair runtime** checks the managed speech runtime.
 
 **Settings → History & data → Backup & restore** exports a `.yap-backup.zip` with
 history, titles, edited text, generated outputs, prompts, chains, dictionary, and

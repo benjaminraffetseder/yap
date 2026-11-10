@@ -44,7 +44,10 @@ func FindTextModel(id string) (TextModel, bool) {
 	return TextModel{}, false
 }
 
-func TextRuntimeAvailable() bool { return runtime.GOOS == "windows" && runtime.GOARCH == "amd64" }
+func TextRuntimeAvailable() bool {
+	_, ok := textRuntimeAssets[runtime.GOOS+"/"+runtime.GOARCH+"/cpu"]
+	return ok
+}
 
 func TextModelPath(dir, id string) (string, error) {
 	m, ok := FindTextModel(id)
@@ -112,7 +115,7 @@ func VerifiedTextModelPath(ctx context.Context, dir, id string) (string, error) 
 
 func InstallTextModel(ctx context.Context, dir, id string, report func(int64, int64)) error {
 	if !TextRuntimeAvailable() {
-		return errors.New("built-in text models currently require Windows x64; use an external server on this platform")
+		return errors.New("built-in text models require Windows x64 or Linux x64/arm64; use an external server on this platform")
 	}
 	m, ok := FindTextModel(id)
 	if !ok {
@@ -160,8 +163,12 @@ func RemoveTextModel(dir, id string) error {
 const textRuntimeVersion = "llama-b12110"
 
 var textRuntimeAssets = map[string]runtimeAsset{
-	"cpu":    {URL: "https://github.com/ggml-org/llama.cpp/releases/download/b12110/llama-b12110-bin-win-cpu-x64.zip", SHA: "98901e327c252875accaf2d1bf364e10e868843b0b63468baad1aa945cdc5da2", Size: 24708445},
-	"vulkan": {URL: "https://github.com/ggml-org/llama.cpp/releases/download/b12110/llama-b12110-bin-win-vulkan-x64.zip", SHA: "9732a5e48887ca54d0bfe4af4324dc85fd56cd8cda19b52df3542fa6ebe6874f", Size: 37661146},
+	"windows/amd64/cpu":    {URL: "https://github.com/ggml-org/llama.cpp/releases/download/b12110/llama-b12110-bin-win-cpu-x64.zip", SHA: "98901e327c252875accaf2d1bf364e10e868843b0b63468baad1aa945cdc5da2", Size: 24708445},
+	"windows/amd64/vulkan": {URL: "https://github.com/ggml-org/llama.cpp/releases/download/b12110/llama-b12110-bin-win-vulkan-x64.zip", SHA: "9732a5e48887ca54d0bfe4af4324dc85fd56cd8cda19b52df3542fa6ebe6874f", Size: 37661146},
+	"linux/amd64/cpu":      {URL: "https://github.com/ggml-org/llama.cpp/releases/download/b12110/llama-b12110-bin-ubuntu-x64.tar.gz", SHA: "368227edcc229be5f9bed16a2223d79b5e41d0ac2e19bcf5825e82291c060e55", Size: 23051958, Tar: true},
+	"linux/amd64/vulkan":   {URL: "https://github.com/ggml-org/llama.cpp/releases/download/b12110/llama-b12110-bin-ubuntu-vulkan-x64.tar.gz", SHA: "a5d741940956ec62e8783aee7e5a4c7c761af867d6f027c3277a51e1a3ac59b0", Size: 35858360, Tar: true},
+	"linux/arm64/cpu":      {URL: "https://github.com/ggml-org/llama.cpp/releases/download/b12110/llama-b12110-bin-ubuntu-arm64.tar.gz", SHA: "4758b51335e37b4346251f2687d64841ff1c07ecb27fc46323945bb2ec9c44d2", Size: 18723578, Tar: true},
+	"linux/arm64/vulkan":   {URL: "https://github.com/ggml-org/llama.cpp/releases/download/b12110/llama-b12110-bin-ubuntu-vulkan-arm64.tar.gz", SHA: "1c68bf23d35230cc607e3d30f8d447d21fef500d9fa8d65e15520dfa3619ad73", Size: 29168359, Tar: true},
 }
 
 // App-local C++ runtime from Microsoft's signed Desktop framework package.
@@ -207,12 +214,16 @@ func installTextCRT(archive, dest string) error {
 }
 
 func TextRuntimePath(dir, backend string) string {
-	return filepath.Join(dir, "runtime", textRuntimeVersion+"-"+backend, "llama-server.exe")
+	name := "llama-server"
+	if runtime.GOOS == "windows" {
+		name += ".exe"
+	}
+	return filepath.Join(dir, "runtime", textRuntimeVersion+"-"+backend, name)
 }
 
 func EnsureTextRuntime(ctx context.Context, dir string, report func(int64, int64)) error {
 	if !TextRuntimeAvailable() {
-		return errors.New("built-in text models currently require Windows x64")
+		return errors.New("built-in text models require Windows x64 or Linux x64/arm64")
 	}
 	root, err := managedRuntimeRoot(dir)
 	if err != nil {
@@ -227,11 +238,15 @@ func EnsureTextRuntime(ctx context.Context, dir string, report func(int64, int64
 	}()
 	for _, backend := range []string{"cpu", "vulkan"} {
 		path := TextRuntimePath(dir, backend)
-		if textRuntimeHasCRT(path) && checkNativeRuntime(ctx, path, "text") == nil {
+		if (runtime.GOOS != "windows" || textRuntimeHasCRT(path)) && checkNativeRuntime(ctx, path, "text") == nil {
 			continue
 		}
-		asset := textRuntimeAssets[backend]
-		archive := filepath.Join(root, textRuntimeVersion+"-"+backend+".zip")
+		asset := textRuntimeAssets[runtime.GOOS+"/"+runtime.GOARCH+"/"+backend]
+		ext := ".zip"
+		if asset.Tar {
+			ext = ".tar.gz"
+		}
+		archive := filepath.Join(root, textRuntimeVersion+"-"+backend+ext)
 		validate := func() error {
 			actual, e := managedRuntimeRoot(dir)
 			if e == nil && !samePath(actual, root) {
@@ -239,7 +254,7 @@ func EnsureTextRuntime(ctx context.Context, dir string, report func(int64, int64
 			}
 			return e
 		}
-		if !crtDownloaded {
+		if runtime.GOOS == "windows" && !crtDownloaded {
 			if err = download(ctx, textCRTAsset.URL, crtArchive, textCRTAsset.SHA, textCRTAsset.Size, report, validate); err != nil {
 				return err
 			}
@@ -252,8 +267,8 @@ func EnsureTextRuntime(ctx context.Context, dir string, report func(int64, int64
 		if e != nil {
 			return e
 		}
-		err = extractNativeArchive(ctx, archive, temp, false, false)
-		if err == nil {
+		err = extractNativeArchive(ctx, archive, temp, asset.Tar, asset.Tar)
+		if err == nil && runtime.GOOS == "windows" {
 			err = installTextCRT(crtArchive, temp)
 		}
 		if err == nil {
@@ -269,7 +284,7 @@ func EnsureTextRuntime(ctx context.Context, dir string, report func(int64, int64
 			}
 		}
 		if err == nil {
-			err = checkNativeRuntime(ctx, filepath.Join(temp, "llama-server.exe"), "text")
+			err = checkNativeRuntime(ctx, filepath.Join(temp, filepath.Base(path)), "text")
 		}
 		if err == nil {
 			err = publishManagedRuntimeDirectory(ctx, dir, temp, textRuntimeVersion+"-"+backend, os.Rename)

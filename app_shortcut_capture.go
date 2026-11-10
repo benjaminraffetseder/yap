@@ -60,8 +60,7 @@ func (a *App) endShortcutCaptureLocked(token string) error {
 	if a.closing {
 		return nil
 	}
-	a.registerShortcut()
-	a.registerProfileShortcut()
+	a.registerMissingShortcutsLocked()
 	a.emit()
 	a.event("shortcut:capture-ended", token)
 	if a.status.ShortcutError != "" {

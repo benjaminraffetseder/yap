@@ -20,7 +20,7 @@ import (
 )
 
 // A real child process exercises readiness, arguments, authentication,
-// cancellation, and Windows job cleanup without downloading model weights.
+// cancellation, and process cleanup without downloading model weights.
 func init() {
 	if os.Getenv("YAP_TEXT_WORKER_HELPER") != "1" || len(os.Args) < 2 || os.Args[1] != "--model" {
 		return
@@ -92,7 +92,7 @@ func TestBuiltInContextValidationAndLegacyConfig(t *testing.T) {
 
 func TestManagedWorkerReuseContextReloadFallbackAndClose(t *testing.T) {
 	if !models.TextRuntimeAvailable() {
-		t.Skip("Windows x64 worker")
+		t.Skip("built-in text runtime unavailable on this platform")
 	}
 	t.Setenv("YAP_TEXT_WORKER_HELPER", "1")
 	dir := t.TempDir()
@@ -119,7 +119,7 @@ func TestManagedWorkerReuseContextReloadFallbackAndClose(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		dst, err := os.Create(path)
+		dst, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0700)
 		if err != nil {
 			src.Close()
 			t.Fatal(err)
@@ -179,7 +179,10 @@ func TestManagedGemmaIntegration(t *testing.T) {
 	if id == "" {
 		t.Skip("set YAP_GEMMA_INTEGRATION=gemma-4-e2b (or another catalog ID) to download and run the real runtime/model")
 	}
-	dir := t.TempDir()
+	dir := os.Getenv("YAP_GEMMA_INTEGRATION_DIR")
+	if dir == "" {
+		dir = t.TempDir()
+	}
 	for _, name := range []string{"models", "runtime"} {
 		if err := os.MkdirAll(filepath.Join(dir, name), 0700); err != nil {
 			t.Fatal(err)
@@ -204,10 +207,26 @@ func TestManagedGemmaIntegration(t *testing.T) {
 		t.Fatalf("completion: %q %v", out, err)
 	}
 	first := m.worker
+	t.Log("Completion used", filepath.Base(filepath.Dir(first.cmd.Path)))
 	c.ContextLength = 4096
-	out, err = m.Chat(ctx, c, []Message{{Role: "user", Content: "Reply with only OK."}}, func(string) {})
-	if err != nil || !strings.Contains(out, "OK") || m.worker == first {
-		t.Fatalf("chat/context reload: %q %v", out, err)
+	var streamed string
+	out, err = m.Chat(ctx, c, []Message{{Role: "user", Content: "Reply with only OK."}}, func(s string) { streamed = s })
+	if err != nil || !strings.Contains(out, "OK") || streamed != out || m.worker == first {
+		t.Fatalf("chat/context reload: %q, streamed %q: %v", out, streamed, err)
 	}
 	t.Log("Verified real completion, streamed chat, and context reload at", strconv.Itoa(c.ContextLength), "tokens")
+	m.Release()
+	path, err := models.VerifiedTextModelPath(ctx, dir, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.worker, err = startTextWorker(ctx, models.TextRuntimePath(dir, "cpu"), path, id, c.ContextLength, "cpu")
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err = m.Process(ctx, c, Prompt{Instruction: "Reply with only OK."}, "CPU connection test.")
+	if err != nil || !strings.Contains(out, "OK") {
+		t.Fatalf("CPU completion: %q %v", out, err)
+	}
+	t.Log("Verified explicit CPU inference")
 }

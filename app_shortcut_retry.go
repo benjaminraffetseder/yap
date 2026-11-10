@@ -16,12 +16,7 @@ func (a *App) RetryShortcut() error {
 	if a.shortcut != nil && (a.profileShortcut != nil || a.profileLibrary.ProfileShortcut == "") {
 		return nil
 	}
-	if a.shortcut == nil {
-		a.registerShortcut()
-	}
-	if a.profileShortcut == nil {
-		a.registerProfileShortcut()
-	}
+	a.registerMissingShortcutsLocked()
 	a.emit()
 	// Registration failures remain in ShortcutError, including after an
 	// asynchronous permission prompt. Do not turn them into dictation errors.

@@ -1019,7 +1019,7 @@ export function SettingsPage({
                       !snapshot.launchAtLoginAvailable &&
                       !snapshot.startInTrayAvailable && (
                         <p className="py-4 text-xs text-muted-foreground">
-                          {t("settingsPage.startupOptionsRequireAPackagedWindowsOr")}
+                          {t("settingsPage.startupOptionsUnavailable")}
                         </p>
                       )
                     )}

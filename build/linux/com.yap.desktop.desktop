@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Yap
+Comment=Local dictation for your desktop
+Exec=/usr/bin/yap
+Icon=com.yap.desktop
+Terminal=false
+Categories=AudioVideo;Audio;
+Keywords=dictation;speech;transcription;
+StartupNotify=true
+StartupWMClass=com.yap.desktop

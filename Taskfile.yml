@@ -22,7 +22,7 @@ tasks:
     cmds:
       - task: '{{.GOOS}}:run'
   package:
-    desc: Package the application on macOS
+    desc: Package the application for the current platform
     cmds:
       - task: '{{.GOOS}}:package'
   dev:

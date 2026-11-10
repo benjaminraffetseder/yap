@@ -32,11 +32,23 @@ export function AudioDropImport() {
   useEffect(() => {
     if (!isDesktop) return;
     let depth = 0;
-    let awaitingPaths = false;
     const reset = () => {
       depth = 0;
       setDragging(false);
     };
+    // GTK handles external drags before WebKit can emit DOM drag events.
+    // Wails marks the native drop target during hover on Linux and macOS.
+    let nativeDragging = false;
+    const syncNativeDrag = () => {
+      const active = document.body.classList.contains("file-drop-target-active");
+      if (active === nativeDragging) return;
+      nativeDragging = active;
+      if (active) setDragging(true);
+      else reset();
+    };
+    const observer = new MutationObserver(syncNativeDrag);
+    observer.observe(document.body, { attributes: true, attributeFilter: ["class"] });
+    syncNativeDrag();
     const isFileDrag = (event: DragEvent) => event.dataTransfer?.types.includes("Files");
     const enter = (event: DragEvent) => {
       if (!isFileDrag(event)) return;
@@ -61,13 +73,9 @@ export function AudioDropImport() {
       if (!isFileDrag(event)) return;
       event.preventDefault();
       reset();
-      awaitingPaths = true;
     };
     const offDrop = Events.On("audio:files-dropped", ({ data: paths }: { data: string[] }) => {
-      // Wails broadcasts native drops to every dev frontend, including browser previews.
-      // Only the window that received the DOM drop may import its resolved paths.
-      if (!awaitingPaths) return;
-      awaitingPaths = false;
+      // The backend delivers resolved paths only to the webview receiving the drop.
       reset();
       if (pending.current) return;
       pending.current = true;
@@ -87,6 +95,7 @@ export function AudioDropImport() {
     window.addEventListener("blur", reset);
     return () => {
       offDrop();
+      observer.disconnect();
       window.removeEventListener("dragenter", enter);
       window.removeEventListener("dragover", over);
       window.removeEventListener("dragleave", leave);

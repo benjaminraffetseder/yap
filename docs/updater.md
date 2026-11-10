@@ -51,8 +51,15 @@ the data directory. If a release needs installer-managed prerequisites changed,
 distribute that change through the installer rather than relying on this swap.
 
 macOS selects the matching architecture-specific `Yap-<version>-macos-*.zip`,
-falling back to the universal bundle. Other platforms currently have no updater
-artifact contract. macOS bundles must be installed in a writable location.
+falling back to the universal bundle. macOS bundles must be installed in a
+writable location.
+
+Linux x64/arm64 selects `yap-<version>-linux-<arch>.deb`. It uses the same Wails
+release provider and checksum requirements, but **Download update** opens the
+Debian package for manual installation with apt after quitting Yap. Debian
+packages are never passed to the executable-swap helper. Include their entries
+in the shared `SHA256SUMS` file. Other platforms have no updater artifact
+contract.
 
 Yap requires the selected artifact to have a full SHA-256 entry. Wails treats
 missing GitHub checksum sidecars as optional, so the provider adapter rejects

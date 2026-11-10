@@ -19,11 +19,11 @@ func TestMissingCustomRuntimeDoesNotInstallOrOverwrite(t *testing.T) {
 }
 
 func TestManagedRuntimeDoesNotReuseBrokenExecutable(t *testing.T) {
-	if runtime.GOOS != "windows" || runtime.GOARCH != "amd64" {
-		t.Skip("managed Windows runtime")
+	if _, ok := whisperRuntimes[runtime.GOOS+"/"+runtime.GOARCH]; !ok {
+		t.Skip("no managed runtime for this platform")
 	}
 	dir, dest, _ := runtimeFixture(t, map[string]string{})
-	path := filepath.Join(dest, "whisper-cli.exe")
+	path := filepath.Join(dest, whisperExecutableName())
 	os.WriteFile(path, []byte("damaged executable"), 0600)
 	requests := 0
 	old := http.DefaultTransport

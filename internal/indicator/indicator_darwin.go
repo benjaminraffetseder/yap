@@ -26,6 +26,10 @@ func configureOptions(o *application.WebviewWindowOptions) {
 	}
 }
 
+func checkSupport() error { return nil }
+
+func (p *platformWindow) show() { p.window.Show() }
+
 type platformWindow struct {
 	window                                  *application.WebviewWindow
 	configured, positioned, dragging, moved bool

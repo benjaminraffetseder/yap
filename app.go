@@ -125,12 +125,15 @@ type App struct {
 	microphoneTested, shortcutTested bool
 	micSignal                        atomic.Bool
 	ctx                              context.Context
+	lifecycleCancel                  context.CancelFunc
 	mu                               sync.Mutex
 	store                            *storage.Store
 	settings                         storage.Settings
 	status                           Status
 	shortcut                         shortcutRegistration
 	registerKey                      func(string, func(), func()) (shortcutRegistration, error)
+	registerKeyContext               func(context.Context, string, func(), func()) (shortcutRegistration, error)
+	shortcutRegistrationCancel       context.CancelFunc
 	shortcutGeneration               uint64
 	shortcutCaptureID                string
 	shortcutCaptureTimer             *time.Timer
@@ -149,6 +152,7 @@ type App struct {
 	quitOnce                         sync.Once
 	notify                           func(string, ...interface{})
 	copyText                         func(string) error
+	copyTextContext                  func(context.Context, string) error
 	indicator                        indicator.Controller
 	indicatorActive                  bool
 	tray                             tray.Controller
@@ -243,8 +247,7 @@ func (a *App) startup(ctx context.Context) {
 			a.loginStart = nil
 		}
 	}
-	a.registerShortcut()
-	a.registerProfileShortcut()
+	a.registerMissingShortcutsLocked()
 }
 
 // SetIndicatorTheme receives the appearance already resolved by the webview,
@@ -383,6 +386,12 @@ func (a *App) shutdown(ctx context.Context) {
 	a.shutdownOnce.Do(func() {
 		a.mu.Lock()
 		a.closing = true
+		if a.lifecycleCancel != nil {
+			a.lifecycleCancel()
+		}
+		if a.shortcutRegistrationCancel != nil {
+			a.shortcutRegistrationCancel()
+		}
 		if a.historyCleanupTimer != nil {
 			a.historyCleanupTimer.Stop()
 		}
@@ -495,9 +504,9 @@ func (a *App) available() error {
 	return nil
 }
 func (a *App) busy() bool {
-	return a.homeResultOperation || a.importActive != "" || a.status.Phase == "backup" || a.shortcutCaptureID != "" || a.status.Phase == "text-processing" || a.status.Phase == "recording" || a.status.Phase == "transcribing" || a.status.Phase == "downloading" || a.status.Phase == "mic-test" || a.status.Phase == "diagnostic-recording" || a.status.Phase == "diagnostic-transcribing"
+	return a.shortcutRegistrationCancel != nil || a.homeResultOperation || a.importActive != "" || a.status.Phase == "backup" || a.shortcutCaptureID != "" || a.status.Phase == "text-processing" || a.status.Phase == "recording" || a.status.Phase == "transcribing" || a.status.Phase == "downloading" || a.status.Phase == "mic-test" || a.status.Phase == "diagnostic-recording" || a.status.Phase == "diagnostic-transcribing"
 }
-func (a *App) registerShortcut() {
+func (a *App) registerShortcut() error {
 	// Retired registrations can still have queued callbacks waiting on a.mu.
 	a.shortcutGeneration++
 	generation := a.shortcutGeneration
@@ -520,14 +529,16 @@ func (a *App) registerShortcut() {
 	if a.registerKey != nil {
 		s, err = a.registerKey(a.settings.Shortcut, down, up)
 	} else {
-		s, err = platform.Register(a.settings.Shortcut, down, up)
+		s, err = a.registerNativeShortcutLocked(a.settings.Shortcut, down, up)
 	}
 	if err != nil {
 		a.status.ShortcutError = err.Error()
-		return
+		return err
 	}
 	a.shortcut = s
+	a.watchShortcutLocked(s, generation, false)
 	a.status.ShortcutError = ""
+	return nil
 }
 func (a *App) hotkeyDown() {
 	a.mu.Lock()
@@ -848,16 +859,28 @@ func (a *App) transcribe(ctx context.Context, id, path, target string, duration 
 			a.homeResult.OutputID = a.homeResult.Outputs[len(a.homeResult.Outputs)-1].ID
 		}
 	}
-	a.status.Transcript = text
-	a.status.StartedAt = 0
-	a.status.Phase = "done"
 	a.status.Message = "Not saved to History"
 	if settings.SaveHistory {
 		a.status.Message = "Saved to History"
 	}
+	var copyErr, pasteErr error
 	if copyToClipboard {
+		copy, copyContext := a.copyText, a.copyTextContext
+		a.mu.Unlock()
+		if copyContext != nil {
+			copyErr = copyContext(ctx, text)
+		} else {
+			copyErr = copy(text)
+		}
+		if copyErr == nil && target != "" && ctx.Err() == nil {
+			pasteErr = platform.Paste(target)
+		}
+		a.mu.Lock()
+		if a.closing {
+			return
+		}
 		a.status.Message = "Copied to clipboard"
-		if err = a.copyText(text); err != nil {
+		if copyErr != nil {
 			a.homeResult.Outcomes.Clipboard = "failed"
 			a.status.CompletionWarning = true
 			a.status.Message = "Clipboard failed; transcript available in Home"
@@ -866,8 +889,8 @@ func (a *App) transcribe(ctx context.Context, id, path, target string, duration 
 			}
 		} else {
 			a.homeResult.Outcomes.Clipboard = "complete"
-			if target != "" {
-				if err = platform.Paste(target); err != nil {
+			if target != "" && ctx.Err() == nil {
+				if pasteErr != nil {
 					a.homeResult.Outcomes.Paste = "failed"
 					a.status.CompletionWarning = true
 					a.status.Message = "Automatic paste failed; copied to clipboard. Paste manually."
@@ -878,6 +901,9 @@ func (a *App) transcribe(ctx context.Context, id, path, target string, duration 
 			}
 		}
 	}
+	a.status.Transcript = text
+	a.status.StartedAt = 0
+	a.status.Phase = "done"
 	transcript = text
 	a.emit()
 	a.event("dictation:history")
@@ -892,6 +918,10 @@ func (a *App) Cancel() error {
 func (a *App) cancelLocked() error {
 	if err := a.available(); err != nil {
 		return err
+	}
+	if a.shortcutRegistrationCancel != nil {
+		a.shortcutRegistrationCancel()
+		return nil
 	}
 	if a.status.Phase == "mic-test" || a.status.Phase == "diagnostic-recording" {
 		diagnostic := a.status.Phase == "diagnostic-recording"
@@ -1004,11 +1034,16 @@ func (a *App) SaveSettings(settings storage.Settings) error {
 			oldKey.Close()
 		}
 		a.settings = settings
-		a.registerShortcut()
+		registrationErr := a.registerShortcut()
+		if err := a.available(); err != nil {
+			return err
+		}
 		if a.shortcut == nil {
 			failure := a.status.ShortcutError
 			a.settings = old
-			a.registerShortcut()
+			if !errors.Is(registrationErr, context.Canceled) && !errors.Is(registrationErr, context.DeadlineExceeded) {
+				a.registerShortcut()
+			}
 			return fmt.Errorf("shortcut could not be registered: %s; choose another combination; your saved shortcut is unchanged", failure)
 		}
 	}

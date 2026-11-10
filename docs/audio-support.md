@@ -1,6 +1,7 @@
 # Audio support
 
-Yap records from the microphone and imports WAV files without FFmpeg. Importing
+Yap imports PCM WAV files without FFmpeg. Microphone recording on Windows and
+macOS also works without it; Linux microphone recording uses FFmpeg. Importing
 MP3, M4A, AAC, FLAC, OGG, Opus, AIFF, or WMA needs a local FFmpeg executable.
 Conversion runs on your computer.
 
@@ -20,7 +21,20 @@ You can also supply FFmpeg yourself. On Windows, an executable beside Yap or on
 PATH takes precedence over the managed copy. On a Mac, Yap checks its bundled
 copy first, then PATH and the usual Homebrew locations; see
 [Mac setup](macos.md#optional-audio-formats).
-Other platforms require manual installation.
+On Linux, Yap uses the system FFmpeg installation.
+
+## Linux audio
+
+The Debian package declares FFmpeg and PulseAudio tools as dependencies, so apt
+installs them along with Yap. For a source or standalone build on Debian/Ubuntu:
+
+```sh
+sudo apt install ffmpeg pulseaudio-utils
+```
+
+Microphone capture uses PulseAudio; PipeWire works through its PulseAudio
+compatibility service. `pactl` lists available microphones. FFmpeg also decodes
+imported files other than PCM WAV. See [Linux setup](linux.md#build-and-run).
 
 ## The Mac bundle
 

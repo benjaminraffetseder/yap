@@ -7,9 +7,12 @@ Yap runs Whisper, NVIDIA Parakeet, or Moonshine locally and keeps recordings and
 on your computer. No account or cloud transcription service needed. The desktop
 app is built with Go, Wails, React, and TypeScript.
 
-This is a personal project, with Windows as the main target. It's still early:
+This is a personal project, with Windows as the main target. Linux desktop
+operation has also been tested on Ubuntu x64 with GNOME Wayland. It's still early;
 macOS has native code but hasn't been tested on a Mac yet.
-Linux support is incomplete.
+Linux supports local speech and text models, desktop shortcuts, automatic paste,
+app profiles, the floating indicator, and tray controls. Desktop support depends
+on the session and its portals; see the [Linux notes](docs/linux.md) for requirements.
 
 ## What it does
 
@@ -33,7 +36,9 @@ Linux support is incomplete.
 ## Getting started
 
 On Windows 10/11 x64, [build from source](#build-from-source) and open
-`build/bin/yap.exe`. WebView2 is required.
+`build/bin/yap.exe`. WebView2 is required. On Linux, follow the
+[Debian installation instructions](docs/linux.md#package-and-install) and open
+**Yap** from the desktop application menu.
 
 1. Open Yap and follow the setup guide to download a speech model and test your
    microphone. Small balances speed and accuracy; Base and Tiny are smaller options.
@@ -68,6 +73,8 @@ Windows and macOS release builds check GitHub Releases and show a notice when a 
 version is available. You can also check in **Settings → General → App updates**.
 Choose **Install update** to download and verify the update in Yap, then
 **Restart & Apply** when you're ready.
+Linux x64/arm64 builds offer the matching Debian package through **Download update**;
+quit Yap and install it with your package manager.
 Your settings, history, and downloaded models are kept.
 
 See [Using Yap](docs/usage.md) for imports, prompts, backups, and troubleshooting.
@@ -77,7 +84,7 @@ See [Using Yap](docs/usage.md) for imports, prompts, backups, and troubleshootin
 
 Speech recognition runs on your computer. Yap has no analytics and doesn't
 upload audio. Models and optional audio support download only when requested.
-Windows and macOS release builds check public GitHub release metadata at startup, at most
+Windows, macOS, and Linux release builds check public GitHub release metadata at startup, at most
 once per day. Update checks send no audio, transcripts, or app settings.
 
 History is saved locally by default. Turn **Save to history** off in Home's
@@ -94,7 +101,8 @@ History, retained recordings, and exported backups are **not encrypted**.
 On Windows, the data folder is `%APPDATA%\yap`.
 
 Optional text processing can use Yap's built-in Gemma 4 E2B, E4B, or 12B models
-on Windows x64. Open **Models → Text models**, download one, and choose **Use model**.
+on Windows x64 and Linux x64/arm64. Open **Models → Text models**, download one,
+and choose **Use model**.
 Yap installs its verified llama.cpp runtime automatically and runs inference locally.
 Set context length during setup or in **Prompts → Text model**; Automatic
 chooses a conservative default based on system memory.
@@ -132,9 +140,17 @@ desktop testing are still pending.
 Parakeet runtimes are available for Intel and Apple Silicon Macs. Moonshine's
 current native runtime requires Apple Silicon and macOS 15 or newer.
 
-Linux has X11 adapters using FFmpeg/PulseAudio and xdotool, but no native tray
-or floating indicator yet. It needs a manually configured Whisper runtime.
-Wayland shortcuts and paste aren't supported.
+Linux x64 and arm64 automatically install Whisper, NVIDIA Parakeet, and Moonshine
+runtimes and models. These use the CPU and need no Python or CUDA installation.
+See the [Linux notes](docs/linux.md) for dependencies, development, and smoke tests.
+Microphone capture uses FFmpeg and PulseAudio (or PipeWire's PulseAudio support).
+X11 paste requires xdotool; Wayland paste uses the desktop portals. The floating
+indicator uses X11 or XWayland without taking focus. The system tray uses
+StatusNotifierItem, including GNOME with AppIndicator support and KDE Plasma.
+Closing Yap hides it to the tray when a tray host is available. Release builds
+support launch at login. Use `wails3 package` to build a Debian package with a
+launcher, icon, and native dependencies; [installation notes](docs/linux.md#package-and-install)
+cover upgrades and supported library versions.
 
 ## Working on Yap
 

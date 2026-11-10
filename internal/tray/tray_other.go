@@ -1,9 +1,8 @@
-//go:build !windows && !darwin
+//go:build !windows && !darwin && !linux
 
 package tray
 
 import "github.com/wailsapp/wails/v3/pkg/application"
 
-// Linux desktop tray availability still needs native verification. Preserve
-// window-close-as-exit there instead of hiding an app without a usable tray.
+// Unsupported desktops close normally instead of hiding without a usable tray.
 func New(*application.App, Actions, []byte) (Controller, error) { return nil, nil }
