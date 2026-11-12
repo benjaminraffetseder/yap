@@ -1,13 +1,14 @@
-import i18n from "@/i18n";
-import { useTranslation } from "react-i18next";
 import { useDictation } from "@/components/dictation-provider";
 import { SettingsSection } from "@/components/settings-section";
 import { Button } from "@/components/ui/button";
-import { backend, isDesktop } from "@/lib/backend";
+import i18n from "@/i18n";
+import { isDesktop } from "@/lib/backend";
+import { useTranslation } from "react-i18next";
 
 export function UpdatePanel() {
   const { t } = useTranslation();
-  const { update, checkingUpdates, updateError, checkUpdates, run } = useDictation();
+  const { update, checkingUpdates, installingUpdate, updateError, checkUpdates, installUpdate } =
+    useDictation();
   return (
     <SettingsSection
       title={t("updatePanel.appUpdates")}
@@ -16,7 +17,7 @@ export function UpdatePanel() {
           <Button
             variant="outline"
             size="sm"
-            disabled={checkingUpdates}
+            disabled={checkingUpdates || installingUpdate || update?.ready}
             onClick={() => void checkUpdates()}
           >
             {t("commandMenu.checkForUpdates")}
@@ -30,9 +31,7 @@ export function UpdatePanel() {
             {t("updatePanel.openYapOnYourDesktopToCheck")}
           </p>
         ) : update && !update.supported ? (
-          <p className="text-sm text-muted-foreground">
-            {t("updatePanel.updateChecksAreAvailableOnWindowsX64")}
-          </p>
+          <p className="text-sm text-muted-foreground">{t("updatePanel.supportedPlatforms")}</p>
         ) : update && !update.configured ? (
           <p className="text-sm text-muted-foreground">
             {t("updatePanel.gitHubUpdateChecksArenTConfiguredFor")}
@@ -60,10 +59,19 @@ export function UpdatePanel() {
                   </p>
                 )}
                 <p className="text-sm text-muted-foreground">
-                  {t("updatePanel.downloadTheInstallerChooseQuitYapFrom")}
+                  {t("updatePanel.installInstructions")}
                 </p>
-                <Button onClick={() => void run(backend.downloadUpdate, false)}>
-                  {t("appLayout.downloadUpdate")}
+                <Button
+                  disabled={checkingUpdates || installingUpdate}
+                  onClick={() => void installUpdate()}
+                >
+                  {t(
+                    installingUpdate
+                      ? "updatePanel.installing"
+                      : update.ready
+                        ? "appLayout.restartUpdate"
+                        : "appLayout.installUpdate",
+                  )}
                 </Button>
               </>
             ) : update?.checkedAt && !updateError && !checkingUpdates ? (

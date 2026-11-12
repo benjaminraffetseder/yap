@@ -141,6 +141,9 @@ after installing. See
 
 ## Testing on a Mac
 
+App updates use the Wails updater and the signed bundle archives from this
+script. See [updater release packaging and smoke tests](updater.md).
+
 The desktop behavior still needs testing, particularly:
 
 - Microphone permission on first launch, denial, and retry.

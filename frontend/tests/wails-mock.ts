@@ -51,6 +51,7 @@ if (methods) {
     "profile:changed",
     "shortcut:capture-ended",
     "indicator:frame",
+    "wails:updater:update-ready",
   ]) {
     events?.subscribe?.(name, (...args) => dispatch(name, args.length > 1 ? args : args[0]));
   }

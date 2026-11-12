@@ -40,6 +40,9 @@ func main() {
 		OnShutdown:     func() { service.shutdown(service.ctx) },
 	})
 	service.desktop = app
+	if err := configureUpdater(app.Updater); err != nil {
+		log.Fatal(err)
+	}
 	window := app.Window.NewWithOptions(application.WebviewWindowOptions{
 		Name: "main", Title: "Yap", URL: "/",
 		Width: 1100, Height: 760, MinWidth: 760, MinHeight: 560,

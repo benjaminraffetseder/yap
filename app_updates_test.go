@@ -15,6 +15,7 @@ import (
 
 	"yap/internal/updates"
 
+	"github.com/wailsapp/wails/v3/pkg/updater"
 	"gopkg.in/yaml.v3"
 )
 
@@ -82,14 +83,15 @@ func TestUpdateVersionMatchesBuildMetadata(t *testing.T) {
 
 func TestUpdateCheckPreservesRecordingAndDevelopmentSkipsNetwork(t *testing.T) {
 	if !updatesSupported() {
-		t.Skip("Windows x64 update checks")
+		t.Skip("packaged update platforms")
 	}
 	a := testApp(t)
-	a.updateChecker = updates.New(appVersion(), updateRepository, filepath.Join(a.store.Dir, "update-check.json"))
+	engine := &testUpdateEngine{checkError: errors.New("offline")}
+	setTestUpdater(a, engine)
 	a.development = true
 	before := a.status
 	s, err := a.CheckForUpdates(false)
-	if err != nil || s.Error != "" || s.CheckedAt != "" {
+	if err != nil || s.Error != "" || s.CheckedAt != "" || engine.checks != 0 {
 		t.Fatalf("development build checked the network: %+v, %v", s, err)
 	}
 	if !reflect.DeepEqual(a.status, before) {
@@ -99,41 +101,137 @@ func TestUpdateCheckPreservesRecordingAndDevelopmentSkipsNetwork(t *testing.T) {
 		t.Fatal(err)
 	}
 	before = a.status
-	// An invalid repository fails locally without using the network.
-	a.updateChecker = updates.New(appVersion(), "invalid repository", filepath.Join(a.store.Dir, "update-check.json"))
 	s, err = a.CheckForUpdates(true)
-	if err != nil || s.Error == "" || !reflect.DeepEqual(before, a.status) {
+	if err != nil || s.Error == "" || engine.checks != 1 || !reflect.DeepEqual(before, a.status) {
 		t.Fatalf("failed check interrupted recording: %+v, %v, %+v", s, err, a.status)
 	}
 }
 
-func TestUpdateDownloadUsesOnlyKnownInstallerAndLeavesAppRunning(t *testing.T) {
+type testUpdateEngine struct {
+	state                      updater.State
+	checks, installs, restarts int
+	checkError, installError   error
+	installContext             context.Context
+	install                    func(context.Context) error
+}
+
+func (e *testUpdateEngine) State() updater.State { return e.state }
+func (e *testUpdateEngine) Check(context.Context) (*updater.Release, error) {
+	e.checks++
+	return nil, e.checkError
+}
+func (e *testUpdateEngine) CheckAndInstall(ctx context.Context) error {
+	e.installs++
+	e.installContext = ctx
+	if e.install != nil {
+		return e.install(ctx)
+	}
+	return e.installError
+}
+func (e *testUpdateEngine) Restart(context.Context) error {
+	e.restarts++
+	return nil
+}
+
+func setTestUpdater(a *App, engine updates.Engine) {
+	a.updateChecker = updates.New(appVersion(), updateRepository, filepath.Join(a.store.Dir, "update-check.json"), engine)
+	a.updateContext, a.updateCancel = context.WithCancel(a.ctx)
+}
+
+func TestUpdateInstallUsesWailsAndKeepsWindowContextAlive(t *testing.T) {
 	if !updatesSupported() {
-		t.Skip("Windows x64 update checks")
+		t.Skip("packaged update platforms")
 	}
 	a := testApp(t)
-	repository := "owner/yap"
-	path := filepath.Join(a.store.Dir, "update-check.json")
-	data := []byte(`{"repository":"` + repository + `","lastSuccess":"` + time.Now().UTC().Format(time.RFC3339) + `","release":{"version":"99.0.0","tag":"v99.0.0","installer":"yap-99.0.0-windows-amd64-setup.exe","downloadURL":"https://github.com/owner/yap/releases/download/v99.0.0/yap-99.0.0-windows-amd64-setup.exe"}}`)
-	if err := os.WriteFile(path, data, 0600); err != nil {
-		t.Fatal(err)
+	engine := &testUpdateEngine{}
+	setTestUpdater(a, engine)
+	if err := a.InstallUpdate(); err != nil || engine.installs != 1 || a.quitRequested {
+		t.Fatalf("unexpected install action: %v, %+v", err, engine)
 	}
-	a.updateChecker = updates.New(appVersion(), repository, path)
-	opened := ""
-	err := a.openUpdateDownload(func(ctx context.Context, url string) error { opened = url; return nil })
-	if err != nil || opened != "https://github.com/owner/yap/releases/download/v99.0.0/yap-99.0.0-windows-amd64-setup.exe" || a.quitRequested {
-		t.Fatalf("unexpected download action: %q, %v", opened, err)
+	if engine.installContext.Err() != nil {
+		t.Fatal("staging cancelled the native window's retry/restart context")
 	}
-	launchError := errors.New("browser launch failed")
-	if err := a.openUpdateDownload(func(context.Context, string) error { return launchError }); !errors.Is(err, launchError) {
-		t.Fatalf("browser launch failure was hidden: %v", err)
+	engine.installError = errors.New("download failed")
+	if err := a.InstallUpdate(); !errors.Is(err, engine.installError) {
+		t.Fatalf("install failure hidden: %v", err)
 	}
-	a.updateChecker = updates.New("99.0.0", repository, path)
-	if err := a.openUpdateDownload(func(context.Context, string) error { t.Fatal("opened installed version"); return nil }); err == nil {
-		t.Fatal("allowed download without a newer release")
+	engine.state = updater.StateReady
+	if _, err := a.CheckForUpdates(true); err == nil {
+		t.Fatal("rechecked over a staged update")
+	}
+	if err := a.InstallUpdate(); err == nil {
+		t.Fatal("redownloaded a staged update")
+	}
+	if s, err := a.GetUpdateStatus(); err != nil || !s.Ready {
+		t.Fatalf("staged update missing: %+v, %v", s, err)
+	}
+	if err := a.RestartUpdate(); err != nil || engine.restarts != 1 {
+		t.Fatalf("restart not delegated: %v", err)
+	}
+	a.development = true
+	if err := a.InstallUpdate(); err == nil {
+		t.Fatal("installed over a development build")
+	}
+	if err := a.RestartUpdate(); err == nil {
+		t.Fatal("restarted a development build")
 	}
 	a.shutdown(a.ctx)
+	if engine.installContext.Err() == nil {
+		t.Fatal("shutdown left updater context running")
+	}
 	if _, err := a.CheckForUpdates(true); err == nil {
 		t.Fatal("checked updates after shutdown")
+	}
+	if err := a.InstallUpdate(); err == nil {
+		t.Fatal("installed after shutdown")
+	}
+}
+
+func TestShutdownCancelsUpdateAndRejectsConcurrentOperations(t *testing.T) {
+	if !updatesSupported() {
+		t.Skip("packaged update platforms")
+	}
+	a := testApp(t)
+	started := make(chan struct{})
+	engine := &testUpdateEngine{install: func(ctx context.Context) error {
+		close(started)
+		<-ctx.Done()
+		return ctx.Err()
+	}}
+	setTestUpdater(a, engine)
+	done := make(chan error, 1)
+	go func() { done <- a.InstallUpdate() }()
+	select {
+	case <-started:
+	case <-time.After(5 * time.Second):
+		t.Fatal("install never started")
+	}
+	if err := a.InstallUpdate(); err == nil {
+		t.Fatal("allowed concurrent install")
+	}
+	if _, err := a.CheckForUpdates(true); err == nil {
+		t.Fatal("allowed check during install")
+	}
+	a.shutdown(a.ctx)
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("install was not cancelled: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("shutdown did not cancel update")
+	}
+}
+
+func TestConfigureWailsUpdaterUsesBuildVersion(t *testing.T) {
+	if !updatesSupported() {
+		t.Skip("packaged update platforms")
+	}
+	engine := updater.New(nil)
+	if err := configureUpdater(engine); err != nil {
+		t.Fatal(err)
+	}
+	if engine.CurrentVersion() != appVersion() || engine.State() != updater.StateIdle {
+		t.Fatal("Wails updater was not configured with the embedded version")
 	}
 }

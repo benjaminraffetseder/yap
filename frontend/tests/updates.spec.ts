@@ -56,11 +56,10 @@ test.beforeEach(async ({ page }) => {
       currentVersion: "0.1.0",
       latestVersion: "0.2.0",
       available: true,
+      ready: false,
       supported: true,
       configured: true,
       checkedAt: "2026-10-10T08:00:00Z",
-      downloadURL:
-        "https://github.com/benjaminraffetseder/yap/releases/download/v0.2.0/yap-0.2.0-windows-amd64-setup.exe",
       notes: "Improved microphone selection.\nFixed shortcut handling.",
       error: "",
       message: "",
@@ -69,6 +68,9 @@ test.beforeEach(async ({ page }) => {
       update,
       checks: [] as boolean[],
       downloads: 0,
+      restarts: 0,
+      stage: false,
+      installFail: false,
       fail: false,
       pending: false,
       finish: () => {},
@@ -105,8 +107,18 @@ test.beforeEach(async ({ page }) => {
                 };
               return structuredClone(update);
             },
-            OpenUpdateDownload: async () => {
+            GetUpdateStatus: async () => structuredClone(update),
+            InstallUpdate: async () => {
               state.downloads++;
+              if (state.pending)
+                await new Promise<void>((resolve) => {
+                  state.finish = resolve;
+                });
+              if (state.installFail) throw new Error("Update download failed");
+              if (state.stage) update.ready = true;
+            },
+            RestartUpdate: async () => {
+              state.restarts++;
             },
           },
         },
@@ -115,14 +127,14 @@ test.beforeEach(async ({ page }) => {
   });
 });
 
-test("startup offers a download, dismissal keeps details available, and manual check bypasses startup", async ({
+test("startup offers the native updater, dismissal keeps details available, and manual check bypasses startup", async ({
   page,
 }, testInfo) => {
   await page.goto("/");
   const notice = page.getByRole("region", { name: "App update available" });
   await expect(notice).toContainText("Yap 0.2.0 is available.");
   await page.waitForFunction(() => Reflect.get(window, "updateTest").checks.length === 1);
-  await notice.getByRole("button", { name: "Download update" }).click();
+  await notice.getByRole("button", { name: "Install update" }).click();
   expect(await page.evaluate(() => Reflect.get(window, "updateTest").downloads)).toBe(1);
   await notice.getByRole("button", { name: "Later" }).click();
   await expect(notice).toBeHidden();
@@ -137,7 +149,7 @@ test("startup offers a download, dismissal keeps details available, and manual c
   await expect
     .poll(() => page.evaluate(() => Reflect.get(window, "updateTest").checks))
     .toEqual([false, true]);
-  await updates.getByRole("button", { name: "Download update" }).click();
+  await updates.getByRole("button", { name: "Install update" }).click();
   expect(await page.evaluate(() => Reflect.get(window, "updateTest").downloads)).toBe(2);
   await page.screenshot({ path: testInfo.outputPath("update-settings.png"), fullPage: true });
 });
@@ -195,26 +207,85 @@ test("unconfigured builds explain why updates are unavailable", async ({ page })
     page.getByText("GitHub update checks aren’t configured for this build."),
   ).toBeVisible();
   await expect(page.getByRole("button", { name: "Check for updates" })).toBeHidden();
-  await expect(page.getByRole("button", { name: "Download update" })).toBeHidden();
+  await expect(page.getByRole("button", { name: "Install update" })).toBeHidden();
 });
 
-test("a missing public GitHub release is explained without claiming the app is up to date", async ({
-  page,
-}) => {
+test("a provider with no newer release reports up to date", async ({ page }) => {
   await page.addInitScript(() => {
     Object.assign(Reflect.get(window, "updateTest").update, {
       available: false,
       latestVersion: "",
-      downloadURL: "",
       notes: "",
-      message: "No public GitHub release is available yet.",
+      message: "",
     });
   });
   await page.goto("/#/settings?section=general");
-  await expect(
-    page.getByText("No public GitHub release is available yet.", { exact: true }),
-  ).toBeVisible();
-  await expect(page.getByText("You’re up to date.", { exact: true })).toBeHidden();
-  await expect(page.getByRole("button", { name: "Download update" })).toBeHidden();
+  await expect(page.getByText("You’re up to date.", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Install update" })).toBeHidden();
   await expect(page.getByRole("button", { name: "Check for updates" })).toBeEnabled();
+});
+
+test("a staged update can restart from Settings after the native window closes", async ({
+  page,
+}) => {
+  await page.goto("/#/settings?section=general");
+  await expect(page.getByRole("button", { name: "Check for updates" })).toBeEnabled();
+  await page.evaluate(() => {
+    Reflect.get(window, "updateTest").stage = true;
+  });
+  const settings = page
+    .locator("section")
+    .filter({ has: page.getByRole("heading", { name: "App updates", exact: true }) });
+  await settings.getByRole("button", { name: "Install update" }).click();
+  await settings.getByRole("button", { name: "Restart & Apply" }).click();
+  expect(await page.evaluate(() => Reflect.get(window, "updateTest").restarts)).toBe(1);
+  expect(await page.evaluate(() => Reflect.get(window, "updateTest").downloads)).toBe(1);
+  await expect(page.getByRole("button", { name: "Check for updates" })).toBeDisabled();
+});
+
+test("installation prevents duplicate actions and reports failures in Settings", async ({
+  page,
+}) => {
+  await page.goto("/#/settings?section=general");
+  await expect(page.getByRole("button", { name: "Check for updates" })).toBeEnabled();
+  await page.evaluate(() => {
+    Object.assign(Reflect.get(window, "updateTest"), { pending: true, installFail: true });
+  });
+  const settings = page
+    .locator("section")
+    .filter({ has: page.getByRole("heading", { name: "App updates", exact: true }) });
+  await settings.getByRole("button", { name: "Install update" }).click();
+  await expect(settings.getByRole("button", { name: "Opening update window…" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Check for updates" })).toBeDisabled();
+  await page.evaluate(() => {
+    Reflect.get(window, "updateTest").finish();
+  });
+  await expect(settings.getByRole("alert")).toContainText("Update download failed");
+  await expect(settings.getByRole("button", { name: "Install update" })).toBeEnabled();
+});
+
+test("a native-window retry can make the update ready after the initial download fails", async ({
+  page,
+}) => {
+  await page.goto("/#/settings?section=general");
+  await expect(page.getByRole("button", { name: "Check for updates" })).toBeEnabled();
+  await page.evaluate(() => {
+    Reflect.get(window, "updateTest").installFail = true;
+  });
+  const settings = page
+    .locator("section")
+    .filter({ has: page.getByRole("heading", { name: "App updates", exact: true }) });
+  await settings.getByRole("button", { name: "Install update" }).click();
+  await expect(settings.getByRole("alert")).toContainText("Update download failed");
+  await page.evaluate(() => {
+    Reflect.get(window, "_wails").dispatchWailsEvent({
+      name: "wails:updater:update-ready",
+      data: { version: "0.3.0" },
+    });
+  });
+  await expect(settings.getByRole("alert")).toHaveCount(0);
+  await expect(settings).toContainText("Yap 0.3.0");
+  await settings.getByRole("button", { name: "Restart & Apply" }).click();
+  expect(await page.evaluate(() => Reflect.get(window, "updateTest").restarts)).toBe(1);
+  expect(await page.evaluate(() => Reflect.get(window, "updateTest").downloads)).toBe(1);
 });

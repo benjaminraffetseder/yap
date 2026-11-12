@@ -1,6 +1,6 @@
+import { toastManager } from "@/components/ui/toast";
 import i18n from "@/i18n";
 import { nativeText } from "@/i18n/native-text";
-import { toastManager } from "@/components/ui/toast";
 import {
   backend,
   defaultTextProcessing,
@@ -14,8 +14,8 @@ import {
   type Status,
   type UpdateStatus,
 } from "@/lib/backend";
-import { Events } from "@wailsio/runtime";
 import { processingActivity } from "@/lib/processing-activity";
+import { Events } from "@wailsio/runtime";
 import {
   createContext,
   useCallback,
@@ -182,8 +182,10 @@ type Context = {
   setProcessingPanelOpen: (open: boolean) => void;
   update: UpdateStatus | null;
   checkingUpdates: boolean;
+  installingUpdate: boolean;
   updateError: string;
   checkUpdates: (manual?: boolean) => Promise<void>;
+  installUpdate: () => Promise<void>;
   snapshot: Snapshot;
   level: number;
   error: string;
@@ -200,6 +202,7 @@ const DictationContext = createContext<Context | null>(null);
 export function DictationProvider({ children }: { children: ReactNode }) {
   const [update, setUpdate] = useState<UpdateStatus | null>(null);
   const [checkingUpdates, setCheckingUpdates] = useState(false);
+  const [installingUpdate, setInstallingUpdate] = useState(false);
   const [updateError, setUpdateError] = useState("");
   const updateRequest = useRef(false);
   const [snapshot, setSnapshot] = useState(empty);
@@ -239,9 +242,45 @@ export function DictationProvider({ children }: { children: ReactNode }) {
       setCheckingUpdates(false);
     }
   }, []);
+  const installUpdate = useCallback(async () => {
+    if (!isDesktop || updateRequest.current) return;
+    updateRequest.current = true;
+    setInstallingUpdate(true);
+    setUpdateError("");
+    try {
+      if (update?.ready) await backend.restartUpdate();
+      else {
+        await backend.installUpdate();
+        const value = await backend.updateStatus();
+        setUpdate(value);
+        setUpdateError(value.error);
+      }
+    } catch (cause) {
+      setUpdateError(message(cause));
+    } finally {
+      updateRequest.current = false;
+      setInstallingUpdate(false);
+    }
+  }, [update?.ready]);
   useEffect(() => {
     if (isDesktop && !loading) void checkUpdates(false);
   }, [loading, checkUpdates]);
+  useEffect(() => {
+    if (!isDesktop) return;
+    return Events.On("wails:updater:update-ready", (event) => {
+      const release = event.data as { version?: string } | undefined;
+      setUpdate(
+        (value) =>
+          value && {
+            ...value,
+            available: true,
+            ready: true,
+            latestVersion: release?.version ?? value.latestVersion,
+          },
+      );
+      setUpdateError("");
+    });
+  }, []);
   const refresh = useCallback(async () => {
     if (!isDesktop) return;
     const request = ++snapshotRequest.current;
@@ -501,8 +540,10 @@ export function DictationProvider({ children }: { children: ReactNode }) {
         setProcessingPanelOpen,
         update,
         checkingUpdates,
+        installingUpdate,
         updateError,
         checkUpdates,
+        installUpdate,
         snapshot,
         level,
         error,

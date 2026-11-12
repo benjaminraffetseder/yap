@@ -37,6 +37,7 @@ import {
   GetSessionOutputs,
   GetSnapshot,
   GetTranscriptExportPreview,
+  GetUpdateStatus,
   HomeResultAction,
   ImportAudio,
   ImportDroppedAudio,
@@ -44,7 +45,7 @@ import {
   InstallModel,
   InstallTextModel,
   ListTextModels,
-  OpenUpdateDownload,
+  InstallUpdate,
   PermanentlyDeleteSessions,
   PreviewBackup,
   ProcessText,
@@ -58,6 +59,7 @@ import {
   RenameSession,
   ReorderImportQueue,
   RestartSetup,
+  RestartUpdate,
   RestoreBackup,
   RestoreSessions,
   RetryImport,
@@ -206,10 +208,10 @@ export type UpdateStatus = {
   currentVersion: string;
   latestVersion: string;
   available: boolean;
+  ready: boolean;
   supported: boolean;
   configured: boolean;
   checkedAt: string;
-  downloadURL: string;
   notes: string;
   error: string;
   message: string;
@@ -500,7 +502,9 @@ export const backend = {
   checkUpdates: async (manual: boolean): Promise<UpdateStatus> => {
     return CheckForUpdates(manual);
   },
-  downloadUpdate: OpenUpdateDownload,
+  installUpdate: InstallUpdate,
+  restartUpdate: RestartUpdate,
+  updateStatus: GetUpdateStatus,
   reorderImports: async (ids: string[]): Promise<void> => {
     return ReorderImportQueue(ids);
   },

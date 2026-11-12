@@ -33,6 +33,7 @@ frontend/.playwright/
 /scripts/*
 !/scripts/build-macos.sh
 !/scripts/smoke-macos.sh
+!/scripts/prepare-update.ps1
 *.tsbuildinfo
 *.exe
 *.pfx

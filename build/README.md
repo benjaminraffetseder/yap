@@ -28,6 +28,12 @@ metadata files contain concrete values; keep their versions in sync with
 Use `wails3 package` on macOS for an app bundle; Windows installers remain in
 the separate release setup.
 
+After building and signing a Windows x64 executable, run
+`wails3 task windows:update:asset` to prepare its raw update executable and
+`SHA256SUMS`. The Mac packaging script also emits the updater checksum file.
+See [the updater release guide](../docs/updater.md) for required assets and the
+transition path for users of the previous installer-based update checker.
+
 Executables, generated resources, installers, and local packaging files are
 ignored. The ignore rules allow only the source inputs and Taskfiles under
 `build/`. Build outputs go to `build/bin/`.

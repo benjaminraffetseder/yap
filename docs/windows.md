@@ -51,61 +51,22 @@ Source builds are unsigned. Windows may warn when an executable is downloaded
 from another computer. Installer packaging, signing, and website publishing are
 maintained separately and aren't required for this build.
 
-## Release update checks
+## App updates
 
-Windows x64 builds check the latest public stable release in
-`benjaminraffetseder/yap` using GitHub's Releases API. This is enabled in ordinary
-`wails3 build` output; no website feed, `release.json`, account, or token is needed.
-Development builds skip automatic network checks, while manual checks still work.
-macOS and Linux do not offer Windows installers.
+Yap uses the Wails v3 updater and its GitHub Releases provider. Production builds
+quietly check the latest stable release at startup, at most once every 24 hours
+across restarts, including failed attempts. **Settings → General → App updates →
+Check for updates** checks immediately. Development builds allow manual checks
+but skip automatic requests and refuse installation over a development binary.
 
-For each release:
+**Install update** opens the Wails update window, downloads and verifies the
+release, and stages it beside the installed executable. **Restart & Apply**
+starts Wails' helper, shuts down Yap through its normal cleanup, swaps the
+executable, and relaunches. Closing the update window after staging leaves a
+**Restart & Apply** action in Settings and the command menu. The installation
+directory must be writable; per-user and portable installations support this.
+The updater does not request administrator privileges for a protected directory.
 
-1. Bump `info.version` in `build/config.yml` and the version fields in
-   `build/windows/info.json`, `build/windows/wails.exe.manifest`, and both
-   `build/darwin/Info*.plist` files, for example to `0.2.0`.
-2. Build the Windows installer with your release packaging and signing setup.
-3. Create a draft GitHub release tagged `v0.2.0` and add release notes.
-4. Upload `yap-0.2.0-windows-amd64-setup.exe` and its checksum before publishing.
-5. Publish the release as a stable release and mark it as latest.
-
-The tag must match the compiled version: three numeric components, with an
-optional leading `v`. The installer filename must match the exact version and
-Windows x64 naming pattern above. Drafts, prereleases, and incomplete or empty
-installer uploads cannot become update downloads. A tag alone does not publish
-an update. Release notes come from the GitHub release body and are displayed as
-plain text with a preview of at most 8000 UTF-8 bytes.
-
-The separate local `scripts/build-windows.ps1` helper defaults to this repository
-and still supports `-SelfSign`. Its website manifest and `-PrepareLanding` option
-remain useful for website downloads, but the app no longer reads that manifest.
-These packaging helpers remain ignored local files; they aren't needed for a
-regular source build. Build and sign locally, then attach the installer and
-checksum to the draft GitHub release.
-
-If releases move to a separate public GitHub repository, select it at build time:
-
-```powershell
-wails3 build LDFLAGS="-X main.updateRepository=owner/yap-releases"
-```
-
-The local installer helper accepts the corresponding
-`-UpdateRepository owner/yap-releases` option. Never embed GitHub credentials in
-the application; the release repository must be public.
-
-Production builds check at startup, at most once every 24 hours across restarts,
-including failed attempts. **Settings → General → App updates → Check for updates**
-checks immediately. Results are cached in `%APPDATA%\yap\update-check.json`.
-Offline checks leave dictation running and retain a previously discovered update.
-GitHub rate limits show retry guidance. If GitHub returns no public latest
-release, Settings says that no public GitHub release is available yet, rather
-than claiming the app is up to date. Old website-feed cache entries are ignored.
-Users on older builds without the checker must manually install a release that
-includes it once; subsequent releases can then be discovered inside Yap.
-
-**Download update** opens the validated installer link in the system browser.
-The user quits Yap from the tray and runs setup to upgrade in place. This flow
-does not automatically download, verify, or execute the installer. Metadata uses
-HTTPS and stays on the API host; installer URLs must match the configured GitHub
-repository, release tag, and expected filename. Authenticated update signatures
-would be required before adding automatic installation.
+For release assets, checksums, compatibility with older builds, and rollback,
+see [the updater release guide](updater.md). Existing installer packaging and
+website publishing remain separate from the in-app updater.

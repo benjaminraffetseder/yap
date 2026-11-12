@@ -104,7 +104,9 @@ type App struct {
 	homeResultReadMu                 sync.Mutex
 	homeHistory                      []storage.Session
 	updateChecker                    *updates.Checker
+	updateContext                    context.Context
 	updateCancel                     context.CancelFunc
+	updateRunning                    bool
 	pendingBackup                    *storage.BackupArchive
 	backupPreviewID                  string
 	backupHistory                    []storage.Session

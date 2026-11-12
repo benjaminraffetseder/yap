@@ -2,7 +2,10 @@ package updates
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -11,256 +14,214 @@ import (
 	"testing"
 	"time"
 	"unicode/utf8"
+
+	"github.com/wailsapp/wails/v3/pkg/updater"
+	"github.com/wailsapp/wails/v3/pkg/updater/providers/github"
 )
 
-func TestStableVersions(t *testing.T) {
-	for _, tc := range []struct {
-		latest, current string
-		want            bool
-	}{
-		{"0.10.0", "0.9.0", true}, {"1.0.0", "0.99.99", true},
-		{"0.1.1", "0.1.0", true}, {"0.1.0", "0.1.0", false},
-		{"0.1.0", "0.2.0", false}, {"1.0.0", "1.0.1", false},
-	} {
-		got, err := newer(tc.latest, tc.current)
-		if err != nil || got != tc.want {
-			t.Fatalf("%s > %s: %v, %v", tc.latest, tc.current, got, err)
-		}
-	}
-	for _, invalid := range []string{"", "1.0", "v1.0.0", "1.0.0-beta", "01.0.0", "1.+1.0", "1.0.0.0", "18446744073709551616.0.0"} {
-		if _, err := newer(invalid, "0.1.0"); err == nil {
-			t.Errorf("accepted %q", invalid)
-		}
-	}
+type fakeEngine struct {
+	calls   int
+	release *updater.Release
+	err     error
 }
 
-func newTestChecker(t *testing.T, handler http.HandlerFunc) (*Checker, *httptest.Server) {
-	t.Helper()
-	server := httptest.NewTLSServer(handler)
-	t.Cleanup(server.Close)
-	c := New("0.1.0", "owner/yap", filepath.Join(t.TempDir(), "update-check.json"))
-	c.feed = server.URL + "/repos/owner/yap/releases/latest"
-	c.client.Transport = server.Client().Transport
-	return c, server
+func (e *fakeEngine) Check(context.Context) (*updater.Release, error) {
+	e.calls++
+	return e.release, e.err
 }
+func (*fakeEngine) CheckAndInstall(context.Context) error { panic("a check must not install") }
+func (*fakeEngine) Restart(context.Context) error         { panic("a check must not restart") }
+func (*fakeEngine) State() updater.State                  { return updater.StateIdle }
 
-func TestCheckCachesAcrossRestartsAndManualBypassesDailyLimit(t *testing.T) {
-	calls := 0
-	c, server := newTestChecker(t, func(w http.ResponseWriter, r *http.Request) {
-		calls++
-		if r.Method != "GET" || r.URL.String() != "/repos/owner/yap/releases/latest" || r.ContentLength > 0 {
-			t.Errorf("unexpected request: %s %s (%d)", r.Method, r.URL, r.ContentLength)
-		}
-		if r.Header.Get("Accept") != "application/vnd.github+json" || r.Header.Get("X-GitHub-Api-Version") == "" || r.Header.Get("Authorization") != "" {
-			t.Errorf("unexpected API headers: %v", r.Header)
-		}
-		ioJSON(w, githubJSON("v0.2.0", "A useful fix."))
-	})
+func TestDailyChecksCacheStatusAndManualChecksRetry(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "update-check.json")
+	e := &fakeEngine{release: &updater.Release{Version: "0.2.0", Notes: "# Fixes\n" + strings.Repeat("漢", 4000)}}
 	now := time.Now()
-	c.now = func() time.Time { return now }
+	newChecker := func(current, repo string) *Checker {
+		c := New(current, repo, path, e)
+		c.now = func() time.Time { return now }
+		return c
+	}
+	c := newChecker("0.1.0", "owner/yap")
 	s := c.Check(context.Background(), false)
-	if !s.Available || s.DownloadURL != "https://github.com/owner/yap/releases/download/v0.2.0/yap-0.2.0-windows-amd64-setup.exe" || s.Notes != "A useful fix." || s.Error != "" {
-		t.Fatalf("unexpected release: %+v", s)
+	if !s.Available || s.Error != "" || s.LatestVersion != "0.2.0" || len(s.Notes) > 8000 || !utf8.ValidString(s.Notes) {
+		t.Fatalf("unexpected Wails release: %+v", s)
 	}
+	c = newChecker("0.1.0", "owner/yap")
+	if !c.Check(context.Background(), false).Available || e.calls != 1 {
+		t.Fatal("startup cache was not preserved")
+	}
+	e.err = errors.New("offline")
+	s = c.Check(context.Background(), true)
+	if !s.Available || s.Error != "offline" || e.calls != 2 {
+		t.Fatalf("manual retry lost the known update: %+v", s)
+	}
+	c = newChecker("0.1.0", "owner/yap")
 	c.Check(context.Background(), false)
-	restarted := New("0.1.0", c.repository, c.path)
-	restarted.feed = server.URL + "/repos/owner/yap/releases/latest"
-	restarted.client.Transport = c.client.Transport
-	restarted.now = c.now
-	if !restarted.Check(context.Background(), false).Available || calls != 1 {
-		t.Fatalf("cache failed after restart, calls=%d", calls)
-	}
-	restarted.Check(context.Background(), true)
-	if calls != 2 {
-		t.Fatal("manual check was throttled")
+	if e.calls != 2 {
+		t.Fatal("failed attempts were not throttled across restarts")
 	}
 	now = now.Add(24 * time.Hour)
-	restarted.Check(context.Background(), false)
-	if calls != 3 {
-		t.Fatal("next day's startup did not check")
+	e.err, e.release = nil, nil
+	s = c.Check(context.Background(), false)
+	if s.Available || s.Error != "" || s.Notes != "" || e.calls != 3 {
+		t.Fatalf("no-update result retained a stale release: %+v", s)
 	}
-	upgraded := New("0.2.0", c.repository, c.path).Status()
-	if upgraded.Available || upgraded.DownloadURL != "" {
-		t.Fatalf("offered installed version: %+v", upgraded)
+	if s := newChecker("0.2.0", "owner/yap").Status(); s.Available || s.CheckedAt != "" {
+		t.Fatal("cache survived a version change")
 	}
-}
-
-func ioJSON(w http.ResponseWriter, data string) {
-	w.Header().Set("Content-Type", "application/json")
-	_, _ = w.Write([]byte(data))
-}
-
-func githubJSON(tag, notes string) string {
-	version := strings.TrimPrefix(tag, "v")
-	filename := "yap-" + version + "-windows-amd64-setup.exe"
-	data, _ := json.Marshal(map[string]any{
-		"tag_name": tag, "body": notes, "draft": false, "prerelease": false,
-		"assets": []map[string]any{{"name": filename, "state": "uploaded", "size": 123,
-			"browser_download_url": "https://github.com/owner/yap/releases/download/" + tag + "/" + filename}},
-	})
-	return string(data)
-}
-
-func TestLongGitHubReleaseNotesAreBoundedPlainText(t *testing.T) {
-	c, _ := newTestChecker(t, func(w http.ResponseWriter, r *http.Request) {
-		ioJSON(w, githubJSON("0.2.0", "# Fixes\n"+strings.Repeat("漢", 4000)))
-	})
-	if s := c.Check(context.Background(), false); !s.Available || s.Error != "" || len(s.Notes) > 8000 || !utf8.ValidString(s.Notes) || !strings.HasPrefix(s.Notes, "# Fixes\n") {
-		t.Fatalf("unexpected notes preview: %+v", s)
+	if s := newChecker("0.1.0", "other/yap").Status(); s.CheckedAt != "" {
+		t.Fatal("cache survived a repository change")
 	}
 }
 
-func TestRejectInvalidMetadataAndPreserveKnownUpdate(t *testing.T) {
-	valid := githubJSON("v0.2.0", "Notes")
-	for _, invalid := range []string{
-		`<html>Not a manifest</html>`,
-		strings.ReplaceAll(valid, "https://github.com/owner/yap/", "https://evil.example/"),
-		strings.ReplaceAll(valid, "/owner/yap/", "/owner/other/"),
-		strings.ReplaceAll(valid, "/download/v0.2.0/", "/download/v0.1.0/"),
-		strings.ReplaceAll(valid, "windows-amd64", "windows-arm64"),
-		githubJSON("v0.2.0-beta", "Beta"),
-		strings.Replace(valid, `"draft":false`, `"draft":true`, 1),
-		strings.Replace(valid, `"prerelease":false`, `"prerelease":true`, 1),
-		strings.Replace(valid, `"state":"uploaded"`, `"state":"starter"`, 1),
-		strings.Replace(valid, `"size":123`, `"size":0`, 1),
-		`{"tag_name":"v0.2.0","assets":[]}`,
-		valid + ` {}`,
-		strings.Repeat(" ", maxMetadata+1),
-	} {
-		t.Run(invalid[:min(len(invalid), 60)], func(t *testing.T) {
-			body := valid
-			c, _ := newTestChecker(t, func(w http.ResponseWriter, r *http.Request) { ioJSON(w, body) })
-			c.Check(context.Background(), true)
-			body = invalid
-			s := c.Check(context.Background(), true)
-			if s.Error == "" || !s.Available || s.LatestVersion != "0.2.0" {
-				t.Fatalf("invalid manifest replaced known update: %+v", s)
-			}
-		})
-	}
-}
-
-func TestFailedAttemptsAreThrottledAndManualCanRecover(t *testing.T) {
-	calls, fail := 0, true
-	c, _ := newTestChecker(t, func(w http.ResponseWriter, r *http.Request) {
-		calls++
-		if fail {
-			w.WriteHeader(http.StatusServiceUnavailable)
-			return
-		}
-		ioJSON(w, githubJSON("v0.1.0", ""))
-	})
-	if s := c.Check(context.Background(), false); s.Error == "" || s.CheckedAt != "" {
-		t.Fatalf("failure appeared successful: %+v", s)
-	}
-	transport := c.client.Transport
-	feed := c.feed
-	c = New(c.current, c.repository, c.path)
-	c.feed = feed
-	c.client.Transport = transport
-	c.Check(context.Background(), false)
-	if calls != 1 {
-		t.Fatal("failed attempt wasn't cached")
-	}
-	fail = false
-	s := c.Check(context.Background(), true)
-	if s.Error != "" || s.CheckedAt == "" || s.Available || calls != 2 {
-		t.Fatalf("manual check did not recover: %+v", s)
-	}
-}
-
-func TestCancellationDoesNotWaitForNetworkTimeout(t *testing.T) {
-	started := make(chan struct{})
-	c, _ := newTestChecker(t, func(w http.ResponseWriter, r *http.Request) {
-		close(started)
-		<-r.Context().Done()
-	})
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	done := make(chan Status, 1)
-	go func() { done <- c.Check(ctx, true) }()
-	select {
-	case <-started:
-	case <-time.After(2 * time.Second):
-		t.Fatal("request never started")
-	}
-	cancel()
-	select {
-	case s := <-done:
-		if s.Error == "" || s.CheckedAt != "" {
-			t.Fatalf("cancellation appeared successful: %+v", s)
-		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("cancelled check waited for timeout")
-	}
-}
-
-func TestRepositoryAndCacheCannotSupplyUntrustedDownload(t *testing.T) {
-	for _, repository := range []string{"https://example.com", "owner/../other", "owner/repo?token=secret", "owner/", "../repo"} {
-		c := New("0.1.0", repository, filepath.Join(t.TempDir(), "cache.json"))
-		if s := c.Check(context.Background(), true); s.Available || s.Error == "" {
-			t.Fatalf("accepted repository %q: %+v", repository, s)
-		}
-	}
-	c, _ := newTestChecker(t, func(w http.ResponseWriter, r *http.Request) {
-		http.Redirect(w, r, "http://example.com/release.json", http.StatusFound)
-	})
-	if s := c.Check(context.Background(), true); s.Available || s.Error == "" {
-		t.Fatalf("accepted insecure redirect: %+v", s)
-	}
-	data, _ := json.Marshal(cache{Repository: c.repository, Release: manifest{Version: "0.2.0", Tag: "v0.2.0", Installer: "yap-0.2.0-windows-amd64-setup.exe", DownloadURL: "https://evil.example/setup.exe"}})
-	if err := os.WriteFile(c.path, data, 0600); err != nil {
+func TestLegacyInstallerCacheCannotBecomeAWailsUpdate(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "update-check.json")
+	data := `{"repository":"owner/yap","lastAttempt":"2099-01-01T00:00:00Z","release":{"version":"99.0.0","downloadURL":"https://example.com/setup.exe"}}`
+	if err := os.WriteFile(path, []byte(data), 0600); err != nil {
 		t.Fatal(err)
 	}
-	if s := New(c.current, c.repository, c.path).Status(); s.Available || s.DownloadURL != "" {
-		t.Fatalf("accepted poisoned cache: %+v", s)
+	e := &fakeEngine{}
+	c := New("0.1.0", "owner/yap", path, e)
+	if c.Status().Available {
+		t.Fatal("offered a cached legacy installer")
+	}
+	c.Check(context.Background(), false)
+	if e.calls != 1 {
+		t.Fatal("legacy cache suppressed the first Wails check")
+	}
+	if s := New("0.1.0", "", path, e).Check(context.Background(), true); s.Configured || e.calls != 1 {
+		t.Fatal("unconfigured build contacted a provider")
 	}
 }
 
-func TestNoPublicReleaseIsNotReportedAsUpToDateOrOffline(t *testing.T) {
-	c, _ := newTestChecker(t, func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusNotFound) })
-	s := c.Check(context.Background(), false)
-	if s.Error != "" || s.Message != "No public GitHub release is available yet." || s.Available || s.LatestVersion != "" || s.CheckedAt == "" {
-		t.Fatalf("unexpected no-release status: %+v", s)
+func TestAssetSelectionNeverChoosesInstallersOrSidecars(t *testing.T) {
+	assets := []github.ReleaseAsset{
+		{Name: "yap-0.2.0-windows-amd64-setup.exe", Size: 1},
+		{Name: "yap-0.2.0-windows-amd64.exe.sha256", Size: 1},
+		{Name: "Yap-0.2.0-macos-universal.zip", Size: 1},
+		{Name: "yap-0.2.0-windows-amd64.exe", Size: 1},
+		{Name: "Yap-0.2.0-macos-arm64.zip", Size: 1},
 	}
-	if saved := New(c.current, c.repository, c.path).Status(); saved.Message != s.Message {
-		t.Fatalf("lost no-release status across restart: %+v", saved)
+	for _, tc := range []struct {
+		platform, arch string
+		want           int
+	}{
+		{"windows", "amd64", 3}, {"windows", "arm64", -1},
+		{"darwin", "arm64", 4}, {"darwin", "amd64", 2}, {"linux", "amd64", -1},
+	} {
+		if got := matchAsset(updater.CheckRequest{Platform: tc.platform, Arch: tc.arch}, assets); got != tc.want {
+			t.Errorf("%s/%s selected %d, want %d", tc.platform, tc.arch, got, tc.want)
+		}
+	}
+	assets[3].Size = 0
+	if matchAsset(updater.CheckRequest{Platform: "windows", Arch: "amd64"}, assets) != -1 {
+		t.Fatal("selected an empty executable")
 	}
 }
 
-func TestRateLimitsPreserveKnownRelease(t *testing.T) {
-	for _, code := range []int{http.StatusForbidden, http.StatusTooManyRequests} {
-		t.Run(http.StatusText(code), func(t *testing.T) {
-			limited := false
-			c, _ := newTestChecker(t, func(w http.ResponseWriter, r *http.Request) {
-				if limited {
-					w.Header().Set("X-RateLimit-Remaining", "0")
-					w.WriteHeader(code)
-					return
+type testHost struct{}
+
+func (testHost) Emit(string, ...any) bool         { return true }
+func (testHost) OnEvent(string, func(any)) func() { return func() {} }
+func (testHost) OpenWindow(updater.WindowOptions) updater.WindowHandle {
+	panic("unexpected native window in headless test")
+}
+func (testHost) Quit() { panic("staging must not quit the app") }
+
+func TestWailsGitHubDownloadVerificationAndStaging(t *testing.T) {
+	const filename = "yap-0.2.0-windows-amd64.exe"
+	payload := []byte("test executable bytes; never launched")
+	digest := sha256.Sum256(payload)
+	for _, mode := range []string{"valid", "missing sidecar", "missing entry", "short digest", "malformed digest", "mismatch", "installer only", "wrong asset version", "already current", "no release"} {
+		t.Run(mode, func(t *testing.T) {
+			downloads := 0
+			var server *httptest.Server
+			server = httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				switch r.URL.Path {
+				case "/repos/owner/yap/releases/latest":
+					if mode == "no release" {
+						w.WriteHeader(http.StatusNotFound)
+						return
+					}
+					name := filename
+					if mode == "installer only" {
+						name = "yap-0.2.0-windows-amd64-setup.exe"
+					}
+					if mode == "wrong asset version" {
+						name = "yap-0.1.0-windows-amd64.exe"
+					}
+					assets := []map[string]any{{"name": name, "size": len(payload), "url": server.URL + "/artifact"}}
+					if mode != "missing sidecar" {
+						assets = append(assets, map[string]any{"name": "SHA256SUMS", "url": server.URL + "/checksums"})
+					}
+					_ = json.NewEncoder(w).Encode(map[string]any{"tag_name": "v0.2.0", "body": "Release notes", "assets": assets})
+				case "/checksums":
+					line := fmt.Sprintf("%x  %s\n", digest, filename)
+					switch mode {
+					case "missing entry":
+						line = fmt.Sprintf("%x  other.exe\n", digest)
+					case "short digest":
+						line = "abcd  " + filename
+					case "malformed digest":
+						line = "not-hex  " + filename
+					case "mismatch":
+						line = strings.Repeat("0", 64) + "  " + filename
+					}
+					_, _ = fmt.Fprint(w, line)
+				case "/artifact":
+					downloads++
+					_, _ = w.Write(payload)
+				default:
+					t.Errorf("unexpected request: %s", r.URL)
+					w.WriteHeader(http.StatusNotFound)
 				}
-				ioJSON(w, githubJSON("v0.2.0", ""))
-			})
-			c.Check(context.Background(), true)
-			limited = true
-			if s := c.Check(context.Background(), true); !s.Available || !strings.Contains(s.Error, "GitHub temporarily limited") {
-				t.Fatalf("unexpected rate limit status: %+v", s)
+			}))
+			defer server.Close()
+			provider, err := newGitHub(github.Config{Repository: "owner/yap", BaseURL: server.URL, HTTPClient: server.Client()})
+			if err != nil {
+				t.Fatal(err)
+			}
+			current := "0.1.0"
+			if mode == "already current" {
+				current = "0.2.0"
+			}
+			engine := updater.New(testHost{})
+			if err := engine.Init(updater.Config{CurrentVersion: current, Providers: []updater.Provider{provider}, Platform: "windows", Arch: "amd64", Window: updater.WindowNone}); err != nil {
+				t.Fatal(err)
+			}
+			release, err := engine.Check(context.Background())
+			if mode == "already current" || mode == "no release" {
+				if err != nil || release != nil {
+					t.Fatalf("unexpected update: %+v, %v", release, err)
+				}
+				return
+			}
+			if mode != "valid" && mode != "mismatch" {
+				if err == nil || release != nil || downloads != 0 {
+					t.Fatalf("incomplete release accepted: %+v, %v", release, err)
+				}
+				return
+			}
+			if err != nil || release == nil || release.Version != "0.2.0" || downloads != 0 {
+				t.Fatalf("bad check: %+v, %v", release, err)
+			}
+			err = engine.DownloadAndInstall(context.Background())
+			if mode == "mismatch" {
+				if err == nil || engine.DownloadedPath() != "" || engine.State() != updater.StateError {
+					t.Fatal("checksum mismatch was staged")
+				}
+				return
+			}
+			if err != nil || engine.State() != updater.StateReady {
+				t.Fatalf("Wails did not stage the update: %v", err)
+			}
+			staged := engine.DownloadedPath()
+			defer os.RemoveAll(filepath.Dir(staged))
+			data, err := os.ReadFile(staged)
+			if err != nil || string(data) != string(payload) || downloads != 1 {
+				t.Fatalf("wrong staged bytes: %v", err)
 			}
 		})
-	}
-}
-
-func TestOldWebsiteCacheAndOtherRepositoryCacheAreIgnored(t *testing.T) {
-	for _, saved := range []string{
-		`{"feed":"https://example.com/release.json","lastAttempt":"2099-01-01T00:00:00Z","release":{"version":"0.2.0","installer":"yap-0.2.0-windows-amd64-setup.exe"}}`,
-		`{"repository":"owner/other","lastAttempt":"2099-01-01T00:00:00Z"}`,
-	} {
-		path := filepath.Join(t.TempDir(), "cache.json")
-		if err := os.WriteFile(path, []byte(saved), 0600); err != nil {
-			t.Fatal(err)
-		}
-		c := New("0.1.0", "owner/yap", path)
-		if s := c.Status(); s.Available || s.CheckedAt != "" || !c.cached.LastAttempt.IsZero() {
-			t.Fatalf("loaded incompatible cache: %+v", s)
-		}
 	}
 }

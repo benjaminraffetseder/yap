@@ -23,3 +23,7 @@ tasks:
         platforms: [darwin, linux]
   run:
     cmds: ['"{{.BIN_DIR}}/{{.APP_NAME}}.exe"']
+  update:asset:
+    desc: Prepare a built and signed Windows x64 executable and SHA256SUMS for the updater
+    cmds:
+      - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/prepare-update.ps1 -Executable "{{.BIN_DIR}}/{{.APP_NAME}}.exe" -OutputDirectory "{{.BIN_DIR}}"

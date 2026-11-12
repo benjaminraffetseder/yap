@@ -339,7 +339,8 @@ test.describe("desktop commands and history", () => {
                   message: "",
                 };
               },
-              OpenUpdateDownload: () => action("download-update"),
+              InstallUpdate: () => action("install-update"),
+              GetUpdateStatus: async () => ({ available: true, error: "" }),
               StartRecording: async () => {
                 await action("start");
                 phase("recording");
@@ -550,7 +551,7 @@ test.describe("desktop commands and history", () => {
       "Copy latest result",
       "Save latest result to history",
       "Check for updates",
-      "Download update",
+      "Install update",
     ]) {
       if (label !== "Switch to profile: Personal") dialog = await openMenu(page);
       await dialog.getByRole("option", { name: label, exact: true }).click();
@@ -563,7 +564,7 @@ test.describe("desktop commands and history", () => {
         "copy:Temporary transcript",
         "save:entry-0",
         "updates:true",
-        "download-update",
+        "install-update",
       ]),
     );
   });

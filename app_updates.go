@@ -9,6 +9,7 @@ import (
 
 	"yap/internal/updates"
 
+	"github.com/wailsapp/wails/v3/pkg/updater"
 	"gopkg.in/yaml.v3"
 )
 
@@ -37,13 +38,39 @@ func (a *App) updateCheckerLocked() (*updates.Checker, error) {
 		return nil, err
 	}
 	if a.updateChecker == nil {
-		a.updateChecker = updates.New(appVersion(), updateRepository, filepath.Join(a.store.Dir, "update-check.json"))
+		if a.desktop == nil {
+			return nil, errors.New("desktop updater unavailable")
+		}
+		a.updateChecker = updates.New(appVersion(), updateRepository, filepath.Join(a.store.Dir, "update-check.json"), a.desktop.Updater)
+		ctx := a.ctx
+		if ctx == nil {
+			ctx = context.Background()
+		}
+		a.updateContext, a.updateCancel = context.WithCancel(ctx)
 	}
 	return a.updateChecker, nil
 }
 
 func updatesSupported() bool {
-	return goruntime.GOOS == "windows" && goruntime.GOARCH == "amd64"
+	return (goruntime.GOOS == "windows" && goruntime.GOARCH == "amd64") ||
+		(goruntime.GOOS == "darwin" && (goruntime.GOARCH == "amd64" || goruntime.GOARCH == "arm64"))
+}
+
+func configureUpdater(engine *updater.Updater) error {
+	if updateRepository == "" || !updatesSupported() {
+		return nil
+	}
+	provider, err := updates.NewGitHub(updateRepository)
+	if err != nil {
+		return err
+	}
+	return engine.Init(updater.Config{
+		CurrentVersion: appVersion(),
+		Providers:      []updater.Provider{provider},
+		Window: &updater.BuiltinWindow{Options: updater.WindowOptions{
+			Title: "Yap Update",
+		}},
+	})
 }
 
 func (a *App) GetUpdateStatus() (updates.Status, error) {
@@ -56,7 +83,7 @@ func (a *App) GetUpdateStatus() (updates.Status, error) {
 	s := checker.Status()
 	s.Supported = updatesSupported()
 	if !s.Supported {
-		s.Available, s.DownloadURL, s.Notes = false, "", ""
+		s.Available, s.Notes = false, ""
 	}
 	return s, nil
 }
@@ -73,46 +100,73 @@ func (a *App) CheckForUpdates(manual bool) (updates.Status, error) {
 		a.mu.Unlock()
 		return a.GetUpdateStatus()
 	}
-	if a.updateCancel != nil {
+	if a.updateRunning || checker.Busy() {
 		a.mu.Unlock()
-		return updates.Status{}, errors.New("an update check is already running")
+		return updates.Status{}, errors.New("an update is already in progress; use the Yap Update window")
 	}
-	ctx := a.ctx
+	ctx := a.updateContext
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	ctx, cancel := context.WithCancel(ctx)
-	a.updateCancel = cancel
+	a.updateRunning = true
 	a.wg.Add(1)
 	a.mu.Unlock()
 	defer a.wg.Done()
 	defer func() {
-		cancel()
 		a.mu.Lock()
-		a.updateCancel = nil
+		a.updateRunning = false
 		a.mu.Unlock()
 	}()
 	return checker.Check(ctx, manual), nil
 }
 
-func (a *App) OpenUpdateDownload() error {
-	return a.openUpdateDownload(func(_ context.Context, url string) error { return a.desktop.Browser.OpenURL(url) })
-}
-
-func (a *App) openUpdateDownload(open func(context.Context, string) error) error {
-	s, err := a.GetUpdateStatus()
+func (a *App) InstallUpdate() error {
+	a.mu.Lock()
+	checker, err := a.updateCheckerLocked()
 	if err != nil {
+		a.mu.Unlock()
 		return err
 	}
-	if !s.Supported || !s.Available || s.DownloadURL == "" {
-		return errors.New("no update download is available")
+	if !updatesSupported() || updateRepository == "" || a.development {
+		a.mu.Unlock()
+		return errors.New("install updates from a packaged Windows or macOS build")
 	}
-	a.mu.Lock()
-	ctx, closing := a.ctx, a.closing
+	if a.updateRunning || checker.Busy() {
+		a.mu.Unlock()
+		return errors.New("an update is already in progress; use the Yap Update window")
+	}
+	a.updateRunning = true
+	ctx := a.updateContext
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	a.wg.Add(1)
 	a.mu.Unlock()
-	if closing {
-		return errors.New("app is shutting down")
+	defer a.wg.Done()
+	defer func() {
+		a.mu.Lock()
+		a.updateRunning = false
+		a.mu.Unlock()
+	}()
+	// Keep the context alive after staging: the native window uses it for
+	// retries and Restart & Apply. Shutdown cancels it with the other workers.
+	return checker.Install(ctx)
+}
+
+// RestartUpdate also lets users apply an already staged update after closing
+// the native update window. Wails still owns the helper and normal quit flow.
+func (a *App) RestartUpdate() error {
+	a.mu.Lock()
+	checker, err := a.updateCheckerLocked()
+	if err != nil {
+		a.mu.Unlock()
+		return err
 	}
-	// Only the validated installer URL can reach the operating system browser.
-	return open(ctx, s.DownloadURL)
+	if !updatesSupported() || updateRepository == "" || a.development || a.updateRunning {
+		a.mu.Unlock()
+		return errors.New("an update is not ready to restart")
+	}
+	ctx := a.updateContext
+	a.mu.Unlock()
+	return checker.Restart(ctx)
 }

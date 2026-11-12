@@ -182,13 +182,16 @@ bash scripts/smoke-macos.sh "$app"
 
 version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app/Contents/Info.plist")"
 archive="$project_root/build/bin/Yap-$version-macos-$target.zip"
-ditto -c -k --sequesterRsrc --keepParent "$app" "$archive"
+# Wails requires exactly one top-level payload. Resource-fork sidecars would
+# introduce a second __MACOSX entry, so omit them from updater archives.
+ditto -c -k --norsrc --keepParent "$app" "$archive"
 if [[ -n "${NOTARY_PROFILE:-}" ]]; then
   xcrun notarytool submit "$archive" --keychain-profile "$NOTARY_PROFILE" --wait
   xcrun stapler staple "$app"
   xcrun stapler validate "$app"
-  ditto -c -k --sequesterRsrc --keepParent "$app" "$archive"
+  ditto -c -k --norsrc --keepParent "$app" "$archive"
 fi
 (cd "$(dirname "$archive")" && shasum -a 256 "$(basename "$archive")" > "$(basename "$archive").sha256")
+(cd "$(dirname "$archive")" && shasum -a 256 Yap-"$version"-macos-*.zip > SHA256SUMS)
 printf '\nBuilt %s\nArchive: %s\n' "$app" "$archive"
 if [[ "$identity" == - ]]; then printf '%s\n' 'Ad hoc signed for local testing. Public distribution needs Developer ID signing and notarization.'; fi

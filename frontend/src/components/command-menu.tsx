@@ -1,5 +1,3 @@
-import i18n from "@/i18n";
-import { useTranslation } from "react-i18next";
 import { useDictation } from "@/components/dictation-provider";
 import { useTheme } from "@/components/theme-provider";
 import {
@@ -11,10 +9,11 @@ import {
   CommandList,
   CommandShortcut,
 } from "@/components/ui/command";
+import i18n from "@/i18n";
 import { backend, isBusy, isDesktop, type Session } from "@/lib/backend";
 import {
-  BookOpen,
   Activity,
+  BookOpen,
   Copy,
   Download,
   HardDriveDownload,
@@ -35,6 +34,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router";
 
 type CommandAction = {
@@ -123,8 +123,17 @@ function CommandMenuContent({
 }) {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const { snapshot, loading, run, update, checkingUpdates, checkUpdates, setProcessingPanelOpen } =
-    useDictation();
+  const {
+    snapshot,
+    loading,
+    run,
+    update,
+    checkingUpdates,
+    installingUpdate,
+    checkUpdates,
+    installUpdate,
+    setProcessingPanelOpen,
+  } = useDictation();
   const { theme, setTheme } = useTheme();
   const { settings, status, latestResult } = snapshot;
   const [query, setQuery] = useState("");
@@ -375,7 +384,8 @@ function CommandMenuContent({
                 label: t("commandMenu.checkForUpdates"),
                 icon: RefreshCw,
                 keywords: ["version", "upgrade"],
-                disabled: unavailable || busy || checkingUpdates,
+                disabled:
+                  unavailable || busy || checkingUpdates || installingUpdate || update?.ready,
                 action: native(() => checkUpdates(true), false),
               },
             ]
@@ -383,11 +393,11 @@ function CommandMenuContent({
         ...(update?.available
           ? [
               {
-                label: t("appLayout.downloadUpdate"),
+                label: t(update.ready ? "appLayout.restartUpdate" : "appLayout.installUpdate"),
                 icon: Download,
                 keywords: ["version", "upgrade"],
-                disabled: unavailable || busy,
-                action: native(backend.downloadUpdate, false),
+                disabled: unavailable || busy || checkingUpdates || installingUpdate,
+                action: native(installUpdate, false),
               },
             ]
           : []),

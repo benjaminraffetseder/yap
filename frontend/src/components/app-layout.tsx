@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { toastManager } from "@/components/ui/toast";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { nativeText } from "@/i18n/native-text";
-import { backend, backendVersionMismatchMessage, isDesktop } from "@/lib/backend";
+import { backendVersionMismatchMessage, isDesktop } from "@/lib/backend";
 import { cn } from "@/lib/utils";
 import { Events } from "@wailsio/runtime";
 import { BookOpen, HardDriveDownload, History, Mic, Settings2, Sparkles } from "lucide-react";
@@ -41,7 +41,19 @@ export function AppLayout({ saveNoticeRef }: { saveNoticeRef?: Ref<HTMLDivElemen
     { to: "/settings", label: t("common.settings"), icon: Settings2 },
   ];
 
-  const { snapshot, error, clearError, loading, run, refresh, update } = useDictation();
+  const {
+    snapshot,
+    error,
+    clearError,
+    loading,
+    run,
+    refresh,
+    update,
+    updateError,
+    checkingUpdates,
+    installingUpdate,
+    installUpdate,
+  } = useDictation();
   const location = useLocation();
   const navigate = useNavigate();
   const [dismissedUpdate, setDismissedUpdate] = useState("");
@@ -258,11 +270,26 @@ export function AppLayout({ saveNoticeRef }: { saveNoticeRef?: Ref<HTMLDivElemen
                       Yap {update.latestVersion} {t("appLayout.isAvailable")}
                     </p>
                     <p className="text-sm text-muted-foreground">
-                      {t("appLayout.downloadTheInstallerQuitYapFromThe")}
+                      {t("appLayout.installUpdateInstructions")}
                     </p>
+                    {updateError && (
+                      <p role="alert" className="text-sm text-destructive">
+                        {updateError}
+                      </p>
+                    )}
                     <div className="flex flex-wrap items-center gap-3">
-                      <Button size="sm" onClick={() => void run(backend.downloadUpdate, false)}>
-                        {t("appLayout.downloadUpdate")}
+                      <Button
+                        size="sm"
+                        disabled={checkingUpdates || installingUpdate}
+                        onClick={() => void installUpdate()}
+                      >
+                        {t(
+                          installingUpdate
+                            ? "updatePanel.installing"
+                            : update.ready
+                              ? "appLayout.restartUpdate"
+                              : "appLayout.installUpdate",
+                        )}
                       </Button>
                       <Link
                         to="/settings?section=general"
