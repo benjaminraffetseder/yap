@@ -64,9 +64,10 @@ and otherwise uses English. Change it in **Settings → General → Interface la
 Your choice is remembered and applies immediately, including to the recording indicator.
 The spoken language for transcription is configured separately in **Settings → Dictation**.
 
-Windows release builds check GitHub Releases and show a notice when a newer
+Windows and macOS release builds check GitHub Releases and show a notice when a newer
 version is available. You can also check in **Settings → General → App updates**.
-Download the installer, choose **Quit Yap** from the tray menu, and run setup.
+Choose **Install update** to download and verify the update in Yap, then
+**Restart & Apply** when you're ready.
 Your settings, history, and downloaded models are kept.
 
 See [Using Yap](docs/usage.md) for imports, prompts, backups, and troubleshooting.
@@ -76,7 +77,7 @@ See [Using Yap](docs/usage.md) for imports, prompts, backups, and troubleshootin
 
 Speech recognition runs on your computer. Yap has no analytics and doesn't
 upload audio. Models and optional audio support download only when requested.
-Windows release builds check public GitHub release metadata at startup, at most
+Windows and macOS release builds check public GitHub release metadata at startup, at most
 once per day. Update checks send no audio, transcripts, or app settings.
 
 History is saved locally by default. Turn **Save to history** off in Home's

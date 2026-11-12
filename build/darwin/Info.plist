@@ -10,11 +10,11 @@
         <key>CFBundleIdentifier</key>
         <string>com.yap.desktop</string>
         <key>CFBundleVersion</key>
-        <string>0.10.0</string>
+        <string>0.11.0</string>
         <key>CFBundleGetInfoString</key>
         <string></string>
         <key>CFBundleShortVersionString</key>
-        <string>0.10.0</string>
+        <string>0.11.0</string>
         <key>CFBundleIconFile</key>
         <string>iconfile</string>
         <key>LSMinimumSystemVersion</key>
