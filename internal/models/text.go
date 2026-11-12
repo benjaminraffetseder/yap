@@ -236,10 +236,10 @@ func EnsureTextRuntime(ctx context.Context, dir string, report func(int64, int64
 			_ = os.Remove(crtArchive)
 		}
 	}()
-	for _, backend := range []string{"cpu", "vulkan"} {
+	installBackend := func(backend string) error {
 		path := TextRuntimePath(dir, backend)
 		if (runtime.GOOS != "windows" || textRuntimeHasCRT(path)) && checkNativeRuntime(ctx, path, "text") == nil {
-			continue
+			return nil
 		}
 		asset := textRuntimeAssets[runtime.GOOS+"/"+runtime.GOARCH+"/"+backend]
 		ext := ".zip"
@@ -291,9 +291,16 @@ func EnsureTextRuntime(ctx context.Context, dir string, report func(int64, int64
 		}
 		os.RemoveAll(temp)
 		os.Remove(archive)
-		if err != nil {
-			return err
-		}
+		return err
 	}
-	return nil
+	if err := installBackend("cpu"); err != nil {
+		return err
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	// A usable CPU runtime is required; GPU acceleration is best effort. Keep
+	// failed Vulkan replacements unpublished and let inference fall back to CPU.
+	_ = installBackend("vulkan")
+	return ctx.Err()
 }

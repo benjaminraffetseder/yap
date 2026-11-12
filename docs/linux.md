@@ -116,7 +116,8 @@ AppIndicator extension as described below.
 Gemma 4 E2B, E4B, and 12B are available under **Models → Text models**. Download
 one, then choose **Use model** for text correction, prompts, titles, and chat.
 Yap installs verified llama.cpp b12110 CPU and Vulkan runtimes automatically.
-It tries GPU acceleration first and falls back to CPU if loading fails. GPU
+Vulkan setup is optional once the CPU runtime is usable. Yap tries GPU
+acceleration first and falls back to CPU if loading fails. GPU
 acceleration needs a working Vulkan loader and driver; CUDA is not required.
 
 The pinned text runtimes require glibc 2.34 and GCC 12's C++ runtime on x64,

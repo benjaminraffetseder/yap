@@ -8,6 +8,7 @@ import (
 	"compress/gzip"
 	"context"
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -131,6 +132,112 @@ func TestLinuxTextRuntimeInstallation(t *testing.T) {
 			}
 			if err := EnsureTextRuntime(ctx, dir, report); err != nil || requests.Load() != 3 {
 				t.Fatal("missing dependency was not repaired", requests.Load(), err)
+			}
+		})
+	}
+}
+
+func TestLinuxTextRuntimeCPUFallbackDuringInstallation(t *testing.T) {
+	for _, tc := range []struct{ backend, failure string }{
+		{"vulkan", "validation"},
+		{"vulkan", "download"},
+		{"vulkan", "checksum"},
+		{"vulkan", "archive"},
+		{"vulkan", "cancel"},
+		{"cpu", "validation"},
+		{"cpu", "download"},
+		{"cpu", "cancel"},
+	} {
+		t.Run(tc.backend+"/"+tc.failure, func(t *testing.T) {
+			dir := t.TempDir()
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			archives := map[string][]byte{}
+			for _, backend := range []string{"cpu", "vulkan"} {
+				root := filepath.Dir(TextRuntimePath(dir, backend))
+				if err := os.MkdirAll(root, 0700); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(filepath.Join(root, "previous"), []byte("old"), 0600); err != nil {
+					t.Fatal(err)
+				}
+				script := "#!/bin/sh\nexit 0\n"
+				if backend == tc.backend && tc.failure == "validation" {
+					script = "#!/bin/sh\nexit 42\n"
+				}
+				var archive bytes.Buffer
+				gz := gzip.NewWriter(&archive)
+				tw := tar.NewWriter(gz)
+				if err := tw.WriteHeader(&tar.Header{Name: "bundle/llama-server", Mode: 0755, Size: int64(len(script))}); err != nil {
+					t.Fatal(err)
+				}
+				if _, err := tw.Write([]byte(script)); err != nil {
+					t.Fatal(err)
+				}
+				if err := tw.Close(); err != nil {
+					t.Fatal(err)
+				}
+				if err := gz.Close(); err != nil {
+					t.Fatal(err)
+				}
+				archives["/"+backend] = archive.Bytes()
+			}
+			if tc.failure == "archive" {
+				archives["/"+tc.backend] = []byte("invalid runtime archive")
+			}
+			var vulkanRequests atomic.Int32
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path == "/vulkan" {
+					vulkanRequests.Add(1)
+				}
+				if r.URL.Path == "/"+tc.backend {
+					switch tc.failure {
+					case "download":
+						w.WriteHeader(http.StatusServiceUnavailable)
+						return
+					case "cancel":
+						cancel()
+						<-r.Context().Done()
+						return
+					}
+				}
+				_, _ = w.Write(archives[r.URL.Path])
+			}))
+			defer server.Close()
+			for _, backend := range []string{"cpu", "vulkan"} {
+				key := "linux/" + runtime.GOARCH + "/" + backend
+				original := textRuntimeAssets[key]
+				defer func() { textRuntimeAssets[key] = original }()
+				data := archives["/"+backend]
+				asset := runtimeAsset{URL: server.URL + "/" + backend, SHA: fmt.Sprintf("%x", sha256.Sum256(data)), Size: int64(len(data)), Tar: true}
+				if backend == tc.backend && tc.failure == "checksum" {
+					asset.SHA = fmt.Sprintf("%064x", 0)
+				}
+				textRuntimeAssets[key] = asset
+			}
+			err := EnsureTextRuntime(ctx, dir, func(int64, int64) {})
+			switch {
+			case tc.failure == "cancel":
+				if !errors.Is(err, context.Canceled) {
+					t.Fatalf("cancellation was lost: %v", err)
+				}
+			case tc.backend == "cpu":
+				if err == nil {
+					t.Fatal("unusable CPU runtime was accepted")
+				}
+			case err != nil:
+				t.Fatalf("optional Vulkan failure blocked the CPU runtime: %v", err)
+			}
+			if tc.backend == "cpu" {
+				if vulkanRequests.Load() != 0 {
+					t.Fatal("Vulkan was attempted after CPU installation failed")
+				}
+			} else if err := checkNativeRuntime(context.Background(), TextRuntimePath(dir, "cpu"), "text"); err != nil {
+				t.Fatalf("CPU fallback is unusable: %v", err)
+			}
+			previous := filepath.Join(filepath.Dir(TextRuntimePath(dir, tc.backend)), "previous")
+			if data, err := os.ReadFile(previous); err != nil || string(data) != "old" {
+				t.Fatal("failed installation replaced the previous runtime", err)
 			}
 		})
 	}
