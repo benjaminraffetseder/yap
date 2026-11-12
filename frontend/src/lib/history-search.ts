@@ -2,7 +2,7 @@ import type { Session } from "@/lib/backend";
 
 // Match Go's per-rune strings.ToLower, including dotted I and Greek sigma.
 function lower(text: string) {
-  return Array.from(text, (char) => (char === "İ" ? "i" : char.toLowerCase())).join("");
+  return text.replace(/[İΣ]/g, (char) => (char === "İ" ? "i" : "σ")).toLowerCase();
 }
 
 export function searchRanges(text: string, query: string) {
@@ -21,15 +21,20 @@ export function searchRanges(text: string, query: string) {
 
 export function historySearchPreview(entry: Session, query: string) {
   let text = entry.finalTranscript ?? entry.rawTranscript;
-  let match = searchRanges(text, query)[0];
-  const original = !!query && !match && !!searchRanges(entry.rawTranscript, query).length;
+  const term = lower(query);
+  let match = term ? lower(text).indexOf(term) : -1;
+  const original =
+    !!term &&
+    match < 0 &&
+    text !== entry.rawTranscript &&
+    lower(entry.rawTranscript).includes(term);
   if (original) {
     text = entry.rawTranscript;
-    match = searchRanges(text, query)[0];
+    match = lower(text).indexOf(term);
   }
-  if (!match) return { text, original };
-  let start = Math.max(0, match.start - 24);
-  let end = Math.min(text.length, Math.max(start + 200, match.end + 65));
+  if (match < 0 && text.length <= 200) return { text, original };
+  let start = Math.max(0, match - 24);
+  let end = Math.min(text.length, Math.max(start + 200, match + term.length + 65));
   const before = text.lastIndexOf(" ", start);
   const after = text.indexOf(" ", end);
   if (before >= 0 && start - before < 12) start = before + 1;

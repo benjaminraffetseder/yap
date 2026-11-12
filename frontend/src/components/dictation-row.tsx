@@ -1,9 +1,9 @@
+import { DictationPreview } from "@/components/dictation-preview";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import i18n from "@/i18n";
 import { duration, type Session } from "@/lib/backend";
-import { historySearchPreview, searchRanges } from "@/lib/history-search";
 import { ChevronRight, RotateCcw, Trash2 } from "lucide-react";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
@@ -51,24 +51,9 @@ export function DictationRow({
   query = "",
 }: DictationRowProps) {
   const { t } = useTranslation();
-  const preview = historySearchPreview(entry, query);
   const content = (
     <div className="min-w-0 flex-1 space-y-2.5">
-      {entry.title && (
-        <p className="line-clamp-2 break-words text-[0.9375rem] leading-6 font-medium">
-          <SearchHighlight text={entry.title} query={query} />
-        </p>
-      )}
-      <p
-        className={`${entry.title && !query ? "line-clamp-1 text-sm text-muted-foreground" : "line-clamp-2 text-[0.9375rem]"} break-words leading-6`}
-      >
-        {preview.original && (
-          <span className="mr-1 text-xs font-medium text-muted-foreground">
-            {t("historyPage.originalMatch")}:{" "}
-          </span>
-        )}
-        <SearchHighlight text={preview.text} query={query} />
-      </p>
+      <DictationPreview entry={entry} query={query} />
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs text-muted-foreground">
         {deleted ? (
           entry.deletedAt &&
@@ -178,25 +163,5 @@ export function DictationRow({
         </div>
       )}
     </article>
-  );
-}
-
-function SearchHighlight({ text, query }: { text: string; query: string }) {
-  const ranges = searchRanges(text, query);
-  let cursor = 0;
-  return (
-    <>
-      {ranges.map(({ start, end }) => {
-        const before = text.slice(cursor, start);
-        cursor = end;
-        return (
-          <span key={start}>
-            {before}
-            <mark className="rounded-sm bg-primary/20 text-inherit">{text.slice(start, end)}</mark>
-          </span>
-        );
-      })}
-      {text.slice(cursor)}
-    </>
   );
 }

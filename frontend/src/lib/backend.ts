@@ -36,6 +36,7 @@ import {
   GetSessionChat,
   GetSessionOutputs,
   GetSnapshot,
+  GetSortedHistory,
   GetTranscriptExportPreview,
   GetUpdateStatus,
   HomeResultAction,
@@ -224,6 +225,8 @@ export type AudioSupport = {
   size: number;
   message: string;
 };
+export type HistorySortColumn = "dictation" | "createdAt" | "deletedAt" | "durationMs";
+
 export type Session = {
   id: string;
   title?: string;
@@ -606,12 +609,28 @@ export const backend = {
   renameSession: RenameSession,
   generateSessionTitle: GenerateSessionTitle,
   addVocabularyTerm: AddVocabularyTerm,
-  history: async (query: string, page: number): Promise<HistoryPageResult> => {
-    const result = await GetHistory(query, page);
+  history: async (
+    query: string,
+    page: number,
+    sortBy: HistorySortColumn = "createdAt",
+    descending = true,
+  ): Promise<HistoryPageResult> => {
+    const result =
+      sortBy === "createdAt" && descending
+        ? await GetHistory(query, page)
+        : await GetSortedHistory(query, page, sortBy, descending, false);
     return { ...result, entries: result.entries ?? [] };
   },
-  recentlyDeleted: async (query: string, page: number): Promise<HistoryPageResult> => {
-    const result = await GetRecentlyDeleted(query, page);
+  recentlyDeleted: async (
+    query: string,
+    page: number,
+    sortBy: HistorySortColumn = "deletedAt",
+    descending = true,
+  ): Promise<HistoryPageResult> => {
+    const result =
+      sortBy === "deletedAt" && descending
+        ? await GetRecentlyDeleted(query, page)
+        : await GetSortedHistory(query, page, sortBy, descending, true);
     return { ...result, entries: result.entries ?? [] };
   },
   restoreSessions: async (ids: string[]): Promise<void> => {

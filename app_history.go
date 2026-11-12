@@ -27,6 +27,18 @@ func (a *App) GetRecentlyDeleted(query string, page int) (storage.HistoryPage, e
 	return a.store.SearchRecentlyDeleted(query, page)
 }
 
+func (a *App) GetSortedHistory(query string, page int, sortBy string, descending, deleted bool) (storage.HistoryPage, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if err := a.historyAvailableLocked(); err != nil {
+		return storage.HistoryPage{}, err
+	}
+	if deleted {
+		a.pruneHistoryLocked()
+	}
+	return a.store.SearchSortedHistory(query, page, sortBy, descending, deleted)
+}
+
 func (a *App) RestoreSessions(ids []string) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()

@@ -8,8 +8,11 @@ import {
   isBusy,
   isDesktop,
   message,
+  type HistoryPageResult,
+  type HistorySortColumn,
   type ImportJob,
   type Model,
+  type Session,
   type Snapshot,
   type Status,
   type UpdateStatus,
@@ -24,6 +27,7 @@ import {
   useRef,
   useState,
   type ReactNode,
+  type RefObject,
 } from "react";
 const empty: Snapshot = {
   textProcessing: defaultTextProcessing,
@@ -176,7 +180,17 @@ const empty: Snapshot = {
     durationMs: 0,
   },
 };
+type HistoryListCache = {
+  query: string;
+  deleted: boolean;
+  sortBy: HistorySortColumn;
+  descending: boolean;
+  reload: number;
+  history: Session[];
+  result: HistoryPageResult;
+};
 type Context = {
+  historyListCache: RefObject<HistoryListCache | null>;
   importQueue: ImportJob[];
   processingPanelOpen: boolean;
   setProcessingPanelOpen: (open: boolean) => void;
@@ -206,6 +220,8 @@ export function DictationProvider({ children }: { children: ReactNode }) {
   const [updateError, setUpdateError] = useState("");
   const updateRequest = useRef(false);
   const [snapshot, setSnapshot] = useState(empty);
+  // Retain the last loaded list when its route unmounts to show a dictation.
+  const historyListCache = useRef<HistoryListCache | null>(null);
   // Follow activity until the user chooses visibility. New work never overrides
   // an explicit minimization, even across page changes or completed batches.
   const [processingPanelPreference, setProcessingPanelOpen] = useState<boolean | null>(null);
@@ -535,6 +551,7 @@ export function DictationProvider({ children }: { children: ReactNode }) {
   return (
     <DictationContext.Provider
       value={{
+        historyListCache,
         importQueue: snapshot.importQueue ?? [],
         processingPanelOpen,
         setProcessingPanelOpen,

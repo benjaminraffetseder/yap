@@ -2,69 +2,32 @@ import { AudioImportButton } from "@/components/audio-import-button";
 import { BulkTextDialog } from "@/components/bulk-text-dialog";
 import { CopyButton } from "@/components/copy-button";
 import { useDictation } from "@/components/dictation-provider";
-import { DictationRow } from "@/components/dictation-row";
+import { HistorySearch } from "@/components/history-search";
+import { HistoryTable } from "@/components/history-table";
 import { PageHeading } from "@/components/page-heading";
 import { SessionTitleAction } from "@/components/session-title-action";
 import { TranscriptExportDialog } from "@/components/transcript-export-dialog";
 import { ActionMenu, ActionMenuItem } from "@/components/ui/action-menu";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Input } from "@/components/ui/input";
 import { toastManager } from "@/components/ui/toast";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import i18n from "@/i18n";
 import { nativeText } from "@/i18n/native-text";
 import {
   backend,
   isDesktop,
   message,
   type HistoryPageResult,
-  type Session,
+  type HistorySortColumn,
   type TranscriptExportSelection,
 } from "@/lib/backend";
 import { deleteTranscriptions } from "@/lib/delete-transcriptions";
-import {
-  Download,
-  History,
-  Loader2,
-  RotateCcw,
-  Search,
-  Sparkles,
-  Trash2,
-  Workflow,
-  X,
-} from "lucide-react";
+import { Download, History, Loader2, RotateCcw, Sparkles, Trash2, Workflow, X } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { useSearchParams } from "react-router";
 
-function historyGroups(entries: Session[], deleted: boolean) {
-  const today = new Date();
-  const yesterday = new Date(today);
-  yesterday.setDate(today.getDate() - 1);
-  const groups = new Map<string, { label: string; entries: { entry: Session; index: number }[] }>();
-  entries.forEach((entry, index) => {
-    const date = new Date((deleted && entry.deletedAt) || entry.createdAt);
-    const key = date.toDateString();
-    const label =
-      key === today.toDateString()
-        ? i18n.t("historyPage.today")
-        : key === yesterday.toDateString()
-          ? i18n.t("historyPage.yesterday")
-          : Number.isNaN(date.getTime())
-            ? i18n.t("historyPage.unknownDate")
-            : date.toLocaleDateString(i18n.resolvedLanguage, {
-                month: "long",
-                day: "numeric",
-                ...(date.getFullYear() !== today.getFullYear() ? { year: "numeric" } : {}),
-              });
-    if (!groups.has(key)) groups.set(key, { label, entries: [] });
-    groups.get(key)!.entries.push({ entry, index });
-  });
-  return [...groups.entries()];
-}
-
-export function HistoryPage() {
+export function HistoryPage({ active = true }: { active?: boolean }) {
   const { t } = useTranslation();
   const [params, setParams] = useSearchParams();
   const deleted = params.get("view") === "deleted";
@@ -82,6 +45,7 @@ export function HistoryPage() {
   return (
     <HistoryList
       key={deleted ? "deleted" : "history"}
+      active={active}
       viewToggle={
         <Button
           ref={toggle}
@@ -102,12 +66,23 @@ export function HistoryPage() {
   );
 }
 
-function HistoryList({ viewToggle }: { viewToggle: ReactNode }) {
+function HistoryList({ viewToggle, active }: { viewToggle: ReactNode; active: boolean }) {
   const { t } = useTranslation();
-  const { snapshot, run, refresh } = useDictation();
+  const { snapshot, run, refresh, historyListCache, loading: connecting } = useDictation();
   const [params, setParams] = useSearchParams();
   const deleted = params.get("view") === "deleted";
   const query = (params.get("q") ?? "").slice(0, 250);
+  const requestedSort = params.get("sort");
+  const sortBy: HistorySortColumn =
+    requestedSort === "dictation" ||
+    requestedSort === "createdAt" ||
+    requestedSort === "durationMs" ||
+    (deleted && requestedSort === "deletedAt")
+      ? requestedSort
+      : deleted
+        ? "deletedAt"
+        : "createdAt";
+  const descending = params.get("direction") !== "asc";
   const requestedPage = Number(params.get("page") ?? 0);
   const page =
     Number.isInteger(requestedPage) && requestedPage >= 0 && requestedPage <= 1000000
@@ -128,28 +103,34 @@ function HistoryList({ viewToggle }: { viewToggle: ReactNode }) {
     [setParams],
   );
   const detailSearch = params.toString() ? `?${params.toString()}` : "";
-  const [reload, setReload] = useState(0);
-  const [result, setResult] = useState<HistoryPageResult>({
-    entries: [],
-    total: 0,
-    page: 0,
-    pageSize: 50,
+  const [initialList] = useState(() => {
+    const cached = historyListCache.current;
+    return cached &&
+      cached.query === query &&
+      cached.deleted === deleted &&
+      cached.sortBy === sortBy &&
+      cached.descending === descending &&
+      cached.result.page <= page
+      ? cached
+      : null;
   });
-  const [loading, setLoading] = useState(isDesktop);
+  const [reload, setReload] = useState(initialList?.reload ?? 0);
+  const [result, setResult] = useState<HistoryPageResult>(
+    initialList?.result ?? { entries: [], total: 0, page: 0, pageSize: 50 },
+  );
+  const [loading, setLoading] = useState(
+    isDesktop && (!initialList || initialList.history !== snapshot.history),
+  );
   const [loadingMore, setLoadingMore] = useState(false);
+  const [searchPending, setSearchPending] = useState(false);
   const [error, setError] = useState("");
   const [loadMoreError, setLoadMoreError] = useState("");
   const [retry, setRetry] = useState(0);
   const request = useRef(0);
-  const loaded = useRef<{
-    query: string;
-    deleted: boolean;
-    reload: number;
-    history: Session[];
-    result: HistoryPageResult;
-  } | null>(null);
+  const loaded = useRef(initialList);
   const loadMoreTrigger = useRef<HTMLDivElement>(null);
   const searchInput = useRef<HTMLInputElement>(null);
+  const toolbar = useRef<HTMLDivElement>(null);
   const renamed = useRef<string | null>(null);
   const selectPage = useRef<HTMLElement>(null);
   const [selected, setSelected] = useState<string[]>([]);
@@ -182,25 +163,57 @@ function HistoryList({ viewToggle }: { viewToggle: ReactNode }) {
     selection: TranscriptExportSelection;
     count: number;
   } | null>(null);
+  const changeSearch = useCallback(
+    (nextQuery: string) => {
+      setLoading(true);
+      setSelected([]);
+      setAllMatching(false);
+      setExcluded([]);
+      setParams(
+        (old) => {
+          const value = new URLSearchParams(old);
+          if (nextQuery) value.set("q", nextQuery);
+          else value.delete("q");
+          value.delete("page");
+          return value;
+        },
+        { replace: true },
+      );
+    },
+    [setParams],
+  );
 
   useEffect(() => {
-    if (!isDesktop) return;
+    if (!isDesktop || connecting || !active) return;
     const revision = ++request.current;
     const previous = loaded.current;
-    const append =
+    const currentList =
       previous !== null &&
       previous.query === query &&
       previous.deleted === deleted &&
+      previous.sortBy === sortBy &&
+      previous.descending === descending &&
       previous.reload === reload &&
-      previous.history === snapshot.history &&
-      page === previous.result.page + 1;
+      previous.history === snapshot.history;
+    // A return from detail can render the complete loaded range immediately.
+    // Snapshot changes still revalidate edits, deletions and newly saved entries.
+    if (currentList && page === previous.result.page && retry === 0) {
+      setLoading(false);
+      setLoadingMore(false);
+      setError("");
+      setLoadMoreError("");
+      return;
+    }
+    const append = currentList && page === previous.result.page + 1;
     setLoading(!append);
     setLoadingMore(append);
     setError("");
     setLoadMoreError("");
     const timer = setTimeout(() => {
       const fetchPage = (index: number) =>
-        deleted ? backend.recentlyDeleted(query, index) : backend.history(query, index);
+        deleted
+          ? backend.recentlyDeleted(query, index, sortBy, descending)
+          : backend.history(query, index, sortBy, descending);
       const fetchEntries = async () => {
         let value = await fetchPage(append ? page : 0);
         if (revision !== request.current) return null;
@@ -223,7 +236,16 @@ function HistoryList({ viewToggle }: { viewToggle: ReactNode }) {
       void fetchEntries()
         .then((value) => {
           if (!value || revision !== request.current) return;
-          loaded.current = { query, deleted, reload, history: snapshot.history, result: value };
+          loaded.current = {
+            query,
+            deleted,
+            sortBy,
+            descending,
+            reload,
+            history: snapshot.history,
+            result: value,
+          };
+          historyListCache.current = loaded.current;
           setResult(value);
           if (page > value.page) setPage(value.page);
           if (!value.total) setAllMatching(false);
@@ -240,12 +262,25 @@ function HistoryList({ viewToggle }: { viewToggle: ReactNode }) {
             setLoadingMore(false);
           }
         });
-    }, 150);
+    }, 0);
     return () => {
       clearTimeout(timer);
       request.current++;
     };
-  }, [query, page, deleted, reload, retry, snapshot.history, setPage]);
+  }, [
+    query,
+    page,
+    deleted,
+    sortBy,
+    descending,
+    reload,
+    retry,
+    snapshot.history,
+    connecting,
+    active,
+    setPage,
+    historyListCache,
+  ]);
 
   const { entries, total } = result;
   const hasMore = (result.page + 1) * result.pageSize < total;
@@ -253,10 +288,12 @@ function HistoryList({ viewToggle }: { viewToggle: ReactNode }) {
     const node = loadMoreTrigger.current;
     if (
       !node ||
+      !active ||
       !isDesktop ||
       !hasMore ||
       loading ||
       loadingMore ||
+      searchPending ||
       error ||
       loadMoreError ||
       deletingNow ||
@@ -276,8 +313,10 @@ function HistoryList({ viewToggle }: { viewToggle: ReactNode }) {
     return () => observer.disconnect();
   }, [
     hasMore,
+    active,
     loading,
     loadingMore,
+    searchPending,
     error,
     loadMoreError,
     deletingNow,
@@ -303,7 +342,13 @@ function HistoryList({ viewToggle }: { viewToggle: ReactNode }) {
     (trigger ?? searchInput.current)?.focus({ preventScroll: true });
   }, [entries, loading]);
   const unavailable =
-    !isDesktop || loading || !!error || deletingNow || !!exportSelection || !!processingSelection;
+    !isDesktop ||
+    loading ||
+    searchPending ||
+    !!error ||
+    deletingNow ||
+    !!exportSelection ||
+    !!processingSelection;
   async function remove(ids: string[]) {
     if (deletingNow) return;
     setDeletingNow(true);
@@ -387,9 +432,51 @@ function HistoryList({ viewToggle }: { viewToggle: ReactNode }) {
       setExcluded(next);
     }
   }
+  function changeSort(column: HistorySortColumn) {
+    setLoading(true);
+    setSelected([]);
+    setAllMatching(false);
+    setExcluded([]);
+    setParams(
+      (old) => {
+        const value = new URLSearchParams(old);
+        value.set("sort", column);
+        value.set(
+          "direction",
+          column === sortBy
+            ? descending
+              ? "asc"
+              : "desc"
+            : column === "dictation"
+              ? "asc"
+              : "desc",
+        );
+        value.delete("page");
+        return value;
+      },
+      { replace: true },
+    );
+  }
+  function selectLoaded(checked: boolean) {
+    if (allMatching) {
+      const pageIds = new Set(entries.map((entry) => entry.id));
+      changeExportExclusions(
+        checked
+          ? excluded.filter((id) => !pageIds.has(id))
+          : [...new Set([...excluded, ...pageIds])],
+      );
+      return;
+    }
+    setAllMatching(false);
+    setSelected(checked ? entries.map((entry) => entry.id) : []);
+  }
   return (
     <div className="space-y-7 pb-32">
-      <div className="sticky top-0 z-20 space-y-4 border-b bg-background py-4">
+      <div
+        ref={toolbar}
+        data-slot="history-toolbar"
+        className="sticky top-0 z-20 space-y-4 border-b bg-background py-4"
+      >
         <PageHeading
           title={deleted ? t("historyPage.recentlyDeleted") : t("common.history")}
           description={
@@ -400,33 +487,13 @@ function HistoryList({ viewToggle }: { viewToggle: ReactNode }) {
           className="items-center"
         >
           <div className="flex w-full min-w-0 flex-wrap items-center gap-3 sm:ml-auto sm:w-auto">
-            <div className="relative min-w-0 flex-1 basis-48 sm:w-60 sm:flex-none lg:w-64">
-              <Search
-                aria-hidden="true"
-                className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"
-              />
-              <Input
-                ref={searchInput}
-                aria-label={t("historyPage.searchTranscripts")}
-                maxLength={250}
-                className="h-9 rounded-lg bg-card pl-10 text-sm"
-                placeholder={t("historyPage.searchTranscripts2")}
-                value={query}
-                onChange={(event) => {
-                  setLoading(true);
-                  setSelected([]);
-                  setAllMatching(false);
-                  setExcluded([]);
-                  setParams(
-                    {
-                      ...(deleted ? { view: "deleted" } : {}),
-                      ...(event.target.value ? { q: event.target.value } : {}),
-                    },
-                    { replace: true },
-                  );
-                }}
-              />
-            </div>
+            <HistorySearch
+              active={active}
+              ref={searchInput}
+              query={query}
+              onSearch={changeSearch}
+              onPendingChange={setSearchPending}
+            />
             {!deleted && <AudioImportButton showDownloadProgress={false} />}
             {viewToggle}
           </div>
@@ -451,7 +518,7 @@ function HistoryList({ viewToggle }: { viewToggle: ReactNode }) {
         )}
         <div className="flex flex-wrap items-center gap-3">
           <p role="status" className="mr-auto text-xs text-muted-foreground">
-            {loading
+            {loading || searchPending
               ? t("historyPage.loadingHistory")
               : t("historyPage.dictationCount", { count: total })}
           </p>
@@ -462,19 +529,7 @@ function HistoryList({ viewToggle }: { viewToggle: ReactNode }) {
                 disabled={unavailable}
                 checked={selectedOnPage === entries.length}
                 indeterminate={selectedOnPage > 0 && selectedOnPage < entries.length}
-                onCheckedChange={(checked) => {
-                  if (allMatching) {
-                    const pageIds = new Set(entries.map((entry) => entry.id));
-                    changeExportExclusions(
-                      checked
-                        ? excluded.filter((id) => !pageIds.has(id))
-                        : [...new Set([...excluded, ...pageIds])],
-                    );
-                    return;
-                  }
-                  setAllMatching(false);
-                  setSelected(checked ? entries.map((entry) => entry.id) : []);
-                }}
+                onCheckedChange={selectLoaded}
               />
               {t("historyPage.selectLoaded")}
             </label>
@@ -517,79 +572,105 @@ function HistoryList({ viewToggle }: { viewToggle: ReactNode }) {
           )}
         </div>
       ) : (
-        <div aria-busy={loading} className="space-y-6">
-          {historyGroups(entries, deleted).map(([date, group]) => (
-            <section key={date} aria-label={group.label} className="space-y-2.5">
-              <h2 className="px-1 text-xs font-medium text-muted-foreground">{group.label}</h2>
-              <div className="overflow-hidden rounded-xl border bg-card/60">
-                {group.entries.map(({ entry, index }) => (
-                  <DictationRow
-                    key={entry.id}
-                    entry={entry}
-                    query={query}
-                    disabled={unavailable}
-                    action={
-                      !deleted && (
-                        <div className="flex items-center gap-1">
-                          <CopyButton
-                            text={entry.finalTranscript ?? entry.rawTranscript}
-                            label={t("historyPage.copyDictation")}
-                            iconOnly
-                            variant="ghost"
-                            disabled={unavailable}
-                          />
-                          <SessionTitleAction
-                            contextual
-                            entry={entry}
-                            context={
-                              entry.title ||
-                              (entry.finalTranscript ?? entry.rawTranscript).slice(0, 80)
-                            }
-                            disabled={unavailable}
-                            onSaved={() => {
-                              renamed.current = entry.id;
-                              setReload((value) => value + 1);
-                              void run(refresh, false);
-                            }}
-                          />
-                        </div>
-                      )
+        <HistoryTable
+          toolbar={toolbar}
+          entries={entries}
+          deleted={deleted}
+          query={query}
+          detailSearch={detailSearch}
+          sortBy={sortBy}
+          descending={descending}
+          onSort={changeSort}
+          disabled={unavailable}
+          loading={loading || searchPending}
+          selectAll={
+            <Checkbox
+              aria-label={t("historyPage.selectAllLoaded")}
+              disabled={unavailable || !entries.length}
+              checked={entries.length > 0 && selectedOnPage === entries.length}
+              indeterminate={selectedOnPage > 0 && selectedOnPage < entries.length}
+              onCheckedChange={selectLoaded}
+            />
+          }
+          isSelected={(entry) =>
+            allMatching ? !excluded.includes(entry.id) : selected.includes(entry.id)
+          }
+          onSelect={(entry, checked) => {
+            if (allMatching) {
+              changeExportExclusions(
+                checked
+                  ? excluded.filter((id) => id !== entry.id)
+                  : [...new Set([...excluded, entry.id])],
+              );
+              return;
+            }
+            setSelected((old) =>
+              checked ? [...old, entry.id] : old.filter((id) => id !== entry.id),
+            );
+          }}
+          renderActions={(entry) =>
+            deleted ? (
+              <>
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <Button
+                        size="icon-sm"
+                        variant="ghost"
+                        aria-label={t("historyPage.restore")}
+                        disabled={unavailable}
+                        onClick={() => void restore([entry.id])}
+                      />
                     }
-                    selection={{
-                      label: t("historyPage.selectDictation", {
-                        index: index + 1,
-                      }),
-                      checked: allMatching
-                        ? !excluded.includes(entry.id)
-                        : selected.includes(entry.id),
-                      onCheckedChange: (checked) => {
-                        if (allMatching) {
-                          changeExportExclusions(
-                            checked
-                              ? excluded.filter((id) => id !== entry.id)
-                              : [...new Set([...excluded, entry.id])],
-                          );
-                          return;
-                        }
-                        setSelected((old) =>
-                          checked ? [...old, entry.id] : old.filter((id) => id !== entry.id),
-                        );
-                      },
-                    }}
-                    {...(deleted
-                      ? {
-                          deleted: {
-                            onRestore: () => void restore([entry.id]),
-                            onDeletePermanently: () => void permanentlyRemove([entry.id]),
-                          },
-                        }
-                      : { to: `/history/${encodeURIComponent(entry.id)}${detailSearch}` })}
-                  />
-                ))}
+                  >
+                    <RotateCcw aria-hidden="true" />
+                  </TooltipTrigger>
+                  <TooltipContent side="left">{t("historyPage.restore")}</TooltipContent>
+                </Tooltip>
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <Button
+                        size="icon-sm"
+                        variant="ghost"
+                        aria-label={t("historyPage.deletePermanently")}
+                        className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                        disabled={unavailable}
+                        onClick={() => void permanentlyRemove([entry.id])}
+                      />
+                    }
+                  >
+                    <Trash2 aria-hidden="true" />
+                  </TooltipTrigger>
+                  <TooltipContent side="left">{t("historyPage.deletePermanently")}</TooltipContent>
+                </Tooltip>
+              </>
+            ) : (
+              <div className="flex items-center gap-1">
+                <CopyButton
+                  text={entry.finalTranscript ?? entry.rawTranscript}
+                  label={t("historyPage.copyDictation")}
+                  iconOnly
+                  variant="ghost"
+                  disabled={unavailable}
+                />
+                <SessionTitleAction
+                  contextual
+                  entry={entry}
+                  context={
+                    entry.title || (entry.finalTranscript ?? entry.rawTranscript).slice(0, 80)
+                  }
+                  disabled={unavailable}
+                  onSaved={() => {
+                    renamed.current = entry.id;
+                    setReload((value) => value + 1);
+                    void run(refresh, false);
+                  }}
+                />
               </div>
-            </section>
-          ))}
-        </div>
+            )
+          }
+        />
       )}
       {hasMore && (
         <div ref={loadMoreTrigger} className="flex min-h-9 items-center justify-center">

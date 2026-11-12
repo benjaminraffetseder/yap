@@ -66,7 +66,7 @@ function AppRoutes() {
       <Routes location={settingsOpen ? background : location}>
         <Route element={<AppLayout saveNoticeRef={setAppSaveNoticeHost} />}>
           <Route index element={<HomePage />} />
-          <Route path="history" element={<HistoryPage />} />
+          <Route path="history" element={<HistoryPage active={!settingsOpen} />} />
           <Route path="history/:id" element={<HistoryEntryPage />} />
           <Route path="models" element={<ModelsPage />} />
           <Route path="vocabulary" element={<VocabularyPage />} />

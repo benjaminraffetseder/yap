@@ -14,6 +14,9 @@ func init() {
 	// Query-only collation preserves legacy/backup dates and the existing schema.
 	// SQLite's date helpers lose fractional precision; compare full timestamps.
 	sqlite.MustRegisterCollationUtf8("yap_datetime", compareHistoryDates)
+	sqlite.MustRegisterCollationUtf8("yap_text", func(left, right string) int {
+		return strings.Compare(strings.ToLower(left), strings.ToLower(right))
+	})
 }
 
 func compareHistoryDates(left, right string) int {
@@ -52,11 +55,42 @@ func (s *Store) SearchRecentlyDeleted(query string, page int) (HistoryPage, erro
 }
 
 func (s *Store) searchHistory(query string, page int, deleted bool) (HistoryPage, error) {
+	sortBy := "createdAt"
+	if deleted {
+		sortBy = "deletedAt"
+	}
+	return s.SearchSortedHistory(query, page, sortBy, true, deleted)
+}
+
+// Sort the complete matching history before slicing pages, without retaining
+// every transcript in memory. Column names and directions are allowlisted.
+func (s *Store) SearchSortedHistory(query string, page int, sortBy string, descending, deleted bool) (HistoryPage, error) {
 	out := HistoryPage{Entries: []Session{}, Page: page, PageSize: HistoryPageSize}
 	if page < 0 || page > 1000000 {
 		return out, errors.New("invalid History search or page")
 	}
-	err := s.visitHistory(query, deleted, func(v Session) {
+	order := ""
+	switch sortBy {
+	case "dictation":
+		order = "COALESCE(NULLIF(" + sessionTitleColumn + ",''),o.transcript,r.transcript) COLLATE yap_text"
+	case "createdAt":
+		order = "r.created_at COLLATE yap_datetime"
+	case "deletedAt":
+		if !deleted {
+			return out, errors.New("invalid History sort column")
+		}
+		order = "d.deleted_at COLLATE yap_datetime"
+	case "durationMs":
+		order = "r.duration_ms"
+	default:
+		return out, errors.New("invalid History sort column")
+	}
+	if descending {
+		order += " DESC"
+	} else {
+		order += " ASC"
+	}
+	err := s.visitHistoryOrdered(query, deleted, order+",r.id DESC", func(v Session) {
 		if out.Total >= page*HistoryPageSize && len(out.Entries) < HistoryPageSize {
 			out.Entries = append(out.Entries, v)
 		}
@@ -73,15 +107,23 @@ func (s *Store) MatchingHistoryIDs(query string) ([]string, error) {
 }
 
 func (s *Store) visitHistory(query string, deleted bool, visit func(Session)) error {
+	order := "r.created_at"
+	if deleted {
+		order = "d.deleted_at"
+	}
+	return s.visitHistoryOrdered(query, deleted, order+" COLLATE yap_datetime DESC,r.id DESC", visit)
+}
+
+func (s *Store) visitHistoryOrdered(query string, deleted bool, order string, visit func(Session)) error {
 	if len(query) > 1000 {
 		return errors.New("invalid History search or page")
 	}
-	filter, order := "d.id IS NULL", "r.created_at"
+	filter := "d.id IS NULL"
 	if deleted {
-		filter, order = "d.id IS NOT NULL", "d.deleted_at"
+		filter = "d.id IS NOT NULL"
 	}
 	rows, err := s.db.Query(`SELECT r.id,r.created_at,r.duration_ms,r.transcript,r.model,r.language,r.audio_path,COALESCE(o.transcript,r.transcript),COALESCE(d.deleted_at,''),` + sessionTitleColumn + `,` + speechStatsColumn + `
-		FROM recordings r LEFT JOIN recording_outputs o ON r.id=o.id LEFT JOIN deleted_recordings d ON d.id=r.id WHERE ` + filter + ` ORDER BY ` + order + ` COLLATE yap_datetime DESC,r.id DESC`)
+		FROM recordings r LEFT JOIN recording_outputs o ON r.id=o.id LEFT JOIN deleted_recordings d ON d.id=r.id WHERE ` + filter + ` ORDER BY ` + order)
 	if err != nil {
 		return err
 	}

@@ -30,7 +30,11 @@ test("search snippets reveal distant matches and distinguish original-only match
     text: "Edited note.",
     original: false,
   });
-  expect(historySearchPreview(session(text), "").text).toBe(text);
+  const opening = historySearchPreview(session(text), "").text;
+  expect(opening.startsWith("Unrelated opening sentence.")).toBe(true);
+  expect(opening.endsWith("…")).toBe(true);
+  expect(opening.length).toBeLessThan(240);
+  expect(historySearchPreview(session("Short note."), "").text).toBe("Short note.");
 });
 
 test("search highlighting treats queries literally and preserves Unicode offsets", () => {
@@ -38,6 +42,8 @@ test("search highlighting treats queries literally and preserves Unicode offsets
     ["Plan [a+b] today", "[a+b]", "[a+b]"],
     ["İstanbul: John", "john", "John"],
     ["ΟΣ: hello", "οσ", "ΟΣ"],
+    ["ΣΟΣ and σος", "σοσ", "ΣΟΣ"],
+    ["Lowercase final sigma: ς", "ς", "ς"],
     ["👋 GRÜSSE", "grüsse", "GRÜSSE"],
     ["𐐀 report", "𐐨", "𐐀"],
   ]) {

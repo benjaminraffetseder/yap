@@ -25,6 +25,9 @@ func TestDeleteAndRestoreSessionsUpdatesHistoryWithoutInterruptingRecording(t *t
 	if page, err := a.GetRecentlyDeleted("RAW", 0); err != nil || page.Total != 1 || page.Entries[0].DeletedAt == "" {
 		t.Fatal("deleted entry missing from recovery list", page, err)
 	}
+	if page, err := a.GetSortedHistory("RAW", 0, "durationMs", false, true); err != nil || page.Total != 1 || page.Entries[0].DeletedAt == "" {
+		t.Fatal("sorted deleted entry missing from recovery list", page, err)
+	}
 	a.status.Phase = "recording"
 	before := a.status
 	if err := a.RestoreSessions([]string{entry.ID}); err != nil || a.status != before {
@@ -41,6 +44,9 @@ func TestDeleteAndRestoreSessionsUpdatesHistoryWithoutInterruptingRecording(t *t
 		t.Fatal("deleted a dictation still being transcribed")
 	}
 	a.closing = true
+	if _, err := a.GetSortedHistory("", 0, "dictation", false, false); err == nil {
+		t.Fatal("sorted history allowed during shutdown")
+	}
 	if _, err := a.GetRecentlyDeleted("", 0); err == nil {
 		t.Fatal("recovery list allowed during shutdown")
 	}

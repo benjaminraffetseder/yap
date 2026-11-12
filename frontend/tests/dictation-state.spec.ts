@@ -3360,7 +3360,13 @@ declare global {
       pendingSnapshots: (() => void)[];
       deferHistory: boolean;
       pendingHistory: { query: string; page: number; resolve: () => void }[];
-      historyRequests: { query: string; page: number; deleted: boolean }[];
+      historyRequests: {
+        query: string;
+        page: number;
+        deleted: boolean;
+        sortBy?: string;
+        descending?: boolean;
+      }[];
       failSession: boolean;
       deferSessions: boolean;
       pendingSessions: { id: string; resolve: () => void }[];
@@ -3838,6 +3844,44 @@ async function installDictationFixture(page: Page) {
                     page,
                     resolve: () => resolve(result),
                   });
+                });
+              return result;
+            },
+            GetSortedHistory: async (
+              query: string,
+              page: number,
+              sortBy: string,
+              descending: boolean,
+              deleted: boolean,
+            ) => {
+              state.historyRequests.push({ query, page, sortBy, descending, deleted });
+              if (state.failHistory) throw new Error("History load failed");
+              const entries = (deleted ? state.recentlyDeleted : state.snapshot.history)
+                .filter((entry) =>
+                  [entry.title ?? "", entry.rawTranscript, entry.finalTranscript].some((text) =>
+                    text.toLowerCase().includes(query.toLowerCase()),
+                  ),
+                )
+                .sort((left, right) => {
+                  let comparison: number;
+                  if (sortBy === "durationMs") comparison = left.durationMs - right.durationMs;
+                  else if (sortBy === "createdAt" || sortBy === "deletedAt")
+                    comparison = Date.parse(left[sortBy] ?? "") - Date.parse(right[sortBy] ?? "");
+                  else
+                    comparison = (left.title || left.finalTranscript)
+                      .toLowerCase()
+                      .localeCompare((right.title || right.finalTranscript).toLowerCase());
+                  return (descending ? -comparison : comparison) || right.id.localeCompare(left.id);
+                });
+              const result = {
+                entries: structuredClone(entries.slice(page * 50, (page + 1) * 50)),
+                total: entries.length,
+                page,
+                pageSize: 50,
+              };
+              if (state.deferHistory)
+                return new Promise((resolve) => {
+                  state.pendingHistory.push({ query, page, resolve: () => resolve(result) });
                 });
               return result;
             },
@@ -5141,7 +5185,7 @@ test("history uses processed text for copy and exposes searchable originals", as
   });
   await page.goto("/#/history");
   await page.getByLabel("Search transcripts").fill("um,");
-  await page.getByRole("link", { name: /Send PostgreSQL/ }).click();
+  await page.getByRole("link", { name: /Original recognition: um, send postgres/ }).click();
   await expect(page.getByRole("region", { name: "Result", exact: true })).toContainText(
     "Send PostgreSQL.",
   );
@@ -5235,11 +5279,10 @@ test("History opens a dictation page with content tabs that fit narrow windows",
     .getByRole("link", { name: "History", exact: true })
     .click();
   const recent = page.locator("#main-content");
-  await expect(recent.getByRole("article")).toHaveCount(5);
-  await expect(recent.getByRole("article").first()).toContainText("A Paris-based AI lab");
-  await expect(recent.getByRole("article").first()).toContainText("Whisper Small");
-  await expect(recent.getByRole("article").nth(1)).toContainText("An unchanged transcription.");
-  await expect(recent.getByRole("checkbox")).toHaveCount(6);
+  await expect(recent.locator("tbody tr")).toHaveCount(5);
+  await expect(recent.locator("tbody tr").first()).toContainText("A Paris-based AI lab");
+  await expect(recent.locator("tbody tr").nth(1)).toContainText("An unchanged transcription.");
+  await expect(recent.getByRole("checkbox")).toHaveCount(7);
   for (const width of [1280, 600]) {
     await page.setViewportSize({ width, height: 900 });
     expect(
@@ -5261,7 +5304,7 @@ test("History opens a dictation page with content tabs that fit narrow windows",
     .click();
   await expect(page).toHaveURL(/#\/history$/);
   await page.setViewportSize({ width: 1280, height: 900 });
-  const cards = page.getByRole("article");
+  const cards = page.locator('[data-slot="table-body"] [data-slot="table-row"]');
   await expect(cards.first()).toContainText("A Paris-based AI lab");
   await expect(cards.nth(1)).toContainText("An unchanged transcription.");
   await page.screenshot({
@@ -5279,7 +5322,7 @@ test("History opens a dictation page with content tabs that fit narrow windows",
   });
   await firstCheckbox.focus();
   await firstCheckbox.press("Space");
-  await expect(cards.first()).toHaveAttribute("data-selected", "true");
+  await expect(cards.first()).toHaveAttribute("data-state", "selected");
   await expect(pageCheckbox).toHaveAttribute("aria-checked", "mixed");
   await page.screenshot({
     path: testInfo.outputPath("history-list-selected.png"),
@@ -5288,11 +5331,11 @@ test("History opens a dictation page with content tabs that fit narrow windows",
   });
   await page.getByText("Select loaded", { exact: true }).click();
   await expect(pageCheckbox).toBeChecked();
-  await expect(page.locator("article[data-selected=true]")).toHaveCount(5);
+  await expect(page.locator('tr[data-state="selected"]')).toHaveCount(5);
   await pageCheckbox.focus();
   await pageCheckbox.press("Space");
   await expect(pageCheckbox).not.toBeChecked();
-  await expect(page.locator("article[data-selected=true]")).toHaveCount(0);
+  await expect(page.locator('tr[data-state="selected"]')).toHaveCount(0);
   await page.setViewportSize({ width: 600, height: 900 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
     true,
@@ -5480,6 +5523,162 @@ test("transcription and editor Changes compare the correct versions and remain u
   await expect(page.getByRole("region", { name: "Transcription", exact: true })).toBeVisible();
 });
 
+for (const deleted of [false, true]) {
+  test(`${deleted ? "Recently Deleted" : "History"} pauses a pending search while Settings is open`, async ({
+    page,
+  }) => {
+    await page.goto(`/#/history${deleted ? "?view=deleted" : ""}`);
+    await expect(
+      page.getByText(deleted ? "No recently deleted dictations" : "No dictations yet", {
+        exact: true,
+      }),
+    ).toBeVisible();
+    await page.clock.install({ time: new Date("2026-11-12T12:00:00Z") });
+    await page.clock.pauseAt(new Date("2026-11-12T12:00:01Z"));
+    await page.getByLabel("Search transcripts", { exact: true }).fill("meeting");
+    await page
+      .getByRole("navigation", { name: "Main navigation" })
+      .getByRole("link", { name: "Settings", exact: true })
+      .click();
+    const settings = page.getByRole("dialog", { name: "Settings", exact: true });
+    await expect(settings).toBeVisible();
+    await page.clock.runFor(500);
+    await expect(settings).toBeVisible();
+    await expect(page).toHaveURL(/#\/settings$/);
+    expect(
+      await page.evaluate(() => window.dictationTest.historyRequests.map(({ query }) => query)),
+    ).toEqual([""]);
+    await page.clock.resume();
+    await settings.getByRole("button", { name: "Close", exact: true }).click();
+    await expect(page).toHaveURL(/q=meeting$/);
+    if (deleted) expect(page.url()).toContain("view=deleted");
+    await expect(page.getByLabel("Search transcripts", { exact: true })).toHaveValue("meeting");
+    await expect(
+      page.getByRole("heading", { name: "No matching transcripts", exact: true }),
+    ).toBeVisible();
+  });
+}
+
+for (const back of ["link", "browser"] as const) {
+  test(`History keeps its loaded table when returning from a dictation using ${back} back`, async ({
+    page,
+  }) => {
+    await page.addInitScript(() => {
+      window.dictationTest.snapshot.history = Array.from({ length: 55 }, (_, index) => ({
+        id: `cached-${index}`,
+        createdAt: "2026-11-06T10:00:00Z",
+        durationMs: index * 1000,
+        rawTranscript: `Original ${index}`,
+        finalTranscript: `Saved dictation ${index}`,
+        speechModel: "base",
+        language: "en",
+        audioPath: "",
+      }));
+    });
+    await page.goto(
+      `/#/history?q=Saved&sort=durationMs&direction=asc${back === "browser" ? "&page=1" : ""}`,
+    );
+    const rows = page.locator("tbody tr");
+    await expect(rows).toHaveCount(back === "browser" ? 55 : 50);
+    if (back === "link") {
+      // Leave the next batch pending when the list route unmounts.
+      await page.evaluate(() => {
+        window.dictationTest.deferHistory = true;
+      });
+      await rows.last().scrollIntoViewIfNeeded();
+      await expect
+        .poll(() => page.evaluate(() => window.dictationTest.pendingHistory.length))
+        .toBe(1);
+    }
+    await rows.first().getByRole("link").click();
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText("Saved dictation 0");
+    await page.evaluate(() => {
+      window.dictationTest.deferHistory = true;
+    });
+    if (back === "browser") await page.goBack();
+    else await page.getByRole("link", { name: "Back to History", exact: true }).click();
+    if (back === "link") {
+      await expect(rows).toHaveCount(50);
+      await expect(rows.first().getByRole("checkbox")).toBeEnabled();
+      await expect
+        .poll(() => page.evaluate(() => window.dictationTest.pendingHistory.length))
+        .toBe(2);
+      await page.evaluate(() => {
+        window.dictationTest.deferHistory = false;
+        window.dictationTest.pendingHistory[1].resolve();
+        window.dictationTest.pendingHistory[0].resolve();
+      });
+    }
+    await expect(rows).toHaveCount(55);
+    await expect(rows.first()).toContainText("Saved dictation 0");
+    await expect(rows.last()).toContainText("Saved dictation 54");
+    await expect(rows.first().getByRole("checkbox")).toBeEnabled();
+    await expect(page.getByLabel("Search transcripts", { exact: true })).toHaveValue("Saved");
+    await expect(page.getByRole("columnheader", { name: "Duration", exact: true })).toHaveAttribute(
+      "aria-sort",
+      "ascending",
+    );
+    await expect(page.getByText("Loading History…", { exact: true })).toHaveCount(0);
+  });
+}
+
+test("History retains cached rows while refreshing changes made in a dictation", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    window.dictationTest.snapshot.history = [
+      {
+        id: "cached-edit",
+        createdAt: "2026-11-06T10:00:00Z",
+        durationMs: 1000,
+        rawTranscript: "Original saved dictation",
+        finalTranscript: "Original saved dictation",
+        speechModel: "base",
+        language: "en",
+        audioPath: "",
+      },
+    ];
+  });
+  await page.goto("/#/history");
+  await page.getByRole("link", { name: "Original saved dictation", exact: true }).click();
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Original saved dictation");
+  await page.evaluate(() => {
+    const state = window.dictationTest;
+    state.deferHistory = true;
+    state.snapshot.history[0].finalTranscript = "Updated saved dictation";
+    state.history();
+  });
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Updated saved dictation");
+  await page.getByRole("link", { name: "Back to History", exact: true }).click();
+  await expect(page.locator("tbody tr")).toHaveCount(1);
+  await expect(page.locator("tbody tr")).toContainText("Original saved dictation");
+  await expect.poll(() => page.evaluate(() => window.dictationTest.pendingHistory.length)).toBe(1);
+  await expect(
+    page.getByRole("checkbox", { name: "Select dictation 1", exact: true }),
+  ).toBeDisabled();
+  await page.evaluate(() => {
+    window.dictationTest.deferHistory = false;
+    window.dictationTest.pendingHistory[0].resolve();
+  });
+  await expect(page.locator("tbody tr")).toContainText("Updated saved dictation");
+  await expect(
+    page.getByRole("checkbox", { name: "Select dictation 1", exact: true }),
+  ).toBeEnabled();
+  await page.evaluate(() => {
+    window.dictationTest.deferHistory = true;
+    window.dictationTest.pendingHistory = [];
+  });
+  const search = page.getByLabel("Search transcripts", { exact: true });
+  await search.fill("Pending search");
+  await expect.poll(() => page.evaluate(() => window.dictationTest.pendingHistory.length)).toBe(1);
+  await search.fill("");
+  await expect(
+    page.getByRole("checkbox", { name: "Select dictation 1", exact: true }),
+  ).toBeEnabled();
+  await page.evaluate(() => window.dictationTest.pendingHistory[0].resolve());
+  await expect(page.locator("tbody tr")).toContainText("Updated saved dictation");
+});
+
 test("dictation pages preserve the History search and loaded batches when returning and deleting", async ({
   page,
 }) => {
@@ -5497,7 +5696,7 @@ test("dictation pages preserve the History search and loaded batches when return
   });
   await page.goto("/#/history?q=Original&page=1");
   await expect(page.getByRole("checkbox", { name: /^Select dictation / })).toHaveCount(52);
-  await page.getByRole("link", { name: /Dictation 50\b/ }).click();
+  await page.getByRole("link", { name: /Original 50\b/ }).click();
   await expect(page).toHaveURL(/#\/history\/row-50\?q=Original&page=1$/);
   await expect(page.getByRole("region", { name: "Result", exact: true })).toContainText(
     "Dictation 50",
@@ -5516,7 +5715,7 @@ test("dictation pages preserve the History search and loaded batches when return
   await page.getByRole("link", { name: "Back to History", exact: true }).click();
   await expect(page.getByLabel("Search transcripts")).toHaveValue("Original");
   await expect(page.getByRole("checkbox", { name: /^Select dictation / })).toHaveCount(52);
-  await page.getByRole("link", { name: /Dictation 50\b/ }).click();
+  await page.getByRole("link", { name: /Original 50\b/ }).click();
   await page.evaluate(() => {
     window.dictationTest.failSave = true;
   });
@@ -5530,8 +5729,8 @@ test("dictation pages preserve the History search and loaded batches when return
   await expect(page).toHaveURL(/#\/history\?q=Original&page=1$/);
   await expect(page.getByLabel("Search transcripts")).toHaveValue("Original");
   await expect(page.getByRole("checkbox", { name: /^Select dictation / })).toHaveCount(51);
-  await expect(page.getByRole("link", { name: /Dictation 51\b/ })).toBeVisible();
-  await expect(page.getByRole("link", { name: /Dictation 50\b/ })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: /Original 51\b/ })).toBeVisible();
+  await expect(page.getByRole("link", { name: /Original 50\b/ })).toHaveCount(0);
   const toast = page.locator('[data-slot="toast"]').last();
   await expect(toast).toBeVisible();
   await expect(toast).toContainText("Dictation deleted");
@@ -5544,7 +5743,7 @@ test("dictation pages preserve the History search and loaded batches when return
     window.dictationTest.failSave = false;
   });
   await toast.getByRole("button", { name: "Undo", exact: true }).click();
-  await expect(page.getByRole("link", { name: /Dictation 50\b/ })).toBeVisible();
+  await expect(page.getByRole("link", { name: /Original 50\b/ })).toBeVisible();
   await expect(toast).toContainText("Dictation restored");
 });
 
@@ -6685,8 +6884,8 @@ test("session titles save, search and clear without changing literal transcripts
   });
   await page.getByRole("link", { name: "Back to History", exact: true }).click();
   await page.getByRole("textbox", { name: "Search transcripts", exact: true }).fill("会議");
-  await expect(page.getByRole("article")).toHaveCount(1);
-  await expect(page.getByRole("article")).toContainText("会議 notes 🎙️");
+  await expect(page.locator("tbody tr")).toHaveCount(1);
+  await expect(page.locator("tbody tr")).toContainText("会議 notes 🎙️");
   await page.getByRole("link", { name: /会議 notes/ }).click();
   await rename.click();
   await expect(input).toHaveValue("会議 notes 🎙️");
@@ -6705,8 +6904,8 @@ test("History renames in place, preserves text and returns focus when a title se
 }) => {
   await sessionTitleScenario(page);
   await page.getByRole("link", { name: "Back to History", exact: true }).click();
-  await expect(page.getByRole("article")).toHaveCount(2);
-  const row = page.getByRole("article").filter({ hasText: "Original saved transcript." });
+  await expect(page.locator("tbody tr")).toHaveCount(2);
+  const row = page.getByRole("row").filter({ hasText: "Original saved transcript." });
   const rename = row.getByRole("button", { name: /^Rename dictation:/ });
   await page.mouse.move(0, 0);
   await expect(rename).toHaveCSS("opacity", "1");
@@ -6738,12 +6937,12 @@ test("History renames in place, preserves text and returns focus when a title se
   expect(new URL(page.url()).hash).toBe("#/history");
   const search = page.getByRole("textbox", { name: "Search transcripts", exact: true });
   await search.fill("Searchable meeting");
-  await expect(page.getByRole("article")).toHaveCount(1);
+  await expect(page.locator("tbody tr")).toHaveCount(1);
   await rename.click();
   await input.fill("");
   await dialog.getByRole("button", { name: "Save title", exact: true }).click();
   await expect(dialog).toHaveCount(0);
-  await expect(page.getByRole("article")).toHaveCount(0);
+  await expect(page.locator("tbody tr")).toHaveCount(0);
   await expect(
     page.getByRole("heading", { name: "No matching transcripts", exact: true }),
   ).toBeVisible();
@@ -7223,6 +7422,159 @@ test("vocabulary selection rejects multiline or oversized terms and respects act
   await expect(input).toHaveValue("PostgreSQL");
 });
 
+test("History uses shadcn tables with sortable headers and preserves the order through search and navigation", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    window.dictationTest.snapshot.history = [
+      { id: "beta", title: "Beta meeting", durationMs: 2000, createdAt: "2026-11-03T12:00:00Z" },
+      { id: "alpha", title: "Alpha meeting", durationMs: 60000, createdAt: "2026-11-02T12:00:00Z" },
+      { id: "zulu", title: "Zulu meeting", durationMs: 11000, createdAt: "2026-11-01T12:00:00Z" },
+    ].map((entry) => ({
+      ...entry,
+      rawTranscript: `Original ${entry.id}`,
+      finalTranscript: `Saved ${entry.id}`,
+      speechModel: "base",
+      language: "en",
+      audioPath: "",
+    }));
+  });
+  await page.goto("/#/history?q=meeting");
+  const table = page.getByRole("table", { name: "History", exact: true });
+  await expect(table).toHaveAttribute("data-slot", "table");
+  const names = table.locator("tbody tr td:nth-child(2) p:first-child");
+  const column = (name: string) => table.getByRole("columnheader", { name, exact: true });
+  await expect(column("Created")).toHaveAttribute("aria-sort", "descending");
+  await page.getByRole("checkbox", { name: "Select dictation 1", exact: true }).check();
+  await column("Dictation").getByRole("button").click();
+  await expect(column("Dictation")).toHaveAttribute("aria-sort", "ascending");
+  await expect(names).toHaveText(["Alpha meeting", "Beta meeting", "Zulu meeting"]);
+  await expect(page.getByRole("region", { name: "Selection actions" })).toHaveCount(0);
+  await expect(page.getByRole("textbox", { name: "Search transcripts", exact: true })).toHaveValue(
+    "meeting",
+  );
+  await column("Dictation").getByRole("button").press("Enter");
+  await expect(names).toHaveText(["Zulu meeting", "Beta meeting", "Alpha meeting"]);
+  await expect(column("Dictation")).toHaveAttribute("aria-sort", "descending");
+  await column("Created").getByRole("button").click();
+  await expect(column("Created").getByRole("button")).toBeEnabled();
+  await column("Created").getByRole("button").press("Enter");
+  await expect(names).toHaveText(["Zulu meeting", "Alpha meeting", "Beta meeting"]);
+  await column("Duration").getByRole("button").click();
+  await expect(names).toHaveText(["Alpha meeting", "Zulu meeting", "Beta meeting"]);
+  await column("Duration").getByRole("button").press("Space");
+  await expect(column("Duration")).toHaveAttribute("aria-sort", "ascending");
+  await expect(names).toHaveText(["Beta meeting", "Zulu meeting", "Alpha meeting"]);
+  await page.getByRole("textbox", { name: "Search transcripts", exact: true }).fill("meeting");
+  await table.getByRole("link", { name: /Beta meeting/ }).click();
+  await page.getByRole("link", { name: "Back to History", exact: true }).click();
+  await expect(column("Duration")).toHaveAttribute("aria-sort", "ascending");
+  await expect(names).toHaveText(["Beta meeting", "Zulu meeting", "Alpha meeting"]);
+  await page.reload();
+  await expect(names).toHaveText(["Beta meeting", "Zulu meeting", "Alpha meeting"]);
+  await page.getByRole("textbox", { name: "Search transcripts", exact: true }).fill("Zulu");
+  await expect(names).toHaveText(["Zulu meeting"]);
+  await expect(column("Duration")).toHaveAttribute("aria-sort", "ascending");
+  await expect(page).toHaveURL(/sort=durationMs&direction=asc/);
+});
+
+test("History resets loaded batches when sorting and appends the next batch in the same order", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    window.dictationTest.snapshot.history = Array.from({ length: 55 }, (_, index) => ({
+      id: `sorted-${index}`,
+      createdAt: "2026-11-06T10:00:00Z",
+      durationMs: index * 1000,
+      rawTranscript: `Sorted dictation ${index}`,
+      finalTranscript: `Sorted dictation ${index}`,
+      speechModel: "base",
+      language: "en",
+      audioPath: "",
+    }));
+  });
+  await page.goto("/#/history?page=1");
+  const rows = page.locator("tbody tr");
+  await expect(rows).toHaveCount(55);
+  await page
+    .getByRole("columnheader", { name: "Duration", exact: true })
+    .getByRole("button")
+    .click();
+  await expect(rows).toHaveCount(50);
+  await expect(rows.first()).toContainText("Sorted dictation 54");
+  await expect(rows.last()).toContainText("Sorted dictation 5");
+  await expect(page).toHaveURL(/sort=durationMs&direction=desc$/);
+  await rows.last().scrollIntoViewIfNeeded();
+  await expect(rows).toHaveCount(55);
+  await expect(rows.first()).toContainText("Sorted dictation 54");
+  await expect(rows.last()).toContainText("Sorted dictation 0");
+  expect(await page.evaluate(() => window.dictationTest.historyRequests.slice(-2))).toEqual([
+    { query: "", page: 0, sortBy: "durationMs", descending: true, deleted: false },
+    { query: "", page: 1, sortBy: "durationMs", descending: true, deleted: false },
+  ]);
+});
+
+test("Recently Deleted sorts each data column and restores the selected table row", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    localStorage.setItem("yap-sidebar-collapsed", "true");
+    const now = Date.now();
+    window.dictationTest.recentlyDeleted = [
+      {
+        id: "alpha",
+        title: "Alpha deleted",
+        durationMs: 60000,
+        age: 1,
+        createdAt: "2026-11-01T12:00:00Z",
+      },
+      {
+        id: "beta",
+        title: "Beta deleted",
+        durationMs: 2000,
+        age: 2,
+        createdAt: "2026-11-02T12:00:00Z",
+      },
+    ].map(({ age, ...entry }) => ({
+      ...entry,
+      rawTranscript: entry.title,
+      finalTranscript: entry.title,
+      deletedAt: new Date(now - age * 86400000).toISOString(),
+      speechModel: "base",
+      language: "en",
+      audioPath: "",
+    }));
+  });
+  await page.setViewportSize({ width: 360, height: 850 });
+  await page.goto("/#/history?view=deleted");
+  const table = page.getByRole("table", { name: "Recently Deleted", exact: true });
+  const names = table.locator("tbody tr td:nth-child(2) p:first-child");
+  const column = (name: string) => table.getByRole("columnheader", { name, exact: true });
+  await expect(column("Deleted")).toHaveAttribute("aria-sort", "descending");
+  await column("Deleted").getByRole("button").click();
+  await expect(column("Deleted")).toHaveAttribute("aria-sort", "ascending");
+  await expect(names).toHaveText(["Beta deleted", "Alpha deleted"]);
+  await column("Created").getByRole("button").click();
+  await expect(names).toHaveText(["Beta deleted", "Alpha deleted"]);
+  await column("Dictation").getByRole("button").click();
+  await expect(names).toHaveText(["Alpha deleted", "Beta deleted"]);
+  await column("Duration").getByRole("button").click();
+  await expect(names).toHaveText(["Alpha deleted", "Beta deleted"]);
+  await column("Duration").getByRole("button").click();
+  await expect(names).toHaveText(["Beta deleted", "Alpha deleted"]);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
+    true,
+  );
+  await page.getByRole("checkbox", { name: "Select dictation 1", exact: true }).check();
+  await page.getByRole("button", { name: "Restore selected", exact: true }).click();
+  await expect(names).toHaveText(["Alpha deleted"]);
+  expect(
+    await page.evaluate(() =>
+      window.dictationTest.snapshot.history.some((entry) => entry.id === "beta"),
+    ),
+  ).toBe(true);
+});
+
 test("History loads one batch at a time, stops at the end, and deletes and restores a selection across batches", async ({
   page,
 }) => {
@@ -7528,7 +7880,7 @@ test("Recently Deleted permanently deletes individual entries and selections wit
     }));
   });
   await page.goto("/#/history?view=deleted&page=1");
-  await expect(page.getByRole("article")).toHaveCount(52);
+  await expect(page.locator("tbody tr")).toHaveCount(52);
   await page.setViewportSize({ width: 360, height: 850 });
   await expect(
     page.getByRole("button", { name: "Delete permanently", exact: true }).first(),
@@ -7544,7 +7896,7 @@ test("Recently Deleted permanently deletes individual entries and selections wit
     window.dictationTest.failSave = true;
   });
   await page
-    .getByRole("article")
+    .getByRole("row")
     .filter({ hasText: "Deleted dictation 50" })
     .getByRole("button", { name: "Delete permanently", exact: true })
     .click();
@@ -7555,7 +7907,7 @@ test("Recently Deleted permanently deletes individual entries and selections wit
     window.dictationTest.failSave = false;
   });
   await page
-    .getByRole("article")
+    .getByRole("row")
     .filter({ hasText: "Deleted dictation 50" })
     .getByRole("button", { name: "Delete permanently", exact: true })
     .click();
@@ -7605,6 +7957,179 @@ test("deletion Undo remains available after navigating away from History", async
   await navigateMain(page, "History");
   await expect(page.getByRole("link", { name: /Corrected transcript/ })).toBeVisible();
 });
+
+for (const control of ["checkbox", "link", "rename"] as const) {
+  test(`History pointer clicks activate a partially visible ${control} below the sticky header`, async ({
+    page,
+  }) => {
+    await page.addInitScript(() => {
+      window.dictationTest.snapshot.history = Array.from({ length: 40 }, (_, index) => ({
+        id: `pointer-${index}`,
+        title: `Pointer dictation ${index}`,
+        createdAt: "2026-11-06T10:00:00Z",
+        durationMs: 1000,
+        rawTranscript: "A transcript preview.",
+        finalTranscript: "A transcript preview.",
+        speechModel: "base",
+        language: "en",
+        audioPath: "",
+      }));
+    });
+    await page.setViewportSize({ width: 1280, height: 720 });
+    await page.goto("/#/history");
+    await expect(page.locator("tbody tr")).toHaveCount(40);
+    const row = page.locator("tbody tr").nth(12);
+    const target =
+      control === "checkbox"
+        ? row.getByRole("checkbox")
+        : control === "link"
+          ? row.getByRole("link")
+          : row.getByRole("button", { name: /^Rename dictation:/ });
+    await target.evaluate((node) => {
+      const toolbar = document
+        .querySelector('[data-slot="history-toolbar"]')!
+        .getBoundingClientRect();
+      const header = document.querySelector("thead")!.getBoundingClientRect();
+      window.scrollBy(0, node.getBoundingClientRect().bottom - toolbar.height - header.height - 6);
+    });
+    await expect
+      .poll(async () => {
+        const toolbar = (await page.locator('[data-slot="history-toolbar"]').boundingBox())!;
+        const header = (await page.locator("thead").boundingBox())!;
+        return Math.abs(header.y - toolbar.y - toolbar.height);
+      })
+      .toBeLessThan(2);
+    const bounds = (await target.boundingBox())!;
+    const header = (await page.locator("thead").boundingBox())!;
+    const point = { x: bounds.x + Math.min(12, bounds.width / 2), y: header.y + header.height + 3 };
+    expect(
+      await target.evaluate(
+        (node, point) => node.contains(document.elementFromPoint(point.x, point.y)),
+        point,
+      ),
+    ).toBe(true);
+    const scrollBefore = await page.evaluate(() => window.scrollY);
+    await page.mouse.move(point.x, point.y);
+    await page.mouse.down();
+    expect(await page.evaluate(() => window.scrollY)).toBeCloseTo(scrollBefore, 0);
+    await page.mouse.up();
+    if (control === "checkbox") await expect(target).toBeChecked();
+    else if (control === "link") await expect(page).toHaveURL(/history\/pointer-12/);
+    else
+      await expect(
+        page.getByRole("dialog", { name: "Rename dictation", exact: true }),
+      ).toBeVisible();
+  });
+}
+
+for (const deleted of [false, true]) {
+  test(`${deleted ? "Recently Deleted" : "History"} keeps backward keyboard focus below pinned headers`, async ({
+    page,
+  }) => {
+    await page.addInitScript((deleted) => {
+      const entries = Array.from({ length: 40 }, (_, index) => ({
+        id: `focus-${index}`,
+        title: `Focus dictation ${index}`,
+        createdAt: "2026-11-06T10:00:00Z",
+        durationMs: 1000,
+        rawTranscript: "A transcript preview.",
+        finalTranscript: "A transcript preview.",
+        speechModel: "base",
+        language: "en",
+        audioPath: "",
+        ...(deleted ? { deletedAt: new Date().toISOString() } : {}),
+      }));
+      if (deleted) window.dictationTest.recentlyDeleted = entries;
+      else window.dictationTest.snapshot.history = entries;
+    }, deleted);
+    await page.setViewportSize({ width: 1280, height: 720 });
+    await page.goto(`/#/history${deleted ? "?view=deleted" : ""}`);
+    await expect(page.locator("tbody tr")).toHaveCount(40);
+    const row = page.locator("tbody tr").nth(12);
+    const target = row.getByRole(deleted ? "checkbox" : "link");
+    await target.evaluate((node) => {
+      const height = document
+        .querySelector('[data-slot="history-toolbar"]')!
+        .getBoundingClientRect().height;
+      window.scrollBy(0, node.getBoundingClientRect().top - height - 4);
+    });
+    await expect
+      .poll(() => page.locator("thead").evaluate((node) => node.getBoundingClientRect().top))
+      .toBeGreaterThan(0);
+    await row
+      .getByRole("button", { name: deleted ? "Restore" : "Copy dictation", exact: true })
+      .evaluate((node) => node.focus({ preventScroll: true }));
+    await page.keyboard.press("Shift+Tab");
+    await expect(target).toBeFocused();
+    await expect
+      .poll(async () => {
+        const targetBox = (await target.boundingBox())!;
+        const headerBox = (await page.locator("thead").boundingBox())!;
+        return targetBox.y - headerBox.y - headerBox.height;
+      })
+      .toBeGreaterThanOrEqual(4);
+    const covered = await target.evaluate((node) => {
+      const bounds = node.getBoundingClientRect();
+      return !!document
+        .elementFromPoint(bounds.x + 8, bounds.y + bounds.height / 2)
+        ?.closest("thead");
+    });
+    expect(covered).toBe(false);
+  });
+
+  test(`${deleted ? "Recently Deleted" : "History"} pins table headers below the toolbar while scrolling`, async ({
+    page,
+  }) => {
+    await page.addInitScript((deleted) => {
+      const entries = Array.from({ length: 40 }, (_, index) => ({
+        id: `sticky-head-${index}`,
+        title: `Sticky dictation ${index}`,
+        createdAt: "2026-11-06T10:00:00Z",
+        durationMs: index * 1000,
+        rawTranscript: "A transcript preview.",
+        finalTranscript: "A transcript preview.",
+        speechModel: "base",
+        language: "en",
+        audioPath: "",
+        ...(deleted ? { deletedAt: new Date().toISOString() } : {}),
+      }));
+      if (deleted) window.dictationTest.recentlyDeleted = entries;
+      else window.dictationTest.snapshot.history = entries;
+    }, deleted);
+    await page.setViewportSize({ width: 1280, height: 720 });
+    await page.goto(`/#/history${deleted ? "?view=deleted" : ""}`);
+    await expect(page.locator("tbody tr")).toHaveCount(40);
+    const toolbar = page.locator('[data-slot="history-toolbar"]');
+    const header = page.locator("thead");
+    for (const width of [1280, 760, 360]) {
+      await page.setViewportSize({ width, height: 720 });
+      await page.evaluate(() => window.scrollTo(0, 700));
+      await expect
+        .poll(async () => {
+          const toolbarBox = (await toolbar.boundingBox())!;
+          const headerBox = (await header.boundingBox())!;
+          return Math.abs(headerBox.y - toolbarBox.y - toolbarBox.height);
+        })
+        .toBeLessThan(2);
+      const headerBox = (await header.boundingBox())!;
+      expect(headerBox.y).toBeGreaterThan(0);
+      expect(headerBox.y + headerBox.height).toBeLessThan(720);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+        true,
+      );
+    }
+    await page.locator('[data-slot="table-container"]').evaluate((node) => {
+      node.scrollLeft = node.scrollWidth;
+    });
+    const duration = page.getByRole("columnheader", { name: "Duration", exact: true });
+    const durationBox = (await duration.boundingBox())!;
+    expect(durationBox.x).toBeGreaterThan(0);
+    expect(durationBox.x + durationBox.width).toBeLessThanOrEqual(360);
+    await duration.getByRole("button").click();
+    await expect(duration).toHaveAttribute("aria-sort", "descending");
+    await expect(page.locator("tbody tr").first()).toContainText("Sticky dictation 39");
+  });
+}
 
 test("History keeps its header stable and selection actions at the bottom while scrolling", async ({
   page,
@@ -7693,7 +8218,7 @@ test("History keeps its header stable and selection actions at the bottom while 
   expect(recordingBounds.y + recordingBounds.height).toBeLessThanOrEqual(barBounds.y);
   await page.evaluate(() => window.dictationTest.status("idle"));
   await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
-  const lastRow = (await page.getByRole("article").last().boundingBox())!;
+  const lastRow = (await page.locator("tbody tr").last().boundingBox())!;
   expect(lastRow.y + lastRow.height).toBeLessThanOrEqual((await selectionBar.boundingBox())!.y);
   await selectionBar.getByRole("button", { name: "Clear selection", exact: true }).click();
   await expect(selectionBar).toHaveCount(0);
@@ -7702,6 +8227,65 @@ test("History keeps its header stable and selection actions at the bottom while 
   await page.getByLabel("Search transcripts", { exact: true }).fill("Dictation 39");
   await expect(page.getByText("1 dictation", { exact: true })).toBeVisible();
   await expect(page.getByRole("link", { name: /Dictation 39/ })).toBeVisible();
+});
+
+test("History keeps keystrokes local and debounces search for long transcripts", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const text = "Planning traffic and conversion changes. ".repeat(1250);
+    window.dictationTest.snapshot.history = Array.from({ length: 50 }, (_, index) => ({
+      id: `long-${index}`,
+      title: `Discussion ${index}`,
+      createdAt: "2026-11-06T10:00:00Z",
+      durationMs: 1000,
+      rawTranscript: text,
+      finalTranscript: text,
+      speechModel: "base",
+      language: "en",
+      audioPath: "",
+    }));
+  });
+  await page.goto("/#/history");
+  await expect(page.locator("tbody tr")).toHaveCount(50);
+  await expect(page.getByRole("checkbox", { name: "Select loaded", exact: true })).toBeEnabled();
+  expect(await page.locator("tbody").evaluate((node) => node.textContent!.length)).toBeLessThan(
+    15000,
+  );
+  await page.clock.install({ time: new Date("2026-11-12T12:00:00Z") });
+  await page.clock.pauseAt(new Date("2026-11-12T12:00:01Z"));
+  const search = page.getByLabel("Search transcripts", { exact: true });
+  await search.pressSequentially("t");
+  await expect(page.getByRole("checkbox", { name: "Select loaded", exact: true })).toBeDisabled();
+  await page.evaluate(() => {
+    Reflect.set(window, "searchTableUpdates", 0);
+    const table = document.querySelector("table")!;
+    new MutationObserver((changes) => {
+      Reflect.set(
+        window,
+        "searchTableUpdates",
+        Reflect.get(window, "searchTableUpdates") + changes.length,
+      );
+    }).observe(table, { subtree: true, childList: true, characterData: true, attributes: true });
+  });
+  await search.pressSequentially("raffic");
+  await expect(search).toHaveValue("traffic");
+  expect(await page.evaluate(() => Reflect.get(window, "searchTableUpdates"))).toBe(0);
+  expect(
+    await page.evaluate(() => window.dictationTest.historyRequests.map(({ query }) => query)),
+  ).toEqual([""]);
+  await page.clock.runFor(149);
+  expect(
+    await page.evaluate(() => window.dictationTest.historyRequests.map(({ query }) => query)),
+  ).toEqual([""]);
+  await page.clock.runFor(1);
+  await expect(page).toHaveURL(/q=traffic$/);
+  await page.clock.resume();
+  await expect
+    .poll(() => page.evaluate(() => window.dictationTest.historyRequests.map(({ query }) => query)))
+    .toEqual(["", "traffic"]);
+  await expect(page.locator("tbody tr")).toHaveCount(50);
+  await expect(page.locator("tbody mark").first()).toHaveText("traffic");
 });
 
 test("History searches all entries beyond 500 and ignores older search replies", async ({
@@ -7723,7 +8307,9 @@ test("History searches all entries beyond 500 and ignores older search replies",
   await expect(page.getByText("501 dictations", { exact: true })).toBeVisible();
   const search = page.getByLabel("Search transcripts");
   await search.fill("ÄLTERER");
-  await expect(page.getByRole("link", { name: /beta correction/ })).toBeVisible();
+  await expect(
+    page.getByRole("link", { name: /Original recognition: Älterer Name/ }),
+  ).toBeVisible();
   await page.evaluate(() => {
     window.dictationTest.deferHistory = true;
   });
