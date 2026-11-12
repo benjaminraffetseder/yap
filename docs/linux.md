@@ -157,6 +157,16 @@ This cleanup runs before shortcut setup and single-instance handoff. If a
 previous development build left Yap missing from application search after its
 first installation, run `yap` once from a terminal to clear that generated helper.
 
+KDE shortcuts use a separate hidden `com.yap.shortcuts` identity. KDE reserves
+component names ending in `.desktop` for launcher actions, so the installed
+launcher identity cannot own these press/release bindings. The launcher stays
+the same, and other desktops keep their existing shortcut permission identity.
+KDE asks for shortcut permission for the new identity on its first use.
+
+On X11, Yap requests detectable auto-repeat for its own keyboard connection and
+filters legacy repeat release/press pairs. Holding a shortcut therefore keeps
+recording until release without changing the desktop's keyboard repeat settings.
+
 Pasting into another app on X11 requires `xdotool`. On Wayland, background
 clipboard writes and automatic paste use the Clipboard and Remote Desktop
 portals. On the first copy, enable **Allow Remote Interaction** and choose
@@ -178,8 +188,37 @@ in Yap or in the system shortcut dialog ends the pending request without opening
 another shortcut dialog. If the portal restarts, closes the session, removes the
 binding, or changes its effective trigger, Yap marks the shortcut unavailable
 and exposes the existing retry action. Unexpected session loss also releases a
-held recording shortcut. Clipboard permission is requested again when its saved
-session becomes unavailable.
+held recording shortcut. If the desktop returns a shortcut without an assigned
+key, Yap reports it as unavailable. Choose another combination or assign it in
+desktop settings, then retry. On KDE, Yap also checks the active assignment
+when KGlobalAccel is available, since a conflicting request can return a trigger
+description without an assigned key. Clipboard permission is requested again
+when its saved session becomes unavailable.
+
+The opt-in Wayland shortcut test requests Ctrl+Shift+F12 and verifies actual
+press and release events. Run it in the desktop session, approve the permission
+dialog, then press and release the requested combination:
+
+```sh
+YAP_SHORTCUT_INTEGRATION=1 go test ./internal/platform -run '^TestWaylandShortcutDesktopIntegration$' -v -count=1 -timeout 3m
+```
+
+Set `YAP_SHORTCUT_TEST_KEY` to an available combination if needed, for example
+`YAP_SHORTCUT_TEST_KEY=Ctrl+Shift+F11`. The test uses a separate application
+identity so it does not replace Yap's shortcuts. It fails if the desktop leaves
+the requested shortcut unassigned; Ctrl+F12 conflicts with Plasma's default
+Show Desktop binding.
+
+The opt-in X11 regression holds a shortcut past the server's auto-repeat delay,
+then checks release and three quick taps. It requires XTest (`libXtst`) and
+`xset`, and uses the same configurable `YAP_SHORTCUT_TEST_KEY` default:
+
+```sh
+YAP_X11_SHORTCUT_INTEGRATION=1 go test ./internal/platform -run '^TestX11ShortcutRepeatIntegration$' -v -count=1 -timeout 20s
+```
+
+Run it on an X11 session with keyboard auto-repeat enabled, or under `xvfb-run`
+with `XDG_SESSION_TYPE=x11`. Choose an unused test key if the default is assigned.
 
 App assignments in **Settings → Profiles** list open applications and select
 their assigned profile when recording starts through a global shortcut. X11

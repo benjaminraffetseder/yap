@@ -43,6 +43,16 @@ func registerWaylandShortcutContext(parent context.Context, value string, down, 
 	if err := ensurePortalDesktopEntry(executable); err != nil {
 		return nil, fmt.Errorf("register Yap's desktop identity for Wayland shortcuts: %w", err)
 	}
+	appID := "com.yap.desktop"
+	if kdeDesktop() {
+		// KDE reserves components ending in .desktop for desktop-file launch
+		// actions. Use a hidden shortcut identity without renaming the launcher
+		// or replacing other desktops' remembered portal permissions.
+		appID = "com.yap.shortcuts"
+		if err := ensurePortalDesktopEntryForApp(executable, appID); err != nil {
+			return nil, fmt.Errorf("register Yap's KDE shortcut identity: %w", err)
+		}
+	}
 	// A private connection owns the session and its subscriptions. Preserve
 	// signal order even if a recording callback blocks while opening audio.
 	conn, err := dbus.ConnectSessionBus(dbus.WithSignalHandler(dbus.NewSequentialSignalHandler()))
@@ -51,7 +61,7 @@ func registerWaylandShortcutContext(parent context.Context, value string, down, 
 	}
 	ctx, cancel := context.WithTimeout(parent, 2*time.Minute)
 	defer cancel()
-	shortcut, err := registerPortalShortcut(ctx, conn, "com.yap.desktop", value, down, up)
+	shortcut, err := registerPortalShortcut(ctx, conn, appID, value, down, up)
 	if err != nil {
 		conn.Close()
 		return nil, fmt.Errorf("Wayland shortcut: %w; enable Global Shortcuts in your desktop portal and retry", err)
@@ -132,8 +142,11 @@ func registerPortalShortcut(ctx context.Context, conn *dbus.Conn, appID, value s
 	}
 	for _, shortcut := range shortcuts {
 		if shortcut.ID == id {
-			bound = true
 			description, _ = shortcut.Options["trigger_description"].Value().(string)
+			if strings.TrimSpace(description) == "" || kdeShortcutUnassigned(ctx, conn, appID, id) {
+				return nil, fmt.Errorf("the desktop did not assign a key to %s; choose another shortcut or assign it in desktop settings, then retry", value)
+			}
+			bound = true
 			break
 		}
 	}
@@ -148,6 +161,36 @@ func registerPortalShortcut(ctx context.Context, conn *dbus.Conn, appID, value s
 		closeSession()
 	}()
 	return shortcut, nil
+}
+
+// KDE can echo the requested trigger even when a conflict left its active
+// assignment empty. Confirm that assignment when KDE's running daemon offers
+// it; other desktops and unavailable optional interfaces use the portal reply.
+func kdeShortcutUnassigned(ctx context.Context, conn *dbus.Conn, appID, id string) bool {
+	if !kdeDesktop() {
+		return false
+	}
+	var keys []int32
+	err := conn.Object("org.kde.kglobalaccel", "/kglobalaccel").CallWithContext(ctx,
+		"org.kde.KGlobalAccel.shortcut", dbus.FlagNoAutoStart, []string{appID, id, "", ""}).Store(&keys)
+	if err != nil {
+		return false
+	}
+	for _, key := range keys {
+		if key != 0 {
+			return false
+		}
+	}
+	return true
+}
+
+func kdeDesktop() bool {
+	for _, desktop := range strings.Split(os.Getenv("XDG_CURRENT_DESKTOP"), ":") {
+		if strings.EqualFold(desktop, "KDE") {
+			return true
+		}
+	}
+	return false
 }
 
 func portalShortcutTrigger(value string) (string, error) {

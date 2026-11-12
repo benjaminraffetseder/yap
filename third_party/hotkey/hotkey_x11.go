@@ -17,11 +17,12 @@ package hotkey
 #include <X11/Xlib.h>
 
 Display *openDisplay();
+int enableDetectableAutoRepeat(Display *d);
 Window createInvisWindow(Display *d);
 void sendCancel(Display *d, Window window);
 void cleanupConnection(Display *d, Window window);
 int grabHotkey(Display *d, unsigned int* mods, int nmods, int key);
-void waitHotkey(uintptr_t hkhandle, Display *d);
+void waitHotkey(uintptr_t hkhandle, Display *d, int detectableRepeat);
 */
 import "C"
 import (
@@ -47,13 +48,14 @@ func init() {
 }
 
 type platformHotkey struct {
-	mu         sync.Mutex
-	registered bool
-	ctx        context.Context
-	cancel     context.CancelFunc
-	canceled   chan struct{}
-	display    *C.Display
-	window     C.Window
+	mu               sync.Mutex
+	registered       bool
+	ctx              context.Context
+	cancel           context.CancelFunc
+	canceled         chan struct{}
+	display          *C.Display
+	window           C.Window
+	detectableRepeat C.int
 }
 
 // errNoDisplay is what register reports without an X server to talk to.
@@ -88,6 +90,7 @@ func (hk *Hotkey) register() error {
 	if display == nil {
 		return errNoDisplay
 	}
+	detectableRepeat := C.enableDetectableAutoRepeat(display)
 	window := C.createInvisWindow(display)
 
 	// Grab synchronously so a conflict surfaces here as an error instead of
@@ -102,6 +105,7 @@ func (hk *Hotkey) register() error {
 
 	hk.display = display
 	hk.window = window
+	hk.detectableRepeat = detectableRepeat
 	hk.registered = true
 	hk.ctx, hk.cancel = context.WithCancel(context.Background())
 	hk.canceled = make(chan struct{})
@@ -143,7 +147,7 @@ func (hk *Hotkey) handle() {
 			close(hk.canceled)
 			return
 		default:
-			C.waitHotkey(C.uintptr_t(h), hk.display)
+			C.waitHotkey(C.uintptr_t(h), hk.display, hk.detectableRepeat)
 		}
 	}
 }

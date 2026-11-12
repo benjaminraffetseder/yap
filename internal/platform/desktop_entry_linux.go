@@ -23,6 +23,10 @@ func PrepareDesktopEntry() error {
 // for an unpackaged development build. Keep installed entries intact and hide
 // this identity-only entry from launchers.
 func ensurePortalDesktopEntry(executable string) error {
+	return ensurePortalDesktopEntryForApp(executable, "com.yap.desktop")
+}
+
+func ensurePortalDesktopEntryForApp(executable, appID string) error {
 	dataHome := os.Getenv("XDG_DATA_HOME")
 	if !filepath.IsAbs(dataHome) {
 		home, err := os.UserHomeDir()
@@ -35,7 +39,7 @@ func ensurePortalDesktopEntry(executable string) error {
 	if dataDirs == "" {
 		dataDirs = "/usr/local/share:/usr/share"
 	}
-	const filename = "com.yap.desktop.desktop"
+	filename := appID + ".desktop"
 	userEntry := filepath.Join(dataHome, "applications", filename)
 	// An installed launcher must supersede only our hidden identity helper.
 	// A manually customized per-user launcher remains the user's override.
