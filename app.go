@@ -569,55 +569,13 @@ func (a *App) hotkeyUpLocked() {
 func (a *App) GetSnapshot() (Snapshot, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	if err := a.available(); err != nil {
+	runtime, err := a.runtimeSnapshotLocked()
+	if err != nil {
 		return Snapshot{}, err
 	}
-	// Backups own the single database connection. Serve the pre-operation
-	// history so refreshing the UI cannot hold a.mu and prevent cancellation.
-	history := a.backupHistory
-	if a.homeResultOperation {
-		history = a.homeHistory
-	} else if a.status.Phase != "backup" {
-		var err error
-		history, err = a.store.History()
-		if err != nil {
-			return Snapshot{}, err
-		}
-	}
-	if !a.homeResultOperation && a.status.Phase != "backup" {
-		a.homeHistory = history
-		a.updateTray()
-	}
-	ready := speech.Validate(speech.Options{Executable: a.settings.WhisperPath, Model: a.settings.ModelPath}) == nil
-	entries, err := vocabulary.Normalize(a.vocabulary)
-	if err != nil {
-		// Preserve legacy conflicts for editing, without sharing application memory
-		// or returning null alias arrays to the Vocabulary page.
-		entries = make([]vocabulary.Entry, len(a.vocabulary))
-		for i, entry := range a.vocabulary {
-			entries[i] = entry
-			entries[i].Aliases = append([]string{}, entry.Aliases...)
-		}
-	}
-	config, _ := textmodel.Normalize(a.textConfig)
-	var latest *TemporaryResult
-	if a.latestResult != nil {
-		copy := *a.latestResult
-		copy.Outputs = append([]storage.GeneratedOutput{}, copy.Outputs...)
-		if copy.Output != nil {
-			output := *copy.Output
-			copy.Output = &output
-		}
-		latest = &copy
-	}
-	activeProfileID := a.profileLibrary.ActiveID
-	profileModified := false
-	for _, p := range a.profileLibrary.Profiles {
-		if p.ID == activeProfileID {
-			profileModified = !p.Matches(a.settings, a.textConfig)
-		}
-	}
-	return Snapshot{TextModels: models.ListTextModels(a.store.Dir), TextRuntimeAvailable: models.TextRuntimeAvailable(), RecommendedTextContext: models.RecommendedTextContext(), BulkTextQueue: a.bulkTextSnapshotLocked(), ImportQueue: a.importSnapshotLocked(), AppProfileRules: append([]storage.AppProfileRule{}, a.profileLibrary.AppRules...), ProfileShortcut: a.profileLibrary.ProfileShortcut, DefaultProfileID: a.profileLibrary.DefaultID, ProfileModified: profileModified, DictationProfiles: append([]storage.DictationProfile{}, a.profileLibrary.Profiles...), ActiveProfileID: activeProfileID, RecordingSaveHistory: a.recordSettings.SaveHistory, LatestResult: latest, TextProcessing: config, Diagnostic: a.diagnostic, Vocabulary: entries, MicrophoneTested: a.microphoneTested, ShortcutTested: a.shortcutTested, Settings: a.settings, Status: a.status, History: history, Models: models.List(a.store.Dir), DataDir: a.store.Dir, Ready: ready, FloatingIndicator: a.indicator != nil, LaunchAtLoginAvailable: a.loginStart != nil, StartInTrayAvailable: a.tray != nil && !a.development}, nil
+	config := a.configurationLocked()
+	catalog := a.modelCatalogLocked()
+	return Snapshot{TextModels: catalog.TextModels, TextRuntimeAvailable: catalog.TextRuntimeAvailable, RecommendedTextContext: catalog.RecommendedTextContext, BulkTextQueue: runtime.BulkTextQueue, ImportQueue: runtime.ImportQueue, AppProfileRules: config.AppProfileRules, ProfileShortcut: config.ProfileShortcut, DefaultProfileID: config.DefaultProfileID, ProfileModified: config.ProfileModified, DictationProfiles: config.DictationProfiles, ActiveProfileID: config.ActiveProfileID, RecordingSaveHistory: runtime.RecordingSaveHistory, LatestResult: runtime.LatestResult, TextProcessing: config.TextProcessing, Diagnostic: runtime.Diagnostic, Vocabulary: a.vocabularyLocked(), MicrophoneTested: runtime.MicrophoneTested, ShortcutTested: runtime.ShortcutTested, Settings: config.Settings, Status: runtime.Status, History: runtime.History, Models: catalog.Models, DataDir: runtime.DataDir, Ready: config.Ready, FloatingIndicator: runtime.FloatingIndicator, LaunchAtLoginAvailable: runtime.LaunchAtLoginAvailable, StartInTrayAvailable: runtime.StartInTrayAvailable}, nil
 }
 func (a *App) GetMicrophones() ([]audio.Device, error) {
 	a.mu.Lock()
@@ -1090,6 +1048,7 @@ func (a *App) SaveSettings(settings storage.Settings) error {
 	}
 	a.pruneHistoryLocked()
 	a.emit()
+	a.event("setup:changed", []string{"configuration"})
 	return nil
 }
 func (a *App) SelectFile(kind string) (string, error) {
@@ -1156,6 +1115,7 @@ func (a *App) InstallModel(id string) error {
 		if a.closing {
 			return
 		}
+		defer a.event("setup:changed", []string{"configuration", "catalogs"})
 		if ctx.Err() != nil {
 			a.status.Phase = "idle"
 			a.status.Message = "Download cancelled"

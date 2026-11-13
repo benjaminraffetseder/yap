@@ -1,7 +1,7 @@
 import { useRef, useState, type RefObject } from "react";
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router";
-import { useDictation } from "@/components/dictation-provider";
+import { useDictationState } from "@/components/dictation-provider";
 import { ProcessingSelectItems } from "@/components/processing-select-items";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -39,7 +39,7 @@ export function BulkTextDialog({
   onClose: () => void;
 }) {
   const { t } = useTranslation();
-  const { snapshot } = useDictation();
+  const { snapshot } = useDictationState();
   const options = processingOptions(snapshot.textProcessing);
   const [selected, setSelected] = useState(options[0]?.value ?? "");
   const [replaceTitles, setReplaceTitles] = useState(false);

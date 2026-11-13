@@ -1,8 +1,9 @@
+import { useSavedActions } from "@/lib/saved-queries";
 import { useState } from "react";
 import { Check, Download, Trash2, Wrench } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router";
-import { useDictation } from "@/components/dictation-provider";
+import { useDictationState } from "@/components/dictation-provider";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { ActionMenu, ActionMenuItem } from "@/components/ui/action-menu";
@@ -26,7 +27,8 @@ export function TextModelLibrary({
   disabled?: boolean;
 }) {
   const { t, i18n } = useTranslation();
-  const { snapshot, loading, run, refresh } = useDictation();
+  const savedActions = useSavedActions();
+  const { snapshot, loading, run, refresh } = useDictationState();
   const [removing, setRemoving] = useState<TextModel | null>(null);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
@@ -41,7 +43,7 @@ export function TextModelLibrary({
     try {
       const current = snapshot.textProcessing;
       await run(() =>
-        backend.textProcessing({
+        savedActions.textProcessing({
           ...current,
           enabled: true,
           provider: "builtin",
@@ -61,7 +63,7 @@ export function TextModelLibrary({
     setPending(true);
     setError("");
     try {
-      await backend.removeTextModel(removing.id);
+      await savedActions.removeTextModel(removing.id);
       setRemoving(null);
       await refresh();
     } catch (cause) {
@@ -177,7 +179,7 @@ export function TextModelLibrary({
                       onClick={() =>
                         model.installed
                           ? void selectModel(model)
-                          : void run(() => backend.installTextModel(model.id))
+                          : void run(() => savedActions.installTextModel(model.id))
                       }
                     >
                       {!model.installed && <Download aria-hidden="true" className="size-3.5" />}
@@ -198,7 +200,7 @@ export function TextModelLibrary({
                       {model.installed && (
                         <ActionMenuItem
                           disabled={busy}
-                          onClick={() => void run(() => backend.installTextModel(model.id))}
+                          onClick={() => void run(() => savedActions.installTextModel(model.id))}
                         >
                           <Wrench aria-hidden="true" />
                           {t("textModels.repair")}

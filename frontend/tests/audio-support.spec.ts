@@ -132,15 +132,14 @@ test("audio support download progress and cancel survive navigation", async ({
 }, testInfo) => {
   await page.goto("/#/history");
   await page.getByRole("button", { name: "Import audio", exact: true }).click();
-  await expect(page.getByRole("progressbar", { name: "Download progress" })).toHaveAttribute(
-    "aria-valuenow",
-    "42",
-  );
+  const operation = page.getByRole("region", { name: "Current operation", exact: true });
+  await expect(operation.getByRole("progressbar")).toHaveAttribute("aria-valuenow", "42");
   await expect(
-    page.getByRole("status").filter({ hasText: "Downloading audio support… 42%" }),
+    operation.getByRole("status").filter({ hasText: "Downloading audio support…" }),
   ).toBeVisible();
   await expect(page.getByRole("button", { name: "Import audio", exact: true })).toBeEnabled();
   await page.screenshot({ path: testInfo.outputPath("audio-support-progress.png") });
+  await page.getByRole("button", { name: "Minimize activity pane", exact: true }).click();
   await page.getByRole("link", { name: "Dictate", exact: true }).click();
   await expect(page.getByRole("button", { name: "Downloading", exact: true })).toBeDisabled();
   const progress = page.getByRole("progressbar", { name: "Download progress" });
@@ -164,7 +163,10 @@ test("audio support download progress and cancel survive navigation", async ({
   await expect(page.getByRole("progressbar", { name: "Download progress" })).toBeHidden();
   await expect(page.getByRole("button", { name: "Import audio", exact: true })).toBeEnabled();
   await page.getByRole("button", { name: "Import audio", exact: true }).click();
-  await expect(page.getByRole("button", { name: "Cancel download", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Processing activity", exact: true }).click();
+  await expect(operation.getByRole("progressbar")).toHaveAttribute("aria-valuenow", "42");
+  await operation.getByRole("button", { name: "Cancel current operation", exact: true }).click();
+  await expect(operation).toBeHidden();
 });
 
 test("FFmpeg settings show status, confirmation cancellation, progress, and installed path", async ({

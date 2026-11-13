@@ -1,4 +1,5 @@
-import { useDictation } from "@/components/dictation-provider";
+import { useModelCatalog } from "@/lib/saved-queries";
+import { emptySnapshot } from "@/lib/resource-defaults";
 import { SettingRow } from "@/components/settings-section";
 import {
   Select,
@@ -23,7 +24,8 @@ export function TextModelSettings({
   showModelPicker?: boolean;
 }) {
   const { t, i18n } = useTranslation();
-  const { snapshot } = useDictation();
+  const catalog = useModelCatalog();
+  const snapshot = catalog.data ?? emptySnapshot;
   const models = snapshot.textModels ?? [];
   const model = models.find((model) => model.id === value.model);
   const format = (n: number) => n.toLocaleString(i18n.resolvedLanguage);

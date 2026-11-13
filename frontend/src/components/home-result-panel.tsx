@@ -1,4 +1,4 @@
-import { useDictation } from "@/components/dictation-provider";
+import { useDictationState } from "@/components/dictation-provider";
 import { InferenceStats } from "@/components/inference-stats";
 import { MarkdownContent } from "@/components/markdown-content";
 import { TranscriptContextMenu } from "@/components/transcript-context-menu";
@@ -14,6 +14,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import i18n from "@/i18n";
 import { nativeText } from "@/i18n/native-text";
 import { backend, isBusy, isDesktop, type HomeResult } from "@/lib/backend";
+import { homeResultQuery, resourceKeys } from "@/lib/resource-queries";
+import { isCancelledError, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSavedDraft } from "@/lib/use-saved-draft";
 import { Check, Copy, Loader2, Pencil, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -47,22 +49,27 @@ export function HomeResultPanel({
   embedded?: boolean;
 }) {
   const { t } = useTranslation();
-  const { snapshot, loading, refresh } = useDictation();
-  const [result, setResult] = useState<HomeResult | null>(null);
+  const { snapshot, loading, refresh } = useDictationState();
   const [editing, setEditing] = useState<HomeResult | null>(null);
-  const [fetchError, setFetchError] = useState(false);
-  const [reload, setReload] = useState(0);
+  const [refreshFailed, setRefreshFailed] = useState(false);
   const [pending, setPending] = useState(false);
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
+  const busy = loading || isBusy(snapshot.status.phase);
+  const queryClient = useQueryClient();
+  const home = useQuery({ ...homeResultQuery, enabled: isDesktop && !busy && !pending });
+  const result = home.data ?? null;
+  const fetchError = home.isError || refreshFailed;
+  const command = useMutation({
+    mutationFn: ({ target, action, text }: { target: HomeResult; action: string; text: string }) =>
+      backend.homeResultAction(target.session.id, target.revision, action, text),
+  });
   const [view, setView] = useState("result");
   const visibleView = view === "outputs" && result?.outputs.length ? "outputs" : "result";
-  const request = useRef(0);
   const actionPending = useRef(false);
   const editTrigger = useRef<HTMLButtonElement>(null);
   const reading = useRef<HTMLDivElement>(null);
   const current = useRef(result);
-  const busy = loading || isBusy(snapshot.status.phase);
   const latestBusy = useRef(busy);
   const present = !!(result || fetchError || editing);
   useEffect(() => onPresenceChange?.(present), [present, onPresenceChange]);
@@ -86,30 +93,20 @@ export function HomeResultPanel({
     // Status is emitted only after capture/import acceptance. Other busy phases
     // and rejected starts must not expire temporary text. Keep an open editor
     // as a stale draft, separate from the expired result and its actions.
-    setResult((value) => (value && !value.saved ? null : value));
+    void queryClient.cancelQueries({ queryKey: resourceKeys.home });
+    queryClient.setQueryData<HomeResult | null>(resourceKeys.home, (value) =>
+      value && !value.saved ? null : value,
+    );
     setNotice("");
     setError("");
-    setFetchError(false);
-  }, [snapshot.status.phase, snapshot.status.importId, snapshot.status.startedAt]);
+    setRefreshFailed(false);
+  }, [snapshot.status.phase, snapshot.status.importId, snapshot.status.startedAt, queryClient]);
 
-  useEffect(() => {
-    if (!isDesktop || busy || actionPending.current) return;
-    const version = ++request.current;
-    let active = true;
-    void backend
-      .homeResult()
-      .then((value) => {
-        if (!active || version !== request.current) return;
-        setResult(value);
-        setFetchError(false);
-      })
-      .catch(() => {
-        if (active && version === request.current) setFetchError(true);
-      });
-    return () => {
-      active = false;
-    };
-  }, [snapshot.history, snapshot.latestResult, snapshot.status, busy, reload]);
+  async function readResult() {
+    setRefreshFailed(false);
+    // Commands require a real native read, regardless of cached freshness.
+    return queryClient.fetchQuery({ ...homeResultQuery, staleTime: 0 });
+  }
 
   async function act(target: HomeResult, action: string, text = "") {
     if (actionPending.current || latestBusy.current || fetchError) return false;
@@ -121,12 +118,12 @@ export function HomeResultPanel({
       return false;
     }
     actionPending.current = true;
-    request.current++;
     setPending(true);
     setError("");
     setNotice("");
     try {
-      await backend.homeResultAction(target.session.id, target.revision, action, text);
+      await queryClient.cancelQueries({ queryKey: resourceKeys.home });
+      await command.mutateAsync({ target, action, text });
     } catch {
       setError(
         action === "edit"
@@ -134,13 +131,18 @@ export function HomeResultPanel({
           : t("homeResultPanel.couldnTCompleteThisActionYourText"),
       );
       actionPending.current = false;
+      void queryClient.invalidateQueries({ queryKey: resourceKeys.home });
       setPending(false);
-      setReload((value) => value + 1);
       return false;
     }
     if (action === "dismiss") {
-      setResult(null);
-      setFetchError(false);
+      // A replacement may have loaded after navigation while this reply waited.
+      queryClient.setQueryData<HomeResult | null>(resourceKeys.home, (value) =>
+        value?.session.id === target.session.id && value.revision === target.revision
+          ? null
+          : value,
+      );
+      setRefreshFailed(false);
       actionPending.current = false;
       setPending(false);
       fallbackFocus.current?.focus();
@@ -148,8 +150,12 @@ export function HomeResultPanel({
     }
     // A committed save/edit is successful even when the subsequent refresh
     // fails. Disable further actions until the identity can be read again.
-    setResult((value) =>
-      value && action === "save"
+    queryClient.setQueryData<HomeResult | null>(resourceKeys.home, (value) =>
+      value &&
+      value.session.id === target.session.id &&
+      value.revision === target.revision &&
+      !latestBusy.current &&
+      action === "save"
         ? { ...value, saved: true, outcomes: { ...value.outcomes, history: "saved" } }
         : value,
     );
@@ -163,16 +169,14 @@ export function HomeResultPanel({
           : t("homeResultPanel.savedToHistory"),
     );
     try {
-      const value = await backend.homeResult();
-      setResult(value);
-      setFetchError(false);
+      if (!latestBusy.current) await readResult();
+      setRefreshFailed(false);
       await refresh();
-    } catch {
-      setFetchError(true);
+    } catch (cause) {
+      if (!isCancelledError(cause)) setRefreshFailed(true);
     } finally {
       actionPending.current = false;
       setPending(false);
-      setReload((value) => value + 1);
     }
     return true;
   }
@@ -533,7 +537,7 @@ export function HomeResultPanel({
                 variant="outline"
                 size="sm"
                 disabled={busy || pending}
-                onClick={() => setReload((value) => value + 1)}
+                onClick={() => void readResult().catch(() => {})}
               >
                 {t("homeResultPanel.refreshResult")}
               </Button>
@@ -553,7 +557,7 @@ export function HomeResultPanel({
           busy={unavailable}
           pending={pending}
           readFailed={fetchError}
-          onRefresh={() => setReload((value) => value + 1)}
+          onRefresh={() => void readResult().catch(() => {})}
           error={error}
           stale={!result || result.revision !== editing.revision}
           onCancel={closeEditor}

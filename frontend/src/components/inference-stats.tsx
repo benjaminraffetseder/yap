@@ -1,6 +1,6 @@
 import i18n from "@/i18n";
 import { useTranslation } from "react-i18next";
-import { useDictation } from "@/components/dictation-provider";
+import { useDictationState } from "@/components/dictation-provider";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -95,7 +95,7 @@ export function InferenceStats({
   output?: GeneratedOutput;
 }) {
   const { t } = useTranslation();
-  const { snapshot } = useDictation();
+  const { snapshot } = useDictationState();
   if (!snapshot.settings.statsForNerds) return null;
   const generated = output ? [output] : outputs;
   const speed =

@@ -1,5 +1,6 @@
+import { useConfiguration, useSavedActions } from "@/lib/saved-queries";
 import { AutoSaveStatus } from "@/components/auto-save-status";
-import { useDictation } from "@/components/dictation-provider";
+import { useDictationState } from "@/components/dictation-provider";
 import { ProfileSettingIndicator } from "@/components/profile-setting-indicator";
 import { PromptChainsEditor } from "@/components/prompt-chains-editor";
 import { RevisionHistory } from "@/components/revision-history";
@@ -90,6 +91,8 @@ function AutomationHelp({ active }: { active: boolean }) {
 
 export function PromptsPage() {
   const { t } = useTranslation();
+  const savedActions = useSavedActions();
+  const configuration = useConfiguration();
   const serverOptions = [...localServers, { value: "custom", label: t("promptsPage.custom") }];
   const sections = [
     { value: "prompts", label: t("promptsPage.prompts") },
@@ -101,8 +104,8 @@ export function PromptsPage() {
   const section = sections.some((item) => item.value === searchParams.get("section"))
     ? searchParams.get("section")!
     : "prompts";
-  const { snapshot, refresh, clearError, loading } = useDictation();
-  const saved = snapshot.textProcessing;
+  const { snapshot, refresh, clearError, loading } = useDictationState();
+  const saved = configuration.data?.textProcessing ?? snapshot.textProcessing;
   const [draft, setDraft, draftState] = useSavedDraft<TextProcessing>("prompts", saved);
   const [selected, setSelected] = useState(saved.prompts[0]?.id ?? "");
   const [saveError, setSaveError] = useState("");
@@ -255,7 +258,7 @@ export function PromptsPage() {
     clearError();
     setSaveError("");
     try {
-      await backend.textProcessing(draft);
+      await savedActions.textProcessing(draft);
       draftState.markSubmitted(draft);
       modelTest.clear();
       await refresh();

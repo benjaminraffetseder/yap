@@ -1,3 +1,4 @@
+import { useSavedActions } from "@/lib/saved-queries";
 import { useDictation } from "@/components/dictation-provider";
 import { MotionReveal } from "@/components/motion-reveal";
 import { ShortcutInput } from "@/components/shortcut-input";
@@ -39,6 +40,7 @@ import { Link } from "react-router";
 
 export function SetupPage() {
   const { t } = useTranslation();
+  const savedActions = useSavedActions();
   const steps = [
     {
       label: t("common.speechModel"),
@@ -272,7 +274,7 @@ export function SetupPage() {
                       disabled={busy || pending}
                       showModelPicker={false}
                       onChange={(value) =>
-                        void action(() => backend.textProcessing({ ...textConfig, ...value }))
+                        void action(() => savedActions.textProcessing({ ...textConfig, ...value }))
                       }
                     />
                   ) : (
@@ -380,7 +382,7 @@ export function SetupPage() {
                     void action(async () => {
                       if (testing) return backend.stopMicTest();
                       if (mic !== snapshot.settings.microphoneId)
-                        await backend.settings({
+                        await savedActions.settings({
                           ...snapshot.settings,
                           microphoneId: mic,
                         });
@@ -535,7 +537,9 @@ export function SetupPage() {
                         variant="outline"
                         disabled={busy || pending || shortcut === snapshot.settings.shortcut}
                         onClick={() =>
-                          void action(() => backend.settings({ ...snapshot.settings, shortcut }))
+                          void action(() =>
+                            savedActions.settings({ ...snapshot.settings, shortcut }),
+                          )
                         }
                       >
                         {t("setupPage.applyShortcut")}
@@ -571,7 +575,7 @@ export function SetupPage() {
               variant="ghost"
               className="text-muted-foreground"
               disabled={busy || pending}
-              onClick={() => void action(() => backend.completeSetup(true))}
+              onClick={() => void action(() => savedActions.completeSetup(true))}
             >
               {t("setupPage.skipSetup")}
             </Button>
@@ -619,12 +623,12 @@ export function SetupPage() {
                   onClick={() =>
                     void action(async () => {
                       if (textConfig.enabled)
-                        await backend.textProcessing({
+                        await savedActions.textProcessing({
                           ...textConfig,
                           enabled: false,
                           autoPromptId: "",
                         });
-                      await backend.completeSetup(false);
+                      await savedActions.completeSetup(false);
                     })
                   }
                 >
@@ -638,7 +642,7 @@ export function SetupPage() {
                   !textReady && "@max-[40rem]/setup:hidden",
                 )}
                 disabled={busy || pending || !dictationReady || !textReady}
-                onClick={() => void action(() => backend.completeSetup(false))}
+                onClick={() => void action(() => savedActions.completeSetup(false))}
               >
                 {t("setupPage.finishSetup")}
                 <ArrowRight className="size-4" aria-hidden="true" />

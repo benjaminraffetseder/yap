@@ -1,4 +1,5 @@
-import { useDictation } from "@/components/dictation-provider";
+import { useSavedActions } from "@/lib/saved-queries";
+import { useDictationState } from "@/components/dictation-provider";
 import { useTheme } from "@/components/theme-provider";
 import {
   Command,
@@ -56,7 +57,7 @@ export function CommandMenu({
   onOpenChange: (open: boolean) => void;
 }) {
   const { t } = useTranslation();
-  const { run } = useDictation();
+  const { run } = useDictationState();
   const [pending, setPending] = useState(false);
   const running = useRef(false);
 
@@ -122,6 +123,7 @@ function CommandMenuContent({
   runAction: RunAction;
 }) {
   const { t } = useTranslation();
+  const savedActions = useSavedActions();
   const navigate = useNavigate();
   const {
     snapshot,
@@ -133,7 +135,7 @@ function CommandMenuContent({
     checkUpdates,
     installUpdate,
     setProcessingPanelOpen,
-  } = useDictation();
+  } = useDictationState();
   const { theme, setTheme } = useTheme();
   const { settings, status, latestResult } = snapshot;
   const [query, setQuery] = useState("");
@@ -306,7 +308,7 @@ function CommandMenuContent({
           icon: Save,
           keywords: ["save", "history", "privacy"],
           disabled: unavailable || status.phase === "backup",
-          action: native(() => backend.setSaveHistory(!settings.saveHistory)),
+          action: native(() => savedActions.setSaveHistory(!settings.saveHistory)),
         },
         ...(latestResult && !busy
           ? [
@@ -337,7 +339,7 @@ function CommandMenuContent({
           keywords: ["profile", "dictation"],
           checked: snapshot.activeProfileId === profile.id,
           disabled: unavailable || busy,
-          action: native(() => backend.applyProfile(profile.id)),
+          action: native(() => savedActions.applyProfile(profile.id)),
         })),
         ...snapshot.models
           .filter((model) => model.installed)
@@ -347,7 +349,7 @@ function CommandMenuContent({
             keywords: ["speech", "model"],
             checked: settings.modelPath === model.path,
             disabled: unavailable || busy,
-            action: native(() => backend.settings({ ...settings, modelPath: model.path })),
+            action: native(() => savedActions.settings({ ...settings, modelPath: model.path })),
           })),
         {
           label: t("commandMenu.downloadASpeechModel"),

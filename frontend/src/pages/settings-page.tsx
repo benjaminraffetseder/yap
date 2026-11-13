@@ -1,9 +1,10 @@
+import { useConfiguration, useSavedActions } from "@/lib/saved-queries";
 import { AudioSupportPanel } from "@/components/audio-support-panel";
 import { AutoSaveStatus } from "@/components/auto-save-status";
 import { BackupPanel } from "@/components/backup-panel";
 import { DiagnosticsPanel } from "@/components/diagnostics-panel";
 import { ProfilesPanel } from "@/components/dictation-profiles";
-import { useDictation } from "@/components/dictation-provider";
+import { useDictationState } from "@/components/dictation-provider";
 import { ProfileSettingIndicator } from "@/components/profile-setting-indicator";
 import { RecordingStatus } from "@/components/recording-status";
 import { RecoveryActions } from "@/components/recovery-actions";
@@ -84,6 +85,8 @@ export function SettingsPage({
 }) {
   const languages = useLanguages();
   const { t, i18n } = useTranslation();
+  const savedActions = useSavedActions();
+  const configuration = useConfiguration();
   const sections = [
     { value: "dictation", label: t("historyEntryPage.dictation"), icon: Mic },
     { value: "profiles", label: t("settingsPage.profiles"), icon: Users },
@@ -122,10 +125,13 @@ export function SettingsPage({
     loading,
     error: connectionError,
     update: appUpdate,
-  } = useDictation();
+  } = useDictationState();
   const connectionFailure =
     !!connectionError && (loading || connectionError === backendVersionMismatchMessage);
-  const [settings, setSettings, settingsDraft] = useSavedDraft("settings", snapshot.settings);
+  const [settings, setSettings, settingsDraft] = useSavedDraft(
+    "settings",
+    configuration.data?.settings ?? snapshot.settings,
+  );
   const savedProfileShortcut = snapshot.profileShortcut ?? "";
   const [profileShortcut, setProfileShortcut, shortcutDraft] = useSavedDraft(
     "profile-shortcut",
@@ -356,9 +362,9 @@ export function SettingsPage({
     setConfirmRetention(false);
     clearError();
     toastManager.close("settings-save");
-    const saveSettings = () => backend.settings(settings);
+    const saveSettings = () => savedActions.settings(settings);
     const saveProfileShortcut = () =>
-      backend.saveProfileAutomation(snapshot.appProfileRules ?? [], profileShortcut);
+      savedActions.saveProfileAutomation(snapshot.appProfileRules ?? [], profileShortcut);
     // Each save rejects a shortcut the other one still holds, so free the
     // recording shortcut's new combination first when it was the profile one.
     const steps = !profileShortcutDirty
@@ -1205,7 +1211,7 @@ export function SettingsPage({
                       disabled={controlsDisabled || saving || dirty}
                       onClick={() =>
                         void run(async () => {
-                          await backend.restartSetup();
+                          await savedActions.restartSetup();
                           navigate("/");
                         })
                       }

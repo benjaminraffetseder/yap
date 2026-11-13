@@ -16,18 +16,27 @@ import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { MotionConfig } from "motion/react";
 import { DraftProvider } from "@/lib/use-saved-draft";
 import { useTranslation } from "react-i18next";
+import { QueryClientProvider } from "@tanstack/react-query";
+import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
+import { createQueryClient } from "@/lib/resource-queries";
 
 export function App() {
+  const [queryClient] = useState(createQueryClient);
   return (
     <MotionConfig reducedMotion="user">
       <ThemeProvider>
-        <DictationProvider>
-          <DraftProvider>
-            <HashRouter>
-              <AppRoutes />
-            </HashRouter>
-          </DraftProvider>
-        </DictationProvider>
+        <QueryClientProvider client={queryClient}>
+          <DictationProvider>
+            <DraftProvider>
+              <HashRouter>
+                <AppRoutes />
+              </HashRouter>
+            </DraftProvider>
+          </DictationProvider>
+          {import.meta.env.DEV && import.meta.env.MODE !== "ui-test" && (
+            <ReactQueryDevtools initialIsOpen={false} />
+          )}
+        </QueryClientProvider>
       </ThemeProvider>
     </MotionConfig>
   );

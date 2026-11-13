@@ -1,7 +1,8 @@
 import { useTranslation } from "react-i18next";
 import type { ComponentProps } from "react";
 import { CircleDot } from "lucide-react";
-import { useDictation } from "@/components/dictation-provider";
+import { useConfiguration, useModelCatalog } from "@/lib/saved-queries";
+import { emptySnapshot } from "@/lib/resource-defaults";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useLanguages } from "@/lib/languages";
 import { processingOptions } from "@/lib/backend";
@@ -40,7 +41,10 @@ export function ProfileSettingIndicator({
     autoPromptId: t("promptsPage.runAfterDictation"),
   };
 
-  const { snapshot, loading } = useDictation();
+  const configuration = useConfiguration();
+  const catalog = useModelCatalog();
+  const snapshot = { ...emptySnapshot, ...configuration.data, ...catalog.data };
+  const loading = configuration.isPending;
   const profile = snapshot.dictationProfiles?.find((p) => p.id === snapshot.activeProfileId);
   if (loading || !profile || profile[field] === value) return null;
 

@@ -1,6 +1,9 @@
+import { useQueryClient } from "@tanstack/react-query";
+import { refreshSaved, resourceKeys } from "@/lib/resource-queries";
+import { useSavedActions } from "@/lib/saved-queries";
 import { nativeText } from "@/i18n/native-text";
 import { useTranslation } from "react-i18next";
-import { useDictation } from "@/components/dictation-provider";
+import { useDictationState } from "@/components/dictation-provider";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -21,14 +24,14 @@ import {
   message,
   processingOptions,
   type DictationProfile,
-  type Snapshot,
+  type Configuration,
 } from "@/lib/backend";
 import { useLanguages } from "@/lib/languages";
 import { useId, useRef, useState, type RefObject } from "react";
 
 type Review = { kind: "update" | "new"; baseline: string; choices: DictationProfile };
 
-function currentChoices(snapshot: Snapshot, profile: DictationProfile): DictationProfile {
+function currentChoices(snapshot: Configuration, profile: DictationProfile): DictationProfile {
   return {
     id: profile.id,
     name: profile.name,
@@ -39,7 +42,7 @@ function currentChoices(snapshot: Snapshot, profile: DictationProfile): Dictatio
   };
 }
 
-function reviewKey(snapshot: Snapshot, id: string) {
+function reviewKey(snapshot: Configuration, id: string) {
   const saved = snapshot.dictationProfiles?.find((p) => p.id === id);
   return JSON.stringify([
     snapshot.activeProfileId,
@@ -81,7 +84,9 @@ export function HomeProfileActions({
 }) {
   const languages = useLanguages();
   const { t } = useTranslation();
-  const { snapshot, loading, refresh } = useDictation();
+  const savedActions = useSavedActions();
+  const queryClient = useQueryClient();
+  const { snapshot, loading, refresh } = useDictationState();
   const [review, setReview] = useState<Review | null>(null);
   const [expanded, setExpanded] = useState(false);
   const [name, setName] = useState("");
@@ -163,17 +168,21 @@ export function HomeProfileActions({
     setCompleted("");
     try {
       // A shortcut or another window can change the profile after the UI rendered.
-      const fresh = await backend.snapshot();
-      if (isBusy(fresh.status.phase))
+      const [, runtime] = await Promise.all([
+        refreshSaved(queryClient, ["configuration"]),
+        backend.runtimeSnapshot(),
+      ]);
+      const fresh = queryClient.getQueryData<Configuration>(resourceKeys.configuration)!;
+      if (isBusy(runtime.status.phase))
         throw new Error(t("homeProfileActions.finishTheCurrentOperationBeforeChangingProfiles"));
       if ((review?.baseline ?? reviewKey(snapshot, profile.id)) !== reviewKey(fresh, profile.id)) {
         await refresh();
         throw new Error(t("homeProfileActions.settingsOrProfileChangedReviewTheCurrentChoices"));
       }
       if (kind === "restore") {
-        await backend.applyProfile(profile.id);
+        await savedActions.applyProfile(profile.id);
       } else {
-        await backend.saveProfile({
+        await savedActions.saveProfile({
           ...choices,
           id: kind === "new" ? "" : profile.id,
           name: kind === "new" ? trimmed : profile.name,

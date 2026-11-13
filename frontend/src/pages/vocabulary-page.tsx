@@ -1,7 +1,8 @@
+import { useVocabulary, useSavedActions } from "@/lib/saved-queries";
 import { nativeText } from "@/i18n/native-text";
 import { useTranslation } from "react-i18next";
 import { AutoSaveStatus } from "@/components/auto-save-status";
-import { useDictation } from "@/components/dictation-provider";
+import { useDictationState } from "@/components/dictation-provider";
 import { PageHeading } from "@/components/page-heading";
 import { RevisionHistory } from "@/components/revision-history";
 import { Button } from "@/components/ui/button";
@@ -17,7 +18,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { toastManager } from "@/components/ui/toast";
-import { backend, isBusy, isDesktop, message, type VocabularyEntry } from "@/lib/backend";
+import { isBusy, isDesktop, message, type VocabularyEntry } from "@/lib/backend";
 import {
   vocabularyDraft as draftOf,
   validateVocabulary,
@@ -33,8 +34,11 @@ const PAGE_SIZE = 10;
 
 export function VocabularyPage() {
   const { t } = useTranslation();
-  const { snapshot, refresh, loading } = useDictation();
-  const saved = useMemo(() => draftOf(snapshot.vocabulary), [snapshot.vocabulary]);
+  const savedActions = useSavedActions();
+  const vocabulary = useVocabulary();
+  const { snapshot, refresh, loading } = useDictationState();
+  const entries = vocabulary.data ?? snapshot.vocabulary;
+  const saved = useMemo(() => draftOf(entries), [entries]);
   const [draft, setDraft, draftState] = useSavedDraft("vocabulary", saved);
   const [error, setError] = useState("");
   const [history, setHistory] = useState(false);
@@ -56,7 +60,7 @@ export function VocabularyPage() {
   async function save() {
     setError("");
     try {
-      await backend.vocabulary(payload);
+      await savedActions.vocabulary(payload);
       draftState.markSubmitted(draft);
       await refresh();
     } catch (cause) {

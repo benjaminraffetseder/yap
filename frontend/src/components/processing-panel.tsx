@@ -1,6 +1,6 @@
 import { Activity, CircleAlert, Loader2, Minus, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { useDictation } from "@/components/dictation-provider";
+import { useDictationState } from "@/components/dictation-provider";
 import { BulkTextQueue } from "@/components/bulk-text-queue";
 import { ImportQueue } from "@/components/import-queue/import-queue";
 import { Button } from "@/components/ui/button";
@@ -13,7 +13,7 @@ import { cn } from "@/lib/utils";
 
 export function ProcessingPanelToggle({ compact }: { compact: boolean }) {
   const { t } = useTranslation();
-  const { snapshot, processingPanelOpen, setProcessingPanelOpen } = useDictation();
+  const { snapshot, processingPanelOpen, setProcessingPanelOpen } = useDictationState();
   const { pending, failed } = processingActivity(snapshot);
   return (
     <Tooltip>
@@ -71,7 +71,7 @@ export function ProcessingPanelToggle({ compact }: { compact: boolean }) {
 
 export function ProcessingPanel() {
   const { t } = useTranslation();
-  const { snapshot, processingPanelOpen, setProcessingPanelOpen, run } = useDictation();
+  const { snapshot, processingPanelOpen, setProcessingPanelOpen, run } = useDictationState();
   const { current, hasActivity } = processingActivity(snapshot);
   function minimize() {
     setProcessingPanelOpen(false);

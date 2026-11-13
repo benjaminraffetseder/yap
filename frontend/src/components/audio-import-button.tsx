@@ -1,6 +1,6 @@
 import { nativeText } from "@/i18n/native-text";
 import { useTranslation } from "react-i18next";
-import { useDictation } from "@/components/dictation-provider";
+import { useDictationState } from "@/components/dictation-provider";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { backend, isDesktop } from "@/lib/backend";
@@ -17,7 +17,7 @@ export function AudioImportButton({
   label?: ReactNode;
 }) {
   const { t } = useTranslation();
-  const { snapshot, loading, run } = useDictation();
+  const { snapshot, loading, run } = useDictationState();
   const [pending, setPending] = useState(false);
   async function importAudio() {
     setPending(true);

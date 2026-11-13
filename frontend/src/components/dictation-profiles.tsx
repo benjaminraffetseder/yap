@@ -1,5 +1,6 @@
+import { useSavedActions } from "@/lib/saved-queries";
 import { AutoSaveStatus } from "@/components/auto-save-status";
-import { useDictation } from "@/components/dictation-provider";
+import { useDictationState } from "@/components/dictation-provider";
 import { HomeProfileActions } from "@/components/home-profile-actions";
 import { ProcessingSelectItems } from "@/components/processing-select-items";
 import { ProfileApps } from "@/components/profile-apps";
@@ -61,7 +62,8 @@ export function ProfileSelector({
   onReceipt?: (receipt: string) => void;
 }) {
   const { t } = useTranslation();
-  const { snapshot, loading, refresh, run } = useDictation();
+  const savedActions = useSavedActions();
+  const { snapshot, loading, refresh, run } = useDictationState();
   const [pending, setPending] = useState(false);
   const [actionPending, setActionPending] = useState(false);
   const selectorRef = useRef<HTMLButtonElement>(null);
@@ -84,7 +86,7 @@ export function ProfileSelector({
     onPendingChange?.(true);
     try {
       await run(async () => {
-        await backend.applyProfile(id.slice("profile:".length));
+        await savedActions.applyProfile(id.slice("profile:".length));
         await refresh();
       }, false);
     } finally {
@@ -172,7 +174,8 @@ export function ProfilesPanel({
 }) {
   const languages = useLanguages();
   const { t } = useTranslation();
-  const { snapshot, refresh } = useDictation();
+  const savedActions = useSavedActions();
+  const { snapshot, refresh } = useDictationState();
   const [editing, setEditing] = useState<DictationProfile | null>(null);
   const [deleting, setDeleting] = useState<DictationProfile | null>(null);
   const [pending, setPending] = useState(false);
@@ -192,7 +195,7 @@ export function ProfilesPanel({
     setPending(true);
     setError("");
     try {
-      await backend.applyProfile(id);
+      await savedActions.applyProfile(id);
       await refresh();
     } catch (cause) {
       setError(message(cause));
@@ -215,7 +218,7 @@ export function ProfilesPanel({
     setPending(true);
     setError("");
     try {
-      await backend.saveProfileAutomation(next, snapshot.profileShortcut ?? "");
+      await savedActions.saveProfileAutomation(next, snapshot.profileShortcut ?? "");
       await refresh();
     } catch (cause) {
       setError(message(cause));
@@ -452,7 +455,7 @@ export function ProfilesPanel({
                 setPending(true);
                 setError("");
                 try {
-                  await backend.deleteProfile(deleting.id);
+                  await savedActions.deleteProfile(deleting.id);
                   await refresh();
                   setDeleting(null);
                 } catch (cause) {
@@ -484,8 +487,10 @@ function ProfileEditor({
 }) {
   const languages = useLanguages();
   const { t } = useTranslation();
-  const { snapshot, refresh } = useDictation();
-  const [saved, setSaved] = useState(profile);
+  const savedActions = useSavedActions();
+  const { snapshot, refresh } = useDictationState();
+  const [savedID, setSavedID] = useState(profile.id);
+  const saved = snapshot.dictationProfiles?.find((item) => item.id === savedID) ?? profile;
   const [draft, setDraft, draftState] = useSavedDraft(`profile:${profile.id || "new"}`, saved);
   const profileID = useRef(profile.id);
   const [error, setError] = useState("");
@@ -537,11 +542,11 @@ function ProfileEditor({
     setError("");
     try {
       const submitted = { ...draft, id: profileID.current || draft.id };
-      const result = await backend.saveProfile(submitted);
+      const result = await savedActions.saveProfile(submitted);
       profileID.current = result.id;
       setDraft((old) => ({ ...old, id: result.id }));
       draftState.markSubmitted({ ...submitted, id: result.id });
-      setSaved(result);
+      setSavedID(result.id);
       await refresh();
     } catch (cause) {
       setError(message(cause));

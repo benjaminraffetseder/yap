@@ -1,7 +1,7 @@
 import { AudioImportButton } from "@/components/audio-import-button";
 import { BulkTextDialog } from "@/components/bulk-text-dialog";
 import { CopyButton } from "@/components/copy-button";
-import { useDictation } from "@/components/dictation-provider";
+import { useDictationState } from "@/components/dictation-provider";
 import { HistorySearch } from "@/components/history-search";
 import { HistoryTable } from "@/components/history-table";
 import { PageHeading } from "@/components/page-heading";
@@ -21,9 +21,25 @@ import {
   type HistorySortColumn,
   type TranscriptExportSelection,
 } from "@/lib/backend";
+import { resourceKeys } from "@/lib/resource-queries";
+import {
+  useInfiniteQuery,
+  useMutation,
+  useQueryClient,
+  type InfiniteData,
+  type QueryKey,
+} from "@tanstack/react-query";
 import { deleteTranscriptions } from "@/lib/delete-transcriptions";
 import { Download, History, Loader2, RotateCcw, Sparkles, Trash2, Workflow, X } from "lucide-react";
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { useTranslation } from "react-i18next";
 import { useSearchParams } from "react-router";
 
@@ -68,7 +84,7 @@ export function HistoryPage({ active = true }: { active?: boolean }) {
 
 function HistoryList({ viewToggle, active }: { viewToggle: ReactNode; active: boolean }) {
   const { t } = useTranslation();
-  const { snapshot, run, refresh, historyListCache, loading: connecting } = useDictation();
+  const { snapshot, run, refresh, loading: connecting } = useDictationState();
   const [params, setParams] = useSearchParams();
   const deleted = params.get("view") === "deleted";
   const query = (params.get("q") ?? "").slice(0, 250);
@@ -103,31 +119,76 @@ function HistoryList({ viewToggle, active }: { viewToggle: ReactNode; active: bo
     [setParams],
   );
   const detailSearch = params.toString() ? `?${params.toString()}` : "";
-  const [initialList] = useState(() => {
-    const cached = historyListCache.current;
-    return cached &&
-      cached.query === query &&
-      cached.deleted === deleted &&
-      cached.sortBy === sortBy &&
-      cached.descending === descending &&
-      cached.result.page <= page
-      ? cached
-      : null;
+  const queryClient = useQueryClient();
+  const listKey = useMemo(
+    () => [...resourceKeys.history, { query, deleted, sortBy, descending }],
+    [query, deleted, sortBy, descending],
+  );
+  // Retain only the identity of the previous successful query. Query remains
+  // the sole data owner, including the rows shown during a failed new search.
+  const previousList = useRef<QueryKey | null>(null);
+  const [changingList, setChangingList] = useState(false);
+  useLayoutEffect(() => setChangingList(false), [query, deleted, sortBy, descending]);
+  const history = useInfiniteQuery({
+    queryKey: listKey,
+    queryFn: async ({ pageParam, signal }) => {
+      // StrictMode's discarded observer must not start a native read before
+      // the replacement observer can take ownership.
+      await Promise.resolve();
+      signal.throwIfAborted();
+      return deleted
+        ? backend.recentlyDeleted(query, pageParam, sortBy, descending)
+        : backend.history(query, pageParam, sortBy, descending);
+    },
+    initialPageParam: 0,
+    getNextPageParam: (last) =>
+      (last.page + 1) * last.pageSize < last.total ? last.page + 1 : undefined,
+    enabled: isDesktop && !connecting && active,
   });
-  const [reload, setReload] = useState(initialList?.reload ?? 0);
-  const [result, setResult] = useState<HistoryPageResult>(
-    initialList?.result ?? { entries: [], total: 0, page: 0, pageSize: 50 },
-  );
-  const [loading, setLoading] = useState(
-    isDesktop && (!initialList || initialList.history !== snapshot.history),
-  );
-  const [loadingMore, setLoadingMore] = useState(false);
+  useEffect(() => {
+    if (history.data) previousList.current = listKey;
+  }, [history.data, listKey]);
+  const pages =
+    history.data?.pages ??
+    (previousList.current
+      ? queryClient.getQueryData<InfiniteData<HistoryPageResult>>(previousList.current)?.pages
+      : undefined);
+  const visiblePages = history.data ? pages?.slice(0, page + 1) : pages;
+  const last = visiblePages?.at(-1);
+  const result = {
+    entries: [
+      ...new Map(
+        visiblePages?.flatMap((batch) => batch.entries).map((entry) => [entry.id, entry]),
+      ).values(),
+    ],
+    total: last?.total ?? 0,
+    page: last?.page ?? 0,
+    pageSize: last?.pageSize ?? 50,
+  };
+  const missingPage = !!last && page > last.page && history.hasNextPage;
+  const loadingMore = missingPage && history.isFetchingNextPage;
+  const loading =
+    isDesktop && (changingList || connecting || history.isPending || history.isRefetching);
+  const error = history.error && !history.isFetchNextPageError ? message(history.error) : "";
+  const loadMoreError = history.isFetchNextPageError ? message(history.error) : "";
   const [searchPending, setSearchPending] = useState(false);
-  const [error, setError] = useState("");
-  const [loadMoreError, setLoadMoreError] = useState("");
-  const [retry, setRetry] = useState(0);
-  const request = useRef(0);
-  const loaded = useRef(initialList);
+  const { fetchNextPage, refetch } = history;
+  useEffect(() => {
+    if (!active || connecting || history.isFetching || history.isError) return;
+    if (missingPage) void fetchNextPage();
+    else if (last && page > last.page && !history.hasNextPage) setPage(last.page);
+  }, [
+    active,
+    connecting,
+    history.isFetching,
+    history.isError,
+    history.hasNextPage,
+    missingPage,
+    last,
+    page,
+    fetchNextPage,
+    setPage,
+  ]);
   const loadMoreTrigger = useRef<HTMLDivElement>(null);
   const searchInput = useRef<HTMLInputElement>(null);
   const toolbar = useRef<HTMLDivElement>(null);
@@ -165,7 +226,7 @@ function HistoryList({ viewToggle, active }: { viewToggle: ReactNode; active: bo
   } | null>(null);
   const changeSearch = useCallback(
     (nextQuery: string) => {
-      setLoading(true);
+      setChangingList(true);
       setSelected([]);
       setAllMatching(false);
       setExcluded([]);
@@ -183,104 +244,16 @@ function HistoryList({ viewToggle, active }: { viewToggle: ReactNode; active: bo
     [setParams],
   );
 
+  // Infinite-query refetches replace every loaded page together. Keep UI
+  // selection separate and reconcile only after the refreshed range settles.
   useEffect(() => {
-    if (!isDesktop || connecting || !active) return;
-    const revision = ++request.current;
-    const previous = loaded.current;
-    const currentList =
-      previous !== null &&
-      previous.query === query &&
-      previous.deleted === deleted &&
-      previous.sortBy === sortBy &&
-      previous.descending === descending &&
-      previous.reload === reload &&
-      previous.history === snapshot.history;
-    // A return from detail can render the complete loaded range immediately.
-    // Snapshot changes still revalidate edits, deletions and newly saved entries.
-    if (currentList && page === previous.result.page && retry === 0) {
-      setLoading(false);
-      setLoadingMore(false);
-      setError("");
-      setLoadMoreError("");
-      return;
-    }
-    const append = currentList && page === previous.result.page + 1;
-    setLoading(!append);
-    setLoadingMore(append);
-    setError("");
-    setLoadMoreError("");
-    const timer = setTimeout(() => {
-      const fetchPage = (index: number) =>
-        deleted
-          ? backend.recentlyDeleted(query, index, sortBy, descending)
-          : backend.history(query, index, sortBy, descending);
-      const fetchEntries = async () => {
-        let value = await fetchPage(append ? page : 0);
-        if (revision !== request.current) return null;
-        if (append) {
-          const entries = new Map(previous.result.entries.map((entry) => [entry.id, entry]));
-          value.entries.forEach((entry) => entries.set(entry.id, entry));
-          return { ...value, entries: [...entries.values()] };
-        }
-        // Refresh every loaded batch together so edits and deletions cannot leave
-        // stale entries or shifted page boundaries in the accumulated list.
-        const last = Math.min(page, Math.max(0, Math.ceil(value.total / value.pageSize) - 1));
-        const entries = new Map(value.entries.map((entry) => [entry.id, entry]));
-        for (let index = 1; index <= last; index++) {
-          value = await fetchPage(index);
-          if (revision !== request.current) return null;
-          value.entries.forEach((entry) => entries.set(entry.id, entry));
-        }
-        return { ...value, entries: [...entries.values()] };
-      };
-      void fetchEntries()
-        .then((value) => {
-          if (!value || revision !== request.current) return;
-          loaded.current = {
-            query,
-            deleted,
-            sortBy,
-            descending,
-            reload,
-            history: snapshot.history,
-            result: value,
-          };
-          historyListCache.current = loaded.current;
-          setResult(value);
-          if (page > value.page) setPage(value.page);
-          if (!value.total) setAllMatching(false);
-          const ids = new Set(value.entries.map((entry) => entry.id));
-          setSelected((old) => old.filter((id) => ids.has(id)));
-          setLoading(false);
-          setLoadingMore(false);
-        })
-        .catch((cause) => {
-          if (revision === request.current) {
-            if (append) setLoadMoreError(message(cause));
-            else setError(message(cause));
-            setLoading(false);
-            setLoadingMore(false);
-          }
-        });
-    }, 0);
-    return () => {
-      clearTimeout(timer);
-      request.current++;
-    };
-  }, [
-    query,
-    page,
-    deleted,
-    sortBy,
-    descending,
-    reload,
-    retry,
-    snapshot.history,
-    connecting,
-    active,
-    setPage,
-    historyListCache,
-  ]);
+    if (!history.data || !pages || history.isFetching || missingPage) return;
+    const ids = new Set(
+      pages.slice(0, page + 1).flatMap((batch) => batch.entries.map((entry) => entry.id)),
+    );
+    setSelected((old) => old.filter((id) => ids.has(id)));
+    if (!pages[0].total) setAllMatching(false);
+  }, [pages, history.data, history.isFetching, missingPage, page]);
 
   const { entries, total } = result;
   const hasMore = (result.page + 1) * result.pageSize < total;
@@ -349,18 +322,21 @@ function HistoryList({ viewToggle, active }: { viewToggle: ReactNode; active: bo
     deletingNow ||
     !!exportSelection ||
     !!processingSelection;
+  const removeMutation = useMutation({
+    mutationFn: (ids: string[]) => deleteTranscriptions(ids, () => run(refresh, false)),
+  });
+  const restoreMutation = useMutation({ mutationFn: backend.restoreSessions });
+  const permanentlyRemoveMutation = useMutation({ mutationFn: backend.permanentlyDeleteSessions });
   async function remove(ids: string[]) {
     if (deletingNow) return;
     setDeletingNow(true);
     setDeleteError("");
     try {
-      await deleteTranscriptions(ids, () => run(refresh, false));
+      await removeMutation.mutateAsync(ids);
       setSelected([]);
-      setReload((old) => old + 1);
       await run(refresh, false);
     } catch (cause) {
       setDeleteError(message(cause));
-      setReload((old) => old + 1);
     } finally {
       setDeletingNow(false);
     }
@@ -370,9 +346,8 @@ function HistoryList({ viewToggle, active }: { viewToggle: ReactNode; active: bo
     setDeletingNow(true);
     setDeleteError("");
     try {
-      await backend.restoreSessions(ids);
+      await restoreMutation.mutateAsync(ids);
       setSelected([]);
-      setReload((old) => old + 1);
       toastManager.add({
         type: "success",
         title:
@@ -392,7 +367,7 @@ function HistoryList({ viewToggle, active }: { viewToggle: ReactNode; active: bo
     setDeletingNow(true);
     setDeleteError("");
     try {
-      await backend.permanentlyDeleteSessions(ids);
+      await permanentlyRemoveMutation.mutateAsync(ids);
       setSelected([]);
       toastManager.add({
         type: "success",
@@ -404,7 +379,6 @@ function HistoryList({ viewToggle, active }: { viewToggle: ReactNode; active: bo
     } catch (cause) {
       setDeleteError(message(cause));
     } finally {
-      setReload((old) => old + 1);
       await run(refresh, false);
       setDeletingNow(false);
     }
@@ -433,7 +407,7 @@ function HistoryList({ viewToggle, active }: { viewToggle: ReactNode; active: bo
     }
   }
   function changeSort(column: HistorySortColumn) {
-    setLoading(true);
+    setChangingList(true);
     setSelected([]);
     setAllMatching(false);
     setExcluded([]);
@@ -506,7 +480,7 @@ function HistoryList({ viewToggle, active }: { viewToggle: ReactNode; active: bo
         {error && (
           <div role="alert" className="flex items-center gap-3 text-sm text-destructive">
             {nativeText(error)}
-            <Button variant="outline" size="sm" onClick={() => setReload((old) => old + 1)}>
+            <Button variant="outline" size="sm" onClick={() => void refetch()}>
               {t("common.retry")}
             </Button>
           </div>
@@ -663,7 +637,6 @@ function HistoryList({ viewToggle, active }: { viewToggle: ReactNode; active: bo
                   disabled={unavailable}
                   onSaved={() => {
                     renamed.current = entry.id;
-                    setReload((value) => value + 1);
                     void run(refresh, false);
                   }}
                 />
@@ -686,7 +659,7 @@ function HistoryList({ viewToggle, active }: { viewToggle: ReactNode; active: bo
           {loadMoreError && (
             <div role="alert" className="flex items-center gap-3 text-sm text-destructive">
               {nativeText(loadMoreError)}
-              <Button variant="outline" size="sm" onClick={() => setRetry((old) => old + 1)}>
+              <Button variant="outline" size="sm" onClick={() => void fetchNextPage()}>
                 {t("common.retry")}
               </Button>
             </div>

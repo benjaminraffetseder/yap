@@ -350,13 +350,16 @@ test("close stays reachable beside the minimized import queue", async ({ page })
       ],
     });
   });
-  await page.getByRole("button", { name: "Minimize import queue" }).click();
-  await expect(page.getByRole("button", { name: "Open import queue" })).toBeVisible();
+  await page.getByRole("button", { name: "Minimize activity pane", exact: true }).click();
+  const activity = page.getByRole("button", { name: "Processing activity", exact: true });
+  await expect(activity).toBeVisible();
+  await expect(activity).toHaveAttribute("aria-expanded", "false");
   await player(page)
     .getByRole("button", { name: "Close audio player", exact: true })
     .click({ timeout: 2000 });
   await expect(player(page)).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Open import queue" })).toBeVisible();
+  await expect(activity).toBeVisible();
+  await expect(activity).toHaveAttribute("aria-expanded", "false");
 });
 
 test("audio loading, backend failure and decode failure remain recoverable", async ({ page }) => {

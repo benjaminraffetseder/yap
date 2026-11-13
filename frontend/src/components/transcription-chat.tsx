@@ -1,6 +1,6 @@
 import { ChatCitationContent } from "@/components/chat-citation-content";
 import { CopyButton } from "@/components/copy-button";
-import { useDictation } from "@/components/dictation-provider";
+import { useDictationState } from "@/components/dictation-provider";
 import { MarkdownContent } from "@/components/markdown-content";
 import { TranscriptDiff } from "@/components/transcript-diff";
 import { Button } from "@/components/ui/button";
@@ -36,6 +36,8 @@ import {
   type SessionChat,
 } from "@/lib/backend";
 import { referenceRanges, chatReplyText as replyText } from "@/lib/chat-references";
+import { chatQuery, resourceKeys } from "@/lib/resource-queries";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useChatVoice } from "@/lib/use-chat-voice";
 import { useSavedDraft } from "@/lib/use-saved-draft";
 import { Events } from "@wailsio/runtime";
@@ -104,20 +106,21 @@ export function TranscriptionChat({
   onApplied: () => void;
 }) {
   const { t } = useTranslation();
-  const { snapshot } = useDictation();
-  const [chat, setChat] = useState<SessionChat>({
+  const { snapshot } = useDictationState();
+  const queryClient = useQueryClient();
+  const savedChat = useQuery(chatQuery(session.id));
+  const chat: SessionChat = savedChat.data ?? {
     sessionId: session.id,
     messages: [],
     sources: [],
     summary: "",
     compactedThrough: 0,
-  });
+  };
   const [draft, setDraft] = useSavedDraft(`chat:${session.id}`, "");
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState("");
+  const loading = savedChat.isPending;
+  const loadError = savedChat.error ? message(savedChat.error) : "";
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
-  const [reload, setReload] = useState(0);
   const [pending, setPending] = useState(false);
   const [stopping, setStopping] = useState(false);
   const [compacting, setCompacting] = useState(false);
@@ -185,25 +188,6 @@ export function TranscriptionChat({
     };
   }, []);
   useEffect(() => {
-    let active = true;
-    setLoading(true);
-    setLoadError("");
-    void backend
-      .chat(session.id)
-      .then((value) => {
-        if (active) setChat(value);
-      })
-      .catch((cause) => {
-        if (active) setLoadError(message(cause));
-      })
-      .finally(() => {
-        if (active) setLoading(false);
-      });
-    return () => {
-      active = false;
-    };
-  }, [session.id, reload]);
-  useEffect(() => {
     if (!isDesktop) return;
     const off = Events.On(
       "chat:progress",
@@ -221,13 +205,7 @@ export function TranscriptionChat({
         setCompacting(data.compacting);
       },
     );
-    const changed = Events.On("chat:changed", ({ data }: { data: string }) => {
-      if (data === session.id && !request.current) setReload((value) => value + 1);
-    });
-    return () => {
-      off();
-      changed();
-    };
+    return () => off();
   }, [session.id]);
   useEffect(() => {
     if (follow.current && log.current) log.current.scrollTop = log.current.scrollHeight;
@@ -236,6 +214,29 @@ export function TranscriptionChat({
     if (selection || output) input.current?.focus();
   }, [selection, output]);
 
+  async function refreshChat() {
+    const filters = { queryKey: resourceKeys.chat(session.id) };
+    // Mutations can settle after navigation or newer writes. Read current
+    // persistence instead of caching an obsolete reply, including after errors.
+    await queryClient.cancelQueries(filters);
+    await queryClient.invalidateQueries(filters);
+  }
+  const sendMutation = useMutation({
+    mutationFn: ({ id, payload }: { id: string; payload: ChatRequest }) =>
+      backend.sendChat(id, session.id, payload),
+    onSettled: refreshChat,
+  });
+  const saveMutation = useMutation({
+    mutationFn: (id: string) => backend.saveChatReply(session.id, id),
+  });
+  const applyMutation = useMutation({
+    mutationFn: ({ id, before }: { id: string; before: string }) =>
+      backend.applyChatReply(session.id, id, before),
+  });
+  const clearMutation = useMutation({
+    mutationFn: () => backend.clearChat(session.id),
+    onSettled: refreshChat,
+  });
   async function send(retry = false) {
     if (
       request.current ||
@@ -265,9 +266,8 @@ export function TranscriptionChat({
     setStream("");
     setSendingText(retry ? (lastUser?.content ?? "") : draft);
     try {
-      const result = await backend.sendChat(id, session.id, payload);
+      await sendMutation.mutateAsync({ id, payload });
       if (!mounted.current) return;
-      setChat(result);
       if (!retry) {
         setDraft("");
         onClearSelection();
@@ -316,7 +316,7 @@ export function TranscriptionChat({
     setSavingID(msg.id);
     setError("");
     try {
-      await backend.saveChatReply(session.id, msg.id);
+      await saveMutation.mutateAsync(msg.id);
       setSavedIDs((ids) => new Set([...ids, msg.id]));
     } catch (cause) {
       setError(message(cause));
@@ -347,7 +347,7 @@ export function TranscriptionChat({
     setApplying(true);
     setError("");
     try {
-      await backend.applyChatReply(session.id, review.message.id, review.before);
+      await applyMutation.mutateAsync({ id: review.message.id, before: review.before });
       setReview(null);
       setNotice(t("chat.applied"));
       onApplied();
@@ -362,14 +362,7 @@ export function TranscriptionChat({
     setClearing(true);
     setError("");
     try {
-      await backend.clearChat(session.id);
-      setChat({
-        sessionId: session.id,
-        messages: [],
-        sources: [],
-        summary: "",
-        compactedThrough: 0,
-      });
+      await clearMutation.mutateAsync();
       setClearOpen(false);
       setNotice("");
       setSavedIDs(new Set());
@@ -494,7 +487,7 @@ export function TranscriptionChat({
         {loadError && (
           <div role="alert" className="space-y-2 text-xs text-destructive">
             <p>{nativeText(loadError)}</p>
-            <Button size="xs" variant="outline" onClick={() => setReload((value) => value + 1)}>
+            <Button size="xs" variant="outline" onClick={() => void savedChat.refetch()}>
               {t("common.retry")}
             </Button>
           </div>

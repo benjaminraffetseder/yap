@@ -299,6 +299,173 @@ async function selectFirstPassage(page: Page) {
   await page.getByRole("menuitem", { name: "Ask about selection", exact: true }).click();
 }
 
+test("saved chat queries and sends run while internet is offline", async ({ page, context }) => {
+  await scenario(page);
+  await context.setOffline(true);
+  await openChat(page);
+  const chat = page.getByRole("region", { name: "Chat", exact: true });
+  await chat.getByRole("textbox").fill("What is the deadline?");
+  await chat.getByRole("button", { name: "Send", exact: true }).click();
+  await expect(chat.getByRole("log")).toContainText("Friday is the deadline.");
+  expect(await page.evaluate(() => Reflect.get(window, "chatTest").calls)).toHaveLength(1);
+});
+
+test("delayed chat send replies cannot restore a conversation cleared after navigation", async ({
+  page,
+}) => {
+  await scenario(page);
+  await openChat(page);
+  await page.evaluate(() => {
+    const app = Reflect.get(window, "mockBackend").main.App;
+    const send = app.SendChatMessage;
+    app.SendChatMessage = async (...args: [string, string, ChatRequest]) => {
+      const value = await send(...args);
+      Reflect.get(window, "_wails").dispatchWailsEvent({ name: "chat:changed", data: "chat" });
+      return new Promise((resolve) =>
+        Reflect.set(window, "releaseDelayedChatReply", () => resolve(value)),
+      );
+    };
+  });
+  const chat = page.getByRole("region", { name: "Chat", exact: true });
+  await chat.getByRole("textbox", { name: "Message", exact: true }).fill("What is the deadline?");
+  await chat.getByRole("button", { name: "Send", exact: true }).click();
+  await expect
+    .poll(() => page.evaluate(() => typeof Reflect.get(window, "releaseDelayedChatReply")))
+    .toBe("function");
+  await page.getByRole("link", { name: "History", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "History", exact: true })).toBeVisible();
+  await page.evaluate(() => {
+    location.hash = "/history/chat";
+  });
+  await openChat(page);
+  await expect(chat.getByRole("log")).toContainText("Friday is the deadline.");
+  await chat.getByRole("button", { name: "Clear chat", exact: true }).click();
+  await page
+    .getByRole("dialog", { name: "Clear chat", exact: true })
+    .getByRole("button", { name: "Clear chat", exact: true })
+    .click();
+  await expect(chat.getByText(/Ask about this transcription/)).toBeVisible();
+  await page.evaluate(async () => {
+    Reflect.get(window, "releaseDelayedChatReply")();
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+  });
+  await expect(chat.getByText(/Ask about this transcription/)).toBeVisible();
+  await expect(chat.getByRole("log")).not.toContainText("Friday is the deadline.");
+  expect(await page.evaluate(() => Reflect.get(window, "chatTest").chat.messages)).toEqual([]);
+});
+
+test("failed chat sends recover persisted turns and remain retryable after navigation", async ({
+  page,
+}) => {
+  await scenario(page);
+  await openChat(page);
+  await page.evaluate(() => {
+    const app = Reflect.get(window, "mockBackend").main.App;
+    const send = app.SendChatMessage;
+    const get = app.GetSessionChat;
+    app.GetSessionChat = async () => {
+      const last = Reflect.get(window, "chatTest").chat.messages.at(-1);
+      if (last?.state === "pending") {
+        last.state = "failed";
+        last.error = "The previous reply was interrupted; retry to continue.";
+      }
+      return get();
+    };
+    app.SendChatMessage = async (...args: [string, string, ChatRequest]) => {
+      app.SendChatMessage = send;
+      await send(...args);
+      const last = Reflect.get(window, "chatTest").chat.messages.at(-1);
+      last.state = "pending";
+      last.content = "";
+      throw new Error("Synthetic final chat persistence failure");
+    };
+  });
+  const chat = page.getByRole("region", { name: "Chat", exact: true });
+  await chat
+    .getByRole("textbox", { name: "Message", exact: true })
+    .fill("Recover this persisted question");
+  await chat.getByRole("button", { name: "Send", exact: true }).click();
+  await expect(chat.getByRole("alert")).toContainText("Synthetic final chat persistence failure");
+  await page.getByRole("link", { name: "History", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "History", exact: true })).toBeVisible();
+  await page.evaluate(() => {
+    location.hash = "/history/chat";
+  });
+  await openChat(page);
+  await expect(chat.getByRole("log")).toContainText("Recover this persisted question");
+  await expect(
+    chat.getByText("The previous reply was interrupted; retry to continue."),
+  ).toBeVisible();
+  await chat.getByRole("button", { name: "Retry reply", exact: true }).click();
+  await expect(chat.getByRole("log")).toContainText("Friday is the deadline.");
+  expect(await page.evaluate(() => Reflect.get(window, "chatTest").calls.at(-1).retry)).toBe(true);
+});
+
+test("chat events refresh only their session and preserve external request ownership", async ({
+  page,
+}) => {
+  await scenario(page);
+  await openChat(page);
+  await page.evaluate(() => {
+    const state = Reflect.get(window, "chatTest");
+    Reflect.set(window, "externalChatReads", 0);
+    Reflect.get(window, "mockBackend").main.App.GetSessionChat = async () => {
+      Reflect.set(window, "externalChatReads", Reflect.get(window, "externalChatReads") + 1);
+      return structuredClone(state.chat);
+    };
+    state.chat.messages = [
+      {
+        id: "external-request",
+        role: "assistant",
+        content: "",
+        state: "pending",
+        sourceId: "external-source",
+        createdAt: "2026-11-12T12:00:00Z",
+        references: [],
+      },
+    ];
+    Reflect.get(window, "_wails").dispatchWailsEvent({
+      name: "chat:changed",
+      data: "another-session",
+    });
+  });
+  await page.evaluate(
+    () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
+  );
+  expect(await page.evaluate(() => Reflect.get(window, "externalChatReads"))).toBe(0);
+  await page.evaluate(() =>
+    Reflect.get(window, "_wails").dispatchWailsEvent({ name: "chat:changed", data: "chat" }),
+  );
+  const chat = page.getByRole("region", { name: "Chat", exact: true });
+  await expect(chat.getByRole("button", { name: "Stop", exact: true })).toBeEnabled();
+  expect(await page.evaluate(() => Reflect.get(window, "externalChatReads"))).toBe(1);
+  await page.evaluate(() => {
+    const dispatch = Reflect.get(window, "_wails").dispatchWailsEvent;
+    dispatch({
+      name: "chat:progress",
+      data: {
+        sessionId: "chat",
+        requestId: "obsolete-request",
+        content: "Obsolete stream",
+        compacting: false,
+      },
+    });
+    dispatch({
+      name: "chat:progress",
+      data: {
+        sessionId: "chat",
+        requestId: "external-request",
+        content: "External stream",
+        compacting: false,
+      },
+    });
+  });
+  await expect(chat.getByText("External stream", { exact: true })).toBeVisible();
+  await expect(chat.getByText("Obsolete stream", { exact: true })).toHaveCount(0);
+  await chat.getByRole("button", { name: "Stop", exact: true }).click();
+  expect(await page.evaluate(() => Reflect.get(window, "chatTest").cancelled)).toBe(true);
+});
+
 test("docked chat shares space with the source, links output citations, and survives navigation", async ({
   page,
 }, testInfo) => {

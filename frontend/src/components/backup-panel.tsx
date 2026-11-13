@@ -1,4 +1,5 @@
-import { useDictation } from "@/components/dictation-provider";
+import { useSavedActions } from "@/lib/saved-queries";
+import { useDictationState } from "@/components/dictation-provider";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -36,7 +37,8 @@ function restoredMessage(summary: BackupSummary) {
 
 export function BackupPanel({ disabled, unsaved }: { disabled: boolean; unsaved: boolean }) {
   const { t } = useTranslation();
-  const { refresh, snapshot } = useDictation();
+  const savedActions = useSavedActions();
+  const { refresh, snapshot } = useDictationState();
   const [audio, setAudio] = useState(false);
   const [preferences, setPreferences] = useState(false);
   const [preview, setPreview] = useState<BackupPreview | null>(null);
@@ -113,7 +115,7 @@ export function BackupPanel({ disabled, unsaved }: { disabled: boolean; unsaved:
     setWorking("restore");
     setError("");
     try {
-      const result = await backend.restoreBackup(preview.id, preferences);
+      const result = await savedActions.restoreBackup(preview.id, preferences);
       // Restoration is committed even if refreshing the interface then fails.
       previewID.current = "";
       if (active.current) {

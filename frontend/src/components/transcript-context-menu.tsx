@@ -1,3 +1,4 @@
+import { useSavedActions } from "@/lib/saved-queries";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -234,6 +235,7 @@ function CorrectionForm({
   onDone: () => void;
 }) {
   const { t } = useTranslation();
+  const savedActions = useSavedActions();
   const [value, setValue] = useState(target.text);
   const [remember, setRemember] = useState(true);
   const [pending, setPending] = useState(false);
@@ -257,7 +259,7 @@ function CorrectionForm({
     setError("");
     try {
       if (remember) {
-        await backend.addVocabularyTerm(canonical, [target.text]);
+        await savedActions.addVocabularyTerm(canonical, [target.text]);
         remembered.current = true;
       }
       if (!(await onApply(canonical))) throw new Error(t("correction.couldNotApply"));

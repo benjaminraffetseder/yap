@@ -67,24 +67,36 @@ export function useSavedDraft<T>(
   if (!drafts) throw new Error("DraftProvider is required");
   const [draft, update] = useState<T>(() => {
     const cached = drafts.get(key);
-    return cached && !clean(cached) ? (cached.value as T) : saved;
+    return cached && (cached.awaitingSaved || !clean(cached)) ? (cached.value as T) : saved;
   });
+  const latestSaved = useRef(saved);
+  latestSaved.current = saved;
   const [lastSubmitted, setSubmitted] = useState<T | undefined>(
     () => drafts.get(key)?.submitted as T | undefined,
   );
   useEffect(() => {
     const cached = drafts.get(key);
+    const receivedSaved = cached && !same(cached.saved, saved);
     update((value) => {
       // Once the submitted value has received its backend snapshot, later
       // external updates can replace a clean draft (for example profile switches).
       const external =
         cached && clean(cached) && !cached.awaitingSaved && !same(cached.saved, saved);
-      const next = !cached || external ? saved : reconcile(value, cached.saved, saved);
+      const next =
+        !cached || external
+          ? saved
+          : reconcile(
+              value,
+              cached.awaitingSaved && receivedSaved && !Array.isArray(value)
+                ? cached.submitted
+                : cached.saved,
+              saved,
+            );
       drafts.set(key, {
         ...cached,
         saved,
         value: next,
-        awaitingSaved: false,
+        awaitingSaved: cached?.awaitingSaved && !receivedSaved,
         submitted: external ? undefined : cached?.submitted,
       });
       return next;
@@ -109,6 +121,19 @@ export function useSavedDraft<T>(
   const markSubmitted = useCallback(
     (value: T) => {
       const cached = drafts.get(key);
+      if (!same(saved, latestSaved.current)) {
+        // Collection forms retain their submitted spelling/alias formatting.
+        // Their saved query baseline is normalized independently by the backend.
+        const current = (cached?.value ?? value) as T;
+        const next = Array.isArray(value)
+          ? current
+          : reconcile(current, value, latestSaved.current);
+        const submitted = Array.isArray(value) ? value : undefined;
+        drafts.set(key, { saved: latestSaved.current, value: next, submitted });
+        update(next);
+        setSubmitted(submitted);
+        return;
+      }
       drafts.set(key, {
         saved,
         value: cached?.value ?? value,
@@ -120,11 +145,27 @@ export function useSavedDraft<T>(
     },
     [drafts, key, saved],
   );
+  // Project a fresh baseline during the render that receives it. Effects commit
+  // the reconciled draft afterwards; clean fields never flash old profile data.
+  const cached = drafts.get(key);
+  const external = cached && clean(cached) && !cached.awaitingSaved && !same(cached.saved, saved);
+  const visible =
+    !cached || external
+      ? saved
+      : reconcile(
+          draft,
+          // A committed write can outlive a failed refetch. Until a new baseline
+          // arrives, the old saved value must not replace the submitted draft.
+          cached.awaitingSaved && !same(cached.saved, saved) && !Array.isArray(draft)
+            ? cached.submitted
+            : cached.saved,
+          saved,
+        );
   return [
-    draft,
+    visible,
     setDraft,
     {
-      dirty: !same(draft, saved) && !same(draft, lastSubmitted),
+      dirty: !same(visible, saved) && !same(visible, lastSubmitted),
       lastSubmitted,
       markSubmitted,
     },

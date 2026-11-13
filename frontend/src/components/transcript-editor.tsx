@@ -1,5 +1,6 @@
+import { useSavedActions } from "@/lib/saved-queries";
 import { AutoSaveStatus } from "@/components/auto-save-status";
-import { useDictation } from "@/components/dictation-provider";
+import { useDictationState } from "@/components/dictation-provider";
 import { RevisionHistory } from "@/components/revision-history";
 import { TextPanel } from "@/components/text-panel";
 import { TranscriptContextMenu } from "@/components/transcript-context-menu";
@@ -56,7 +57,7 @@ export function TranscriptEditor({
   const [processing, setProcessing] = useState(false);
   const [referenceTab, setReferenceTab] = useState("original");
   const [compare, setCompare] = useState(false);
-  const { snapshot } = useDictation();
+  const { snapshot } = useDictationState();
   const busy = isBusy(snapshot.status.phase);
   const input = useRef<HTMLTextAreaElement>(null);
   useEffect(() => {
@@ -366,6 +367,7 @@ function VocabularyTermForm({
   onSaved: () => void;
 }) {
   const { t } = useTranslation();
+  const savedActions = useSavedActions();
   const [canonical, setCanonical] = useState(selected);
   const [aliases, setAliases] = useState("");
   const [saving, setSaving] = useState(false);
@@ -380,7 +382,7 @@ function VocabularyTermForm({
     onBusy(true);
     setError("");
     try {
-      await backend.addVocabularyTerm(
+      await savedActions.addVocabularyTerm(
         canonical,
         aliases
           .split(",")

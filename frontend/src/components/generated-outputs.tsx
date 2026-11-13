@@ -1,6 +1,6 @@
 import { ChatCitationContent } from "@/components/chat-citation-content";
 import { CopyButton } from "@/components/copy-button";
-import { useDictation } from "@/components/dictation-provider";
+import { useDictationState } from "@/components/dictation-provider";
 import { InferenceStats } from "@/components/inference-stats";
 import { MarkdownContent } from "@/components/markdown-content";
 import { ProcessingSelectItems } from "@/components/processing-select-items";
@@ -34,6 +34,8 @@ import {
   type ChatReference,
   type GeneratedOutput,
 } from "@/lib/backend";
+import { outputsQuery } from "@/lib/resource-queries";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { useTextRequest } from "@/lib/use-text-request";
 import {
   Download,
@@ -63,19 +65,22 @@ export function GeneratedOutputs({
   onReveal?: (output: GeneratedOutput, references: ChatReference[]) => void;
 }) {
   const { t } = useTranslation();
-  const { snapshot } = useDictation();
+  const { snapshot } = useDictationState();
   const { enabled } = snapshot.textProcessing;
   const options = processingOptions(snapshot.textProcessing);
   const [selected, setSelected] = useState(options[0]?.value ?? "");
-  const [outputs, setOutputs] = useState<GeneratedOutput[]>([]);
+  const outputsResource = useQuery(outputsQuery(sessionID));
+  const outputs = outputsResource.data ?? [];
+  const loading = outputsResource.isPending || outputsResource.isFetching;
+  const error = outputsResource.error ? message(outputsResource.error) : "";
+  const deleteOutput = useMutation({
+    mutationFn: (id: string) => backend.deleteOutput(sessionID, id),
+  });
   const seenOutputs = useRef<{ sessionID: string; ids: Set<string> } | null>(null);
   const [activeOutput, setActiveOutput] = useState("");
   const [composerOpen, setComposerOpen] = useState(false);
   const composerTrigger = useRef<HTMLButtonElement>(null);
   const promptTrigger = useRef<HTMLButtonElement>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-  const [reload, setReload] = useState(0);
   const [deleting, setDeleting] = useState<GeneratedOutput | null>(null);
   const [exporting, setExporting] = useState<string | null>(null);
   const outputActionsTrigger = useRef<HTMLButtonElement>(null);
@@ -88,58 +93,37 @@ export function GeneratedOutputs({
       setSelected(processingOptions(snapshot.textProcessing)[0]?.value ?? "");
   }, [snapshot.textProcessing, selected]);
   useEffect(() => {
-    let active = true;
-    setLoading(true);
-    setError("");
-    void backend
-      .generatedOutputs(sessionID)
-      .then((value) => {
-        if (active) {
-          const previous = seenOutputs.current;
-          // The first fetch is existing history, not a newly generated result.
-          const newest = [...value].sort(
-            (a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt),
-          );
-          const added =
-            previous?.sessionID === sessionID
-              ? newest.find((output) => !previous.ids.has(output.id))
-              : undefined;
-          setActiveOutput(
-            (current) =>
-              added?.id ??
-              (value.some((output) => output.id === current) ? current : (newest[0]?.id ?? "")),
-          );
-          seenOutputs.current = { sessionID, ids: new Set(value.map((output) => output.id)) };
-          setOutputs(value);
-          setLoading(false);
-        }
-      })
-      .catch((cause) => {
-        if (active) {
-          setError(message(cause));
-          setLoading(false);
-        }
-      });
-    return () => {
-      active = false;
-    };
-  }, [sessionID, snapshot.history, reload]);
+    const value = outputsResource.data;
+    if (!value) return;
+    const previous = seenOutputs.current;
+    // Cached existing outputs are not new generation. Only unseen saved IDs
+    // from a later query result select the newest tab.
+    const newest = [...value].sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
+    const added =
+      previous?.sessionID === sessionID
+        ? newest.find((output) => !previous.ids.has(output.id))
+        : undefined;
+    setActiveOutput(
+      (current) =>
+        added?.id ??
+        (value.some((output) => output.id === current) ? current : (newest[0]?.id ?? "")),
+    );
+    seenOutputs.current = { sessionID, ids: new Set(value.map((output) => output.id)) };
+  }, [sessionID, outputsResource.data]);
   const disabled = unavailable || loading || !!error || deletingNow || generation.pending;
   const modelBusy = isBusy(snapshot.status.phase);
   const canGenerate = !disabled && !modelBusy && enabled;
   async function generate(action: (id: string) => Promise<string>) {
     await generation.request(action);
-    setReload((old) => old + 1);
   }
   async function remove() {
     if (!deleting || deletingNow) return;
     setDeletingNow(true);
     setDeleteError("");
     try {
-      await backend.deleteOutput(sessionID, deleting.id);
+      await deleteOutput.mutateAsync(deleting.id);
       setDeleting(null);
       generation.clear();
-      setReload((old) => old + 1);
     } catch (cause) {
       setDeleteError(message(cause));
     } finally {
@@ -503,7 +487,7 @@ export function GeneratedOutputs({
       {error && (
         <div role="alert" className="flex flex-wrap items-center gap-3 text-sm text-destructive">
           {nativeText(error)}
-          <Button size="sm" variant="outline" onClick={() => setReload((old) => old + 1)}>
+          <Button size="sm" variant="outline" onClick={() => void outputsResource.refetch()}>
             {t("generatedOutputs.retryOutputs")}
           </Button>
         </div>

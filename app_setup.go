@@ -63,7 +63,7 @@ func (a *App) saveVocabularyLocked(entries []vocabulary.Entry) ([]vocabulary.Ent
 	}
 	a.vocabulary = normalized
 	a.diagnostic = DiagnosticResult{}
-	a.event("setup:changed")
+	a.event("setup:changed", []string{"vocabulary"})
 	return vocabulary.Normalize(normalized)
 }
 

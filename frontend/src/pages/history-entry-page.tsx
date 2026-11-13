@@ -1,7 +1,7 @@
 import { AudioPlayer } from "@/components/audio-player";
 import { ChatSourceText } from "@/components/chat-source-text";
 import { CopyButton } from "@/components/copy-button";
-import { useDictation } from "@/components/dictation-provider";
+import { useDictationState } from "@/components/dictation-provider";
 import { GeneratedOutputs } from "@/components/generated-outputs";
 import { InferenceStats } from "@/components/inference-stats";
 import { SessionTitleAction } from "@/components/session-title-action";
@@ -28,6 +28,8 @@ import {
 } from "@/lib/backend";
 import { referenceRanges } from "@/lib/chat-references";
 import { deleteTranscriptions } from "@/lib/delete-transcriptions";
+import { resourceKeys, sessionQuery } from "@/lib/resource-queries";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
 import {
   ArrowLeft,
@@ -59,15 +61,18 @@ function EntryDetail({ id }: { id: string }) {
     refresh,
     processingPanelOpen,
     setProcessingPanelOpen,
-  } = useDictation();
+  } = useDictationState();
   const navigate = useNavigate();
   const location = useLocation();
   const back = `/history${location.search}`;
-  const [entry, setEntry] = useState<Session | null>(null);
-  const entryLoaded = useRef(false);
-  const [loading, setLoading] = useState(isDesktop);
-  const [error, setError] = useState("");
-  const [reload, setReload] = useState(0);
+  const queryClient = useQueryClient();
+  const detail = useQuery({ ...sessionQuery(id), enabled: isDesktop && !connecting });
+  const entry = detail.data ?? null;
+  const loading = isDesktop && (connecting || detail.isPending);
+  const error = detail.error ? message(detail.error) : "";
+  const saveTranscript = useMutation({
+    mutationFn: (value: string) => backend.saveTranscript(id, value),
+  });
   const [editing, setEditing] = useState<Session | null>(null);
   const [activeTab, setActiveTab] = useState("transcription");
   const [chatOpen, setChatOpen] = useState(false);
@@ -118,30 +123,8 @@ function EntryDetail({ id }: { id: string }) {
     title.current?.focus();
   }, []);
   useEffect(() => {
-    if (!isDesktop || connecting) return;
-    let active = true;
-    if (!entryLoaded.current) setLoading(true);
-    setError("");
-    void backend
-      .session(id)
-      .then((value) => {
-        if (active) {
-          entryLoaded.current = !!value;
-          setEntry(value);
-          setLoading(false);
-          if (!value) setAudio("");
-        }
-      })
-      .catch((cause) => {
-        if (active) {
-          setError(message(cause));
-          setLoading(false);
-        }
-      });
-    return () => {
-      active = false;
-    };
-  }, [id, snapshot.history, connecting, reload]);
+    if (detail.isSuccess && !entry) setAudio("");
+  }, [detail.isSuccess, entry]);
   const unavailable = !isDesktop || loading || !!error || deletingNow;
   const text = entry?.finalTranscript ?? entry?.rawTranscript ?? "";
   const changed = !!entry && text !== entry.rawTranscript;
@@ -171,7 +154,7 @@ function EntryDetail({ id }: { id: string }) {
       void run(refresh, false);
     } catch (cause) {
       setDeleteError(message(cause));
-      setReload((old) => old + 1);
+      void detail.refetch();
       setDeletingNow(false);
     }
   }
@@ -238,7 +221,11 @@ function EntryDetail({ id }: { id: string }) {
                       entry={entry}
                       disabled={unavailable}
                       onSaved={(value) => {
-                        setEntry((current) => (current ? { ...current, title: value } : current));
+                        queryClient.setQueryData(
+                          resourceKeys.session(id),
+                          (current: Session | null | undefined) =>
+                            current ? { ...current, title: value } : current,
+                        );
                         void run(refresh, false);
                       }}
                     />
@@ -392,7 +379,7 @@ function EntryDetail({ id }: { id: string }) {
       {error && (
         <div role="alert" className="flex flex-wrap items-center gap-3 text-sm text-destructive">
           {nativeText(error)}
-          <Button size="sm" variant="outline" onClick={() => setReload((old) => old + 1)}>
+          <Button size="sm" variant="outline" onClick={() => void detail.refetch()}>
             {t("common.retry")}
           </Button>
         </div>
@@ -502,8 +489,7 @@ function EntryDetail({ id }: { id: string }) {
                     text={text}
                     disabled={unavailable || isBusy(snapshot.status.phase)}
                     onApply={async (value) => {
-                      await backend.saveTranscript(id, value);
-                      setReload((old) => old + 1);
+                      await saveTranscript.mutateAsync(value);
                       void run(refresh, false);
                       return true;
                     }}
@@ -603,7 +589,6 @@ function EntryDetail({ id }: { id: string }) {
                 returnFocus={editTrigger}
                 onClose={() => setEditing(null)}
                 onSaved={() => {
-                  setReload((old) => old + 1);
                   void run(refresh, false);
                 }}
               />
@@ -632,7 +617,6 @@ function EntryDetail({ id }: { id: string }) {
               requestAnimationFrame(() => chatTrigger.current?.focus());
             }}
             onApplied={() => {
-              setReload((old) => old + 1);
               void run(refresh, false);
             }}
           />

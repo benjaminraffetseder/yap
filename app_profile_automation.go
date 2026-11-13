@@ -96,7 +96,7 @@ func (a *App) SaveProfileAutomation(rules []storage.AppProfileRule, shortcut str
 	}
 	a.profileLibrary = library
 	a.profileOverridePending = false
-	a.event("setup:changed")
+	a.event("setup:changed", []string{"configuration"})
 	return nil
 }
 

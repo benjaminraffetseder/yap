@@ -1,3 +1,4 @@
+import { useSavedActions } from "@/lib/saved-queries";
 import { Popover } from "@base-ui/react/popover";
 import { useTranslation } from "react-i18next";
 import { nativeText } from "@/i18n/native-text";
@@ -33,6 +34,7 @@ import { Link, useNavigate } from "react-router";
 
 export function HomePage() {
   const { t } = useTranslation();
+  const savedActions = useSavedActions();
   const navigate = useNavigate();
   const resultFallback = useRef<HTMLButtonElement>(null);
   const reduced = useMotionPreference();
@@ -102,7 +104,7 @@ export function HomePage() {
     setSwitchingModel(true);
     try {
       if (model.installed)
-        await run(() => backend.settings({ ...settings, modelPath: model.path }));
+        await run(() => savedActions.settings({ ...settings, modelPath: model.path }));
       else await installModel(model);
     } finally {
       setSwitchingModel(false);
@@ -346,7 +348,7 @@ export function HomePage() {
                                   onCheckedChange={async (enabled) => {
                                     setHistoryPending(true);
                                     try {
-                                      await run(() => backend.setSaveHistory(enabled));
+                                      await run(() => savedActions.setSaveHistory(enabled));
                                     } finally {
                                       setHistoryPending(false);
                                     }

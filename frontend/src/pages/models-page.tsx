@@ -1,4 +1,5 @@
-import { useDictation } from "@/components/dictation-provider";
+import { useSavedActions } from "@/lib/saved-queries";
+import { useDictationState } from "@/components/dictation-provider";
 import { ModelCard } from "@/components/model-card";
 import { ModelGuidance } from "@/components/model-guidance";
 import { PageHeading } from "@/components/page-heading";
@@ -42,6 +43,7 @@ const modelSegmentButtonClassName = (active: boolean) =>
 
 export function ModelsPage({ embedded = false }: { embedded?: boolean }) {
   const { t } = useTranslation();
+  const savedActions = useSavedActions();
   const [params, setParams] = useSearchParams();
   const location = useLocation();
   const kind =
@@ -51,7 +53,7 @@ export function ModelsPage({ embedded = false }: { embedded?: boolean }) {
       : "speech";
   const locale = i18n.resolvedLanguage ?? "en";
   const guidanceId = useId();
-  const { snapshot, run, refresh, loading, installModel, downloadingModelId } = useDictation();
+  const { snapshot, run, refresh, loading, installModel, downloadingModelId } = useDictationState();
   const [removing, setRemoving] = useState<Model | null>(null);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
@@ -145,7 +147,7 @@ export function ModelsPage({ embedded = false }: { embedded?: boolean }) {
   function selectModel(model: Model) {
     if (!isDesktop || busy || pending) return;
     void (model.installed
-      ? run(() => backend.settings({ ...settings, modelPath: model.path }))
+      ? run(() => savedActions.settings({ ...settings, modelPath: model.path }))
       : installModel(model));
   }
   async function remove() {
@@ -153,7 +155,7 @@ export function ModelsPage({ embedded = false }: { embedded?: boolean }) {
     setPending(true);
     setError("");
     try {
-      await backend.removeModel(removing.id);
+      await savedActions.removeModel(removing.id);
       setRemoving(null);
       await run(refresh, false);
     } catch (cause) {

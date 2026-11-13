@@ -19,6 +19,46 @@ if (methods) {
   chrome.webview = { postMessage() {} };
   Reflect.set(window, "chrome", chrome);
 
+  const fields = {
+    GetConfiguration: [
+      "settings",
+      "textProcessing",
+      "appProfileRules",
+      "profileShortcut",
+      "dictationProfiles",
+      "activeProfileId",
+      "defaultProfileId",
+      "profileModified",
+      "ready",
+    ],
+    GetModelCatalog: ["models", "textModels", "textRuntimeAvailable", "recommendedTextContext"],
+    GetRuntimeSnapshot: [
+      "status",
+      "history",
+      "bulkTextQueue",
+      "importQueue",
+      "recordingSaveHistory",
+      "latestResult",
+      "diagnostic",
+      "microphoneTested",
+      "shortcutTested",
+      "dataDir",
+      "floatingIndicator",
+      "launchAtLoginAvailable",
+      "startInTrayAvailable",
+    ],
+  };
+  for (const [name, keys] of Object.entries(fields)) {
+    if (!methods[name])
+      methods[name] = async () => {
+        const snapshot = await methods.GetSnapshot();
+        return Object.fromEntries(keys.map((key) => [key, Reflect.get(snapshot as object, key)]));
+      };
+  }
+  if (!methods.GetVocabulary)
+    methods.GetVocabulary = async () =>
+      Reflect.get((await methods.GetSnapshot()) as object, "vocabulary");
+
   setTransport({
     async call(objectID, _method, _windowName, args) {
       if (objectID === 3) return events?.emit?.(args.name, args.data) ?? false;

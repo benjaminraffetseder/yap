@@ -25,6 +25,7 @@ func (a *App) setSaveHistoryLocked(enabled bool) error {
 	}
 	a.settings = settings
 	a.emit()
+	a.event("setup:changed", []string{"configuration"})
 	return nil
 }
 func (a *App) toggleHistory() {

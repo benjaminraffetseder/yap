@@ -1,6 +1,6 @@
 import { nativeText } from "@/i18n/native-text";
 import { useTranslation } from "react-i18next";
-import { useDictation } from "@/components/dictation-provider";
+import { useDictationState } from "@/components/dictation-provider";
 import { Button } from "@/components/ui/button";
 import { backend, isBusy, isDesktop } from "@/lib/backend";
 import { Keyboard } from "lucide-react";
@@ -17,7 +17,7 @@ export function ShortcutStatus({
   variant?: "inline" | "banner" | "notice";
 }) {
   const { t } = useTranslation();
-  const { snapshot, run } = useDictation();
+  const { snapshot, run } = useDictationState();
   const [pending, setPending] = useState(false);
   const retrying = useRef(false);
   const error = profile ? snapshot.status.profileShortcutError : snapshot.status.shortcutError;

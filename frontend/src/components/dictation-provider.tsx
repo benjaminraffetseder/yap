@@ -3,21 +3,30 @@ import i18n from "@/i18n";
 import { nativeText } from "@/i18n/native-text";
 import {
   backend,
-  defaultTextProcessing,
   importPending,
   isBusy,
   isDesktop,
   message,
-  type HistoryPageResult,
-  type HistorySortColumn,
+  type HomeResult,
   type ImportJob,
   type Model,
-  type Session,
   type Snapshot,
+  type RuntimeSnapshot,
   type Status,
   type UpdateStatus,
 } from "@/lib/backend";
 import { processingActivity } from "@/lib/processing-activity";
+import {
+  resourceKeys,
+  configurationQuery,
+  vocabularyQuery,
+  modelCatalogQuery,
+  refreshSaved,
+  savedResources,
+} from "@/lib/resource-queries";
+import { emptySnapshot as empty } from "@/lib/resource-defaults";
+import { useSavedActions } from "@/lib/saved-queries";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Events } from "@wailsio/runtime";
 import {
   createContext,
@@ -27,170 +36,8 @@ import {
   useRef,
   useState,
   type ReactNode,
-  type RefObject,
 } from "react";
-const empty: Snapshot = {
-  textProcessing: defaultTextProcessing,
-  settings: {
-    microphoneId: "",
-    whisperPath: "",
-    modelPath: "",
-    language: "auto",
-    shortcut: "Ctrl+Alt+Space",
-    interaction: "hold",
-    autoCopy: true,
-    autoPaste: true,
-    saveHistory: true,
-    saveAudio: false,
-    launchAtLogin: false,
-    startInTray: false,
-    cleanText: false,
-    setupComplete: false,
-    historyRetentionDays: 0,
-    statsForNerds: false,
-  },
-  status: {
-    phase: "idle",
-    message: i18n.t("dictationProvider.readyWhenYouAre"),
-    startedAt: 0,
-    transcript: "",
-    progress: 0,
-    shortcutError: "",
-    indicatorError: "",
-    trayError: "",
-    startupError: "",
-    historyError: "",
-  },
-  models: [
-    {
-      id: "tiny",
-      name: "Whisper Tiny",
-      size: 77691713,
-      description: i18n.t("dictationProvider.fastestShortDictation"),
-      installed: false,
-      path: "",
-      diskBytes: 0,
-      removable: false,
-    },
-    {
-      id: "base",
-      name: "Whisper Base",
-      size: 147951465,
-      description: i18n.t("dictationProvider.lightweightEverydayDictation"),
-      installed: false,
-      path: "",
-      diskBytes: 0,
-      removable: false,
-    },
-    {
-      id: "small",
-      name: "Whisper Small",
-      size: 487601967,
-      description: i18n.t("dictationProvider.balancedBetterAccuracy"),
-      installed: false,
-      path: "",
-      diskBytes: 0,
-      removable: false,
-    },
-    {
-      id: "medium",
-      name: "Whisper Medium",
-      size: 1533763059,
-      description: i18n.t("dictationProvider.higherAccuracyMoreMemory"),
-      installed: false,
-      path: "",
-      diskBytes: 0,
-      removable: false,
-    },
-    {
-      id: "large-v3",
-      name: "Whisper Large v3",
-      size: 3095033483,
-      description: i18n.t("dictationProvider.largeV3HighestMemoryUse"),
-      installed: false,
-      path: "",
-      diskBytes: 0,
-      removable: false,
-    },
-    {
-      id: "parakeet-tdt-0.6b-v3",
-      name: "NVIDIA Parakeet TDT v3",
-      size: 713975456,
-      description: i18n.t("dictationProvider.25EuropeanLanguagesAutomaticDetection"),
-      installed: false,
-      path: "",
-      diskBytes: 0,
-      removable: false,
-    },
-    {
-      id: "moonshine-v2-tiny",
-      name: "Moonshine V2 Tiny",
-      size: 45233659,
-      description: i18n.t("dictationProvider.englishOnlyFastest"),
-      installed: false,
-      path: "",
-      diskBytes: 0,
-      removable: false,
-    },
-    {
-      id: "moonshine-v2-small",
-      name: "Moonshine V2 Small",
-      size: 142300974,
-      description: i18n.t("dictationProvider.englishOnlyVeryFast"),
-      installed: false,
-      path: "",
-      diskBytes: 0,
-      removable: false,
-    },
-    {
-      id: "moonshine-v2-medium",
-      name: "Moonshine V2 Medium",
-      size: 269141623,
-      description: i18n.t("dictationProvider.englishOnlyBetterAccuracy"),
-      installed: false,
-      path: "",
-      diskBytes: 0,
-      removable: false,
-    },
-    {
-      id: "moonshine-base",
-      name: "Moonshine Base",
-      size: 141001190,
-      description: i18n.t("dictationProvider.englishOnlyLightweight"),
-      installed: false,
-      path: "",
-      diskBytes: 0,
-      removable: false,
-    },
-  ],
-  history: [],
-  dataDir: "",
-  ready: false,
-  floatingIndicator: false,
-  launchAtLoginAvailable: false,
-  startInTrayAvailable: false,
-  vocabulary: [],
-  microphoneTested: false,
-  shortcutTested: false,
-  diagnostic: {
-    phase: "",
-    message: "",
-    details: "",
-    transcript: "",
-    durationMs: 0,
-  },
-};
-type HistoryListCache = {
-  query: string;
-  deleted: boolean;
-  sortBy: HistorySortColumn;
-  descending: boolean;
-  reload: number;
-  history: Session[];
-  result: HistoryPageResult;
-};
 type Context = {
-  historyListCache: RefObject<HistoryListCache | null>;
   importQueue: ImportJob[];
   processingPanelOpen: boolean;
   setProcessingPanelOpen: (open: boolean) => void;
@@ -201,7 +48,6 @@ type Context = {
   checkUpdates: (manual?: boolean) => Promise<void>;
   installUpdate: () => Promise<void>;
   snapshot: Snapshot;
-  level: number;
   error: string;
   loading: boolean;
   downloadingModelId: string | null;
@@ -212,22 +58,45 @@ type Context = {
   installModel: (model: Model) => Promise<void>;
   clearError: () => void;
 };
+const LevelContext = createContext(0);
 const DictationContext = createContext<Context | null>(null);
 export function DictationProvider({ children }: { children: ReactNode }) {
+  const queryClient = useQueryClient();
   const [update, setUpdate] = useState<UpdateStatus | null>(null);
   const [checkingUpdates, setCheckingUpdates] = useState(false);
   const [installingUpdate, setInstallingUpdate] = useState(false);
   const [updateError, setUpdateError] = useState("");
   const updateRequest = useRef(false);
-  const [snapshot, setSnapshot] = useState(empty);
-  // Retain the last loaded list when its route unmounts to show a dictation.
-  const historyListCache = useRef<HistoryListCache | null>(null);
+  const configuration = useQuery({ ...configurationQuery, enabled: isDesktop });
+  const vocabulary = useQuery({ ...vocabularyQuery, enabled: isDesktop });
+  const catalog = useQuery({ ...modelCatalogQuery, enabled: isDesktop });
+  const [runtime, setSnapshot] = useState<RuntimeSnapshot>({
+    status: empty.status,
+    history: [],
+    dataDir: "",
+    floatingIndicator: false,
+    launchAtLoginAvailable: false,
+    startInTrayAvailable: false,
+    microphoneTested: false,
+    shortcutTested: false,
+    diagnostic: empty.diagnostic,
+  });
+  const snapshot: Snapshot = {
+    ...empty,
+    ...runtime,
+    ...configuration.data,
+    ...catalog.data,
+    vocabulary: vocabulary.data ?? empty.vocabulary,
+  };
+  const savedError = configuration.error || vocabulary.error || catalog.error;
+  const savedLoading = isDesktop && (!configuration.data || !vocabulary.data || !catalog.data);
+  const savedActions = useSavedActions();
   // Follow activity until the user chooses visibility. New work never overrides
   // an explicit minimization, even across page changes or completed batches.
   const [processingPanelPreference, setProcessingPanelOpen] = useState<boolean | null>(null);
   const processingPanelOpen = processingPanelPreference ?? processingActivity(snapshot).hasActivity;
-  const [level, setLevel] = useState(0);
   const [error, setError] = useState("");
+  const [dismissedSavedError, setDismissedSavedError] = useState<unknown>(null);
   const [loading, setLoading] = useState(isDesktop);
   const [downloadingModelId, setDownloadingModelId] = useState<string | null>(null);
   const [microphoneTestVisible, setMicrophoneTestVisible] = useState(false);
@@ -297,15 +166,15 @@ export function DictationProvider({ children }: { children: ReactNode }) {
       setUpdateError("");
     });
   }, []);
-  const refresh = useCallback(async () => {
+  const refreshRuntime = useCallback(async () => {
     if (!isDesktop) return;
     const request = ++snapshotRequest.current;
     const revision = statusRevision.current;
     const importRevision = queueRevision.current;
     const textRevision = textQueueRevision.current;
-    let value: Snapshot;
+    let value: RuntimeSnapshot;
     try {
-      value = await backend.snapshot();
+      value = await backend.runtimeSnapshot();
     } catch (cause) {
       // An obsolete failure is as stale as an obsolete successful snapshot.
       if (request !== snapshotRequest.current) return;
@@ -340,6 +209,15 @@ export function DictationProvider({ children }: { children: ReactNode }) {
     );
     setLoading(false);
   }, []);
+  const refresh = useCallback(async () => {
+    const failed = savedResources.filter(
+      (resource) => queryClient.getQueryState(resourceKeys[resource])?.status === "error",
+    );
+    await Promise.all([
+      refreshRuntime(),
+      isDesktop && failed.length ? refreshSaved(queryClient, failed) : Promise.resolve(),
+    ]);
+  }, [refreshRuntime, queryClient]);
   async function run(action: () => Promise<unknown>, reload = true) {
     setError("");
     try {
@@ -356,7 +234,7 @@ export function DictationProvider({ children }: { children: ReactNode }) {
     setError("");
     toastManager.close("speech-model-download");
     try {
-      await backend.install(model.id);
+      await savedActions.install(model.id);
     } catch (cause) {
       modelDownload.current = null;
       setDownloadingModelId(null);
@@ -405,6 +283,21 @@ export function DictationProvider({ children }: { children: ReactNode }) {
     let active = true;
     const offStatus = Events.On("dictation:status", ({ data: status }: { data: Status }) => {
       if (!active) return;
+      // A status event supersedes an outstanding Home read, even when its
+      // native promise cannot be stopped. Accepted capture expires temporary
+      // text in the cache too, including while Home is unmounted.
+      void queryClient.cancelQueries({ queryKey: resourceKeys.home });
+      const accepted =
+        status.phase === "recording" ||
+        (!!status.importId && ["transcribing", "downloading"].includes(status.phase));
+      if (accepted)
+        queryClient.setQueryData<HomeResult | null>(resourceKeys.home, (value) =>
+          value && !value.saved ? null : value,
+        );
+      void queryClient.invalidateQueries({
+        queryKey: resourceKeys.home,
+        refetchType: isBusy(status.phase) ? "none" : "active",
+      });
       if (status.phase === "recording" || status.importId)
         toastManager.close("transcription-complete");
       const previous = latestStatus.current;
@@ -510,17 +403,41 @@ export function DictationProvider({ children }: { children: ReactNode }) {
         setSnapshot((old) => ({ ...old, bulkTextQueue: data }));
       },
     );
-    const offLevel = Events.On("dictation:level", ({ data: value }: { data: number }) => {
-      if (active) setLevel(value);
-    });
     const offHistory = Events.On("dictation:history", () => {
-      void refresh().catch((cause) => {
+      if (!active) return;
+      // The event covers older sessions outside the snapshot's history subset.
+      // Cancel first: invalidation alone can reuse an obsolete initial read.
+      const filters = {
+        queryKey: resourceKeys.all,
+        predicate: (query: { queryKey: readonly unknown[] }) => query.queryKey[1] !== "chat",
+      };
+      void queryClient.cancelQueries(filters).then(() => {
+        if (active) void queryClient.invalidateQueries(filters);
+      });
+      void refreshRuntime().catch((cause) => {
         if (active) setError(message(cause));
       });
     });
-    const offSetup = Events.On("setup:changed", () => {
-      void refresh().catch((cause) => {
+    const offSetup = Events.On("setup:changed", ({ data }) => {
+      if (!active) return;
+      const domains = Array.isArray(data)
+        ? savedResources.filter((resource) => data.includes(resource))
+        : savedResources;
+      void refreshSaved(queryClient, domains).catch(() => {});
+      // Unscoped events include backup restore and may replace session resources.
+      if (!Array.isArray(data))
+        void queryClient.cancelQueries({ queryKey: resourceKeys.all }).then(() => {
+          if (active) void queryClient.invalidateQueries({ queryKey: resourceKeys.all });
+        });
+      void refreshRuntime().catch((cause) => {
         if (active) setError(message(cause));
+      });
+    });
+    const offChat = Events.On("chat:changed", ({ data }: { data: string }) => {
+      if (!active) return;
+      const filters = { queryKey: resourceKeys.chat(data) };
+      void queryClient.cancelQueries(filters).then(() => {
+        if (active) void queryClient.invalidateQueries(filters);
       });
     });
     const offProfile = Events.On(
@@ -533,7 +450,7 @@ export function DictationProvider({ children }: { children: ReactNode }) {
         });
       },
     );
-    void refresh().catch((cause) => {
+    void refreshRuntime().catch((cause) => {
       if (active) setError(message(cause));
     });
     return () => {
@@ -542,44 +459,64 @@ export function DictationProvider({ children }: { children: ReactNode }) {
       offStatus();
       offQueue();
       offTextQueue();
-      offLevel();
       offHistory();
       offSetup();
+      offChat();
       offProfile();
     };
-  }, [refresh]);
+  }, [refreshRuntime, queryClient]);
   return (
-    <DictationContext.Provider
-      value={{
-        historyListCache,
-        importQueue: snapshot.importQueue ?? [],
-        processingPanelOpen,
-        setProcessingPanelOpen,
-        update,
-        checkingUpdates,
-        installingUpdate,
-        updateError,
-        checkUpdates,
-        installUpdate,
-        snapshot,
-        level,
-        error,
-        loading,
-        downloadingModelId,
-        microphoneTestVisible,
-        setMicrophoneTestVisible,
-        refresh,
-        run,
-        installModel,
-        clearError: () => setError(""),
-      }}
-    >
-      {children}
-    </DictationContext.Provider>
+    <AudioLevelProvider>
+      <DictationContext.Provider
+        value={{
+          importQueue: snapshot.importQueue ?? [],
+          processingPanelOpen,
+          setProcessingPanelOpen,
+          update,
+          checkingUpdates,
+          installingUpdate,
+          updateError,
+          checkUpdates,
+          installUpdate,
+          snapshot,
+          error:
+            error || (savedError && savedError !== dismissedSavedError ? message(savedError) : ""),
+          loading: loading || savedLoading,
+          downloadingModelId,
+          microphoneTestVisible,
+          setMicrophoneTestVisible,
+          refresh,
+          run,
+          installModel,
+          clearError: () => {
+            setError("");
+            setDismissedSavedError(savedError);
+          },
+        }}
+      >
+        {children}
+      </DictationContext.Provider>
+    </AudioLevelProvider>
   );
 }
-export function useDictation() {
+// eslint-disable-next-line react-refresh/only-export-components -- Hooks share the private runtime context.
+export function useDictationState() {
   const value = useContext(DictationContext);
   if (!value) throw new Error("DictationProvider is missing");
   return value;
+}
+
+export function useDictation() {
+  const value = useDictationState();
+  const level = useContext(LevelContext);
+  return { ...value, level };
+}
+
+function AudioLevelProvider({ children }: { children: ReactNode }) {
+  const [level, setLevel] = useState(0);
+  useEffect(() => {
+    if (!isDesktop) return;
+    return Events.On("dictation:level", ({ data }: { data: number }) => setLevel(data));
+  }, []);
+  return <LevelContext.Provider value={level}>{children}</LevelContext.Provider>;
 }

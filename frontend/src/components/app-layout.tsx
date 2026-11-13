@@ -1,7 +1,7 @@
 import appIcon from "@/assets/app-icon.svg";
 import { AudioDropImport } from "@/components/audio-drop-import";
 import { CommandMenu } from "@/components/command-menu";
-import { useDictation } from "@/components/dictation-provider";
+import { useDictationState } from "@/components/dictation-provider";
 import { ProcessingPanel, ProcessingPanelToggle } from "@/components/processing-panel";
 import { RecordingStatus } from "@/components/recording-status";
 import { RecoveryActions } from "@/components/recovery-actions";
@@ -53,7 +53,7 @@ export function AppLayout({ saveNoticeRef }: { saveNoticeRef?: Ref<HTMLDivElemen
     checkingUpdates,
     installingUpdate,
     installUpdate,
-  } = useDictation();
+  } = useDictationState();
   const location = useLocation();
   const navigate = useNavigate();
   const [dismissedUpdate, setDismissedUpdate] = useState("");

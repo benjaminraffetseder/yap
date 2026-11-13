@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Download, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
-import { useDictation } from "@/components/dictation-provider";
+import { useDictationState } from "@/components/dictation-provider";
 import { backend, isBusy, isDesktop, message, type AudioSupport } from "@/lib/backend";
 
 export function AudioSupportPanel({
@@ -15,7 +15,7 @@ export function AudioSupportPanel({
   disabled?: boolean;
 }) {
   const { t } = useTranslation();
-  const { snapshot, run } = useDictation();
+  const { snapshot, run } = useDictationState();
   const [support, setSupport] = useState<AudioSupport | null>(null);
   const [checking, setChecking] = useState(false);
   const [pending, setPending] = useState(false);

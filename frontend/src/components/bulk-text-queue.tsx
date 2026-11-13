@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router";
 import { Check, CircleAlert, CircleSlash2, Clock3, Loader2, Trash2, X } from "lucide-react";
-import { useDictation } from "@/components/dictation-provider";
+import { useDictationState } from "@/components/dictation-provider";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -11,7 +11,7 @@ import { backend } from "@/lib/backend";
 
 export function BulkTextQueue() {
   const { t } = useTranslation();
-  const { snapshot, run } = useDictation();
+  const { snapshot, run } = useDictationState();
   const [pending, setPending] = useState(false);
   const jobs = snapshot.bulkTextQueue ?? [];
   if (!jobs.length) return null;
