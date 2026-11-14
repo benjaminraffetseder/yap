@@ -1,17 +1,19 @@
-import { useState } from "react";
+import { memo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router";
 import { Check, CircleAlert, CircleSlash2, Clock3, Loader2, Trash2, X } from "lucide-react";
-import { useDictationState } from "@/components/dictation-provider";
+import { useBulkTextQueue, useDictationActions } from "@/lib/dictation-state";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { nativeText } from "@/i18n/native-text";
 import { backend } from "@/lib/backend";
 
-export function BulkTextQueue() {
+// The activity pane also renders native progress; only this queue should wake its rows.
+export const BulkTextQueue = memo(function BulkTextQueue() {
   const { t } = useTranslation();
-  const { snapshot, run } = useDictationState();
+  const { run } = useDictationActions();
+  const snapshot = { bulkTextQueue: useBulkTextQueue() };
   const [pending, setPending] = useState(false);
   const jobs = snapshot.bulkTextQueue ?? [];
   if (!jobs.length) return null;
@@ -133,4 +135,4 @@ export function BulkTextQueue() {
       </ul>
     </section>
   );
-}
+});

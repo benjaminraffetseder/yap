@@ -3,7 +3,13 @@ import { refreshSaved, resourceKeys } from "@/lib/resource-queries";
 import { useSavedActions } from "@/lib/saved-queries";
 import { nativeText } from "@/i18n/native-text";
 import { useTranslation } from "react-i18next";
-import { useDictationState } from "@/components/dictation-provider";
+import {
+  useDictationActions,
+  useDictationConnection,
+  useDictationPhase,
+  useSavedConfiguration,
+  useSavedModelCatalog,
+} from "@/lib/dictation-state";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -86,7 +92,13 @@ export function HomeProfileActions({
   const { t } = useTranslation();
   const savedActions = useSavedActions();
   const queryClient = useQueryClient();
-  const { snapshot, loading, refresh } = useDictationState();
+  const { refresh } = useDictationActions();
+  const { loading } = useDictationConnection();
+  const snapshot = {
+    ...useSavedConfiguration(),
+    ...useSavedModelCatalog(),
+    status: { phase: useDictationPhase() },
+  };
   const [review, setReview] = useState<Review | null>(null);
   const [expanded, setExpanded] = useState(false);
   const [name, setName] = useState("");

@@ -4,7 +4,14 @@ import { AutoSaveStatus } from "@/components/auto-save-status";
 import { BackupPanel } from "@/components/backup-panel";
 import { DiagnosticsPanel } from "@/components/diagnostics-panel";
 import { ProfilesPanel } from "@/components/dictation-profiles";
-import { useDictationState } from "@/components/dictation-provider";
+import {
+  useAppUpdates,
+  useDictationActions,
+  useDictationActivity,
+  useDictationConnection,
+  useDictationMetadata,
+  useSavedConfiguration,
+} from "@/lib/dictation-state";
 import { ProfileSettingIndicator } from "@/components/profile-setting-indicator";
 import { RecordingStatus } from "@/components/recording-status";
 import { RecoveryActions } from "@/components/recovery-actions";
@@ -117,15 +124,14 @@ export function SettingsPage({
     ? searchParams.get("section")!
     : "dictation";
   const { theme, setTheme } = useTheme();
-  const {
-    snapshot,
-    run,
-    refresh,
-    clearError,
-    loading,
-    error: connectionError,
-    update: appUpdate,
-  } = useDictationState();
+  const { run, refresh, clearError } = useDictationActions();
+  const { loading, error: connectionError } = useDictationConnection();
+  const { update: appUpdate } = useAppUpdates();
+  const snapshot = {
+    ...useSavedConfiguration(),
+    ...useDictationMetadata(),
+    status: useDictationActivity(),
+  };
   const connectionFailure =
     !!connectionError && (loading || connectionError === backendVersionMismatchMessage);
   const [settings, setSettings, settingsDraft] = useSavedDraft(
@@ -380,7 +386,7 @@ export function SettingsPage({
       for (const step of steps) await step();
       settingsDraft.markSubmitted(settings);
       shortcutDraft.markSubmitted(profileShortcut);
-      await refresh();
+      await run(refresh, false);
     } catch (cause) {
       await refresh().catch(() => {});
       toastManager.add({

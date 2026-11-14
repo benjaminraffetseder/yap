@@ -1,7 +1,12 @@
 import { AudioPlayer } from "@/components/audio-player";
 import { ChatSourceText } from "@/components/chat-source-text";
 import { CopyButton } from "@/components/copy-button";
-import { useDictationState } from "@/components/dictation-provider";
+import {
+  useDictationActions,
+  useDictationConnection,
+  useDictationPhase,
+  useProcessingPanelState,
+} from "@/lib/dictation-state";
 import { GeneratedOutputs } from "@/components/generated-outputs";
 import { InferenceStats } from "@/components/inference-stats";
 import { SessionTitleAction } from "@/components/session-title-action";
@@ -54,14 +59,10 @@ export function HistoryEntryPage() {
 
 function EntryDetail({ id }: { id: string }) {
   const { t } = useTranslation();
-  const {
-    snapshot,
-    loading: connecting,
-    run,
-    refresh,
-    processingPanelOpen,
-    setProcessingPanelOpen,
-  } = useDictationState();
+  const { run, refresh } = useDictationActions();
+  const { loading: connecting } = useDictationConnection();
+  const { processingPanelOpen, setProcessingPanelOpen } = useProcessingPanelState();
+  const snapshot = { status: { phase: useDictationPhase() } };
   const navigate = useNavigate();
   const location = useLocation();
   const back = `/history${location.search}`;

@@ -4,7 +4,7 @@ import { Loader2, Pencil, Sparkles, Square } from "lucide-react";
 import { nativeText } from "@/i18n/native-text";
 import { backend, isBusy, message, type Session } from "@/lib/backend";
 import { useTextRequest } from "@/lib/use-text-request";
-import { useDictationState } from "@/components/dictation-provider";
+import { useDictationPhase, useSavedConfiguration } from "@/lib/dictation-state";
 import { Button } from "@/components/ui/button";
 import {
   InputGroup,
@@ -123,7 +123,7 @@ function SessionTitleForm({
   onCancel: () => void;
 }) {
   const { t } = useTranslation();
-  const { snapshot } = useDictationState();
+  const snapshot = { ...useSavedConfiguration(), status: { phase: useDictationPhase() } };
   const id = useId();
   const input = useRef<HTMLInputElement>(null);
   const [draft, setDraft] = useState(entry.title ?? "");

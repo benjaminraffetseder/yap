@@ -1,5 +1,9 @@
 import { useTranslation } from "react-i18next";
-import { useDictationState } from "@/components/dictation-provider";
+import {
+  useDictationActions,
+  useDictationConnection,
+  useSavedConfiguration,
+} from "@/lib/dictation-state";
 import { MotionReveal } from "@/components/motion-reveal";
 import { backend, isDesktop } from "@/lib/backend";
 import { fade } from "@/lib/motion";
@@ -11,7 +15,9 @@ import { useEffect, useRef, useState } from "react";
 
 export function AudioDropImport() {
   const { t } = useTranslation();
-  const { snapshot, loading, run } = useDictationState();
+  const { run } = useDictationActions();
+  const { loading } = useDictationConnection();
+  const snapshot = useSavedConfiguration();
   const [dragging, setDragging] = useState(false);
   const reduced = useMotionPreference();
   const pending = useRef(false);

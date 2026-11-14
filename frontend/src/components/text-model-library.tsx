@@ -3,7 +3,13 @@ import { useState } from "react";
 import { Check, Download, Trash2, Wrench } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router";
-import { useDictationState } from "@/components/dictation-provider";
+import {
+  useDictationActions,
+  useDictationConnection,
+  useDictationStatus,
+  useSavedConfiguration,
+  useSavedModelCatalog,
+} from "@/lib/dictation-state";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { ActionMenu, ActionMenuItem } from "@/components/ui/action-menu";
@@ -28,7 +34,13 @@ export function TextModelLibrary({
 }) {
   const { t, i18n } = useTranslation();
   const savedActions = useSavedActions();
-  const { snapshot, loading, run, refresh } = useDictationState();
+  const { run, refresh } = useDictationActions();
+  const { loading } = useDictationConnection();
+  const snapshot = {
+    ...useSavedConfiguration(),
+    ...useSavedModelCatalog(),
+    status: useDictationStatus(),
+  };
   const [removing, setRemoving] = useState<TextModel | null>(null);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");

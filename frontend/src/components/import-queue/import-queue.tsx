@@ -1,17 +1,19 @@
 import { useTranslation } from "react-i18next";
-import { useDictation } from "@/components/dictation-provider";
+import { useDictationActions, useImportQueue } from "@/lib/dictation-state";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { toastManager } from "@/components/ui/toast";
 import { backend, importPending, message } from "@/lib/backend";
 import { Trash2 } from "lucide-react";
 import { Reorder } from "motion/react";
-import { useRef, useState } from "react";
+import { memo, useRef, useState } from "react";
 import { ImportQueueRow } from "./import-queue-row";
 
-export function ImportQueue() {
+// The activity pane also renders native progress; only this queue should wake its rows.
+export const ImportQueue = memo(function ImportQueue() {
   const { t } = useTranslation();
-  const { importQueue: jobs, run, refresh } = useDictation();
+  const { run, refresh } = useDictationActions();
+  const jobs = useImportQueue();
   const [order, setOrder] = useState<string[] | null>(null);
   const [saving, setSaving] = useState(false);
   const draft = useRef<string[] | null>(null);
@@ -110,4 +112,4 @@ export function ImportQueue() {
       </Reorder.Group>
     </section>
   );
-}
+});

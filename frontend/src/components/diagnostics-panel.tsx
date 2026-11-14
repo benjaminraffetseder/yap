@@ -3,12 +3,23 @@ import { useTranslation } from "react-i18next";
 import { useEffect, useRef, useState } from "react";
 import { Check, Loader2, RefreshCw, Square } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { useDictation } from "@/components/dictation-provider";
+import {
+  useAudioLevel,
+  useDictationActions,
+  useDictationMetadata,
+  useDictationPhase,
+  useSavedConfiguration,
+} from "@/lib/dictation-state";
 import { backend, isBusy, isDesktop, message, type DiagnosticCheck } from "@/lib/backend";
 
 export function DiagnosticsPanel({ disabled = false }: { disabled?: boolean }) {
   const { t } = useTranslation();
-  const { snapshot, run, level } = useDictation();
+  const { run } = useDictationActions();
+  const snapshot = {
+    ...useSavedConfiguration(),
+    ...useDictationMetadata(),
+    status: { phase: useDictationPhase() },
+  };
   const [checks, setChecks] = useState<DiagnosticCheck[]>([]);
   const [checking, setChecking] = useState(false);
   const [checkError, setCheckError] = useState("");
@@ -107,13 +118,7 @@ export function DiagnosticsPanel({ disabled = false }: { disabled?: boolean }) {
       </p>
       {recording && (
         <div className="space-y-2">
-          <meter
-            aria-label={t("diagnosticsPanel.dictationTestMicrophoneLevel")}
-            className="h-4 w-full"
-            min={0}
-            max={1}
-            value={level}
-          />
+          <DictationTestLevelMeter />
           <p role="status" className="text-sm">
             {t("diagnosticsPanel.sayAShortSentenceThenStopThe")}
           </p>
@@ -182,5 +187,19 @@ export function DiagnosticsPanel({ disabled = false }: { disabled?: boolean }) {
         </div>
       )}
     </section>
+  );
+}
+
+function DictationTestLevelMeter() {
+  const { t } = useTranslation();
+  const level = useAudioLevel();
+  return (
+    <meter
+      aria-label={t("diagnosticsPanel.dictationTestMicrophoneLevel")}
+      className="h-4 w-full"
+      min={0}
+      max={1}
+      value={level}
+    />
   );
 }

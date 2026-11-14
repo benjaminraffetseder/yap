@@ -1,6 +1,6 @@
 import { ChatCitationContent } from "@/components/chat-citation-content";
 import { CopyButton } from "@/components/copy-button";
-import { useDictationState } from "@/components/dictation-provider";
+import { useDictationPhase, useSavedConfiguration } from "@/lib/dictation-state";
 import { MarkdownContent } from "@/components/markdown-content";
 import { TranscriptDiff } from "@/components/transcript-diff";
 import { Button } from "@/components/ui/button";
@@ -106,7 +106,7 @@ export function TranscriptionChat({
   onApplied: () => void;
 }) {
   const { t } = useTranslation();
-  const { snapshot } = useDictationState();
+  const snapshot = { ...useSavedConfiguration(), status: { phase: useDictationPhase() } };
   const queryClient = useQueryClient();
   const savedChat = useQuery(chatQuery(session.id));
   const chat: SessionChat = savedChat.data ?? {

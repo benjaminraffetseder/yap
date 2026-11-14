@@ -1,6 +1,6 @@
 import { useSavedActions } from "@/lib/saved-queries";
 import { AutoSaveStatus } from "@/components/auto-save-status";
-import { useDictationState } from "@/components/dictation-provider";
+import { useDictationPhase, useSavedConfiguration } from "@/lib/dictation-state";
 import { RevisionHistory } from "@/components/revision-history";
 import { TextPanel } from "@/components/text-panel";
 import { TranscriptContextMenu } from "@/components/transcript-context-menu";
@@ -57,7 +57,7 @@ export function TranscriptEditor({
   const [processing, setProcessing] = useState(false);
   const [referenceTab, setReferenceTab] = useState("original");
   const [compare, setCompare] = useState(false);
-  const { snapshot } = useDictationState();
+  const snapshot = { ...useSavedConfiguration(), status: { phase: useDictationPhase() } };
   const busy = isBusy(snapshot.status.phase);
   const input = useRef<HTMLTextAreaElement>(null);
   useEffect(() => {

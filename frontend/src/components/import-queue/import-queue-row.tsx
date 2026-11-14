@@ -1,7 +1,7 @@
 import { useTranslation } from "react-i18next";
 import { nativeText } from "@/i18n/native-text";
 import i18n from "@/i18n";
-import { useDictation } from "@/components/dictation-provider";
+import { useDictationActions } from "@/lib/dictation-state";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { backend, importPending, type ImportJob } from "@/lib/backend";
@@ -32,7 +32,7 @@ export function ImportQueueRow({
 }) {
   const { t } = useTranslation();
   const controls = useDragControls();
-  const { run } = useDictation();
+  const { run } = useDictationActions();
   const reduced = useMotionPreference();
   const queued = job.state === "queued";
   const pending = importPending(job);

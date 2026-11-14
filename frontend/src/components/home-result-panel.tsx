@@ -1,4 +1,8 @@
-import { useDictationState } from "@/components/dictation-provider";
+import {
+  useDictationActions,
+  useDictationActivity,
+  useDictationConnection,
+} from "@/lib/dictation-state";
 import { InferenceStats } from "@/components/inference-stats";
 import { MarkdownContent } from "@/components/markdown-content";
 import { TranscriptContextMenu } from "@/components/transcript-context-menu";
@@ -49,7 +53,9 @@ export function HomeResultPanel({
   embedded?: boolean;
 }) {
   const { t } = useTranslation();
-  const { snapshot, loading, refresh } = useDictationState();
+  const { refresh } = useDictationActions();
+  const { loading } = useDictationConnection();
+  const snapshot = { status: useDictationActivity() };
   const [editing, setEditing] = useState<HomeResult | null>(null);
   const [refreshFailed, setRefreshFailed] = useState(false);
   const [pending, setPending] = useState(false);

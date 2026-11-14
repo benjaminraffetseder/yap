@@ -1,6 +1,12 @@
 import { useConfiguration, useSavedActions } from "@/lib/saved-queries";
 import { AutoSaveStatus } from "@/components/auto-save-status";
-import { useDictationState } from "@/components/dictation-provider";
+import {
+  useDictationActions,
+  useDictationConnection,
+  useDictationPhase,
+  useSavedConfiguration,
+  useSavedModelCatalog,
+} from "@/lib/dictation-state";
 import { ProfileSettingIndicator } from "@/components/profile-setting-indicator";
 import { PromptChainsEditor } from "@/components/prompt-chains-editor";
 import { RevisionHistory } from "@/components/revision-history";
@@ -104,7 +110,13 @@ export function PromptsPage() {
   const section = sections.some((item) => item.value === searchParams.get("section"))
     ? searchParams.get("section")!
     : "prompts";
-  const { snapshot, refresh, clearError, loading } = useDictationState();
+  const { refresh, clearError, run } = useDictationActions();
+  const { loading } = useDictationConnection();
+  const snapshot = {
+    ...useSavedConfiguration(),
+    ...useSavedModelCatalog(),
+    status: { phase: useDictationPhase() },
+  };
   const saved = configuration.data?.textProcessing ?? snapshot.textProcessing;
   const [draft, setDraft, draftState] = useSavedDraft<TextProcessing>("prompts", saved);
   const [selected, setSelected] = useState(saved.prompts[0]?.id ?? "");
@@ -261,7 +273,7 @@ export function PromptsPage() {
       await savedActions.textProcessing(draft);
       draftState.markSubmitted(draft);
       modelTest.clear();
-      await refresh();
+      await run(refresh, false);
     } catch (cause) {
       setSaveError(message(cause));
       toastManager.add({

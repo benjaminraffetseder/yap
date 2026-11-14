@@ -1,5 +1,12 @@
 import { useSavedActions } from "@/lib/saved-queries";
-import { useDictationState } from "@/components/dictation-provider";
+import {
+  useDictationActions,
+  useDictationConnection,
+  useDictationStatus,
+  useModelDownload,
+  useSavedConfiguration,
+  useSavedModelCatalog,
+} from "@/lib/dictation-state";
 import { ModelCard } from "@/components/model-card";
 import { ModelGuidance } from "@/components/model-guidance";
 import { PageHeading } from "@/components/page-heading";
@@ -53,7 +60,14 @@ export function ModelsPage({ embedded = false }: { embedded?: boolean }) {
       : "speech";
   const locale = i18n.resolvedLanguage ?? "en";
   const guidanceId = useId();
-  const { snapshot, run, refresh, loading, installModel, downloadingModelId } = useDictationState();
+  const { run, refresh, installModel } = useDictationActions();
+  const { loading } = useDictationConnection();
+  const { downloadingModelId } = useModelDownload();
+  const snapshot = {
+    ...useSavedConfiguration(),
+    ...useSavedModelCatalog(),
+    status: useDictationStatus(),
+  };
   const [removing, setRemoving] = useState<Model | null>(null);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");

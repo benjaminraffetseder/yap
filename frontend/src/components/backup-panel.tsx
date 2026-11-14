@@ -1,5 +1,5 @@
 import { useSavedActions } from "@/lib/saved-queries";
-import { useDictationState } from "@/components/dictation-provider";
+import { useDictationActions, useDictationStatus } from "@/lib/dictation-state";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -38,7 +38,8 @@ function restoredMessage(summary: BackupSummary) {
 export function BackupPanel({ disabled, unsaved }: { disabled: boolean; unsaved: boolean }) {
   const { t } = useTranslation();
   const savedActions = useSavedActions();
-  const { refresh, snapshot } = useDictationState();
+  const { refresh } = useDictationActions();
+  const snapshot = { status: useDictationStatus() };
   const [audio, setAudio] = useState(false);
   const [preferences, setPreferences] = useState(false);
   const [preview, setPreview] = useState<BackupPreview | null>(null);

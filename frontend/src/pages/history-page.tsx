@@ -1,7 +1,11 @@
 import { AudioImportButton } from "@/components/audio-import-button";
 import { BulkTextDialog } from "@/components/bulk-text-dialog";
 import { CopyButton } from "@/components/copy-button";
-import { useDictationState } from "@/components/dictation-provider";
+import {
+  useDictationActions,
+  useDictationActivity,
+  useDictationConnection,
+} from "@/lib/dictation-state";
 import { HistorySearch } from "@/components/history-search";
 import { HistoryTable } from "@/components/history-table";
 import { PageHeading } from "@/components/page-heading";
@@ -84,7 +88,9 @@ export function HistoryPage({ active = true }: { active?: boolean }) {
 
 function HistoryList({ viewToggle, active }: { viewToggle: ReactNode; active: boolean }) {
   const { t } = useTranslation();
-  const { snapshot, run, refresh, loading: connecting } = useDictationState();
+  const { run, refresh } = useDictationActions();
+  const { loading: connecting } = useDictationConnection();
+  const snapshot = { status: useDictationActivity() };
   const [params, setParams] = useSearchParams();
   const deleted = params.get("view") === "deleted";
   const query = (params.get("q") ?? "").slice(0, 250);

@@ -1,4 +1,4 @@
-import { useDictationState } from "@/components/dictation-provider";
+import { useAppUpdates } from "@/lib/dictation-state";
 import { SettingsSection } from "@/components/settings-section";
 import { Button } from "@/components/ui/button";
 import i18n from "@/i18n";
@@ -8,7 +8,7 @@ import { useTranslation } from "react-i18next";
 export function UpdatePanel() {
   const { t } = useTranslation();
   const { update, checkingUpdates, installingUpdate, updateError, checkUpdates, installUpdate } =
-    useDictationState();
+    useAppUpdates();
   return (
     <SettingsSection
       title={t("updatePanel.appUpdates")}

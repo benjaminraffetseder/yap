@@ -1,3 +1,4 @@
+import { useCallback } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { backend, isDesktop } from "@/lib/backend";
 import {
@@ -35,7 +36,8 @@ function useSavedMutation<Args extends unknown[], Result>(
           })
         : undefined,
   });
-  return (...args: Args) => mutation.mutateAsync(args);
+  const mutateAsync = mutation.mutateAsync;
+  return useCallback((...args: Args) => mutateAsync(args), [mutateAsync]);
 }
 
 // Only persisted resources use this small set of mutation boundaries. Progress,

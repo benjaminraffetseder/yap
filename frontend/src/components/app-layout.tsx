@@ -1,7 +1,12 @@
 import appIcon from "@/assets/app-icon.svg";
 import { AudioDropImport } from "@/components/audio-drop-import";
 import { CommandMenu } from "@/components/command-menu";
-import { useDictationState } from "@/components/dictation-provider";
+import {
+  useAppUpdates,
+  useDictationActions,
+  useDictationConnection,
+  useSavedConfiguration,
+} from "@/lib/dictation-state";
 import { ProcessingPanel, ProcessingPanelToggle } from "@/components/processing-panel";
 import { RecordingStatus } from "@/components/recording-status";
 import { RecoveryActions } from "@/components/recovery-actions";
@@ -9,7 +14,7 @@ import { Button } from "@/components/ui/button";
 import { toastManager } from "@/components/ui/toast";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { nativeText } from "@/i18n/native-text";
-import { backendVersionMismatchMessage, isDesktop } from "@/lib/backend";
+import { backendVersionMismatchMessage, isDesktop, message } from "@/lib/backend";
 import { cn } from "@/lib/utils";
 import { Events } from "@wailsio/runtime";
 import { BookOpen, HardDriveDownload, History, Mic, Settings2, Sparkles } from "lucide-react";
@@ -41,19 +46,10 @@ export function AppLayout({ saveNoticeRef }: { saveNoticeRef?: Ref<HTMLDivElemen
     { to: "/settings", label: t("common.settings"), icon: Settings2 },
   ];
 
-  const {
-    snapshot,
-    error,
-    clearError,
-    loading,
-    run,
-    refresh,
-    update,
-    updateError,
-    checkingUpdates,
-    installingUpdate,
-    installUpdate,
-  } = useDictationState();
+  const { clearError, run, refresh } = useDictationActions();
+  const { error, loading, savedReadError } = useDictationConnection();
+  const { update, updateError, checkingUpdates, installingUpdate, installUpdate } = useAppUpdates();
+  const snapshot = useSavedConfiguration();
   const location = useLocation();
   const navigate = useNavigate();
   const [dismissedUpdate, setDismissedUpdate] = useState("");
@@ -105,7 +101,25 @@ export function AppLayout({ saveNoticeRef }: { saveNoticeRef?: Ref<HTMLDivElemen
     };
   }, [navigate]);
   useEffect(() => {
-    if (!error || connectionFailure) return;
+    if (!savedReadError || connectionFailure) {
+      toastManager.close("saved-read-error");
+      return;
+    }
+    toastManager.add({
+      id: "saved-read-error",
+      type: "error",
+      title: nativeText(message(savedReadError)),
+      priority: "high",
+      timeout: 0,
+      actionProps: {
+        children: t("appLayout.retryLoading"),
+        onClick: () => void run(refresh, false),
+      },
+    });
+  }, [savedReadError, connectionFailure, refresh, run, t]);
+  useEffect(() => {
+    if (!error || connectionFailure || (savedReadError && error === message(savedReadError)))
+      return;
     toastManager.add({
       id: "app-error",
       type: "error",
@@ -114,7 +128,7 @@ export function AppLayout({ saveNoticeRef }: { saveNoticeRef?: Ref<HTMLDivElemen
       timeout: 8000,
     });
     clearError();
-  }, [error, connectionFailure, clearError]);
+  }, [error, connectionFailure, clearError, savedReadError]);
 
   return (
     <TooltipProvider delay={250}>

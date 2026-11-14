@@ -14041,7 +14041,19 @@ for (const form of ["settings", "prompts"] as const) {
         .filter({ hasText: "Saved configuration unavailable after commit" })
         .first(),
     ).toBeVisible();
+    await expect(
+      page
+        .locator('[data-slot="toast"]')
+        .filter({ hasText: "Saved configuration unavailable after commit" }),
+    ).toHaveCount(1);
+    await expect(page.getByRole("button", { name: "Retry loading", exact: true })).toBeVisible();
     await expect(field).toHaveValue(submitted);
+
+    await page.getByRole("button", { name: "Retry loading", exact: true }).click();
+    await expect(page.getByRole("button", { name: "Retry loading", exact: true })).toBeVisible();
+    expect(await page.evaluate(() => Reflect.get(window, "saveReadRecovery").writes.length)).toBe(
+      1,
+    );
 
     // A later full-object save must keep the already committed field while its
     // saved baseline is unavailable.
@@ -14086,12 +14098,13 @@ for (const form of ["settings", "prompts"] as const) {
     );
     await page.evaluate(() => {
       Reflect.get(window, "saveReadRecovery").failReads = false;
-      window.dictationTest.callbacks["setup:changed"](["configuration"]);
     });
+    await page.getByRole("button", { name: "Retry loading", exact: true }).click();
     await expect
       .poll(() => page.evaluate(() => Reflect.get(window, "saveReadRecovery").successfulReads))
       .toBeGreaterThan(reads);
     await settle(page);
+    await expect(page.getByRole("button", { name: "Retry loading", exact: true })).toHaveCount(0);
     await expect(field).toHaveValue(submitted);
     await expect(status).toHaveText(form === "settings" ? "Saved" : "Changes save automatically");
     expect(await page.evaluate(() => Reflect.get(window, "saveReadRecovery").writes.length)).toBe(

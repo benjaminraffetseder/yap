@@ -71,7 +71,9 @@ if (methods) {
       const name = String(args.methodName).split(".").at(-1)!;
       if (name === "SetIndicatorTheme" && !methods[name]) return;
       if (typeof methods[name] !== "function") throw new ReferenceError(`Unknown method: ${name}`);
-      return methods[name](...args.args);
+      // Native responses cross a serialization boundary. Returning a fixture's
+      // live object lets simulated backend writes silently mutate Query's cache.
+      return structuredClone(await methods[name](...args.args));
     },
   });
 

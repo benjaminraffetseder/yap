@@ -10,7 +10,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { useDictationState } from "@/components/dictation-provider";
+import { useDictationPhase, useSavedConfiguration } from "@/lib/dictation-state";
 import { backend, isBusy } from "@/lib/backend";
 import { useTextRequest } from "@/lib/use-text-request";
 import { TextPanel } from "@/components/text-panel";
@@ -26,7 +26,7 @@ export function TranscriptProcessor({
   onUse: (result: string) => void;
 }) {
   const { t } = useTranslation();
-  const { snapshot } = useDictationState();
+  const snapshot = { ...useSavedConfiguration(), status: { phase: useDictationPhase() } };
   const { prompts } = snapshot.textProcessing;
   const [selected, setSelected] = useState(prompts[0]?.id ?? "");
   const generation = useTextRequest();

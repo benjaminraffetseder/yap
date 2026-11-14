@@ -118,6 +118,10 @@ automatically. Draft baselines come from Query, while `useSavedDraft` retains ed
 and reconciles acknowledged fields against the latest baseline. A successful write
 whose follow-up read fails retains its submitted draft across navigation until a
 fresh saved baseline arrives; later edits must not restore stale saved fields.
+Confirmed autosaves refresh through the error-reporting command boundary, so a
+failed read cannot turn a successful write into a save failure. Cached saved-read
+errors retain a notification with **Retry loading**; it retries reads without
+replaying writes and closes once those reads recover.
 
 The main app's Wails listeners invalidate resources directly on
 `dictation:history`, session-specific `chat:changed`, and `setup:changed` (including
@@ -134,13 +138,31 @@ native events can precede a write's response or be absent after an error.
 Cancelling a query discards obsolete replies, but does not stop native inference;
 text-generation and chat request owners must still cancel by request ID.
 
-`DictationProvider` owns runtime status, import/text queues and runtime snapshot
-synchronization, including its request and revision guards. Its compatibility
-`snapshot` projects Query baselines onto runtime data; it stores no saved copy.
-Audio levels have their own context/subscription. Configuration screens use
-`useDictationState` and focused saved-query hooks, so audio samples do not drive
-those screens. Live download progress, recording, inference, cancellation and
-streaming retain their native/request owners. Interface language remains local.
+`DictationProvider` composes separate contexts for commands, connection state,
+runtime metadata, status, phase, queues, updater state and panel controls.
+`useDictationRuntime` owns native events and runtime synchronization, including
+the existing request and revision guards. `useAppUpdateState` owns updater
+requests/events. Commands and context values retain stable references when their
+domain does not change.
+
+Consumers use the focused hooks in `frontend/src/lib/dictation-state.ts`:
+`useDictationActions` for commands, `useDictationPhase` for phase-only guards,
+`useDictationActivity` for operation identity/errors without progress, and
+`useDictationStatus` when the message, transcript or progress is needed. Import
+and text queues subscribe separately. Saved configuration/catalog/vocabulary
+hooks read Query directly; they keep no additional saved copy. The broad
+`useDictationState` and `useDictation` interfaces remain compatibility wrappers;
+application components use the focused hooks instead.
+
+Audio levels have their own provider/subscription and are read inside small meter
+components in Home, setup and diagnostics. Queue rows and command-only components
+do not subscribe to audio. Browser render-count regressions verify that progress,
+queue and audio events leave unrelated consumers idle while operation errors
+still reach their readers. Live recording, inference, cancellation and streaming
+retain their native/request owners. Interface language remains local.
+Queue roots are memoized so the activity pane's native-progress updates do not
+rerender either queue through their parent; their own queue contexts still update
+them. A browser call-count regression covers the actual queue components.
 
 This stage is reversible: the older full snapshot and all existing setters remain
 available, and no database/schema or persisted format changed. Reverting the

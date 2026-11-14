@@ -1,5 +1,14 @@
 import { useSavedActions } from "@/lib/saved-queries";
-import { useDictationState } from "@/components/dictation-provider";
+import {
+  useAppUpdates,
+  useDictationActions,
+  useDictationConnection,
+  useDictationMetadata,
+  useDictationPhase,
+  useProcessingPanelState,
+  useSavedConfiguration,
+  useSavedModelCatalog,
+} from "@/lib/dictation-state";
 import { useTheme } from "@/components/theme-provider";
 import {
   Command,
@@ -57,7 +66,7 @@ export function CommandMenu({
   onOpenChange: (open: boolean) => void;
 }) {
   const { t } = useTranslation();
-  const { run } = useDictationState();
+  const { run } = useDictationActions();
   const [pending, setPending] = useState(false);
   const running = useRef(false);
 
@@ -125,17 +134,17 @@ function CommandMenuContent({
   const { t } = useTranslation();
   const savedActions = useSavedActions();
   const navigate = useNavigate();
-  const {
-    snapshot,
-    loading,
-    run,
-    update,
-    checkingUpdates,
-    installingUpdate,
-    checkUpdates,
-    installUpdate,
-    setProcessingPanelOpen,
-  } = useDictationState();
+  const { run } = useDictationActions();
+  const { loading } = useDictationConnection();
+  const { update, checkingUpdates, installingUpdate, checkUpdates, installUpdate } =
+    useAppUpdates();
+  const { setProcessingPanelOpen } = useProcessingPanelState();
+  const snapshot = {
+    ...useSavedConfiguration(),
+    ...useSavedModelCatalog(),
+    ...useDictationMetadata(),
+    status: { phase: useDictationPhase() },
+  };
   const { theme, setTheme } = useTheme();
   const { settings, status, latestResult } = snapshot;
   const [query, setQuery] = useState("");

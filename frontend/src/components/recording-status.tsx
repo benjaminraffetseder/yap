@@ -1,17 +1,24 @@
 import { useTranslation } from "react-i18next";
 import { nativeText } from "@/i18n/native-text";
-import { useDictation } from "@/components/dictation-provider";
+import {
+  useAudioLevel,
+  useDictationActions,
+  useDictationMetadata,
+  useDictationStatus,
+  useMicrophoneTestState,
+} from "@/lib/dictation-state";
 import { backend, duration } from "@/lib/backend";
 import { AudioLines, Loader2, Square, X } from "lucide-react";
 import { useEffect, useState } from "react";
 export function RecordingStatus({ inline = false }: { inline?: boolean }) {
   const { t } = useTranslation();
-  const {
-    snapshot: { status, floatingIndicator, recordingSaveHistory },
-    level,
-    run,
-    microphoneTestVisible,
-  } = useDictation();
+  const { run } = useDictationActions();
+  const { microphoneTestVisible } = useMicrophoneTestState();
+  const { status, floatingIndicator, recordingSaveHistory } = {
+    ...useDictationMetadata(),
+    status: useDictationStatus(),
+  };
+  const level = useAudioLevel();
   const [now, setNow] = useState(Date.now());
   const recording = status.phase === "recording";
   const diagnostic = status.phase.startsWith("diagnostic-");

@@ -1,5 +1,13 @@
 import { useSavedActions } from "@/lib/saved-queries";
-import { useDictation } from "@/components/dictation-provider";
+import {
+  useAudioLevel,
+  useDictationActions,
+  useDictationMetadata,
+  useDictationStatus,
+  useMicrophoneTestState,
+  useSavedConfiguration,
+  useSavedModelCatalog,
+} from "@/lib/dictation-state";
 import { MotionReveal } from "@/components/motion-reveal";
 import { ShortcutInput } from "@/components/shortcut-input";
 import { ShortcutStatus } from "@/components/shortcut-status";
@@ -72,7 +80,14 @@ export function SetupPage() {
     },
   ];
 
-  const { snapshot, run, level, setMicrophoneTestVisible } = useDictation();
+  const { run } = useDictationActions();
+  const { setMicrophoneTestVisible } = useMicrophoneTestState();
+  const snapshot = {
+    ...useSavedConfiguration(),
+    ...useSavedModelCatalog(),
+    ...useDictationMetadata(),
+    status: useDictationStatus(),
+  };
   const [navigation, setNavigation] = useState({ step: 0, direction: 1, animate: false });
   const { step } = navigation;
   const [celebratedMic, setCelebratedMic] = useState(snapshot.microphoneTested);
@@ -180,7 +195,6 @@ export function SetupPage() {
   const dictationReady = snapshot.ready && micPassed && shortcutPassed;
   const completed = [snapshot.ready, micPassed, shortcutPassed, textReady];
   const canContinue = completed[step];
-  const inputLevel = Math.min(1, Math.max(0, level));
   const guidance = canContinue
     ? step === steps.length - 1
       ? t("setupPage.everythingIsReadyLetSStartDictating")
@@ -425,32 +439,7 @@ export function SetupPage() {
                     <Mic className="size-7" aria-hidden="true" />
                   )}
                 </span>
-                {testing && (
-                  <div className="w-full max-w-xs">
-                    <div aria-hidden="true" className="flex h-12 items-end gap-1.5">
-                      {Array.from({ length: 24 }, (_, index) => (
-                        <span
-                          key={index}
-                          className={cn(
-                            "h-full min-w-0 flex-1 rounded-sm transition-colors motion-reduce:transition-none",
-                            inputLevel * 24 > index ? "bg-primary" : "bg-muted",
-                          )}
-                        />
-                      ))}
-                    </div>
-                    <div className="mt-3 flex items-center justify-between text-xs text-muted-foreground">
-                      <span>{t("setupPage.inputLevel")}</span>
-                      <span className="tabular-nums">{`${Math.round(inputLevel * 100)}%`}</span>
-                    </div>
-                    <meter
-                      aria-label={t("setupPage.microphoneLevel")}
-                      className="sr-only"
-                      min={0}
-                      max={1}
-                      value={level}
-                    />
-                  </div>
-                )}
+                {testing && <MicrophoneLevelMeter />}
                 <div className="text-center">
                   <p
                     role="status"
@@ -690,5 +679,37 @@ function MicrophoneSuccess({
         <Check className="size-7" aria-hidden="true" />
       </MotionReveal>
     </>
+  );
+}
+
+function MicrophoneLevelMeter() {
+  const { t } = useTranslation();
+  const level = useAudioLevel();
+  const inputLevel = Math.min(1, Math.max(0, level));
+  return (
+    <div className="w-full max-w-xs">
+      <div aria-hidden="true" className="flex h-12 items-end gap-1.5">
+        {Array.from({ length: 24 }, (_, index) => (
+          <span
+            key={index}
+            className={cn(
+              "h-full min-w-0 flex-1 rounded-sm transition-colors motion-reduce:transition-none",
+              inputLevel * 24 > index ? "bg-primary" : "bg-muted",
+            )}
+          />
+        ))}
+      </div>
+      <div className="mt-3 flex items-center justify-between text-xs text-muted-foreground">
+        <span>{t("setupPage.inputLevel")}</span>
+        <span className="tabular-nums">{`${Math.round(inputLevel * 100)}%`}</span>
+      </div>
+      <meter
+        aria-label={t("setupPage.microphoneLevel")}
+        className="sr-only"
+        min={0}
+        max={1}
+        value={level}
+      />
+    </div>
   );
 }

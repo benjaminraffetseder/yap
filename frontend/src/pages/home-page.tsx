@@ -4,7 +4,15 @@ import { useTranslation } from "react-i18next";
 import { nativeText } from "@/i18n/native-text";
 import { AudioImportButton } from "@/components/audio-import-button";
 import { ProfileSelector } from "@/components/dictation-profiles";
-import { useDictation } from "@/components/dictation-provider";
+import {
+  useAudioLevel,
+  useDictationActions,
+  useDictationConnection,
+  useDictationMetadata,
+  useDictationStatus,
+  useSavedConfiguration,
+  useSavedModelCatalog,
+} from "@/lib/dictation-state";
 import { HomeResultPanel } from "@/components/home-result-panel";
 import { ShortcutStatus } from "@/components/shortcut-status";
 import { Button } from "@/components/ui/button";
@@ -37,8 +45,14 @@ export function HomePage() {
   const savedActions = useSavedActions();
   const navigate = useNavigate();
   const resultFallback = useRef<HTMLButtonElement>(null);
-  const reduced = useMotionPreference();
-  const { snapshot, loading, level, run, installModel } = useDictation();
+  const { run, installModel } = useDictationActions();
+  const { loading } = useDictationConnection();
+  const snapshot = {
+    ...useSavedConfiguration(),
+    ...useSavedModelCatalog(),
+    ...useDictationMetadata(),
+    status: useDictationStatus(),
+  };
   const { status, settings, ready } = snapshot;
   const [now, setNow] = useState(Date.now());
   const [historyPending, setHistoryPending] = useState(false);
@@ -178,24 +192,7 @@ export function HomePage() {
                 <span className="font-mono tabular-nums">
                   {duration(Math.max(0, now - status.startedAt))}
                 </span>
-                <span
-                  data-slot="recording-level-meter"
-                  aria-hidden="true"
-                  className="flex h-6 items-center gap-1"
-                >
-                  {Array.from({ length: 9 }, (_, index) => (
-                    <span
-                      key={index}
-                      className="h-6 w-1 rounded-full bg-current transition-[transform,opacity] duration-150 motion-reduce:transition-[opacity]"
-                      style={{
-                        transform: reduced
-                          ? "scaleY(0.375)"
-                          : `scaleY(${(4 + level * (8 + 12 * Math.sin(index * 1.7) ** 2)) / 24})`,
-                        opacity: reduced ? 0.35 + level * 0.65 : undefined,
-                      }}
-                    />
-                  ))}
-                </span>
+                <RecordingLevelMeter />
               </div>
             )}
             <div
@@ -545,5 +542,30 @@ export function HomePage() {
         </div>
       </div>
     </div>
+  );
+}
+
+function RecordingLevelMeter() {
+  const level = useAudioLevel();
+  const reduced = useMotionPreference();
+  return (
+    <span
+      data-slot="recording-level-meter"
+      aria-hidden="true"
+      className="flex h-6 items-center gap-1"
+    >
+      {Array.from({ length: 9 }, (_, index) => (
+        <span
+          key={index}
+          className="h-6 w-1 rounded-full bg-current transition-[transform,opacity] duration-150 motion-reduce:transition-[opacity]"
+          style={{
+            transform: reduced
+              ? "scaleY(0.375)"
+              : `scaleY(${(4 + level * (8 + 12 * Math.sin(index * 1.7) ** 2)) / 24})`,
+            opacity: reduced ? 0.35 + level * 0.65 : undefined,
+          }}
+        />
+      ))}
+    </span>
   );
 }

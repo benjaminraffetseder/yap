@@ -1,6 +1,12 @@
 import { useSavedActions } from "@/lib/saved-queries";
 import { AutoSaveStatus } from "@/components/auto-save-status";
-import { useDictationState } from "@/components/dictation-provider";
+import {
+  useDictationActions,
+  useDictationActivity,
+  useDictationConnection,
+  useSavedConfiguration,
+  useSavedModelCatalog,
+} from "@/lib/dictation-state";
 import { HomeProfileActions } from "@/components/home-profile-actions";
 import { ProcessingSelectItems } from "@/components/processing-select-items";
 import { ProfileApps } from "@/components/profile-apps";
@@ -63,7 +69,9 @@ export function ProfileSelector({
 }) {
   const { t } = useTranslation();
   const savedActions = useSavedActions();
-  const { snapshot, loading, refresh, run } = useDictationState();
+  const { refresh, run } = useDictationActions();
+  const { loading } = useDictationConnection();
+  const snapshot = { ...useSavedConfiguration(), status: useDictationActivity() };
   const [pending, setPending] = useState(false);
   const [actionPending, setActionPending] = useState(false);
   const selectorRef = useRef<HTMLButtonElement>(null);
@@ -175,7 +183,8 @@ export function ProfilesPanel({
   const languages = useLanguages();
   const { t } = useTranslation();
   const savedActions = useSavedActions();
-  const { snapshot, refresh } = useDictationState();
+  const { refresh } = useDictationActions();
+  const snapshot = { ...useSavedConfiguration(), ...useSavedModelCatalog() };
   const [editing, setEditing] = useState<DictationProfile | null>(null);
   const [deleting, setDeleting] = useState<DictationProfile | null>(null);
   const [pending, setPending] = useState(false);
@@ -488,7 +497,8 @@ function ProfileEditor({
   const languages = useLanguages();
   const { t } = useTranslation();
   const savedActions = useSavedActions();
-  const { snapshot, refresh } = useDictationState();
+  const { refresh, run } = useDictationActions();
+  const snapshot = { ...useSavedConfiguration(), ...useSavedModelCatalog() };
   const [savedID, setSavedID] = useState(profile.id);
   const saved = snapshot.dictationProfiles?.find((item) => item.id === savedID) ?? profile;
   const [draft, setDraft, draftState] = useSavedDraft(`profile:${profile.id || "new"}`, saved);
@@ -547,7 +557,7 @@ function ProfileEditor({
       setDraft((old) => ({ ...old, id: result.id }));
       draftState.markSubmitted({ ...submitted, id: result.id });
       setSavedID(result.id);
-      await refresh();
+      await run(refresh, false);
     } catch (cause) {
       setError(message(cause));
       throw cause;

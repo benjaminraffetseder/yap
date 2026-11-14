@@ -1,7 +1,9 @@
-import { importPending, type Snapshot } from "@/lib/backend";
+import { importPending, type Snapshot, type Status } from "@/lib/backend";
 
 // Queue jobs already describe their active operation; don't count it twice.
-export function processingActivity(snapshot: Snapshot) {
+export function processingActivity<CurrentStatus extends Pick<Status, "phase" | "importId">>(
+  snapshot: Pick<Snapshot, "importQueue" | "bulkTextQueue"> & { status: CurrentStatus },
+) {
   const imports = snapshot.importQueue ?? [];
   const textJobs = snapshot.bulkTextQueue ?? [];
   const current =

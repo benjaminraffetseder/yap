@@ -1,6 +1,6 @@
 import { ChatCitationContent } from "@/components/chat-citation-content";
 import { CopyButton } from "@/components/copy-button";
-import { useDictationState } from "@/components/dictation-provider";
+import { useDictationStatus, useSavedConfiguration } from "@/lib/dictation-state";
 import { InferenceStats } from "@/components/inference-stats";
 import { MarkdownContent } from "@/components/markdown-content";
 import { ProcessingSelectItems } from "@/components/processing-select-items";
@@ -65,7 +65,7 @@ export function GeneratedOutputs({
   onReveal?: (output: GeneratedOutput, references: ChatReference[]) => void;
 }) {
   const { t } = useTranslation();
-  const { snapshot } = useDictationState();
+  const snapshot = { ...useSavedConfiguration(), status: useDictationStatus() };
   const { enabled } = snapshot.textProcessing;
   const options = processingOptions(snapshot.textProcessing);
   const [selected, setSelected] = useState(options[0]?.value ?? "");

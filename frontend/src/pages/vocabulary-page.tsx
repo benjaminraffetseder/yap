@@ -2,7 +2,12 @@ import { useVocabulary, useSavedActions } from "@/lib/saved-queries";
 import { nativeText } from "@/i18n/native-text";
 import { useTranslation } from "react-i18next";
 import { AutoSaveStatus } from "@/components/auto-save-status";
-import { useDictationState } from "@/components/dictation-provider";
+import {
+  useDictationActions,
+  useDictationConnection,
+  useDictationPhase,
+  useSavedVocabulary,
+} from "@/lib/dictation-state";
 import { PageHeading } from "@/components/page-heading";
 import { RevisionHistory } from "@/components/revision-history";
 import { Button } from "@/components/ui/button";
@@ -36,7 +41,9 @@ export function VocabularyPage() {
   const { t } = useTranslation();
   const savedActions = useSavedActions();
   const vocabulary = useVocabulary();
-  const { snapshot, refresh, loading } = useDictationState();
+  const { refresh, run } = useDictationActions();
+  const { loading } = useDictationConnection();
+  const snapshot = { vocabulary: useSavedVocabulary(), status: { phase: useDictationPhase() } };
   const entries = vocabulary.data ?? snapshot.vocabulary;
   const saved = useMemo(() => draftOf(entries), [entries]);
   const [draft, setDraft, draftState] = useSavedDraft("vocabulary", saved);
@@ -62,7 +69,7 @@ export function VocabularyPage() {
     try {
       await savedActions.vocabulary(payload);
       draftState.markSubmitted(draft);
-      await refresh();
+      await run(refresh, false);
     } catch (cause) {
       setError(message(cause));
       toastManager.add({
