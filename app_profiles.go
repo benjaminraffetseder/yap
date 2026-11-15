@@ -90,7 +90,7 @@ func (a *App) SaveDictationProfile(profile storage.DictationProfile) (storage.Di
 		return storage.DictationProfile{}, err
 	}
 	a.profileLibrary = library
-	a.event("setup:changed")
+	a.event("setup:changed", []string{"configuration"})
 	for _, p := range library.Profiles {
 		if p.ID == profile.ID {
 			return p, nil
@@ -134,7 +134,7 @@ func (a *App) DeleteDictationProfile(id string) error {
 		return err
 	}
 	a.profileLibrary = library
-	a.event("setup:changed")
+	a.event("setup:changed", []string{"configuration"})
 	return nil
 }
 
@@ -188,7 +188,7 @@ func (a *App) applyDictationProfileLocked(id string) error {
 		}
 		a.profileLibrary, a.settings, a.textConfig = library, settings, config
 		a.diagnostic = DiagnosticResult{}
-		a.event("setup:changed")
+		a.event("setup:changed", []string{"configuration"})
 		return nil
 	}
 	return errors.New("dictation profile no longer exists")

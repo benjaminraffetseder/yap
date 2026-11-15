@@ -19,6 +19,46 @@ if (methods) {
   chrome.webview = { postMessage() {} };
   Reflect.set(window, "chrome", chrome);
 
+  const fields = {
+    GetConfiguration: [
+      "settings",
+      "textProcessing",
+      "appProfileRules",
+      "profileShortcut",
+      "dictationProfiles",
+      "activeProfileId",
+      "defaultProfileId",
+      "profileModified",
+      "ready",
+    ],
+    GetModelCatalog: ["models", "textModels", "textRuntimeAvailable", "recommendedTextContext"],
+    GetRuntimeSnapshot: [
+      "status",
+      "history",
+      "bulkTextQueue",
+      "importQueue",
+      "recordingSaveHistory",
+      "latestResult",
+      "diagnostic",
+      "microphoneTested",
+      "shortcutTested",
+      "dataDir",
+      "floatingIndicator",
+      "launchAtLoginAvailable",
+      "startInTrayAvailable",
+    ],
+  };
+  for (const [name, keys] of Object.entries(fields)) {
+    if (!methods[name])
+      methods[name] = async () => {
+        const snapshot = await methods.GetSnapshot();
+        return Object.fromEntries(keys.map((key) => [key, Reflect.get(snapshot as object, key)]));
+      };
+  }
+  if (!methods.GetVocabulary)
+    methods.GetVocabulary = async () =>
+      Reflect.get((await methods.GetSnapshot()) as object, "vocabulary");
+
   setTransport({
     async call(objectID, _method, _windowName, args) {
       if (objectID === 3) return events?.emit?.(args.name, args.data) ?? false;
@@ -31,7 +71,9 @@ if (methods) {
       const name = String(args.methodName).split(".").at(-1)!;
       if (name === "SetIndicatorTheme" && !methods[name]) return;
       if (typeof methods[name] !== "function") throw new ReferenceError(`Unknown method: ${name}`);
-      return methods[name](...args.args);
+      // Native responses cross a serialization boundary. Returning a fixture's
+      // live object lets simulated backend writes silently mutate Query's cache.
+      return structuredClone(await methods[name](...args.args));
     },
   });
 

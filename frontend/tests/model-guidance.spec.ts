@@ -371,7 +371,7 @@ test("quality-first guidance follows catalog ratings and the available compatibl
     state.snapshot.models = state.snapshot.models.filter((model) =>
       model.id.startsWith("moonshine"),
     );
-    state.callbacks["dictation:history"]();
+    state.callbacks["setup:changed"]?.(["configuration", "catalogs"]);
   });
   await expect(guide(page).getByRole("status")).toContainText("Moonshine V2 Medium");
   expect(await page.evaluate(() => window.modelGuidanceTest.calls)).toEqual([]);
@@ -419,7 +419,7 @@ test("Show model reveals its family and focuses its heading; explicit download c
     Object.assign(model, { installed: true, removable: true, diskBytes: model.size });
     state.snapshot.settings.modelPath = model.path;
     state.status("idle", "Model installed. Ready to dictate.");
-    state.callbacks["dictation:history"]();
+    state.callbacks["setup:changed"]?.(["configuration", "catalogs"]);
   });
   await expectActiveModel(moonshine);
   await expect(currentSpeechModel(page)).toContainText("Moonshine V2 Small");
@@ -444,7 +444,7 @@ test("unknown language, custom models and unavailable catalog suggestions stay s
     window.modelGuidanceTest.snapshot.models = window.modelGuidanceTest.snapshot.models.filter(
       (model) => model.id === "moonshine-base",
     );
-    window.modelGuidanceTest.callbacks["dictation:history"]();
+    window.modelGuidanceTest.callbacks["setup:changed"]?.(["configuration", "catalogs"]);
   });
   await choose(page, "Language for guidance", "Japanese");
   await expect(guide(page).getByRole("status")).toContainText("No catalog suggestion");
@@ -636,7 +636,7 @@ test("explicit installed selection, repair, busy and pending removal retain life
       s.snapshot.models.find((model) => model.id === "small")!,
       { removable: true },
     );
-    s.callbacks["dictation:history"]();
+    s.callbacks["setup:changed"]?.(["configuration", "catalogs"]);
   });
   await choose(page, "What will you dictate?", "Emails & everyday dictation");
   await expect(

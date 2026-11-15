@@ -62,14 +62,14 @@ func (a *App) InstallTextModel(id string) error {
 			a.status.Phase, a.status.Message = "idle", "Download cancelled"
 		} else if err != nil {
 			a.fail(err)
-			a.event("setup:changed")
+			a.event("setup:changed", []string{"catalogs"})
 			return
 		} else {
 			a.status.Phase, a.status.Message = "idle", "Text model installed. Select it in Prompts to get started."
 		}
 		a.status.Progress = 0
 		a.emit()
-		a.event("setup:changed")
+		a.event("setup:changed", []string{"catalogs"})
 	}()
 	return nil
 }
@@ -92,7 +92,7 @@ func (a *App) RemoveTextModel(id string) error {
 	if err := models.RemoveTextModel(a.store.Dir, id); err != nil {
 		return err
 	}
-	a.event("setup:changed")
+	a.event("setup:changed", []string{"catalogs"})
 	return nil
 }
 
@@ -109,5 +109,6 @@ func (a *App) RemoveModel(id string) error {
 		return err
 	}
 	a.event("dictation:history")
+	a.event("setup:changed", []string{"catalogs"})
 	return nil
 }

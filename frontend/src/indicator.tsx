@@ -1,7 +1,7 @@
 import { StrictMode } from "react";
 import "@/i18n";
 import { createRoot } from "react-dom/client";
-import { Indicator } from "@/components/indicator";
+import { Indicator } from "@/features/indicator/components/indicator";
 import "@/index.css";
 import "./indicator.css";
 

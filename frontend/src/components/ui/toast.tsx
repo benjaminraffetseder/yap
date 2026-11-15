@@ -11,7 +11,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { fade, motionTransition } from "@/lib/motion";
-import { useMotionPreference } from "@/lib/use-motion-preference";
+import { useMotionPreference } from "@/hooks/use-motion-preference";
 import { Toast } from "@base-ui/react/toast";
 import { CircleAlert, CircleCheck, X } from "lucide-react";
 import { motion } from "motion/react";

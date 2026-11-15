@@ -609,6 +609,57 @@ test("correct and remember changes the selected Home occurrence and preserves re
   expect(await page.evaluate(() => window.homeResultsTest.clipboard)).toBe("");
 });
 
+test("correction form validates fields, ignores IME submission and prevents duplicate writes", async ({
+  page,
+}) => {
+  await scenario(page);
+  const reader = page.getByLabel("Result text", { exact: true });
+  await selectWord(reader, "tomorrow");
+  await openSelectionMenu(page);
+  await page.getByRole("menuitem", { name: "Correct and remember", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Correct and remember" });
+  const spelling = dialog.getByLabel("Correct spelling", { exact: true });
+  const apply = dialog.getByRole("button", { name: "Apply correction" });
+  await spelling.fill(" ");
+  await expect(spelling).toHaveAttribute("aria-invalid", "true");
+  await expect(dialog.getByRole("alert")).toContainText("1–80");
+  await expect(apply).toBeDisabled();
+  await spelling.press("Control+Enter");
+  expect(await page.evaluate(() => window.homeResultsTest.snapshot.vocabulary)).toEqual([]);
+  await spelling.fill("today");
+  await expect(spelling).toHaveAttribute("aria-invalid", "false");
+  await expect(dialog.getByRole("alert")).toHaveCount(0);
+  await spelling.dispatchEvent("compositionstart");
+  await spelling.press("Control+Enter");
+  await expect(dialog).toBeVisible();
+  expect(await page.evaluate(() => window.homeResultsTest.snapshot.vocabulary)).toEqual([]);
+  await spelling.dispatchEvent("compositionend");
+  await page.evaluate(() => {
+    const app = Reflect.get(window, "mockBackend").main.App;
+    const add = app.AddVocabularyTerm;
+    Reflect.set(window, "correctionWriteCount", 0);
+    app.AddVocabularyTerm = async (canonical: string, aliases: string[]) => {
+      Reflect.set(window, "correctionWriteCount", Reflect.get(window, "correctionWriteCount") + 1);
+      await new Promise<void>((resolve) => Reflect.set(window, "releaseCorrectionWrite", resolve));
+      return add(canonical, aliases);
+    };
+  });
+  // Both submit events reach React before a render can disable the button.
+  await dialog.locator("form").evaluate((form) => {
+    form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+  });
+  await expect.poll(() => page.evaluate(() => Reflect.get(window, "correctionWriteCount"))).toBe(1);
+  await expect(spelling).toBeDisabled();
+  await expect(dialog.getByRole("button", { name: "Cancel", exact: true })).toBeDisabled();
+  await page.keyboard.press("Escape");
+  await expect(dialog).toBeVisible();
+  await page.evaluate(() => Reflect.get(window, "releaseCorrectionWrite")());
+  await expect(dialog).toHaveCount(0);
+  await expect(reader).toContainText("today");
+  expect(await page.evaluate(() => Reflect.get(window, "correctionWriteCount"))).toBe(1);
+});
+
 test("one-time corrections stay in the Home draft until Apply changes", async ({ page }) => {
   await scenario(page, false);
   await page.getByRole("button", { name: "Edit result", exact: true }).click();
@@ -631,6 +682,36 @@ test("one-time corrections stay in the Home draft until Apply changes", async ({
   await expect(page.getByLabel("Result text", { exact: true })).toHaveText("John called today.");
   expect(await page.evaluate(() => window.homeResultsTest.result!.saved)).toBe(false);
 });
+
+for (const failure of ["vocabulary", "edit"] as const) {
+  test(`correction can retry a ${failure} failure without editing its fields`, async ({ page }) => {
+    await scenario(page);
+    const reader = page.getByLabel("Result text", { exact: true });
+    await selectWord(reader, "tomorrow");
+    await openSelectionMenu(page);
+    await page.getByRole("menuitem", { name: "Correct and remember", exact: true }).click();
+    const dialog = page.getByRole("dialog", { name: "Correct and remember" });
+    await dialog.getByLabel("Correct spelling", { exact: true }).fill("today");
+    await page.evaluate((failure) => {
+      window.homeResultsTest.fail = failure;
+    }, failure);
+    const apply = dialog.getByRole("button", { name: "Apply correction" });
+    await apply.click();
+    await expect(dialog.getByRole("alert")).toContainText(
+      failure === "vocabulary" ? "Synthetic vocabulary failure" : "The spelling was remembered",
+    );
+    await expect(reader).toContainText("tomorrow");
+    await page.evaluate(() => {
+      window.homeResultsTest.fail = "";
+    });
+    await expect(apply).toBeEnabled();
+    await apply.click();
+    await expect(dialog).toHaveCount(0);
+    await expect(reader).toContainText("today");
+    expect(await page.evaluate(() => window.homeResultsTest.snapshot.vocabulary)).toHaveLength(1);
+    expect(await page.evaluate(() => window.homeResultsTest.calls)).toEqual(["edit"]);
+  });
+}
 
 test("correction errors, cancellation and stale results keep the original text", async ({
   page,
@@ -684,7 +765,7 @@ test("History editor autosaves a remembered correction without changing original
     window.homeResultsTest.emit();
   });
   await page.getByRole("link", { name: "History", exact: true }).click();
-  await page.locator("article").getByRole("link").click();
+  await page.getByRole("table", { name: "History", exact: true }).getByRole("link").click();
   await page.getByRole("button", { name: "Edit transcript", exact: true }).click();
   const input = page.getByRole("textbox", { name: "Editable text", exact: true });
   await input.press("Home");
@@ -715,7 +796,7 @@ test("History reading corrects Markdown at its source offsets", async ({ page })
     window.homeResultsTest.emit();
   });
   await page.getByRole("link", { name: "History", exact: true }).click();
-  await page.locator("article").getByRole("link").click();
+  await page.getByRole("table", { name: "History", exact: true }).getByRole("link").click();
   await selectWord(page.locator('[data-slot="chat-source-text"]').first(), "Jon", 1);
   await openSelectionMenu(page);
   await page.getByRole("menuitem", { name: "Correct and remember", exact: true }).click();
@@ -828,7 +909,7 @@ test("History rows reveal search matches and copy the complete edited transcript
     window.homeResultsTest.emit();
   }, text);
   await page.goto("/#/history?q=John");
-  const row = page.locator("article").first();
+  const row = page.getByRole("table", { name: "History", exact: true }).locator("tbody tr").first();
   await expect(row.locator("mark")).toHaveText("John");
   const snippet = row.locator("p").nth(1);
   expect((await snippet.textContent())!.startsWith("…")).toBe(true);
@@ -1394,3 +1475,74 @@ for (const theme of ["light", "dark"] as const) {
     });
   });
 }
+
+test("late Home reads cannot resurrect expired temporary text across navigation", async ({
+  page,
+}) => {
+  await scenario(page, false);
+  await page.evaluate(() => {
+    const state = window.homeResultsTest;
+    const old = structuredClone(state.result);
+    Reflect.get(window, "mockBackend").main.App.GetHomeResult = () =>
+      new Promise((resolve) => Reflect.set(window, "releaseExpiredHomeRead", () => resolve(old)));
+    state.emit();
+  });
+  await expect
+    .poll(() => page.evaluate(() => typeof Reflect.get(window, "releaseExpiredHomeRead")))
+    .toBe("function");
+  await page.getByRole("link", { name: "History", exact: true }).click();
+  await page.evaluate(() => {
+    const state = window.homeResultsTest;
+    state.accept();
+    state.failRead = true;
+    Reflect.get(window, "mockBackend").main.App.GetHomeResult = async () => {
+      throw new Error("Current read failure");
+    };
+    state.setBusy(false);
+    Reflect.get(window, "releaseExpiredHomeRead")();
+  });
+  await page.getByRole("link", { name: "Dictate", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Refresh result", exact: true })).toBeVisible();
+  await expect(page.getByLabel("Result text", { exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Copy", exact: true })).toHaveCount(0);
+  expect(await page.evaluate(() => window.homeResultsTest.calls)).toEqual([]);
+});
+
+test("a delayed Home dismissal cannot hide a replacement result after navigation", async ({
+  page,
+}) => {
+  await scenario(page, false);
+  const replacement = await page.evaluate(() => {
+    const replacement = structuredClone(window.homeResultsTest.result!);
+    replacement.session.id = "replacement-result";
+    replacement.revision = "replacement-revision";
+    replacement.text = "The replacement result remains available.";
+    const app = Reflect.get(window, "mockBackend").main.App;
+    const dismiss = app.HomeResultAction;
+    app.HomeResultAction = async (...args: [string, string, string, string]) => {
+      await dismiss(...args);
+      if (args[2] === "dismiss")
+        await new Promise<void>((resolve) => Reflect.set(window, "releaseHomeDismissal", resolve));
+    };
+    return replacement;
+  });
+  await page.getByRole("button", { name: "Dismiss", exact: true }).click();
+  await expect
+    .poll(() => page.evaluate(() => typeof Reflect.get(window, "releaseHomeDismissal")))
+    .toBe("function");
+  await page.getByRole("link", { name: "History", exact: true }).click();
+  await page.evaluate((replacement) => {
+    const state = window.homeResultsTest;
+    state.result = replacement;
+    state.emit();
+  }, replacement);
+  await page.getByRole("link", { name: "Dictate", exact: true }).click();
+  const result = page.getByLabel("Result text", { exact: true });
+  await expect(result).toHaveText("The replacement result remains available.");
+  await page.evaluate(() => Reflect.get(window, "releaseHomeDismissal")());
+  await page.getByRole("button", { name: "Copy", exact: true }).click();
+  await expect
+    .poll(() => page.evaluate(() => window.homeResultsTest.clipboard))
+    .toBe("The replacement result remains available.");
+  await expect(result).toHaveText("The replacement result remains available.");
+});

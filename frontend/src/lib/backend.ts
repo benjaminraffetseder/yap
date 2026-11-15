@@ -35,7 +35,10 @@ import {
   GetSession,
   GetSessionChat,
   GetSessionOutputs,
-  GetSnapshot,
+  GetConfiguration,
+  GetVocabulary,
+  GetModelCatalog,
+  GetRuntimeSnapshot,
   GetSortedHistory,
   GetTranscriptExportPreview,
   GetUpdateStatus,
@@ -407,6 +410,27 @@ export type Snapshot = {
   shortcutTested: boolean;
   diagnostic: DiagnosticResult;
 };
+export type Configuration = Pick<
+  Snapshot,
+  | "settings"
+  | "textProcessing"
+  | "appProfileRules"
+  | "profileShortcut"
+  | "dictationProfiles"
+  | "activeProfileId"
+  | "defaultProfileId"
+  | "profileModified"
+  | "ready"
+>;
+export type ModelCatalog = Pick<
+  Snapshot,
+  "models" | "textModels" | "textRuntimeAvailable" | "recommendedTextContext"
+>;
+export type RuntimeSnapshot = Omit<
+  Snapshot,
+  keyof Configuration | keyof ModelCatalog | "vocabulary"
+>;
+
 export type BackupSummary = {
   chats?: number;
   skippedChats?: number;
@@ -455,6 +479,38 @@ async function updateHistorySessions(ids: string[], update: (batch: string[]) =>
 }
 
 export const backend = {
+  configuration: async (): Promise<Configuration> => {
+    const value = await GetConfiguration();
+    if (!value?.settings || !value.textProcessing || !Array.isArray(value.textProcessing.prompts))
+      throw new Error(backendVersionMismatchMessage);
+    return {
+      ...value,
+      textProcessing: normalizeTextProcessing(value.textProcessing),
+      appProfileRules: value.appProfileRules ?? [],
+      dictationProfiles: value.dictationProfiles ?? [],
+    };
+  },
+  savedVocabulary: async (): Promise<VocabularyEntry[]> =>
+    ((await GetVocabulary()) ?? []).map((entry) => ({ ...entry, aliases: entry.aliases ?? [] })),
+  modelCatalog: async (): Promise<ModelCatalog> => {
+    const value = await GetModelCatalog();
+    if (!value || !Array.isArray(value.models)) throw new Error(backendVersionMismatchMessage);
+    return { ...value, models: value.models ?? [], textModels: value.textModels ?? [] };
+  },
+  runtimeSnapshot: async (): Promise<RuntimeSnapshot> => {
+    const value = await GetRuntimeSnapshot();
+    if (!value?.status) throw new Error(backendVersionMismatchMessage);
+    return {
+      ...value,
+      latestResult: value.latestResult && {
+        ...value.latestResult,
+        outputs: value.latestResult.outputs ?? [],
+      },
+      history: value.history ?? [],
+      importQueue: value.importQueue ?? [],
+      bulkTextQueue: value.bulkTextQueue ?? [],
+    };
+  },
   installTextModel: InstallTextModel,
   removeTextModel: RemoveTextModel,
   refinePromptWithConfig: (id: string, config: TextProcessing, instruction: string) =>
@@ -543,33 +599,6 @@ export const backend = {
   },
   discardBackup: async (id: string): Promise<void> => {
     return DiscardBackupPreview(id);
-  },
-  snapshot: async (): Promise<Snapshot> => {
-    const value = await GetSnapshot();
-    // A long-running dev backend can predate the frontend and generated bindings.
-    // Keep the last safe snapshot instead of rendering incompatible page state.
-    if (!value.textProcessing || !Array.isArray(value.textProcessing.prompts)) {
-      throw new Error(backendVersionMismatchMessage);
-    }
-    return {
-      ...value,
-      textProcessing: normalizeTextProcessing(value.textProcessing),
-      importQueue: value.importQueue ?? [],
-      bulkTextQueue: value.bulkTextQueue ?? [],
-      appProfileRules: value.appProfileRules ?? [],
-      dictationProfiles: value.dictationProfiles ?? [],
-      history: value.history ?? [],
-      models: value.models ?? [],
-      textModels: value.textModels ?? [],
-      vocabulary: (value.vocabulary ?? []).map((entry) => ({
-        ...entry,
-        aliases: entry.aliases ?? [],
-      })),
-      latestResult: value.latestResult && {
-        ...value.latestResult,
-        outputs: value.latestResult.outputs ?? [],
-      },
-    };
   },
   start: StartRecording,
   stop: StopRecording,

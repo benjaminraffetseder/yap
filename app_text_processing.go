@@ -36,7 +36,7 @@ func (a *App) SaveTextProcessing(config textmodel.Config) (textmodel.Config, err
 			engine.Release()
 		}
 	}
-	a.event("setup:changed")
+	a.event("setup:changed", []string{"configuration"})
 	return textmodel.Normalize(normalized)
 }
 
