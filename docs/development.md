@@ -47,15 +47,19 @@ shortcuts through Wails. Use the desktop app to test those.
 | `internal/inference` | Whisper CLI and local text-server clients                                   |
 | `internal/models`    | Model/runtime downloads and verification                                    |
 | `internal/storage`   | SQLite, history, retention, and backups                                     |
-| `frontend/src`       | Pages, components, and bridge helpers                                       |
+| `frontend/src`       | Domain features, shared UI, hooks, and bridge helpers                       |
 | `build`              | Wails icons, native manifests, and version metadata                         |
+
+The [frontend code map](../frontend/src/README.md) lists domain ownership and
+shared folders. Components and hooks for a product area live together under
+`frontend/src/features/<domain>`; cross-domain UI and hooks have shared folders.
 
 Keep platform-specific code in the existing `_windows`, `_darwin`, and `_other`
 files with matching build tags. Bound Go structs use camelCase JSON fields.
 Wails generates `frontend/bindings`; don't edit it by hand.
 
 The main UI and floating indicator are separate Vite entry points. Keep the
-indicator in `frontend/src/components/indicator.tsx`, mounted by
+indicator in `frontend/src/features/indicator/components/indicator.tsx`, mounted by
 `frontend/src/indicator.tsx`, independent of the main app's providers and
 background effects. Reuse the shared shadcn components and theme. It receives
 presentation via Wails events and sends versioned actions back to the indicator
@@ -145,7 +149,7 @@ the existing request and revision guards. `useAppUpdateState` owns updater
 requests/events. Commands and context values retain stable references when their
 domain does not change.
 
-Consumers use the focused hooks in `frontend/src/lib/dictation-state.ts`:
+Consumers use the focused hooks in `frontend/src/features/dictation/hooks/use-dictation-state.ts`:
 `useDictationActions` for commands, `useDictationPhase` for phase-only guards,
 `useDictationActivity` for operation identity/errors without progress, and
 `useDictationStatus` when the message, transcript or progress is needed. Import
@@ -181,6 +185,24 @@ Keep output-generation requests mounted while the inline transcript editor is
 open. Hiding the detail tabs preserves their request owner; unmounting it cancels
 the request. Copy confirmation must also belong to the text version that started
 the request, so a late reply cannot confirm a different tab's text.
+
+## Validation and form ownership
+
+Frontend domain schemas use Zod and live in the owning feature's `lib` folder.
+Shared rules and the compatibility adapters for existing editors live in
+`frontend/src/lib/validation`. The adapters preserve existing first-error/row-error
+messages, while schemas expose field paths for forms. Preserve Go's byte limits,
+Unicode character limits and duplicate folding. Schemas validate drafts without
+normalizing them; native payload conversion stays separate. Native Go validation
+remains authoritative.
+
+React Hook Form owns fields and submission state in explicit-submit forms, with
+`zodResolver` sharing the domain validation. `CorrectionForm` is the first example;
+it retains native-write error recovery, stale-selection guards and IME handling.
+Use shared Field primitives for accessible errors, `register` for native inputs
+and `Controller` for controlled Base UI controls. Saved writes still use Query
+actions. Autosaved editors retain `useSavedDraft`/`useAutoSave` so drafts survive
+navigation and reconcile with saved changes through one owner.
 
 ## Build files
 

@@ -2,7 +2,7 @@ import { StrictMode } from "react";
 import "@/i18n";
 import { createRoot } from "react-dom/client";
 import { App } from "@/app";
-import { ErrorBoundary } from "@/components/error-boundary";
+import { ErrorBoundary } from "@/components/layout/error-boundary";
 import "@/index.css";
 
 if (document.getElementById("unsupported-engine")?.hidden !== false) {

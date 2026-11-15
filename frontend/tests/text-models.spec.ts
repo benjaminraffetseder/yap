@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { validateTextProcessing } from "../src/lib/draft-validation";
+import { validateTextProcessing } from "../src/lib/validation/draft-validation";
 
 test("built-in context validation respects each model limit", () => {
   const value = {

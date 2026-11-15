@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { transcriptDiff } from "../src/lib/transcript-diff";
+import { transcriptDiff } from "../src/features/transcripts/lib/transcript-diff";
 
 test("transcript diffs preserve both versions including Unicode, whitespace and punctuation", () => {
   const cases = [

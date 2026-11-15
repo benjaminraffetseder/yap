@@ -1,4 +1,4 @@
-import { useMotionPreference } from "@/lib/use-motion-preference";
+import { useMotionPreference } from "@/hooks/use-motion-preference";
 import { Button as ButtonPrimitive } from "@base-ui/react/button";
 import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "cn";

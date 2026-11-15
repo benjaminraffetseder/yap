@@ -609,6 +609,57 @@ test("correct and remember changes the selected Home occurrence and preserves re
   expect(await page.evaluate(() => window.homeResultsTest.clipboard)).toBe("");
 });
 
+test("correction form validates fields, ignores IME submission and prevents duplicate writes", async ({
+  page,
+}) => {
+  await scenario(page);
+  const reader = page.getByLabel("Result text", { exact: true });
+  await selectWord(reader, "tomorrow");
+  await openSelectionMenu(page);
+  await page.getByRole("menuitem", { name: "Correct and remember", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Correct and remember" });
+  const spelling = dialog.getByLabel("Correct spelling", { exact: true });
+  const apply = dialog.getByRole("button", { name: "Apply correction" });
+  await spelling.fill(" ");
+  await expect(spelling).toHaveAttribute("aria-invalid", "true");
+  await expect(dialog.getByRole("alert")).toContainText("1–80");
+  await expect(apply).toBeDisabled();
+  await spelling.press("Control+Enter");
+  expect(await page.evaluate(() => window.homeResultsTest.snapshot.vocabulary)).toEqual([]);
+  await spelling.fill("today");
+  await expect(spelling).toHaveAttribute("aria-invalid", "false");
+  await expect(dialog.getByRole("alert")).toHaveCount(0);
+  await spelling.dispatchEvent("compositionstart");
+  await spelling.press("Control+Enter");
+  await expect(dialog).toBeVisible();
+  expect(await page.evaluate(() => window.homeResultsTest.snapshot.vocabulary)).toEqual([]);
+  await spelling.dispatchEvent("compositionend");
+  await page.evaluate(() => {
+    const app = Reflect.get(window, "mockBackend").main.App;
+    const add = app.AddVocabularyTerm;
+    Reflect.set(window, "correctionWriteCount", 0);
+    app.AddVocabularyTerm = async (canonical: string, aliases: string[]) => {
+      Reflect.set(window, "correctionWriteCount", Reflect.get(window, "correctionWriteCount") + 1);
+      await new Promise<void>((resolve) => Reflect.set(window, "releaseCorrectionWrite", resolve));
+      return add(canonical, aliases);
+    };
+  });
+  // Both submit events reach React before a render can disable the button.
+  await dialog.locator("form").evaluate((form) => {
+    form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+  });
+  await expect.poll(() => page.evaluate(() => Reflect.get(window, "correctionWriteCount"))).toBe(1);
+  await expect(spelling).toBeDisabled();
+  await expect(dialog.getByRole("button", { name: "Cancel", exact: true })).toBeDisabled();
+  await page.keyboard.press("Escape");
+  await expect(dialog).toBeVisible();
+  await page.evaluate(() => Reflect.get(window, "releaseCorrectionWrite")());
+  await expect(dialog).toHaveCount(0);
+  await expect(reader).toContainText("today");
+  expect(await page.evaluate(() => Reflect.get(window, "correctionWriteCount"))).toBe(1);
+});
+
 test("one-time corrections stay in the Home draft until Apply changes", async ({ page }) => {
   await scenario(page, false);
   await page.getByRole("button", { name: "Edit result", exact: true }).click();
@@ -631,6 +682,36 @@ test("one-time corrections stay in the Home draft until Apply changes", async ({
   await expect(page.getByLabel("Result text", { exact: true })).toHaveText("John called today.");
   expect(await page.evaluate(() => window.homeResultsTest.result!.saved)).toBe(false);
 });
+
+for (const failure of ["vocabulary", "edit"] as const) {
+  test(`correction can retry a ${failure} failure without editing its fields`, async ({ page }) => {
+    await scenario(page);
+    const reader = page.getByLabel("Result text", { exact: true });
+    await selectWord(reader, "tomorrow");
+    await openSelectionMenu(page);
+    await page.getByRole("menuitem", { name: "Correct and remember", exact: true }).click();
+    const dialog = page.getByRole("dialog", { name: "Correct and remember" });
+    await dialog.getByLabel("Correct spelling", { exact: true }).fill("today");
+    await page.evaluate((failure) => {
+      window.homeResultsTest.fail = failure;
+    }, failure);
+    const apply = dialog.getByRole("button", { name: "Apply correction" });
+    await apply.click();
+    await expect(dialog.getByRole("alert")).toContainText(
+      failure === "vocabulary" ? "Synthetic vocabulary failure" : "The spelling was remembered",
+    );
+    await expect(reader).toContainText("tomorrow");
+    await page.evaluate(() => {
+      window.homeResultsTest.fail = "";
+    });
+    await expect(apply).toBeEnabled();
+    await apply.click();
+    await expect(dialog).toHaveCount(0);
+    await expect(reader).toContainText("today");
+    expect(await page.evaluate(() => window.homeResultsTest.snapshot.vocabulary)).toHaveLength(1);
+    expect(await page.evaluate(() => window.homeResultsTest.calls)).toEqual(["edit"]);
+  });
+}
 
 test("correction errors, cancellation and stale results keep the original text", async ({
   page,

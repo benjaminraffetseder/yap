@@ -8,7 +8,7 @@ import type {
   SessionChat,
   Snapshot,
 } from "../src/lib/backend";
-import { referenceRanges } from "../src/lib/chat-references";
+import { referenceRanges } from "../src/features/chat/lib/chat-references";
 import { openSelectionMenu } from "./transcript-menu";
 
 async function scenario(page: Page) {

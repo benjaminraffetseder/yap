@@ -2,7 +2,7 @@
 import { Profiler, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { QueryClientProvider } from "@tanstack/react-query";
-import { DictationProvider } from "../src/components/dictation-provider";
+import { DictationProvider } from "../src/features/dictation/components/dictation-provider";
 import {
   useDictationActions,
   useDictationPhase,
@@ -11,14 +11,14 @@ import {
   useImportQueue,
   useAudioLevel,
   useDictationConnection,
-} from "../src/lib/dictation-state";
-import { UpdatePanel } from "../src/components/update-panel";
-import { ProcessingPanel } from "../src/components/processing-panel";
+} from "../src/features/dictation/hooks/use-dictation-state";
+import { UpdatePanel } from "../src/features/updates/components/update-panel";
+import { ProcessingPanel } from "../src/features/processing/components/processing-panel";
 import { TooltipProvider } from "../src/components/ui/tooltip";
 import { MemoryRouter } from "react-router";
-import { createQueryClient } from "../src/lib/resource-queries";
-import { emptySnapshot } from "../src/lib/resource-defaults";
-import { useConfiguration } from "../src/lib/saved-queries";
+import { createQueryClient } from "../src/lib/queries/resource-queries";
+import { emptySnapshot } from "../src/lib/queries/resource-defaults";
+import { useConfiguration } from "../src/lib/queries/saved-queries";
 
 const snapshot = structuredClone(emptySnapshot);
 snapshot.ready = true;

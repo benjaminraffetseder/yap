@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 import type { Session } from "../src/lib/backend";
-import { historySearchPreview, searchRanges } from "../src/lib/history-search";
-import { textSelection } from "../src/lib/text-selection";
+import { historySearchPreview, searchRanges } from "../src/features/history/lib/history-search";
+import { textSelection } from "../src/features/transcripts/lib/text-selection";
 
 const session = (rawTranscript: string, finalTranscript = rawTranscript, title = ""): Session => ({
   id: "one",

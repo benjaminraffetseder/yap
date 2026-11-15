@@ -1,0 +1,669 @@
+import { ProfileSettingIndicator } from "@/features/profiles/components/profile-setting-indicator";
+import { RevisionHistory } from "@/features/transcripts/components/revision-history";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
+import type { PromptChain, PromptChainStep, TextProcessing } from "@/lib/backend";
+import { validateTextProcessing } from "@/lib/validation/draft-validation";
+import { Menu } from "@base-ui/react/menu";
+import {
+  ArrowDown,
+  ArrowUp,
+  CornerDownRight,
+  Ellipsis,
+  FileAudio,
+  FileText,
+  History,
+  Plus,
+  Sparkles,
+  Trash2,
+  Workflow,
+} from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
+
+const emptyChains: PromptChain[] = [];
+const menuClass =
+  "min-w-[min(12rem,calc(100vw-2rem))] max-w-[calc(100vw-2rem)] max-h-[calc(100dvh-2rem)] overflow-y-auto origin-(--transform-origin) rounded-lg bg-popover p-1 text-popover-foreground shadow-md ring-1 ring-foreground/10 motion-popup";
+const menuItemClass =
+  "flex items-center gap-2 rounded-md px-3 py-2 text-sm outline-none data-highlighted:bg-accent data-disabled:text-muted-foreground/50";
+
+function validOrder(steps: PromptChainStep[]) {
+  const seen = new Set<string>();
+  for (const step of steps) {
+    if (step.input.startsWith("step:") && !seen.has(step.input.slice(5))) return false;
+    seen.add(step.id);
+  }
+  return true;
+}
+
+export function PromptChainsEditor({
+  config,
+  disabled,
+  onChange,
+  onConfigureModel,
+  onDelete,
+}: {
+  config: TextProcessing;
+  disabled: boolean;
+  onChange: (value: Partial<TextProcessing>) => void;
+  onConfigureModel: () => void;
+  onDelete: (chain: PromptChain) => void;
+}) {
+  const { t } = useTranslation();
+  const chains = config.chains ?? emptyChains;
+  const [selected, setSelected] = useState(chains[0]?.id ?? "");
+  const [deleting, setDeleting] = useState(false);
+  const [history, setHistory] = useState<PromptChain | null>(null);
+  const nameInput = useRef<HTMLInputElement>(null);
+  const focusNewName = useRef(false);
+  const lastAddedStep = useRef<string | null>(null);
+  const chain = chains.find((item) => item.id === selected);
+  const automatic = config.autoPromptId === chain?.id;
+  const automaticName = [...config.prompts, ...chains].find(
+    (item) => item.id === config.autoPromptId,
+  )?.name;
+
+  useEffect(() => {
+    if (!chains.some((item) => item.id === selected)) setSelected(chains[0]?.id ?? "");
+  }, [chains, selected]);
+  useEffect(() => {
+    if (chain && focusNewName.current) {
+      focusNewName.current = false;
+      nameInput.current?.focus();
+      nameInput.current?.select();
+    }
+  }, [chain]);
+
+  function update(value: Partial<PromptChain>) {
+    onChange({
+      chains: chains.map((item) => (item.id === selected ? { ...item, ...value } : item)),
+    });
+  }
+  function addChain() {
+    const id = crypto.randomUUID();
+    focusNewName.current = true;
+    onChange({
+      chains: [
+        ...chains,
+        {
+          id,
+          name: t("promptChainsEditor.newChain"),
+          steps: [
+            { id: crypto.randomUUID(), promptId: config.prompts[0]?.id ?? "", input: "original" },
+          ],
+        },
+      ],
+    });
+    setSelected(id);
+  }
+  function addStep(promptId: string) {
+    if (!chain || disabled || chain.steps.length >= 10) return;
+    const id = crypto.randomUUID();
+    lastAddedStep.current = id;
+    update({
+      steps: [...chain.steps, { id, promptId, input: `step:${chain.steps.at(-1)!.id}` }],
+    });
+  }
+  function move(index: number, offset: number) {
+    if (!chain) return [];
+    const steps = [...chain.steps];
+    [steps[index], steps[index + offset]] = [steps[index + offset], steps[index]];
+    return steps;
+  }
+  const chainOptions = chains.map((item) => ({
+    value: item.id,
+    label: item.name || t("promptChainsEditor.untitledChain"),
+  }));
+  const promptOptions = config.prompts.map((prompt) => ({
+    value: prompt.id,
+    label: prompt.name || t("promptsPage.untitledPrompt"),
+  }));
+
+  const addStepMenu = (
+    <Menu.Root
+      onOpenChange={(open) => {
+        if (open) lastAddedStep.current = null;
+      }}
+    >
+      <Menu.Trigger
+        disabled={disabled || !chain || chain.steps.length >= 10 || !config.prompts.length}
+        render={<Button variant="outline" size="sm" />}
+      >
+        <Plus aria-hidden="true" className="size-4" />
+        {t("promptChainsEditor.addStep")}
+      </Menu.Trigger>
+      <Menu.Portal>
+        <Menu.Positioner align="start" sideOffset={4} className="z-50">
+          <Menu.Popup
+            finalFocus={() =>
+              lastAddedStep.current
+                ? (document.getElementById(`chain-prompt-${lastAddedStep.current}`) ?? true)
+                : true
+            }
+            className={`${menuClass} w-72`}
+            style={{ maxHeight: "min(20rem, var(--available-height))" }}
+          >
+            <p className="px-3 py-2 text-xs text-muted-foreground">
+              {t("promptChainsEditor.chooseAPromptToAdd")}
+            </p>
+            {promptOptions.map((prompt) => (
+              <Menu.Item
+                key={prompt.value}
+                onClick={() => addStep(prompt.value)}
+                className={menuItemClass}
+              >
+                <Sparkles aria-hidden="true" className="size-3.5 shrink-0 text-muted-foreground" />
+                <span className="min-w-0 truncate">{prompt.label}</span>
+              </Menu.Item>
+            ))}
+          </Menu.Popup>
+        </Menu.Positioner>
+      </Menu.Portal>
+    </Menu.Root>
+  );
+
+  return (
+    <section
+      aria-label={t("promptChainsEditor.promptChains")}
+      className="@container min-w-0 space-y-3"
+    >
+      <p className="text-sm leading-6 text-muted-foreground">
+        {t("promptChainsEditor.turnADictationIntoAFinishedResult")}
+      </p>
+      <fieldset disabled={disabled} className="min-w-0 space-y-4 disabled:opacity-60">
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="min-w-0 max-w-full shrink-0">
+            <Label htmlFor="saved-chain" className="sr-only">
+              {t("promptChainsEditor.savedChain")}
+            </Label>
+            <Select
+              items={chainOptions}
+              value={chain?.id ?? null}
+              onValueChange={(id) => {
+                if (id) setSelected(id);
+              }}
+              disabled={disabled || !chains.length}
+            >
+              <SelectTrigger
+                id="saved-chain"
+                className="data-[size=default]:h-9 max-w-full border-transparent bg-transparent text-muted-foreground hover:bg-accent hover:text-foreground dark:bg-transparent"
+              >
+                <Workflow aria-hidden="true" className="size-4 text-muted-foreground" />
+                <span>
+                  {chain ? t("uiPolish.switchChain") : t("promptChainsEditor.noSavedChains")}
+                </span>
+                <SelectValue
+                  className="sr-only"
+                  placeholder={t("promptChainsEditor.noSavedChains")}
+                />
+              </SelectTrigger>
+              <SelectContent
+                alignItemWithTrigger={false}
+                align="start"
+                style={{
+                  width: "max-content",
+                  minWidth: "var(--anchor-width)",
+                  maxWidth: "min(32rem, var(--available-width))",
+                }}
+              >
+                {chainOptions.map((item) => (
+                  <SelectItem
+                    key={item.value}
+                    value={item.value}
+                    className="[&>:first-child]:min-w-0 [&>:first-child]:shrink"
+                  >
+                    <Workflow
+                      aria-hidden="true"
+                      className="size-4 shrink-0 text-muted-foreground"
+                    />
+                    <span className="min-w-0 whitespace-normal wrap-anywhere">{item.label}</span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          {chain && (
+            <div className="flex min-w-[min(100%,14rem)] flex-[1_1_18rem] items-center gap-2">
+              <Label htmlFor="chain-name" className="shrink-0 text-xs text-muted-foreground">
+                {t("promptChainsEditor.chainName")}
+              </Label>
+              <Input
+                ref={nameInput}
+                id="chain-name"
+                maxLength={80}
+                value={chain.name}
+                onChange={(event) => update({ name: event.target.value })}
+                className="h-9 border-input px-3 text-base font-medium"
+              />
+            </div>
+          )}
+          <Button
+            variant="outline"
+            disabled={disabled || chains.length >= 30 || !config.prompts.length}
+            onClick={addChain}
+          >
+            <Plus aria-hidden="true" className="size-4" />
+            {t("promptChainsEditor.addChain")}
+          </Button>
+          {chain && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+              onClick={() => setDeleting(true)}
+            >
+              <Trash2 aria-hidden="true" className="size-3.5" />
+              {t("promptChainsEditor.deleteChain")}
+            </Button>
+          )}
+        </div>
+
+        {!chain && (
+          <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed px-6 py-10 text-center">
+            <Workflow aria-hidden="true" className="size-8 text-muted-foreground/60" />
+            <div className="space-y-1">
+              <h2 className="text-sm font-medium">
+                {t("promptChainsEditor.yourPromptsWorkingTogether")}
+              </h2>
+              <p className="max-w-sm text-sm leading-6 text-muted-foreground">
+                {config.prompts.length
+                  ? t("promptChainsEditor.addAChainThenChooseThePrompts")
+                  : t("promptChainsEditor.addASavedPromptBeforeCreatingYour")}
+              </p>
+            </div>
+          </div>
+        )}
+
+        {chain && (
+          <>
+            <div className="overflow-hidden rounded-xl border bg-card">
+              <div className="flex items-center justify-between gap-4 bg-muted/15 px-4 py-2.5">
+                <div className="min-w-0 space-y-1">
+                  <Label htmlFor="chain-automatic" className="text-sm">
+                    {t("promptChainsEditor.runChainAfterDictation")}
+                  </Label>
+                  <p id="chain-automatic-help" className="text-xs leading-5 text-muted-foreground">
+                    {!config.enabled ? (
+                      <>
+                        {t("promptChainsEditor.enableYour")}{" "}
+                        <button
+                          type="button"
+                          className="underline underline-offset-4"
+                          onClick={onConfigureModel}
+                        >
+                          {t("promptChainsEditor.textModel")}
+                        </button>{" "}
+                        {t("promptChainsEditor.toRunAutomatically")}
+                      </>
+                    ) : automatic ? (
+                      t("promptChainsEditor.useTheLastStepAsYourDictation")
+                    ) : automaticName ? (
+                      t("promptChainsEditor.replacesWhenTurnedOn", { automaticName: automaticName })
+                    ) : (
+                      t("promptChainsEditor.runThisChainWhenYouFinishRecording")
+                    )}
+                  </p>
+                </div>
+                <div className="flex shrink-0 items-center gap-2">
+                  <ProfileSettingIndicator field="autoPromptId" value={config.autoPromptId} />
+                  <Switch
+                    id="chain-automatic"
+                    checked={automatic}
+                    disabled={disabled || !config.enabled}
+                    aria-describedby="chain-automatic-help"
+                    onCheckedChange={(checked) =>
+                      onChange({ autoPromptId: checked ? chain.id : "" })
+                    }
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <div className="flex flex-wrap items-center gap-3">
+                <h2 className="text-sm font-medium">{t("promptChainsEditor.steps")}</h2>
+                <span className="ml-auto text-xs tabular-nums text-muted-foreground">
+                  {chain.steps.length} / 10
+                </span>
+                {addStepMenu}
+                <Button variant="ghost" size="sm" onClick={() => setHistory(chain)}>
+                  <History aria-hidden="true" className="size-3.5" />
+                  {t("promptsPage.versionHistory")}
+                </Button>
+              </div>
+              <div
+                aria-hidden="true"
+                className="hidden grid-cols-[1.75rem_minmax(0,1fr)_minmax(0,1fr)_2rem] gap-x-3 px-3 text-xs text-muted-foreground @xl:grid"
+              >
+                <span />
+                <span>{t("promptChainsEditor.prompt")}</span>
+                <span>{t("promptChainsEditor.useTextFrom")}</span>
+              </div>
+              <ol className="divide-y overflow-hidden rounded-xl border bg-card">
+                {chain.steps.map((step, index) => {
+                  const inputOptions = [
+                    {
+                      value: "original",
+                      label: t("historyEntryPage.originalTranscription"),
+                      description: t("promptChainsEditor.uneditedSpeechRecognition"),
+                    },
+                    {
+                      value: "transcript",
+                      label: t("generatedOutputs.savedTranscript"),
+                      description: t("promptChainsEditor.includesSavedCorrectionsAndCleanup"),
+                    },
+                    ...chain.steps.slice(0, index).map((earlier, earlierIndex) => ({
+                      value: `step:${earlier.id}`,
+                      label: t("promptChainsEditor.step", {
+                        earlierIndex: earlierIndex + 1,
+                        prompt:
+                          config.prompts.find((prompt) => prompt.id === earlier.promptId)?.name ||
+                          t("promptsPage.untitledPrompt"),
+                      }),
+                      description: t("promptChainsEditor.useThisStepSGeneratedResult"),
+                    })),
+                  ];
+                  const referenced = chain.steps.some((other) => other.input === `step:${step.id}`);
+                  const upReason =
+                    index === 0
+                      ? t("promptChainsEditor.alreadyFirst")
+                      : !validOrder(move(index, -1))
+                        ? t("promptChainsEditor.keepAfterInput")
+                        : "";
+                  const downReason =
+                    index === chain.steps.length - 1
+                      ? t("promptChainsEditor.alreadyLast")
+                      : !validOrder(move(index, 1))
+                        ? t("promptChainsEditor.keepBeforeDependents")
+                        : "";
+                  const InputIcon =
+                    step.input === "original"
+                      ? FileAudio
+                      : step.input === "transcript"
+                        ? FileText
+                        : CornerDownRight;
+                  return (
+                    <li
+                      key={step.id}
+                      aria-label={t("promptChainsEditor.step2", { index: index + 1 })}
+                      className="relative grid grid-cols-[1.75rem_minmax(0,1fr)_2rem] items-start gap-x-3 gap-y-3 p-3 before:pointer-events-none before:absolute before:top-16 before:bottom-[-2.25rem] before:left-[1.625rem] before:w-px before:bg-border last:before:hidden @xl:grid-cols-[1.75rem_minmax(0,1fr)_minmax(0,1fr)_2rem] @xl:before:top-11 @xl:before:bottom-[-1rem]"
+                    >
+                      <span
+                        aria-hidden="true"
+                        className="relative z-10 col-start-1 row-start-1 mt-6 flex size-7 items-center justify-center rounded-full border bg-card text-xs font-medium tabular-nums text-muted-foreground @xl:mt-1"
+                      >
+                        {index + 1}
+                      </span>
+                      <div className="col-start-2 row-start-1 flex min-w-0 flex-col gap-2">
+                        <Label
+                          htmlFor={`chain-prompt-${step.id}`}
+                          className="text-xs text-muted-foreground @xl:sr-only"
+                        >
+                          {t("promptChainsEditor.prompt")}
+                        </Label>
+                        <Select
+                          items={promptOptions}
+                          value={step.promptId || null}
+                          disabled={disabled}
+                          onValueChange={(promptId) => {
+                            if (promptId)
+                              update({
+                                steps: chain.steps.map((item) =>
+                                  item.id === step.id ? { ...item, promptId } : item,
+                                ),
+                              });
+                          }}
+                        >
+                          <SelectTrigger
+                            id={`chain-prompt-${step.id}`}
+                            aria-label={t("promptChainsEditor.stepPrompt", { index: index + 1 })}
+                            className="data-[size=default]:h-9 w-full min-w-0 bg-background"
+                          >
+                            <SelectValue
+                              className="min-w-0 truncate"
+                              placeholder={t("generatedOutputs.chooseAPrompt")}
+                            />
+                          </SelectTrigger>
+                          <SelectContent alignItemWithTrigger={false} align="start">
+                            {promptOptions.map((item) => (
+                              <SelectItem
+                                key={item.value}
+                                value={item.value}
+                                className="[&>span]:min-w-0"
+                              >
+                                <span className="truncate">{item.label}</span>
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="col-start-2 row-start-2 flex min-w-0 flex-col gap-2 @xl:col-start-3 @xl:row-start-1">
+                        <Label
+                          htmlFor={`chain-input-${step.id}`}
+                          className="text-xs text-muted-foreground @xl:sr-only"
+                        >
+                          {t("promptChainsEditor.useTextFrom")}
+                        </Label>
+                        <Select
+                          items={inputOptions}
+                          value={step.input}
+                          disabled={disabled}
+                          onValueChange={(input) => {
+                            if (input)
+                              update({
+                                steps: chain.steps.map((item) =>
+                                  item.id === step.id ? { ...item, input } : item,
+                                ),
+                              });
+                          }}
+                        >
+                          <SelectTrigger
+                            id={`chain-input-${step.id}`}
+                            aria-label={t("promptChainsEditor.stepInput", { index: index + 1 })}
+                            className="data-[size=default]:h-9 w-full min-w-0 bg-background"
+                          >
+                            <InputIcon
+                              aria-hidden="true"
+                              className="size-3.5 text-muted-foreground"
+                            />
+                            <SelectValue className="min-w-0 truncate" />
+                          </SelectTrigger>
+                          <SelectContent
+                            alignItemWithTrigger={false}
+                            align="start"
+                            className="min-w-64 max-w-[calc(100vw-2rem)]"
+                          >
+                            {inputOptions.map((item) => (
+                              <SelectItem
+                                key={item.value}
+                                value={item.value}
+                                aria-label={item.label}
+                                aria-description={item.description}
+                                className="py-2 [&>span]:min-w-0"
+                              >
+                                <span className="flex min-w-0 flex-col gap-0.5">
+                                  <span className="truncate">{item.label}</span>
+                                  <span className="text-xs text-muted-foreground">
+                                    {item.description}
+                                  </span>
+                                </span>
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      {index === chain.steps.length - 1 && (
+                        <span className="col-start-2 row-start-3 w-fit rounded bg-primary/10 px-1.5 py-0.5 text-xs text-primary @xl:row-start-2">
+                          {t("promptChainsEditor.finalOutput")}
+                        </span>
+                      )}
+                      <div className="col-start-3 row-start-1 mt-6 @xl:col-start-4 @xl:mt-0">
+                        <Menu.Root>
+                          <Menu.Trigger
+                            disabled={disabled}
+                            aria-label={t("promptChainsEditor.stepActions", { index: index + 1 })}
+                            render={
+                              <Button
+                                variant="ghost"
+                                size="icon-sm"
+                                className="text-muted-foreground"
+                              />
+                            }
+                          >
+                            <Ellipsis aria-hidden="true" className="size-4" />
+                          </Menu.Trigger>
+                          <Menu.Portal>
+                            <Menu.Positioner align="end" sideOffset={4} className="z-50">
+                              <Menu.Popup className={menuClass}>
+                                <Menu.Item
+                                  aria-label={t("promptChainsEditor.moveStepUp", {
+                                    index: index + 1,
+                                  })}
+                                  disabled={disabled || !!upReason}
+                                  onClick={() => update({ steps: move(index, -1) })}
+                                  className={menuItemClass}
+                                >
+                                  <ArrowUp aria-hidden="true" className="size-4" />
+                                  {t("promptChainsEditor.moveUp")}
+                                </Menu.Item>
+                                {upReason && (
+                                  <p className="max-w-56 px-3 pb-2 text-xs leading-5 text-muted-foreground">
+                                    {upReason}
+                                  </p>
+                                )}
+                                <Menu.Item
+                                  aria-label={t("promptChainsEditor.moveStepDown", {
+                                    index: index + 1,
+                                  })}
+                                  disabled={disabled || !!downReason}
+                                  onClick={() => update({ steps: move(index, 1) })}
+                                  className={menuItemClass}
+                                >
+                                  <ArrowDown aria-hidden="true" className="size-4" />
+                                  {t("promptChainsEditor.moveDown")}
+                                </Menu.Item>
+                                {downReason && (
+                                  <p className="max-w-56 px-3 pb-2 text-xs leading-5 text-muted-foreground">
+                                    {downReason}
+                                  </p>
+                                )}
+                                <Menu.Item
+                                  aria-label={t("promptChainsEditor.removeStep", {
+                                    index: index + 1,
+                                  })}
+                                  disabled={disabled || chain.steps.length === 1 || referenced}
+                                  onClick={() =>
+                                    update({
+                                      steps: chain.steps.filter((item) => item.id !== step.id),
+                                    })
+                                  }
+                                  className={`${menuItemClass} text-destructive data-highlighted:bg-destructive/10`}
+                                >
+                                  <Trash2 aria-hidden="true" className="size-4" />
+                                  {t("promptChainsEditor.removeStep2")}
+                                </Menu.Item>
+                                {referenced && (
+                                  <p className="mt-1 max-w-56 border-t px-3 pt-2 pb-1 text-xs leading-5 text-muted-foreground">
+                                    {t("promptChainsEditor.laterStepsUseThisResultChangeTheir")}
+                                  </p>
+                                )}
+                              </Menu.Popup>
+                            </Menu.Positioner>
+                          </Menu.Portal>
+                        </Menu.Root>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ol>
+
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <p className="text-xs leading-5 text-muted-foreground">
+                  {t("promptChainsEditor.stepsRunInOrderEveryCompletedResult")}
+                </p>
+              </div>
+            </div>
+          </>
+        )}
+      </fieldset>
+      {history && (
+        <RevisionHistory
+          kind="chain"
+          itemId={history.id}
+          title={t("promptChainsEditor.chainVersionHistory")}
+          prompts={config.prompts}
+          current={JSON.stringify(chains.find((item) => item.id === history.id) ?? history)}
+          onClose={() => setHistory(null)}
+          validate={(value) => {
+            const previous = JSON.parse(value) as PromptChain;
+            const missing = previous.steps.some(
+              (step) => !config.prompts.some((prompt) => prompt.id === step.promptId),
+            );
+            return missing
+              ? t("promptChainsEditor.thisVersionUsesAPromptThatNo")
+              : validateTextProcessing({
+                  ...config,
+                  chains: chains.map((item) =>
+                    item.id === history.id ? { ...previous, id: history.id } : item,
+                  ),
+                });
+          }}
+          onRestore={(value) => {
+            const previous = JSON.parse(value) as PromptChain;
+            onChange({
+              chains: chains.map((item) =>
+                item.id === history.id
+                  ? { ...item, name: previous.name, steps: previous.steps }
+                  : item,
+              ),
+            });
+          }}
+        />
+      )}
+      <Dialog open={deleting} onOpenChange={setDeleting}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t("promptChainsEditor.deleteThisChain")}</DialogTitle>
+            <DialogDescription>
+              {t("promptChainsEditor.deleteDescription", { name: chain?.name ?? "" })}
+              {config.autoPromptId === chain?.id &&
+                t("promptChainsEditor.automaticProcessingWillBeTurnedOff")}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleting(false)}>
+              {t("common.cancel")}
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={disabled}
+              onClick={() => {
+                if (chain) onDelete(chain);
+                setDeleting(false);
+              }}
+            >
+              {t("promptChainsEditor.deleteChain")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </section>
+  );
+}
