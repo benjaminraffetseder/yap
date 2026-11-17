@@ -1,13 +1,13 @@
-import { nativeText } from "@/i18n/native-text";
-import { useTranslation } from "react-i18next";
+import { Button } from "@/components/ui/button";
 import {
   useDictationActions,
   useDictationActivity,
 } from "@/features/dictation/hooks/use-dictation-state";
-import { Button } from "@/components/ui/button";
+import { nativeText } from "@/i18n/native-text";
 import { backend, isBusy, isDesktop } from "@/lib/backend";
 import { Keyboard } from "lucide-react";
 import { useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Link } from "react-router";
 
 export function ShortcutStatus({

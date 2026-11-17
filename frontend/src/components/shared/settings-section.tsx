@@ -21,7 +21,7 @@ export function SettingsSection({
           data-slot="settings-section-heading"
           className="flex flex-wrap items-center justify-between gap-3 border-b px-5 py-4"
         >
-          <h2 className="flex items-center gap-2 text-sm font-semibold">
+          <h2 className="flex items-center gap-2 font-mono text-[0.75rem] leading-(--text-sm--line-height) font-medium tracking-[0.045em] uppercase">
             {icon}
             {title}
           </h2>
@@ -30,7 +30,7 @@ export function SettingsSection({
       ) : (
         <h2
           data-slot="settings-section-heading"
-          className="flex items-center gap-2 border-b px-5 py-4 text-sm font-semibold"
+          className="flex items-center gap-2 border-b px-5 py-4 font-mono text-[0.75rem] leading-(--text-sm--line-height) font-medium tracking-[0.045em] uppercase"
         >
           {icon}
           {title}

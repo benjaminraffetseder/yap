@@ -1,12 +1,21 @@
+import { CopyButton } from "@/components/shared/copy-button";
+import { ActionMenu, ActionMenuItem } from "@/components/ui/action-menu";
+import { Button } from "@/components/ui/button";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AudioPlayer } from "@/features/audio/components/audio-player";
 import { ChatSourceText } from "@/features/chat/components/chat-source-text";
-import { CopyButton } from "@/components/shared/copy-button";
+import {
+  TranscriptionChat,
+  type ChatSelection,
+} from "@/features/chat/components/transcription-chat";
+import { referenceRanges } from "@/features/chat/lib/chat-references";
 import {
   useDictationActions,
   useDictationConnection,
   useDictationPhase,
   useProcessingPanelState,
 } from "@/features/dictation/hooks/use-dictation-state";
+import { deleteTranscriptions } from "@/features/history/lib/delete-transcriptions";
 import { GeneratedOutputs } from "@/features/processing/components/generated-outputs";
 import { InferenceStats } from "@/features/transcripts/components/inference-stats";
 import { SessionTitleAction } from "@/features/transcripts/components/session-title-action";
@@ -15,13 +24,6 @@ import { TranscriptContextMenu } from "@/features/transcripts/components/transcr
 import { TranscriptDiff } from "@/features/transcripts/components/transcript-diff";
 import { TranscriptEditor } from "@/features/transcripts/components/transcript-editor";
 import { TranscriptExportDialog } from "@/features/transcripts/components/transcript-export-dialog";
-import {
-  TranscriptionChat,
-  type ChatSelection,
-} from "@/features/chat/components/transcription-chat";
-import { ActionMenu, ActionMenuItem } from "@/components/ui/action-menu";
-import { Button } from "@/components/ui/button";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import i18n from "@/i18n";
 import { nativeText } from "@/i18n/native-text";
 import {
@@ -34,11 +36,9 @@ import {
   type GeneratedOutput,
   type Session,
 } from "@/lib/backend";
-import { referenceRanges } from "@/features/chat/lib/chat-references";
-import { deleteTranscriptions } from "@/features/history/lib/delete-transcriptions";
 import { resourceKeys, sessionQuery } from "@/lib/queries/resource-queries";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft,
   AudioLines,

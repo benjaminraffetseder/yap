@@ -1,14 +1,14 @@
-import { nativeText } from "@/i18n/native-text";
-import { useTranslation } from "react-i18next";
-import { useCallback, useEffect, useRef, useState } from "react";
-import { Download, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import {
   useDictationActions,
   useDictationStatus,
 } from "@/features/dictation/hooks/use-dictation-state";
+import { nativeText } from "@/i18n/native-text";
 import { backend, isBusy, isDesktop, message, type AudioSupport } from "@/lib/backend";
+import { Download, RefreshCw } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 
 export function AudioSupportPanel({
   active,

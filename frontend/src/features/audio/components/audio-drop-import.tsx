@@ -1,17 +1,17 @@
-import { useTranslation } from "react-i18next";
+import { MotionReveal } from "@/components/shared/motion-reveal";
 import {
   useDictationActions,
   useDictationConnection,
   useSavedConfiguration,
 } from "@/features/dictation/hooks/use-dictation-state";
-import { MotionReveal } from "@/components/shared/motion-reveal";
+import { useMotionPreference } from "@/hooks/use-motion-preference";
 import { backend, isDesktop } from "@/lib/backend";
 import { fade } from "@/lib/motion";
-import { useMotionPreference } from "@/hooks/use-motion-preference";
 import { Events } from "@wailsio/runtime";
 import { Upload } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 
 export function AudioDropImport() {
   const { t } = useTranslation();

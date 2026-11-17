@@ -1,7 +1,3 @@
-import { nativeText } from "@/i18n/native-text";
-import { useTranslation } from "react-i18next";
-import i18n from "@/i18n";
-import { TranscriptDiff } from "@/features/transcripts/components/transcript-diff";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -11,6 +7,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { TranscriptDiff } from "@/features/transcripts/components/transcript-diff";
+import i18n from "@/i18n";
+import { nativeText } from "@/i18n/native-text";
 import {
   backend,
   message,
@@ -21,6 +20,7 @@ import {
   type VocabularyEntry,
 } from "@/lib/backend";
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 
 function preview(kind: RevisionKind, value: string, prompts: TextPrompt[]): string {
   if (kind === "transcript") return value;

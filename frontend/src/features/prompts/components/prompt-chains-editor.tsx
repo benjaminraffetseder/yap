@@ -1,5 +1,3 @@
-import { ProfileSettingIndicator } from "@/features/profiles/components/profile-setting-indicator";
-import { RevisionHistory } from "@/features/transcripts/components/revision-history";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -19,6 +17,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import { ProfileSettingIndicator } from "@/features/profiles/components/profile-setting-indicator";
+import { RevisionHistory } from "@/features/transcripts/components/revision-history";
 import type { PromptChain, PromptChainStep, TextProcessing } from "@/lib/backend";
 import { validateTextProcessing } from "@/lib/validation/draft-validation";
 import { Menu } from "@base-ui/react/menu";

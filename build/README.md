@@ -2,8 +2,8 @@
 
 These are source inputs to `wails3 dev` and `wails3 build`, not generated output.
 
-- `../frontend/src/assets/app-icon.svg` is the icon artwork, matching the landing
-  page favicon. The frontend uses it for the sidebar brand and favicon.
+- `../frontend/src/assets/app-icon.svg` is the canonical sage-and-ink icon artwork.
+  The frontend uses it for the sidebar brand and favicon.
 - `appicon.png` is its 1024px render, shared by the Wails application and system
   tray, and used to generate the macOS bundle icon during packaging.
 - `windows/icon.ico` is the Windows executable icon.

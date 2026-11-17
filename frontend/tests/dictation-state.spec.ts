@@ -4651,7 +4651,7 @@ test("action refresh replies preserve status events received while awaiting them
   await expect(page.getByRole("button", { name: "Transcribing…", exact: true })).toBeDisabled();
 });
 
-test("Vocabulary matches the Models heading and keeps editing actions visible in narrow windows", async ({
+test("Dictionary matches the Models heading and keeps editing actions visible in narrow windows", async ({
   page,
 }, testInfo) => {
   await page.addInitScript(() => {
@@ -4677,9 +4677,9 @@ test("Vocabulary matches the Models heading and keeps editing actions visible in
   const modelHeading = await page
     .getByRole("heading", { name: "Models", exact: true })
     .evaluate(headingStyle);
-  await navigateMain(page, "Vocabulary");
+  await navigateMain(page, "Dictionary");
   expect(
-    await page.getByRole("heading", { name: "Vocabulary", exact: true }).evaluate(headingStyle),
+    await page.getByRole("heading", { name: "Dictionary", exact: true }).evaluate(headingStyle),
   ).toEqual(modelHeading);
   await expect(page.getByText("3 / 100", { exact: true })).toBeVisible();
   const table = page.getByRole("table");
@@ -4737,7 +4737,7 @@ test("Vocabulary matches the Models heading and keeps editing actions visible in
     window.dictationTest.callbacks["setup:changed"]();
   });
   await expect(
-    page.getByRole("heading", { name: "A vocabulary that sounds like you" }),
+    page.getByRole("heading", { name: "A dictionary that sounds like you" }),
   ).toBeVisible();
   await expect(page.getByRole("table")).toHaveCount(0);
   await expect(page.getByText("0 / 100", { exact: true })).toBeVisible();
@@ -4797,7 +4797,7 @@ test("vocabulary table paginates when there are more than ten terms", async ({ p
   });
   await page.goto("/#/vocabulary");
   await expect(page.getByText("11 / 100", { exact: true })).toBeVisible();
-  const pages = page.getByRole("navigation", { name: "Vocabulary pages" });
+  const pages = page.getByRole("navigation", { name: "Dictionary pages" });
   await expect(pages).toBeVisible();
   await expect(pages.getByText("Page 1 of 2", { exact: true })).toBeVisible();
   await expect(page.getByLabel("Preferred spelling", { exact: true })).toHaveCount(10);
@@ -5358,7 +5358,7 @@ test("History opens a dictation page with content tabs that fit narrow windows",
   await expect(recent.locator("tbody tr")).toHaveCount(5);
   await expect(recent.locator("tbody tr").first()).toContainText("A Paris-based AI lab");
   await expect(recent.locator("tbody tr").nth(1)).toContainText("An unchanged transcription.");
-  await expect(recent.getByRole("checkbox")).toHaveCount(7);
+  await expect(recent.getByRole("checkbox")).toHaveCount(6);
   for (const width of [1280, 600]) {
     await page.setViewportSize({ width, height: 900 });
     expect(
@@ -5393,7 +5393,7 @@ test("History opens a dictation page with content tabs that fit narrow windows",
     exact: true,
   });
   const pageCheckbox = page.getByRole("checkbox", {
-    name: "Select loaded",
+    name: "Select all loaded dictations",
     exact: true,
   });
   await firstCheckbox.focus();
@@ -5405,7 +5405,7 @@ test("History opens a dictation page with content tabs that fit narrow windows",
     fullPage: true,
     animations: "disabled",
   });
-  await page.getByText("Select loaded", { exact: true }).click();
+  await pageCheckbox.click();
   await expect(pageCheckbox).toBeChecked();
   await expect(page.locator('tr[data-state="selected"]')).toHaveCount(5);
   await pageCheckbox.focus();
@@ -6720,6 +6720,87 @@ async function sessionTitleScenario(page: Page) {
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("Original saved transcript.");
 }
 
+test("output prompt combobox searches grouped recipes without submitting the dialog", async ({
+  page,
+}, testInfo) => {
+  await page.addInitScript(() => {
+    localStorage.setItem("desktop-theme", "dark");
+    const config = window.dictationTest.snapshot.textProcessing;
+    config.enabled = true;
+    config.model = "local-model";
+    config.prompts.push(
+      ...Array.from({ length: 24 }, (_, index) => ({
+        id: `custom-${index}`,
+        name: `Custom prompt ${index + 1}`,
+        instruction: "Rewrite the transcript.",
+      })),
+      { id: "shared-prompt", name: "Shared recipe", instruction: "Rewrite." },
+    );
+    config.chains = [
+      {
+        id: "shared-chain",
+        name: "Shared recipe",
+        steps: [{ id: "one", promptId: "summary", input: "original" }],
+      },
+    ];
+  });
+  await sessionTitleScenario(page);
+  await page.getByRole("tab", { name: "Outputs", exact: true }).click();
+  await page.getByRole("button", { name: "New output", exact: true }).click();
+  const composer = page.getByRole("dialog", { name: "Create an output", exact: true });
+  const picker = composer.getByRole("combobox", { name: "Output prompt", exact: true });
+  await expect(picker).toBeFocused();
+  await picker.press("Enter");
+  const search = page.getByRole("combobox", { name: "Search prompts and chains…", exact: true });
+  await expect(search).toBeFocused();
+  await search.fill("sUmMaRy");
+  await expect(page.getByRole("option")).toHaveCount(1);
+  await expect(page.getByRole("option", { name: "Summary", exact: true })).toBeVisible();
+  await search.press("Enter");
+  await expect(picker).toContainText("Summary");
+  await expect(picker).toBeFocused();
+  await expect(composer).toBeVisible();
+  expect(await page.evaluate(() => window.dictationTest.processing)).toBeNull();
+
+  await picker.click();
+  await expect(search).toHaveValue("");
+  await search.fill("no matching recipe");
+  await expect(page.getByRole("option")).toHaveCount(0);
+  await expect(page.getByText("No prompts or chains found.", { exact: true })).toBeVisible();
+  await search.press("Enter");
+  await expect(composer).toBeVisible();
+  expect(await page.evaluate(() => window.dictationTest.processing)).toBeNull();
+  await expect(picker).toBeFocused();
+  await picker.click();
+  await search.fill("still no matching recipe");
+  await search.press("Escape");
+  await expect(picker).toBeFocused();
+  await expect(picker).toContainText("Summary");
+  await expect(composer).toBeVisible();
+
+  await picker.click();
+  await expect(search).toHaveValue("");
+  await search.fill("shared");
+  await expect(page.getByRole("option", { name: "Shared recipe", exact: true })).toHaveCount(2);
+  const popup = page.locator('[data-slot="combobox-content"]');
+  await expect(popup).toHaveCSS("opacity", "1");
+  await expect(popup).toHaveCSS("background-color", "rgb(37, 37, 37)");
+  await page.screenshot({ path: testInfo.outputPath("prompt-combobox-dark.png") });
+  await page.setViewportSize({ width: 360, height: 760 });
+  await expect(popup).toBeInViewport();
+  expect(await popup.evaluate((node) => node.scrollWidth <= node.clientWidth + 1)).toBe(true);
+  await page.screenshot({ path: testInfo.outputPath("prompt-combobox-narrow.png") });
+  const chain = page.getByRole("group", { name: "Chains", exact: true }).getByRole("option");
+  await expect(chain).toHaveAttribute("aria-description", "Prompt chain");
+  await chain.click();
+  await expect(picker.locator("svg.lucide-workflow")).toHaveCount(1);
+  await composer.getByRole("button", { name: "Run chain", exact: true }).click();
+  await expect(composer).toHaveCount(0);
+  await expect
+    .poll(() => page.evaluate(() => window.dictationTest.processing?.prompt))
+    .toBe("summary");
+});
+
 test("output dialog keeps prompt and chain controls usable at narrow or enlarged sizes", async ({
   page,
 }, testInfo) => {
@@ -6982,7 +7063,7 @@ test("History renames in place, preserves text and returns focus when a title se
   await sessionTitleScenario(page);
   await page.getByRole("link", { name: "Back to History", exact: true }).click();
   await expect(page.locator("tbody tr")).toHaveCount(2);
-  const row = page.getByRole("row").filter({ hasText: "Original saved transcript." });
+  const row = page.getByRole("row").filter({ has: page.locator('a[href^="#/history/title-one"]') });
   const rename = row.getByRole("button", { name: /^Rename dictation:/ });
   await page.mouse.move(0, 0);
   await expect(rename).toHaveCSS("opacity", "1");
@@ -7330,7 +7411,7 @@ test("a selected correction adds a confirmed term without saving the transcript 
 }) => {
   const input = await openCorrectionEditor(page);
   const add = page.getByRole("menuitem", {
-    name: "Add to vocabulary",
+    name: "Add to dictionary",
     exact: true,
   });
   await expect(add).toHaveCount(0);
@@ -7340,7 +7421,7 @@ test("a selected correction adds a confirmed term without saving the transcript 
   await expect(add).toBeEnabled();
   await add.click();
   const term = page.getByRole("dialog", {
-    name: "Add to vocabulary",
+    name: "Add to dictionary",
     exact: true,
   });
   await expect(term.getByLabel("Preferred spelling", { exact: true })).toHaveValue("PostgreSQL");
@@ -7357,7 +7438,7 @@ test("a selected correction adds a confirmed term without saving the transcript 
   });
   await term.getByRole("button", { name: "Save term", exact: true }).click();
   await expect(page.getByRole("region", { name: "Edit transcript" })).toBeVisible();
-  await expect(page.getByRole("status").filter({ hasText: "Added to vocabulary" })).toBeVisible();
+  await expect(page.getByRole("status").filter({ hasText: "Added to dictionary" })).toBeVisible();
   await expect(input).toHaveValue("PostgreSQL connection ready.");
   await expect(input).toBeFocused();
   await expect
@@ -7391,7 +7472,7 @@ test("a selected correction adds a confirmed term without saving the transcript 
   await expect
     .poll(() => page.evaluate(() => window.dictationTest.snapshot.history[0].finalTranscript))
     .toBe("PostgreSQL connection ready.");
-  await navigateMain(page, "Vocabulary");
+  await navigateMain(page, "Dictionary");
   await expect(page.getByLabel("Preferred spelling", { exact: true }).last()).toHaveValue(
     "PostgreSQL",
   );
@@ -7402,8 +7483,8 @@ test("term save failures and conflicts preserve both drafts for retry", async ({
   await input.press("Home");
   await input.press("Control+Shift+ArrowRight");
   await openSelectionMenu(page);
-  await page.getByRole("menuitem", { name: "Add to vocabulary", exact: true }).click();
-  const term = page.getByRole("dialog", { name: "Add to vocabulary" });
+  await page.getByRole("menuitem", { name: "Add to dictionary", exact: true }).click();
+  const term = page.getByRole("dialog", { name: "Add to dictionary" });
   const aliases = term.getByLabel("Aliases (comma-separated)");
   await aliases.fill("postgres");
   await page.evaluate(() => {
@@ -7439,8 +7520,8 @@ test("Cancel and Escape return from vocabulary confirmation without losing edits
     await input.press("Home");
     await input.press("Control+Shift+ArrowRight");
     await openSelectionMenu(page);
-    await page.getByRole("menuitem", { name: "Add to vocabulary", exact: true }).click();
-    const term = page.getByRole("dialog", { name: "Add to vocabulary" });
+    await page.getByRole("menuitem", { name: "Add to dictionary", exact: true }).click();
+    const term = page.getByRole("dialog", { name: "Add to dictionary" });
     await term.getByLabel("Preferred spelling", { exact: true }).fill("Discarded");
     await page.mouse.click(5, 5);
     await expect(term).toBeVisible();
@@ -7465,7 +7546,7 @@ test("vocabulary selection rejects multiline or oversized terms and respects act
 }) => {
   const input = await openCorrectionEditor(page);
   const add = page.getByRole("menuitem", {
-    name: "Add to vocabulary",
+    name: "Add to dictionary",
     exact: true,
   });
   await input.fill("a".repeat(81));
@@ -7479,7 +7560,7 @@ test("vocabulary selection rejects multiline or oversized terms and respects act
   await openSelectionMenu(page);
   await expect(add).toBeEnabled();
   await add.click();
-  const term = page.getByRole("dialog", { name: "Add to vocabulary" });
+  const term = page.getByRole("dialog", { name: "Add to dictionary" });
   await term.getByLabel("Preferred spelling", { exact: true }).fill(" ");
   await expect(term.getByRole("button", { name: "Save term", exact: true })).toBeDisabled();
   await term.getByLabel("Preferred spelling", { exact: true }).fill("PostgreSQL");
@@ -7498,6 +7579,60 @@ test("vocabulary selection rejects multiline or oversized terms and respects act
   await term.getByRole("button", { name: "Save term", exact: true }).click();
   await expect(input).toHaveValue("PostgreSQL");
 });
+
+for (const deleted of [false, true]) {
+  test(`${deleted ? "Recently Deleted" : "History"} clears an unmatched search with keyboard focus and preserves sorting`, async ({
+    page,
+  }) => {
+    await page.addInitScript((deleted) => {
+      window.dictationTest.snapshot.history = [
+        {
+          id: "search-recovery",
+          title: "Release review",
+          createdAt: "2026-11-06T10:00:00Z",
+          durationMs: 18000,
+          rawTranscript: "Bring the updated meeting notes.",
+          finalTranscript: "Bring the updated meeting notes.",
+          speechModel: "base",
+          language: "en",
+          audioPath: "",
+        },
+      ];
+      if (deleted) {
+        localStorage.setItem("desktop-language", "de");
+        window.dictationTest.recentlyDeleted = window.dictationTest.snapshot.history.map(
+          (entry) => ({ ...entry, deletedAt: new Date().toISOString() }),
+        );
+      }
+    }, deleted);
+    await page.goto(
+      `/#/history?q=unmatched-polish-query&sort=durationMs&direction=asc${deleted ? "&view=deleted" : ""}`,
+    );
+    const search = page.getByRole("textbox", {
+      name: deleted ? "Transkripte durchsuchen" : "Search transcripts",
+      exact: true,
+    });
+    await expect(search).toHaveValue("unmatched-polish-query");
+    await expect(
+      page.getByText(deleted ? "0 passende Diktate" : "0 matching dictations", { exact: true }),
+    ).toBeVisible();
+    const clear = page.getByRole("button", {
+      name: deleted ? "Suche leeren" : "Clear search",
+      exact: true,
+    });
+    await clear.focus();
+    await page.keyboard.press("Enter");
+    await expect(search).toBeFocused();
+    await expect(search).toHaveValue("");
+    await expect(clear).toHaveCount(0);
+    await expect(page.locator("tbody tr")).not.toHaveCount(0);
+    const params = new URLSearchParams(new URL(page.url()).hash.split("?")[1]);
+    expect(params.has("q")).toBe(false);
+    expect(params.get("sort")).toBe("durationMs");
+    expect(params.get("direction")).toBe("asc");
+    expect(params.get("view")).toBe(deleted ? "deleted" : null);
+  });
+}
 
 test("History uses shadcn tables with sortable headers and preserves the order through search and navigation", async ({
   page,
@@ -7519,6 +7654,8 @@ test("History uses shadcn tables with sortable headers and preserves the order t
   await page.goto("/#/history?q=meeting");
   const table = page.getByRole("table", { name: "History", exact: true });
   await expect(table).toHaveAttribute("data-slot", "table");
+  await expect(page.locator('[data-slot="history-toolbar"]').getByRole("checkbox")).toHaveCount(0);
+  await expect(table.locator("thead").getByRole("checkbox")).toHaveCount(1);
   const names = table.locator("tbody tr td:nth-child(2) p:first-child");
   const column = (name: string) => table.getByRole("columnheader", { name, exact: true });
   await expect(column("Created")).toHaveAttribute("aria-sort", "descending");
@@ -7709,7 +7846,7 @@ test("History loads one batch at a time, stops at the end, and deletes and resto
   await expect(page.getByRole("link", { name: /Updated older dictation/ })).toHaveCount(1);
   await expect(page.getByRole("link", { name: /Scroll dictation 20\b/ })).toHaveCount(0);
   await expect(rows.first()).toBeChecked();
-  await page.getByRole("checkbox", { name: "Select loaded", exact: true }).check();
+  await page.getByRole("checkbox", { name: "Select all loaded dictations", exact: true }).check();
   await expect(page.getByText("104 selected", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Delete selected", exact: true }).click();
   await expect(page.getByText("No dictations yet", { exact: true })).toBeVisible();
@@ -7825,7 +7962,7 @@ test("History preserves selections while scrolling, exports selected entries, an
   });
   await page.goto("/#/history");
   await expect(page.getByRole("checkbox", { name: /^Select dictation / })).toHaveCount(50);
-  await page.getByRole("checkbox", { name: "Select loaded", exact: true }).check();
+  await page.getByRole("checkbox", { name: "Select all loaded dictations", exact: true }).check();
   await expect(page.getByText("50 selected", { exact: true })).toBeVisible();
   await page
     .getByRole("checkbox", { name: "Select dictation 50", exact: true })
@@ -7881,7 +8018,7 @@ test("History preserves selections while scrolling, exports selected entries, an
   await expect(page.getByText("No matching transcripts", { exact: true })).toBeVisible();
   await page.getByLabel("Search transcripts").fill("");
   await expect(page.getByText("Dictation 51", { exact: true })).toBeVisible();
-  await page.getByRole("checkbox", { name: "Select loaded", exact: true }).check();
+  await page.getByRole("checkbox", { name: "Select all loaded dictations", exact: true }).check();
   await page.getByRole("button", { name: "Restore selected", exact: true }).click();
   await expect(page.getByText("No recently deleted dictations", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Show all dictations", exact: true }).click();
@@ -7922,7 +8059,10 @@ test("Recently Deleted supports retry and restoration on narrow screens after th
   await expect(
     page.getByRole("button", { name: "Show all dictations", exact: true }),
   ).toHaveAttribute("aria-pressed", "true");
-  const selectPage = page.getByRole("checkbox", { name: "Select loaded", exact: true });
+  const selectPage = page.getByRole("checkbox", {
+    name: "Select all loaded dictations",
+    exact: true,
+  });
   const uncheckedBounds = (await selectPage.boundingBox())!;
   await selectPage.check();
   const checkedBounds = (await selectPage.boundingBox())!;
@@ -8033,7 +8173,7 @@ test("Recently Deleted permanently deletes individual entries and selections wit
     .filter({ hasText: "Dictation permanently deleted" });
   await expect(toast).toBeVisible();
   await expect(toast.getByRole("button", { name: "Undo", exact: true })).toHaveCount(0);
-  await page.getByRole("checkbox", { name: "Select loaded", exact: true }).check();
+  await page.getByRole("checkbox", { name: "Select all loaded dictations", exact: true }).check();
   const selectionBounds = (await page
     .getByRole("region", { name: "Selection actions", exact: true })
     .boundingBox())!;
@@ -8290,7 +8430,10 @@ test("History keeps its header stable and selection actions at the bottom while 
     path: testInfo.outputPath("history-header-desktop.png"),
     animations: "disabled",
   });
-  const selectPage = page.getByRole("checkbox", { name: "Select loaded", exact: true });
+  const selectPage = page.getByRole("checkbox", {
+    name: "Select all loaded dictations",
+    exact: true,
+  });
   const checkboxBefore = (await selectPage.boundingBox())!;
   const selectionBar = page.getByRole("region", { name: "Selection actions", exact: true });
   await expect(selectionBar).toHaveCount(0);
@@ -8341,7 +8484,7 @@ test("History keeps its header stable and selection actions at the bottom while 
   await expect(selectPage).not.toBeChecked();
   await expect(selectPage).toBeFocused();
   await page.getByLabel("Search transcripts", { exact: true }).fill("Dictation 39");
-  await expect(page.getByText("1 dictation", { exact: true })).toBeVisible();
+  await expect(page.getByText("1 matching dictation", { exact: true })).toBeVisible();
   await expect(page.getByRole("link", { name: /Dictation 39/ })).toBeVisible();
 });
 
@@ -8364,7 +8507,9 @@ test("History keeps keystrokes local and debounces search for long transcripts",
   });
   await page.goto("/#/history");
   await expect(page.locator("tbody tr")).toHaveCount(50);
-  await expect(page.getByRole("checkbox", { name: "Select loaded", exact: true })).toBeEnabled();
+  await expect(
+    page.getByRole("checkbox", { name: "Select all loaded dictations", exact: true }),
+  ).toBeEnabled();
   expect(await page.locator("tbody").evaluate((node) => node.textContent!.length)).toBeLessThan(
     15000,
   );
@@ -8372,7 +8517,9 @@ test("History keeps keystrokes local and debounces search for long transcripts",
   await page.clock.pauseAt(new Date("2026-11-12T12:00:01Z"));
   const search = page.getByLabel("Search transcripts", { exact: true });
   await search.pressSequentially("t");
-  await expect(page.getByRole("checkbox", { name: "Select loaded", exact: true })).toBeDisabled();
+  await expect(
+    page.getByRole("checkbox", { name: "Select all loaded dictations", exact: true }),
+  ).toBeDisabled();
   await page.evaluate(() => {
     Reflect.set(window, "searchTableUpdates", 0);
     const table = document.querySelector("table")!;
@@ -8436,7 +8583,7 @@ test("History searches all entries beyond 500 and ignores older search replies",
   await page.evaluate(() => {
     window.dictationTest.pendingHistory[1].resolve();
   });
-  await expect(page.getByText("1 dictation", { exact: true })).toBeVisible();
+  await expect(page.getByText("1 matching dictation", { exact: true })).toBeVisible();
   await page.evaluate(() => {
     window.dictationTest.pendingHistory[0].resolve();
   });
@@ -8449,7 +8596,9 @@ test("History searches all entries beyond 500 and ignores older search replies",
   });
   await search.fill("missing");
   await expect(page.getByRole("alert").filter({ hasText: "History load failed" })).toBeVisible();
-  await expect(page.getByRole("checkbox", { name: "Select loaded", exact: true })).toBeDisabled();
+  await expect(
+    page.getByRole("checkbox", { name: "Select all loaded dictations", exact: true }),
+  ).toBeDisabled();
   await page.evaluate(() => {
     window.dictationTest.failHistory = false;
   });
@@ -10486,7 +10635,7 @@ test("page drafts flush on navigation and remain saved when returning", async ({
     .toBe("Ctrl+Alt+P");
   await page.getByRole("tab", { name: "Text model", exact: true }).click();
   await page.getByLabel("Model identifier").fill("unsaved-local-model");
-  await navigateMain(page, "Vocabulary");
+  await navigateMain(page, "Dictionary");
   await page.getByRole("button", { name: "Add term", exact: true }).click();
   await page.getByLabel("Preferred spelling", { exact: true }).fill("PostgreSQL");
   await navigateMain(page, "History");
@@ -10496,7 +10645,7 @@ test("page drafts flush on navigation and remain saved when returning", async ({
   await page.getByRole("tab", { name: "Text model", exact: true }).click();
   await expect(page.getByLabel("Model identifier")).toHaveValue("unsaved-local-model");
   await saveDraft(page);
-  await navigateMain(page, "Vocabulary");
+  await navigateMain(page, "Dictionary");
   await expect(page.getByLabel("Preferred spelling", { exact: true })).toHaveValue("PostgreSQL");
   await saveDraft(page);
   await page.getByRole("link", { name: "Settings", exact: true }).click();
@@ -10940,7 +11089,7 @@ for (const theme of ["light", "dark"] as const) {
     await expect(marker).toBeFocused();
     await expect(tooltip).toContainText("Profile: Off");
     await page.keyboard.press("Escape");
-    await navigateMain(page, "Vocabulary");
+    await navigateMain(page, "Dictionary");
     await page.getByRole("link", { name: "Settings", exact: true }).click();
     await expect(cleanup).toBeChecked();
     await expect(marker).toBeVisible();
@@ -11992,7 +12141,7 @@ test("auto-save vocabulary keeps submitted aliases without a loop and skips empt
       return event.defaultPrevented;
     }),
   ).toBe(false);
-  await expect(page.getByRole("button", { name: "Save vocabulary" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Save dictionary" })).toHaveCount(0);
 });
 
 test("auto-save pauses invalid vocabulary and prompts, then resumes after correction", async ({
@@ -12408,7 +12557,7 @@ test("auto-save history restores the vocabulary list and transcript, marks curre
   });
   await page.goto("/#/vocabulary");
   await page.getByRole("button", { name: "Version history", exact: true }).click();
-  const vocabularyHistory = page.getByRole("dialog", { name: "Vocabulary version history" });
+  const vocabularyHistory = page.getByRole("dialog", { name: "Dictionary version history" });
   await expect(vocabularyHistory.getByRole("alert")).toHaveText("History load failed");
   await page.evaluate(() => Reflect.set(window, "failRevisionLoad", false));
   await vocabularyHistory.getByRole("button", { name: "Retry", exact: true }).click();
@@ -13292,7 +13441,7 @@ test("transcript exports select all search matches across loaded batches and fre
   });
   await page.goto("/#/history?q=project");
   await expect(page.getByRole("checkbox", { name: /^Select dictation / })).toHaveCount(50);
-  await page.getByRole("checkbox", { name: "Select loaded", exact: true }).check();
+  await page.getByRole("checkbox", { name: "Select all loaded dictations", exact: true }).check();
   await page
     .getByRole("button", { name: "Select all 54 matching transcripts for export", exact: true })
     .click();
@@ -13300,18 +13449,16 @@ test("transcript exports select all search matches across loaded batches and fre
   await expect(page.getByRole("button", { name: "Delete selected", exact: true })).toHaveCount(0);
   await page.getByRole("checkbox", { name: "Select dictation 1", exact: true }).uncheck();
   await expect(page.getByText("53 selected for export", { exact: true })).toBeVisible();
-  await expect(page.getByRole("checkbox", { name: "Select loaded", exact: true })).toHaveAttribute(
-    "aria-checked",
-    "mixed",
-  );
+  await expect(
+    page.getByRole("checkbox", { name: "Select all loaded dictations", exact: true }),
+  ).toHaveAttribute("aria-checked", "mixed");
   await page
     .getByRole("checkbox", { name: "Select dictation 50", exact: true })
     .scrollIntoViewIfNeeded();
   await expect(page.getByRole("checkbox", { name: /^Select dictation / })).toHaveCount(54);
-  await expect(page.getByRole("checkbox", { name: "Select loaded", exact: true })).toHaveAttribute(
-    "aria-checked",
-    "mixed",
-  );
+  await expect(
+    page.getByRole("checkbox", { name: "Select all loaded dictations", exact: true }),
+  ).toHaveAttribute("aria-checked", "mixed");
   await expect(page.getByText("53 selected for export", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Export selected", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "Export transcripts", exact: true });
@@ -13706,7 +13853,7 @@ test("saved Query reads and mutations remain native while offline", async ({ pag
   await expect
     .poll(() => page.evaluate(() => Reflect.get(window, "offlineSettingsWrites")))
     .toBe(1);
-  await navigateMain(page, "Vocabulary");
+  await navigateMain(page, "Dictionary");
   await page.getByRole("button", { name: "Add term", exact: true }).click();
   await page.getByLabel("Preferred spelling").first().fill("Offline vocabulary");
   await expect
@@ -14085,7 +14232,7 @@ for (const form of ["settings", "prompts"] as const) {
       second: form === "settings" ? "de" : "Keep the committed prompt name.",
     });
 
-    await navigateMain(page, "Vocabulary");
+    await navigateMain(page, "Dictionary");
     await page
       .getByRole("link", {
         name: form === "settings" ? "Settings" : "Prompts & chains",

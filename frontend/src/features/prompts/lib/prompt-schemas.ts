@@ -1,4 +1,3 @@
-import { z } from "zod";
 import i18n from "@/i18n";
 import type { TextProcessing } from "@/lib/backend";
 import {
@@ -7,6 +6,7 @@ import {
   modelIdentifierSchema,
   nameSchema,
 } from "@/lib/validation/primitives";
+import { z } from "zod";
 
 const promptShape = z.object({ id: z.string(), name: z.string(), instruction: z.string() });
 const chainStepShape = z.object({ id: z.string(), promptId: z.string(), input: z.string() });

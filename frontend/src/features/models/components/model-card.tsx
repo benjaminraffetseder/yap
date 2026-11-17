@@ -1,13 +1,13 @@
-import { useTranslation } from "react-i18next";
-import { nativeText } from "@/i18n/native-text";
-import { ModelLanguages } from "@/features/models/components/model-languages";
+import { ActionMenu, ActionMenuItem } from "@/components/ui/action-menu";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
-import { ActionMenu, ActionMenuItem } from "@/components/ui/action-menu";
-import type { Model } from "@/lib/backend";
+import { ModelLanguages } from "@/features/models/components/model-languages";
 import { modelProfiles, modelUseCases } from "@/features/models/lib/model-profiles";
+import { nativeText } from "@/i18n/native-text";
+import type { Model } from "@/lib/backend";
 import { cn } from "@/lib/utils";
 import { Check, Download, Loader2, Trash2, Wrench } from "lucide-react";
+import { useTranslation } from "react-i18next";
 
 type ModelCardProps = {
   model: Model;
@@ -49,7 +49,7 @@ export function ModelCard({
         selected && "bg-primary/5",
       )}
     >
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 @min-[48rem]/models:grid @min-[48rem]/models:grid-cols-[minmax(0,1fr)_10rem_12rem_10rem]">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 @min-[48rem]/models:grid @min-[48rem]/models:grid-cols-[minmax(0,1fr)_10rem_14rem_10rem]">
         <div className="min-w-0 flex-[1_1_15rem]">
           <div className="flex flex-wrap items-center gap-2">
             <h3
@@ -100,12 +100,12 @@ export function ModelCard({
             <span aria-hidden="true">—</span>
           )}
         </div>
-        <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground @min-[48rem]/models:flex-nowrap @min-[48rem]/models:gap-x-2">
+        <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground @min-[48rem]/models:gap-x-2">
           {profile && (
             <ModelLanguages id={model.id} name={model.name} languages={profile.languages} />
           )}
           <span
-            className="shrink-0 text-right tabular-nums"
+            className="shrink-0 text-right font-mono tabular-nums"
             title={model.diskBytes ? t("modelCard.onDisk") : t("modelCard.downloadSize")}
           >
             {sizeLabel}

@@ -1,5 +1,3 @@
-import { useModelCatalog } from "@/lib/queries/saved-queries";
-import { emptySnapshot } from "@/lib/queries/resource-defaults";
 import { SettingRow } from "@/components/shared/settings-section";
 import {
   Select,
@@ -9,6 +7,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { type TextProcessing } from "@/lib/backend";
+import { emptySnapshot } from "@/lib/queries/resource-defaults";
+import { useModelCatalog } from "@/lib/queries/saved-queries";
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router";
 

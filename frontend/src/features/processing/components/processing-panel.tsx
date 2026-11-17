@@ -1,5 +1,6 @@
-import { Activity, CircleAlert, Loader2, Minus, X } from "lucide-react";
-import { useTranslation } from "react-i18next";
+import { Button } from "@/components/ui/button";
+import { Progress } from "@/components/ui/progress";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   useBulkTextQueue,
   useDictationActions,
@@ -10,13 +11,12 @@ import {
 } from "@/features/dictation/hooks/use-dictation-state";
 import { BulkTextQueue } from "@/features/processing/components/bulk-text-queue";
 import { ImportQueue } from "@/features/processing/components/import-queue/import-queue";
-import { Button } from "@/components/ui/button";
-import { Progress } from "@/components/ui/progress";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { processingActivity } from "@/features/processing/lib/processing-activity";
 import { nativeText } from "@/i18n/native-text";
 import { backend } from "@/lib/backend";
-import { processingActivity } from "@/features/processing/lib/processing-activity";
 import { cn } from "@/lib/utils";
+import { Activity, CircleAlert, Loader2, Minus, X } from "lucide-react";
+import { useTranslation } from "react-i18next";
 
 export function ProcessingPanelToggle({ compact }: { compact: boolean }) {
   const { t } = useTranslation();
@@ -44,7 +44,7 @@ export function ProcessingPanelToggle({ compact }: { compact: boolean }) {
         aria-controls="processing-activity-panel"
         onClick={() => setProcessingPanelOpen(!processingPanelOpen)}
         className={cn(
-          "relative w-full flex-col gap-1 rounded-lg px-1 text-muted-foreground",
+          "relative w-full flex-col gap-1 px-1 text-muted-foreground",
           compact ? "h-[44px]" : "h-14",
           processingPanelOpen && "bg-accent text-foreground",
         )}

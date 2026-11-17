@@ -1,4 +1,3 @@
-import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -10,12 +9,13 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { fade, motionTransition } from "@/lib/motion";
 import { useMotionPreference } from "@/hooks/use-motion-preference";
+import { fade, motionTransition } from "@/lib/motion";
 import { Toast } from "@base-ui/react/toast";
 import { CircleAlert, CircleCheck, X } from "lucide-react";
 import { motion } from "motion/react";
 import { type ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 
 export const toastManager = Toast.createToastManager();
 

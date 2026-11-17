@@ -1,7 +1,7 @@
-import { z } from "zod";
+import type { TextSelection } from "@/features/transcripts/lib/text-selection";
 import i18n from "@/i18n";
 import { codePointLength, vocabularyPhraseSchema } from "@/lib/validation/primitives";
-import type { TextSelection } from "@/features/transcripts/lib/text-selection";
+import { z } from "zod";
 
 export function correctionSchema(target: Pick<TextSelection, "source" | "start" | "end">) {
   return z

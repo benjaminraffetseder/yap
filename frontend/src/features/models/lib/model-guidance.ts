@@ -1,6 +1,6 @@
+import { modelProfiles } from "@/features/models/lib/model-profiles";
 import type { Model } from "@/lib/backend";
 import { languages } from "@/lib/languages";
-import { modelProfiles } from "@/features/models/lib/model-profiles";
 
 export const guidanceLanguages = [
   { value: "auto", label: "Not sure / multiple languages" },

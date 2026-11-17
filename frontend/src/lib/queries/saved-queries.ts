@@ -1,14 +1,14 @@
-import { useCallback } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { backend, isDesktop } from "@/lib/backend";
 import {
   configurationQuery,
-  vocabularyQuery,
   modelCatalogQuery,
   refreshSaved,
   resourceKeys,
+  vocabularyQuery,
   type SavedResource,
 } from "@/lib/queries/resource-queries";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useCallback } from "react";
 
 export const useConfiguration = () => useQuery({ ...configurationQuery, enabled: isDesktop });
 export const useVocabulary = () => useQuery({ ...vocabularyQuery, enabled: isDesktop });

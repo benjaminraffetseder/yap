@@ -1,9 +1,9 @@
-import { useTranslation } from "react-i18next";
+import { Button } from "@/components/ui/button";
 import { transcriptDiff } from "@/features/transcripts/lib/transcript-diff";
 import { cn } from "@/lib/utils";
-import { Button } from "@/components/ui/button";
 import { ChevronDown, ChevronUp } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 
 export function TranscriptDiff({
   before,

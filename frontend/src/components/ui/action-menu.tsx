@@ -1,9 +1,9 @@
-import { Menu } from "@base-ui/react/menu";
-import { Ellipsis } from "lucide-react";
-import { useTranslation } from "react-i18next";
-import type { ReactNode, Ref } from "react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { Menu } from "@base-ui/react/menu";
+import { Ellipsis } from "lucide-react";
+import type { ReactNode, Ref } from "react";
+import { useTranslation } from "react-i18next";
 
 export function ActionMenu({
   children,

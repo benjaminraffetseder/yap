@@ -1,20 +1,3 @@
-import { useSavedActions } from "@/lib/queries/saved-queries";
-import { Popover } from "@base-ui/react/popover";
-import { useTranslation } from "react-i18next";
-import { nativeText } from "@/i18n/native-text";
-import { AudioImportButton } from "@/features/audio/components/audio-import-button";
-import { ProfileSelector } from "@/features/profiles/components/dictation-profiles";
-import {
-  useAudioLevel,
-  useDictationActions,
-  useDictationConnection,
-  useDictationMetadata,
-  useDictationStatus,
-  useSavedConfiguration,
-  useSavedModelCatalog,
-} from "@/features/dictation/hooks/use-dictation-state";
-import { HomeResultPanel } from "@/features/home/components/home-result-panel";
-import { ShortcutStatus } from "@/features/dictation/components/shortcut-status";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import {
@@ -25,9 +8,25 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { backend, duration, isBusy, isDesktop } from "@/lib/backend";
-import { useMotionPreference } from "@/hooks/use-motion-preference";
+import { AudioImportButton } from "@/features/audio/components/audio-import-button";
+import { ShortcutStatus } from "@/features/dictation/components/shortcut-status";
+import {
+  useAudioLevel,
+  useDictationActions,
+  useDictationConnection,
+  useDictationMetadata,
+  useDictationStatus,
+  useSavedConfiguration,
+  useSavedModelCatalog,
+} from "@/features/dictation/hooks/use-dictation-state";
+import { HomeResultPanel } from "@/features/home/components/home-result-panel";
+import { ProfileSelector } from "@/features/profiles/components/dictation-profiles";
 import { SetupPage } from "@/features/setup/pages/setup-page";
+import { useMotionPreference } from "@/hooks/use-motion-preference";
+import { nativeText } from "@/i18n/native-text";
+import { backend, duration, isBusy, isDesktop } from "@/lib/backend";
+import { useSavedActions } from "@/lib/queries/saved-queries";
+import { Popover } from "@base-ui/react/popover";
 import {
   ChevronDown,
   Download,
@@ -38,6 +37,7 @@ import {
   Square,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Link, useNavigate } from "react-router";
 
 export function HomePage() {
@@ -135,7 +135,14 @@ export function HomePage() {
       data-home-has-result={latestVisible || undefined}
       className="@container/home flex min-h-0 flex-1 flex-col overflow-y-auto px-[clamp(1rem,4vw,1.5rem)] py-4 lg:px-[clamp(1rem,4vw,2.5rem)]"
     >
-      <h1 className="sr-only">{t("uiPolish.homeWorkspaceTitle")}</h1>
+      <header
+        data-slot="home-page-heading"
+        className="mx-auto w-full max-w-[59rem] shrink-0 min-[1000px]:[@media(min-height:650px)]:mb-5 min-[1000px]:[@media(min-height:650px)]:pt-3"
+      >
+        <h1 className="sr-only text-[clamp(1.75rem,2.8vw,2.5rem)] leading-tight font-semibold tracking-[-0.055em] min-[1000px]:[@media(min-height:650px)]:not-sr-only">
+          {t("uiPolish.homeWorkspaceTitle")}
+        </h1>
+      </header>
       <div
         data-slot="home-document-frame"
         className={`mx-auto flex min-h-min w-full max-w-[59rem] flex-col rounded-2xl border bg-card [--home-inset:clamp(16px,2.5vw,28px)] ${latestVisible ? "flex-1" : "shrink-0"}`}
@@ -159,7 +166,7 @@ export function HomePage() {
                 if (!ready && !recording) navigate("/models");
                 else void record();
               }}
-              className="h-auto min-h-10 max-w-full whitespace-normal @max-[12rem]/home:min-h-[44px] @max-[12rem]/home:min-w-[44px] @max-[12rem]/home:px-[8px] @max-[12rem]/home:has-[>svg]:px-[8px]"
+              className="h-auto min-h-11 max-w-full whitespace-normal @max-[12rem]/home:min-h-[44px] @max-[12rem]/home:min-w-[44px] @max-[12rem]/home:px-[8px] @max-[12rem]/home:has-[>svg]:px-[8px]"
             >
               {working || pending ? (
                 <Loader2
@@ -498,12 +505,20 @@ export function HomePage() {
             onPresenceChange={setLatestVisible}
           />
           {!latestVisible && (
-            <section className="flex min-h-56 shrink-0 flex-col items-center justify-center px-6 py-8 text-center">
-              <Mic aria-hidden="true" className="mb-4 size-6 text-muted-foreground" />
+            <section
+              data-slot="home-empty-state"
+              className="flex min-h-64 shrink-0 flex-col items-center justify-center px-6 py-10 text-center"
+            >
+              <div
+                aria-hidden="true"
+                className="mb-6 grid size-16 place-items-center border border-primary/30 bg-primary/5 text-primary"
+              >
+                <Mic className="size-7 stroke-[1.25]" />
+              </div>
               <h2
                 aria-live="polite"
                 aria-atomic="true"
-                className="text-xl font-semibold tracking-tight"
+                className="text-2xl font-medium tracking-[-0.04em]"
               >
                 {loading
                   ? t("homePage.connecting")

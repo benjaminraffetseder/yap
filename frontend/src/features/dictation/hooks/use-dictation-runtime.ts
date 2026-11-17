@@ -1,7 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
-import { Events } from "@wailsio/runtime";
 import { toastManager } from "@/components/ui/toast";
+import { processingActivity } from "@/features/processing/lib/processing-activity";
 import i18n from "@/i18n";
 import { nativeText } from "@/i18n/native-text";
 import {
@@ -17,10 +15,12 @@ import {
   type Snapshot,
   type Status,
 } from "@/lib/backend";
-import { processingActivity } from "@/features/processing/lib/processing-activity";
-import { resourceKeys, refreshSaved, savedResources } from "@/lib/queries/resource-queries";
 import { emptySnapshot as empty } from "@/lib/queries/resource-defaults";
+import { refreshSaved, resourceKeys, savedResources } from "@/lib/queries/resource-queries";
 import { useSavedActions } from "@/lib/queries/saved-queries";
+import { useQueryClient } from "@tanstack/react-query";
+import { Events } from "@wailsio/runtime";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 export function useDictationRuntime() {
   const queryClient = useQueryClient();

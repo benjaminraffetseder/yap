@@ -1,7 +1,3 @@
-import { nativeText } from "@/i18n/native-text";
-import { useTranslation } from "react-i18next";
-import { useEffect, useRef, useState } from "react";
-import { Check, Loader2, RefreshCw, Square } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   useAudioLevel,
@@ -10,7 +6,11 @@ import {
   useDictationPhase,
   useSavedConfiguration,
 } from "@/features/dictation/hooks/use-dictation-state";
+import { nativeText } from "@/i18n/native-text";
 import { backend, isBusy, isDesktop, message, type DiagnosticCheck } from "@/lib/backend";
+import { Check, Loader2, RefreshCw, Square } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 
 export function DiagnosticsPanel({ disabled = false }: { disabled?: boolean }) {
   const { t } = useTranslation();

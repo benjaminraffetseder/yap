@@ -1,6 +1,6 @@
 import { MarkdownContent } from "@/components/shared/markdown-content";
-import type { ChatReference } from "@/lib/backend";
 import { referenceRanges, type SourceRange } from "@/features/chat/lib/chat-references";
+import type { ChatReference } from "@/lib/backend";
 import { useEffect, useRef } from "react";
 
 type SourceNode = {

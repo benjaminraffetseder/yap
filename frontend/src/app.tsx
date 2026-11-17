@@ -1,24 +1,24 @@
 import { AppLayout } from "@/components/layout/app-layout";
-import { DictationProvider } from "@/features/dictation/components/dictation-provider";
+import { NotFoundPage } from "@/components/layout/not-found-page";
 import { ThemeProvider } from "@/components/shared/theme-provider";
+import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Toaster } from "@/components/ui/toast";
+import { DictationProvider } from "@/features/dictation/components/dictation-provider";
 import { HistoryEntryPage } from "@/features/history/pages/history-entry-page";
 import { HistoryPage } from "@/features/history/pages/history-page";
 import { HomePage } from "@/features/home/pages/home-page";
 import { ModelsPage } from "@/features/models/pages/models-page";
-import { NotFoundPage } from "@/components/layout/not-found-page";
 import { PromptsPage } from "@/features/prompts/pages/prompts-page";
 import { SettingsPage } from "@/features/settings/pages/settings-page";
 import { VocabularyPage } from "@/features/vocabulary/pages/vocabulary-page";
-import { HashRouter, Route, Routes, useLocation, useNavigate } from "react-router";
-import { useEffect, useRef, useState } from "react";
-import { Dialog, DialogContent } from "@/components/ui/dialog";
-import { MotionConfig } from "motion/react";
 import { DraftProvider } from "@/hooks/use-saved-draft";
-import { useTranslation } from "react-i18next";
+import { createQueryClient } from "@/lib/queries/resource-queries";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
-import { createQueryClient } from "@/lib/queries/resource-queries";
+import { MotionConfig } from "motion/react";
+import { useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
+import { HashRouter, Route, Routes, useLocation, useNavigate } from "react-router";
 
 export function App() {
   const [queryClient] = useState(createQueryClient);

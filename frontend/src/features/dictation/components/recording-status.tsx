@@ -1,5 +1,3 @@
-import { useTranslation } from "react-i18next";
-import { nativeText } from "@/i18n/native-text";
 import {
   useAudioLevel,
   useDictationActions,
@@ -7,9 +5,11 @@ import {
   useDictationStatus,
   useMicrophoneTestState,
 } from "@/features/dictation/hooks/use-dictation-state";
+import { nativeText } from "@/i18n/native-text";
 import { backend, duration } from "@/lib/backend";
 import { AudioLines, Loader2, Square, X } from "lucide-react";
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 export function RecordingStatus({ inline = false }: { inline?: boolean }) {
   const { t } = useTranslation();
   const { run } = useDictationActions();
@@ -43,7 +43,7 @@ export function RecordingStatus({ inline = false }: { inline?: boolean }) {
       className={
         inline
           ? "shrink-0 border-b px-5 py-3 sm:px-7"
-          : "pointer-events-none fixed bottom-6 left-[var(--sidebar-width)] right-0 z-50 flex justify-center px-4 transition-[left] duration-200 motion-reduce:transition-none group-has-[[data-slot=history-selection-bar]]/layout:bottom-32"
+          : "pointer-events-none fixed bottom-6 left-[var(--sidebar-width)] right-0 z-50 flex justify-center px-4 transition-[left] duration-200 motion-reduce:transition-none group-has-[[data-slot=history-selection-bar]]/layout:bottom-[calc(var(--history-selection-height,0px)+2.25rem+env(safe-area-inset-bottom))]"
       }
     >
       <div

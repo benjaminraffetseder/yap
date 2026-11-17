@@ -1,6 +1,6 @@
 import { MarkdownContent } from "@/components/shared/markdown-content";
-import type { ChatReference } from "@/lib/backend";
 import { citationMarkdown } from "@/features/chat/lib/chat-references";
+import type { ChatReference } from "@/lib/backend";
 import { useTranslation } from "react-i18next";
 
 export function ChatCitationContent({

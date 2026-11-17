@@ -1,33 +1,35 @@
-import type { Session } from "@/lib/backend";
 import { historySearchPreview, searchRanges } from "@/features/history/lib/history-search";
+import type { Session } from "@/lib/backend";
 import { cn } from "cn";
 import { useTranslation } from "react-i18next";
 
 export function DictationPreview({ entry, query = "" }: { entry: Session; query?: string }) {
   const { t } = useTranslation();
-  const preview = historySearchPreview(entry, query);
+  const title = entry.title?.trim();
+  // Search results still need the matching transcript context beside the title.
+  const preview = !title || query ? historySearchPreview(entry, query) : null;
   return (
     <>
-      {entry.title && (
+      {title && (
         <p className="truncate text-[0.9375rem] leading-6 font-medium">
-          <SearchHighlight text={entry.title} query={query} />
+          <SearchHighlight text={title} query={query} />
         </p>
       )}
-      <p
-        className={cn(
-          "break-words leading-6",
-          entry.title && !query
-            ? "line-clamp-1 text-sm text-muted-foreground"
-            : "line-clamp-2 text-[0.9375rem]",
-        )}
-      >
-        {preview.original && (
-          <span className="mr-1 text-xs font-medium text-muted-foreground">
-            {t("historyPage.originalMatch")}:{" "}
-          </span>
-        )}
-        <SearchHighlight text={preview.text} query={query} />
-      </p>
+      {preview && (
+        <p
+          className={cn(
+            "text-[0.9375rem] leading-6",
+            query ? "line-clamp-2 break-words" : "truncate",
+          )}
+        >
+          {preview.original && (
+            <span className="mr-1 text-xs font-medium text-muted-foreground">
+              {t("historyPage.originalMatch")}:{" "}
+            </span>
+          )}
+          <SearchHighlight text={preview.text} query={query} />
+        </p>
+      )}
     </>
   );
 }

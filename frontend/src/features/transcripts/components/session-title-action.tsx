@@ -1,22 +1,4 @@
-import { useEffect, useId, useRef, useState } from "react";
-import { useTranslation } from "react-i18next";
-import { Loader2, Pencil, Sparkles, Square } from "lucide-react";
-import { nativeText } from "@/i18n/native-text";
-import { backend, isBusy, message, type Session } from "@/lib/backend";
-import { useTextRequest } from "@/features/processing/hooks/use-text-request";
-import {
-  useDictationPhase,
-  useSavedConfiguration,
-} from "@/features/dictation/hooks/use-dictation-state";
 import { Button } from "@/components/ui/button";
-import {
-  InputGroup,
-  InputGroupAddon,
-  InputGroupButton,
-  InputGroupInput,
-} from "@/components/ui/input-group";
-import { Label } from "@/components/ui/label";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   Dialog,
   DialogContent,
@@ -26,6 +8,24 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import {
+  InputGroup,
+  InputGroupAddon,
+  InputGroupButton,
+  InputGroupInput,
+} from "@/components/ui/input-group";
+import { Label } from "@/components/ui/label";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import {
+  useDictationPhase,
+  useSavedConfiguration,
+} from "@/features/dictation/hooks/use-dictation-state";
+import { useTextRequest } from "@/features/processing/hooks/use-text-request";
+import { nativeText } from "@/i18n/native-text";
+import { backend, isBusy, message, type Session } from "@/lib/backend";
+import { Loader2, Pencil, Sparkles, Square } from "lucide-react";
+import { useEffect, useId, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 
 export function SessionTitleAction({
   entry,

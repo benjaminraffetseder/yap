@@ -1,7 +1,7 @@
-import { z } from "zod";
 import i18n from "@/i18n";
 import type { VocabularyEntry } from "@/lib/backend";
 import { vocabularyIdentifierSchema, vocabularyPhraseSchema } from "@/lib/validation/primitives";
+import { z } from "zod";
 
 const vocabularyEntryShape = z.object({
   id: z.string(),

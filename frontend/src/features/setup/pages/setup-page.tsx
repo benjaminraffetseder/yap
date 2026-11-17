@@ -1,18 +1,4 @@
-import { useSavedActions } from "@/lib/queries/saved-queries";
-import {
-  useAudioLevel,
-  useDictationActions,
-  useDictationMetadata,
-  useDictationStatus,
-  useMicrophoneTestState,
-  useSavedConfiguration,
-  useSavedModelCatalog,
-} from "@/features/dictation/hooks/use-dictation-state";
 import { MotionReveal } from "@/components/shared/motion-reveal";
-import { ShortcutInput } from "@/features/dictation/components/shortcut-input";
-import { ShortcutStatus } from "@/features/dictation/components/shortcut-status";
-import { TextModelLibrary } from "@/features/models/components/text-model-library";
-import { TextModelSettings } from "@/features/models/components/text-model-settings";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import {
@@ -23,14 +9,28 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { toastManager } from "@/components/ui/toast";
+import { ShortcutInput } from "@/features/dictation/components/shortcut-input";
+import { ShortcutStatus } from "@/features/dictation/components/shortcut-status";
+import {
+  useAudioLevel,
+  useDictationActions,
+  useDictationMetadata,
+  useDictationStatus,
+  useMicrophoneTestState,
+  useSavedConfiguration,
+  useSavedModelCatalog,
+} from "@/features/dictation/hooks/use-dictation-state";
+import { TextModelLibrary } from "@/features/models/components/text-model-library";
+import { TextModelSettings } from "@/features/models/components/text-model-settings";
+import { ModelsPage } from "@/features/models/pages/models-page";
+import { useTextRequest } from "@/features/processing/hooks/use-text-request";
+import { useMotionPreference } from "@/hooks/use-motion-preference";
 import i18n from "@/i18n";
 import { nativeText } from "@/i18n/native-text";
 import { backend, isBusy, type Microphone } from "@/lib/backend";
 import { fade } from "@/lib/motion";
-import { useMotionPreference } from "@/hooks/use-motion-preference";
-import { useTextRequest } from "@/features/processing/hooks/use-text-request";
+import { useSavedActions } from "@/lib/queries/saved-queries";
 import { cn } from "@/lib/utils";
-import { ModelsPage } from "@/features/models/pages/models-page";
 import {
   ArrowLeft,
   ArrowRight,
@@ -361,7 +361,7 @@ export function SetupPage() {
                     >
                       <SelectTrigger
                         id="setup-microphone"
-                        className="data-[size=default]:h-9 w-full"
+                        className="data-[size=default]:h-11 w-full"
                       >
                         <SelectValue />
                       </SelectTrigger>

@@ -1,16 +1,16 @@
-import { nativeText } from "@/i18n/native-text";
-import { useTranslation } from "react-i18next";
+import { Button } from "@/components/ui/button";
+import { Progress } from "@/components/ui/progress";
 import {
   useDictationActions,
   useDictationConnection,
   useDictationStatus,
   useSavedConfiguration,
 } from "@/features/dictation/hooks/use-dictation-state";
-import { Button } from "@/components/ui/button";
-import { Progress } from "@/components/ui/progress";
+import { nativeText } from "@/i18n/native-text";
 import { backend, isDesktop } from "@/lib/backend";
 import { Upload } from "lucide-react";
 import { useState, type ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 
 export function AudioImportButton({
   showDownloadProgress = true,

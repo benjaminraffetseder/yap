@@ -1,7 +1,7 @@
-import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import type { AutoSaveState } from "@/hooks/use-auto-save";
 import { Check, Loader2 } from "lucide-react";
+import { useTranslation } from "react-i18next";
 
 export function AutoSaveStatus({
   status,

@@ -1,18 +1,6 @@
-import { useConfiguration, useSavedActions } from "@/lib/queries/saved-queries";
 import { AutoSaveStatus } from "@/components/shared/auto-save-status";
-import {
-  useDictationActions,
-  useDictationConnection,
-  useDictationPhase,
-  useSavedConfiguration,
-  useSavedModelCatalog,
-} from "@/features/dictation/hooks/use-dictation-state";
-import { ProfileSettingIndicator } from "@/features/profiles/components/profile-setting-indicator";
-import { PromptChainsEditor } from "@/features/prompts/components/prompt-chains-editor";
-import { RevisionHistory } from "@/features/transcripts/components/revision-history";
 import { SectionTabs } from "@/components/shared/section-tabs";
 import { SettingRow, ToggleSetting } from "@/components/shared/settings-section";
-import { TextModelSettings } from "@/features/models/components/text-model-settings";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -35,6 +23,22 @@ import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent } from "@/components/ui/tabs";
 import { toastManager } from "@/components/ui/toast";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import {
+  useDictationActions,
+  useDictationConnection,
+  useDictationPhase,
+  useSavedConfiguration,
+  useSavedModelCatalog,
+} from "@/features/dictation/hooks/use-dictation-state";
+import { TextModelSettings } from "@/features/models/components/text-model-settings";
+import { useModelDiscovery } from "@/features/models/hooks/use-model-discovery";
+import { useTextRequest } from "@/features/processing/hooks/use-text-request";
+import { ProfileSettingIndicator } from "@/features/profiles/components/profile-setting-indicator";
+import { PromptChainsEditor } from "@/features/prompts/components/prompt-chains-editor";
+import { deleteDraftItem } from "@/features/prompts/lib/delete-draft-item";
+import { RevisionHistory } from "@/features/transcripts/components/revision-history";
+import { useAutoSave } from "@/hooks/use-auto-save";
+import { useSavedDraft } from "@/hooks/use-saved-draft";
 import i18n from "@/i18n";
 import { nativeText } from "@/i18n/native-text";
 import {
@@ -46,12 +50,8 @@ import {
   type TextProcessing,
   type TextPrompt,
 } from "@/lib/backend";
-import { deleteDraftItem } from "@/features/prompts/lib/delete-draft-item";
+import { useConfiguration, useSavedActions } from "@/lib/queries/saved-queries";
 import { validateTextProcessing } from "@/lib/validation/draft-validation";
-import { useAutoSave } from "@/hooks/use-auto-save";
-import { useModelDiscovery } from "@/features/models/hooks/use-model-discovery";
-import { useSavedDraft } from "@/hooks/use-saved-draft";
-import { useTextRequest } from "@/features/processing/hooks/use-text-request";
 import { Menu } from "@base-ui/react/menu";
 import { Ellipsis, History, Info, Plus, RefreshCw, Sparkles, Trash2 } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
@@ -308,7 +308,7 @@ export function PromptsPage() {
         >
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div className="min-w-0">
-              <h1 className="text-2xl font-semibold tracking-tight">
+              <h1 className="text-[clamp(1.75rem,2.8vw,2.5rem)] leading-tight font-semibold tracking-[-0.055em] [overflow-wrap:anywhere]">
                 {t("promptsPage.promptsChains")}
               </h1>
             </div>
@@ -410,7 +410,7 @@ export function PromptsPage() {
                     >
                       <SelectTrigger
                         id="llm-server"
-                        className="data-[size=default]:h-9 w-full rounded-md bg-background"
+                        className="data-[size=default]:h-11 w-full rounded-md bg-background"
                       >
                         <SelectValue />
                       </SelectTrigger>
@@ -512,7 +512,7 @@ export function PromptsPage() {
                       >
                         <SelectTrigger
                           id="llm-picker"
-                          className="data-[size=default]:h-9 w-full min-w-0 rounded-md bg-background"
+                          className="data-[size=default]:h-11 w-full min-w-0 rounded-md bg-background"
                           aria-describedby="llm-discovery-status"
                         >
                           <SelectValue />
@@ -663,7 +663,7 @@ export function PromptsPage() {
                 >
                   <SelectTrigger
                     id="saved-prompt"
-                    className="data-[size=default]:h-9 w-full min-w-0 rounded-md bg-background"
+                    className="data-[size=default]:h-11 w-full min-w-0 rounded-md bg-background"
                   >
                     <SelectValue placeholder={t("promptsPage.noSavedPrompts")} />
                   </SelectTrigger>

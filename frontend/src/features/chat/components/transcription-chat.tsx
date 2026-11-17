@@ -1,11 +1,5 @@
-import { ChatCitationContent } from "@/features/chat/components/chat-citation-content";
 import { CopyButton } from "@/components/shared/copy-button";
-import {
-  useDictationPhase,
-  useSavedConfiguration,
-} from "@/features/dictation/hooks/use-dictation-state";
 import { MarkdownContent } from "@/components/shared/markdown-content";
-import { TranscriptDiff } from "@/features/transcripts/components/transcript-diff";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -25,6 +19,15 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { ChatCitationContent } from "@/features/chat/components/chat-citation-content";
+import { useChatVoice } from "@/features/chat/hooks/use-chat-voice";
+import { referenceRanges, chatReplyText as replyText } from "@/features/chat/lib/chat-references";
+import {
+  useDictationPhase,
+  useSavedConfiguration,
+} from "@/features/dictation/hooks/use-dictation-state";
+import { TranscriptDiff } from "@/features/transcripts/components/transcript-diff";
+import { useSavedDraft } from "@/hooks/use-saved-draft";
 import { nativeText } from "@/i18n/native-text";
 import {
   backend,
@@ -38,11 +41,8 @@ import {
   type Session,
   type SessionChat,
 } from "@/lib/backend";
-import { referenceRanges, chatReplyText as replyText } from "@/features/chat/lib/chat-references";
 import { chatQuery, resourceKeys } from "@/lib/queries/resource-queries";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useChatVoice } from "@/features/chat/hooks/use-chat-voice";
-import { useSavedDraft } from "@/hooks/use-saved-draft";
 import { Events } from "@wailsio/runtime";
 import {
   ArrowUp,

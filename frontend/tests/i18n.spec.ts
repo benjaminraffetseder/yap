@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
-import en from "../src/i18n/locales/en.json" with { type: "json" };
 import de from "../src/i18n/locales/de.json" with { type: "json" };
+import en from "../src/i18n/locales/en.json" with { type: "json" };
 
 test("English and German catalogs have matching keys and interpolation variables", () => {
   expect(Object.keys(de).sort()).toEqual(Object.keys(en).sort());
@@ -85,7 +85,7 @@ test("German remains selected across all main screens", async ({ page }) => {
   for (const [path, heading] of [
     ["history", "Verlauf"],
     ["models", "Modelle"],
-    ["vocabulary", "Wortschatz"],
+    ["vocabulary", "Wörterbuch"],
     ["prompts", "Prompts & Ketten"],
     ["settings?section=general", "Einstellungen"],
     ["missing", "Seite nicht gefunden"],

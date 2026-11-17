@@ -1,8 +1,3 @@
-import { useRef, useState, type RefObject } from "react";
-import { useTranslation } from "react-i18next";
-import { Link } from "react-router";
-import { useSavedConfiguration } from "@/features/dictation/hooks/use-dictation-state";
-import { ProcessingSelectItems } from "@/features/processing/components/processing-select-items";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -14,8 +9,9 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toastManager } from "@/components/ui/toast";
+import { useSavedConfiguration } from "@/features/dictation/hooks/use-dictation-state";
+import { ProcessingCombobox } from "@/features/processing/components/processing-combobox";
 import { nativeText } from "@/i18n/native-text";
 import {
   backend,
@@ -24,6 +20,9 @@ import {
   type BulkTextRequest,
   type TranscriptExportSelection,
 } from "@/lib/backend";
+import { useRef, useState, type RefObject } from "react";
+import { useTranslation } from "react-i18next";
+import { Link } from "react-router";
 
 export function BulkTextDialog({
   action,
@@ -104,21 +103,13 @@ export function BulkTextDialog({
         ) : (
           <div className="space-y-2">
             <Label htmlFor="bulk-text-prompt">{t("bulkText.promptOrChain")}</Label>
-            <Select
-              items={options}
+            <ProcessingCombobox
+              id="bulk-text-prompt"
+              options={options}
               value={validPrompt ? selected : null}
               disabled={pending || !configured || !options.length}
-              onValueChange={(value) => {
-                if (value) setSelected(value);
-              }}
-            >
-              <SelectTrigger id="bulk-text-prompt" className="w-full">
-                <SelectValue placeholder={t("generatedOutputs.chooseAPrompt")} />
-              </SelectTrigger>
-              <SelectContent alignItemWithTrigger={false}>
-                <ProcessingSelectItems options={options} />
-              </SelectContent>
-            </Select>
+              onValueChange={setSelected}
+            />
           </div>
         )}
         <p className="text-xs text-muted-foreground">{t("bulkText.queueHelp")}</p>

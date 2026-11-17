@@ -18,7 +18,7 @@ Linux support is incomplete.
 - Search, name, edit, copy, and export past transcripts as Markdown or plain text.
 - Export selected transcripts or all search matches, with optional separate files
   for generated outputs, as a ZIP archive or folder.
-- Add names and preferred spellings to a custom vocabulary.
+- Add names and preferred spellings to a custom dictionary.
 - Switch dictation profiles with saved speech-model, language, cleanup, and prompt choices.
 - Choose profiles automatically per app, or cycle them with a global shortcut.
 - Transcribe audio files, including WAV, MP3, and M4A.
@@ -27,7 +27,7 @@ Linux support is incomplete.
   and refine drafts. Conversations stay local, compact older context automatically,
   and let you review rewrites or save replies as outputs.
 - Save prompt chains with a chosen input for each step and keep intermediate results.
-- Back up history, prompts, vocabulary, and saved recordings.
+- Back up history, prompts, dictionary, and saved recordings.
 - Use the interface in English or German.
 
 ## Getting started

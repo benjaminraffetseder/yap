@@ -1,15 +1,15 @@
-import { useTranslation } from "react-i18next";
+import { Button } from "@/components/ui/button";
+import { toastManager } from "@/components/ui/toast";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   useDictationActions,
   useImportQueue,
 } from "@/features/dictation/hooks/use-dictation-state";
-import { Button } from "@/components/ui/button";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { toastManager } from "@/components/ui/toast";
 import { backend, importPending, message } from "@/lib/backend";
 import { Trash2 } from "lucide-react";
 import { Reorder } from "motion/react";
 import { memo, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { ImportQueueRow } from "./import-queue-row";
 
 // The activity pane also renders native progress; only this queue should wake its rows.

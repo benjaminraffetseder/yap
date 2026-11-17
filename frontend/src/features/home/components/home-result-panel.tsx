@@ -1,11 +1,4 @@
-import {
-  useDictationActions,
-  useDictationActivity,
-  useDictationConnection,
-} from "@/features/dictation/hooks/use-dictation-state";
-import { InferenceStats } from "@/features/transcripts/components/inference-stats";
 import { MarkdownContent } from "@/components/shared/markdown-content";
-import { TranscriptContextMenu } from "@/features/transcripts/components/transcript-context-menu";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -15,12 +8,19 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  useDictationActions,
+  useDictationActivity,
+  useDictationConnection,
+} from "@/features/dictation/hooks/use-dictation-state";
+import { InferenceStats } from "@/features/transcripts/components/inference-stats";
+import { TranscriptContextMenu } from "@/features/transcripts/components/transcript-context-menu";
+import { useSavedDraft } from "@/hooks/use-saved-draft";
 import i18n from "@/i18n";
 import { nativeText } from "@/i18n/native-text";
 import { backend, isBusy, isDesktop, type HomeResult } from "@/lib/backend";
 import { homeResultQuery, resourceKeys } from "@/lib/queries/resource-queries";
 import { isCancelledError, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useSavedDraft } from "@/hooks/use-saved-draft";
 import { Check, Copy, Loader2, Pencil, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -223,10 +223,10 @@ export function HomeResultPanel({
           data-slot="home-result-header"
           className={`flex shrink-0 flex-wrap items-start justify-between gap-2 px-5 py-3 @max-[20rem]/home-result:gap-[8px] @max-[20rem]/home-result:px-[16px] @max-[20rem]/home-result:py-[12px] @max-[12rem]/home-result:gap-[6px] @max-[12rem]/home-result:py-[8px] @max-[280px]/home-result:grid @max-[280px]/home-result:grid-cols-1 sm:px-7 ${embedded ? "home-reading-inset" : ""}`}
         >
-          <div className="flex min-w-0 flex-[1_1_14rem] flex-wrap items-baseline gap-x-3 gap-y-1 @max-[20rem]/home-result:flex-[1_1_6rem] @max-[20rem]/home-result:gap-x-[12px] @max-[12rem]/home-result:flex-[1_1_0] @max-[12rem]/home-result:gap-y-[4px]">
+          <div className="flex min-w-0 flex-[1_1_14rem] flex-col items-start gap-x-3 gap-y-1 @max-[20rem]/home-result:flex-[1_1_6rem] @max-[20rem]/home-result:flex-row @max-[20rem]/home-result:flex-wrap @max-[20rem]/home-result:items-baseline @max-[20rem]/home-result:gap-x-[12px] @max-[12rem]/home-result:flex-[1_1_0] @max-[12rem]/home-result:gap-y-[4px]">
             <h2
               tabIndex={-1}
-              className="max-w-full text-lg font-semibold tracking-tight outline-none @min-[28rem]/home-result:text-xl @max-[12rem]/home-result:text-base"
+              className="max-w-full text-lg font-medium tracking-[-0.04em] outline-none @min-[28rem]/home-result:text-xl @max-[12rem]/home-result:text-base"
             >
               {result?.session.title || (
                 <>
@@ -247,7 +247,7 @@ export function HomeResultPanel({
                     aria-description={t("homeResultPanel.openInHistory")}
                     aria-label={t("uiPolish.savedInHistory")}
                     title={t("homeResultPanel.openInHistory")}
-                    className="rounded underline underline-offset-4 outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+                    className="rounded underline-offset-4 outline-none hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring"
                   >
                     <span className="@max-[12rem]/home-result:sr-only">
                       {t("uiPolish.savedInHistory")}
@@ -261,7 +261,7 @@ export function HomeResultPanel({
                   <span>{t("homeResultPanel.temporaryKeptInMemoryUntilTheNext")}</span>
                 )}
                 {visibleView === "result" && (
-                  <span className="sr-only @min-[40rem]/home-result:not-sr-only">
+                  <span className="sr-only @min-[28rem]/home-result:not-sr-only">
                     {t("uiPolish.homeWordCount", {
                       count: result.text.trim() ? result.text.trim().split(/\s+/u).length : 0,
                     })}
@@ -274,7 +274,7 @@ export function HomeResultPanel({
           {result && (
             <div
               data-slot="home-result-actions"
-              className="flex max-w-full flex-wrap items-center gap-[6px]"
+              className="flex max-w-full flex-wrap items-center gap-[6px] self-start"
             >
               {visibleView === "result" && (
                 <>
