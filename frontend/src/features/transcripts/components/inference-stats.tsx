@@ -1,6 +1,3 @@
-import i18n from "@/i18n";
-import { useTranslation } from "react-i18next";
-import { useSavedConfiguration } from "@/features/dictation/hooks/use-dictation-state";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -10,9 +7,12 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import { useSavedConfiguration } from "@/features/dictation/hooks/use-dictation-state";
+import i18n from "@/i18n";
 import type { GeneratedOutput, Session, TextStats } from "@/lib/backend";
 import { ChartNoAxesColumn } from "lucide-react";
 import type { ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 
 const available = (value: number | null | undefined) =>
   value != null && Number.isFinite(value) && value >= 0;

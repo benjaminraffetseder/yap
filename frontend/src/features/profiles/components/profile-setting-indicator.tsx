@@ -1,11 +1,11 @@
-import { useTranslation } from "react-i18next";
-import type { ComponentProps } from "react";
-import { CircleDot } from "lucide-react";
-import { useConfiguration, useModelCatalog } from "@/lib/queries/saved-queries";
-import { emptySnapshot } from "@/lib/queries/resource-defaults";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { useLanguages } from "@/lib/languages";
 import { processingOptions } from "@/lib/backend";
+import { useLanguages } from "@/lib/languages";
+import { emptySnapshot } from "@/lib/queries/resource-defaults";
+import { useConfiguration, useModelCatalog } from "@/lib/queries/saved-queries";
+import { CircleDot } from "lucide-react";
+import type { ComponentProps } from "react";
+import { useTranslation } from "react-i18next";
 
 export function ModifiedMarker({ className = "", ...props }: ComponentProps<"span">) {
   const { t } = useTranslation();

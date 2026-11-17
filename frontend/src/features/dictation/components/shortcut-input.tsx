@@ -1,6 +1,3 @@
-import { nativeText } from "@/i18n/native-text";
-import { useTranslation } from "react-i18next";
-import i18n from "@/i18n";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -11,10 +8,13 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import i18n from "@/i18n";
+import { nativeText } from "@/i18n/native-text";
 import { backend, isDesktop, message } from "@/lib/backend";
 import { Events } from "@wailsio/runtime";
 import { Keyboard } from "lucide-react";
 import { useEffect, useRef, useState, type RefObject } from "react";
+import { useTranslation } from "react-i18next";
 
 export function ShortcutInput({
   id,

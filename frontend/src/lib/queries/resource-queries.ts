@@ -1,5 +1,5 @@
-import { QueryClient, queryOptions } from "@tanstack/react-query";
 import { backend } from "@/lib/backend";
+import { QueryClient, queryOptions } from "@tanstack/react-query";
 
 export function createQueryClient() {
   return new QueryClient({

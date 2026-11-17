@@ -1,23 +1,6 @@
-import { useConfiguration, useSavedActions } from "@/lib/queries/saved-queries";
-import { AudioSupportPanel } from "@/features/audio/components/audio-support-panel";
 import { AutoSaveStatus } from "@/components/shared/auto-save-status";
-import { BackupPanel } from "@/features/backup/components/backup-panel";
-import { DiagnosticsPanel } from "@/features/dictation/components/diagnostics-panel";
-import { ProfilesPanel } from "@/features/profiles/components/dictation-profiles";
-import {
-  useAppUpdates,
-  useDictationActions,
-  useDictationActivity,
-  useDictationConnection,
-  useDictationMetadata,
-  useSavedConfiguration,
-} from "@/features/dictation/hooks/use-dictation-state";
-import { ProfileSettingIndicator } from "@/features/profiles/components/profile-setting-indicator";
-import { RecordingStatus } from "@/features/dictation/components/recording-status";
 import { RecoveryActions } from "@/components/shared/recovery-actions";
 import { SettingRow, SettingsSection, ToggleSetting } from "@/components/shared/settings-section";
-import { ShortcutInput } from "@/features/dictation/components/shortcut-input";
-import { ShortcutStatus } from "@/features/dictation/components/shortcut-status";
 import { useTheme } from "@/components/shared/theme-provider";
 import { Button } from "@/components/ui/button";
 import {
@@ -38,7 +21,25 @@ import {
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toastManager } from "@/components/ui/toast";
+import { AudioSupportPanel } from "@/features/audio/components/audio-support-panel";
+import { BackupPanel } from "@/features/backup/components/backup-panel";
+import { DiagnosticsPanel } from "@/features/dictation/components/diagnostics-panel";
+import { RecordingStatus } from "@/features/dictation/components/recording-status";
+import { ShortcutInput } from "@/features/dictation/components/shortcut-input";
+import { ShortcutStatus } from "@/features/dictation/components/shortcut-status";
+import {
+  useAppUpdates,
+  useDictationActions,
+  useDictationActivity,
+  useDictationConnection,
+  useDictationMetadata,
+  useSavedConfiguration,
+} from "@/features/dictation/hooks/use-dictation-state";
+import { ProfilesPanel } from "@/features/profiles/components/dictation-profiles";
+import { ProfileSettingIndicator } from "@/features/profiles/components/profile-setting-indicator";
 import { UpdatePanel } from "@/features/updates/components/update-panel";
+import { useAutoSave } from "@/hooks/use-auto-save";
+import { useSavedDraft } from "@/hooks/use-saved-draft";
 import { languages as interfaceLanguages } from "@/i18n";
 import { nativeText } from "@/i18n/native-text";
 import {
@@ -50,8 +51,7 @@ import {
   type Microphone,
 } from "@/lib/backend";
 import { useLanguages } from "@/lib/languages";
-import { useAutoSave } from "@/hooks/use-auto-save";
-import { useSavedDraft } from "@/hooks/use-saved-draft";
+import { useConfiguration, useSavedActions } from "@/lib/queries/saved-queries";
 import { cn } from "@/lib/utils";
 import {
   ArrowRight,
@@ -466,7 +466,7 @@ export function SettingsPage({
             selectSection(value);
           }
         }}
-        className="relative grid min-h-0 flex-1 grid-cols-1 grid-rows-[auto_minmax(0,1fr)] gap-0 @min-[42rem]/settings-dialog:grid-cols-[10.5rem_minmax(0,1fr)] @min-[42rem]/settings-dialog:grid-rows-1"
+        className="relative grid min-h-0 flex-1 grid-cols-1 grid-rows-[auto_minmax(0,1fr)] gap-0 @min-[42rem]/settings-dialog:grid-cols-[11.5rem_minmax(0,1fr)] @min-[42rem]/settings-dialog:grid-rows-1"
       >
         <aside className="grid min-h-0 min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-[8px] border-b bg-sidebar/60 p-[8px] @min-[42rem]/settings-dialog:flex @min-[42rem]/settings-dialog:flex-col @min-[42rem]/settings-dialog:items-stretch @min-[42rem]/settings-dialog:gap-0 @min-[42rem]/settings-dialog:overflow-y-auto @min-[42rem]/settings-dialog:border-r @min-[42rem]/settings-dialog:border-b-0 @min-[42rem]/settings-dialog:px-3 @min-[42rem]/settings-dialog:py-5">
           <DialogTitle className="sr-only text-lg leading-7 font-semibold @min-[42rem]/settings-dialog:not-sr-only @min-[42rem]/settings-dialog:px-2">
@@ -615,7 +615,7 @@ export function SettingsPage({
               "[&_[data-slot=settings-section]]:min-w-0 [&_[data-slot=settings-section]]:p-4 [&_[data-slot=setting-row]]:py-3 [&_[data-slot=toggle-setting]]:py-3",
               "[&_[data-slot=settings-section-heading]]:border-b-0 [&_[data-slot=settings-section-heading]]:p-0 [&_[data-slot=settings-section-heading]]:pb-1.5",
               "[&_[data-slot=settings-section-content]]:px-0 [&_[data-slot=setting-row]]:items-center",
-              "[&_[data-slot=select-trigger]]:h-auto [&_[data-slot=select-trigger]]:min-h-9 [&_[data-slot=select-trigger]]:min-w-0 [&_[data-slot=select-trigger]]:max-w-full [&_[data-slot=select-trigger]]:whitespace-normal",
+              "[&_[data-slot=select-trigger]]:h-auto [&_[data-slot=select-trigger]]:min-h-11 [&_[data-slot=select-trigger]]:min-w-0 [&_[data-slot=select-trigger]]:max-w-full [&_[data-slot=select-trigger]]:whitespace-normal",
               "[&_[data-slot=select-value]]:flex [&_[data-slot=select-value]]:whitespace-normal [&_[data-slot=select-value]]:[overflow-wrap:anywhere] [&_[data-slot=select-value]]:[-webkit-line-clamp:unset]",
               "[&_[data-slot=profile-list]>[data-slot=settings-section]]:border-0 [&_[data-slot=profile-list]>[data-slot=settings-section]]:bg-transparent [&_[data-slot=profile-list]>[data-slot=settings-section]]:p-0",
               "@max-[24rem]/settings:[&_[data-slot=settings-section]]:p-2 @max-[24rem]/settings:[&_[data-slot=setting-row]]:py-2 @max-[24rem]/settings:[&_[data-slot=toggle-setting]]:py-2 @max-[24rem]/settings:[&_[data-slot=settings-section]]:[overflow-wrap:anywhere]",
@@ -727,7 +727,7 @@ export function SettingsPage({
                         >
                           <SelectTrigger
                             id="microphone"
-                            className="h-9 w-full min-w-0 bg-background"
+                            className="h-11 w-full min-w-0 bg-background"
                             aria-describedby="microphone-status"
                           >
                             <SelectValue />

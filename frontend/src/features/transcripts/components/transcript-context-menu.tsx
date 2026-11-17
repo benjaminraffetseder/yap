@@ -1,4 +1,3 @@
-import { CorrectionForm } from "@/features/transcripts/components/correction-form";
 import {
   ContextMenu,
   ContextMenuContent,
@@ -8,13 +7,14 @@ import {
 } from "@/components/ui/context-menu";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { toastManager } from "@/components/ui/toast";
-import { nativeText } from "@/i18n/native-text";
-import { backend, isDesktop, message } from "@/lib/backend";
+import { CorrectionForm } from "@/features/transcripts/components/correction-form";
 import {
   readTranscriptSelection,
   type TextSelection,
   type TranscriptSelection,
 } from "@/features/transcripts/lib/text-selection";
+import { nativeText } from "@/i18n/native-text";
+import { backend, isDesktop, message } from "@/lib/backend";
 import { BookPlus, Copy, MessageSquare, SpellCheck } from "lucide-react";
 import { useRef, useState, type ReactElement, type RefObject } from "react";
 import { useTranslation } from "react-i18next";

@@ -908,8 +908,15 @@ test("History rows reveal search matches and copy the complete edited transcript
     result.session.title = "Meeting notes";
     window.homeResultsTest.emit();
   }, text);
-  await page.goto("/#/history?q=John");
+  await page.goto("/#/history");
   const row = page.getByRole("table", { name: "History", exact: true }).locator("tbody tr").first();
+  const link = row.getByRole("link");
+  await expect(link).toHaveText("Meeting notes");
+  await expect(link.locator("p")).toHaveCount(1);
+  const title = (await link.locator("p").boundingBox())!;
+  const checkbox = (await row.getByRole("checkbox").boundingBox())!;
+  expect(Math.abs(title.y + title.height / 2 - checkbox.y - checkbox.height / 2)).toBeLessThan(1);
+  await page.goto("/#/history?q=John");
   await expect(row.locator("mark")).toHaveText("John");
   const snippet = row.locator("p").nth(1);
   expect((await snippet.textContent())!.startsWith("…")).toBe(true);
@@ -925,6 +932,14 @@ test("History rows reveal search matches and copy the complete edited transcript
   await expect(row.locator("mark")).toHaveText("Jon");
   await row.getByRole("button", { name: "Copy dictation", exact: true }).click();
   expect(await page.evaluate(() => window.homeResultsTest.clipboard)).toBe(text);
+  await page.evaluate(() => {
+    window.homeResultsTest.result!.session.title = "";
+    window.homeResultsTest.emit();
+  });
+  await page.getByRole("textbox", { name: "Search transcripts", exact: true }).fill("");
+  await expect(link.locator("p")).toHaveCount(1);
+  await expect(link).toContainText("Unrelated opening.");
+  await expect(link.locator("p")).toHaveCSS("white-space", "nowrap");
 });
 
 test("saved edits submit explicitly, cancel without writes, return focus and keep provenance", async ({

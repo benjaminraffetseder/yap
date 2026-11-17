@@ -1,23 +1,23 @@
 /* eslint-disable react-refresh/only-export-components -- This isolated browser fixture mounts itself. */
+import { QueryClientProvider } from "@tanstack/react-query";
 import { Profiler, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
-import { QueryClientProvider } from "@tanstack/react-query";
+import { MemoryRouter } from "react-router";
+import { TooltipProvider } from "../src/components/ui/tooltip";
 import { DictationProvider } from "../src/features/dictation/components/dictation-provider";
 import {
+  useAudioLevel,
   useDictationActions,
+  useDictationActivity,
+  useDictationConnection,
   useDictationPhase,
   useDictationStatus,
-  useDictationActivity,
   useImportQueue,
-  useAudioLevel,
-  useDictationConnection,
 } from "../src/features/dictation/hooks/use-dictation-state";
-import { UpdatePanel } from "../src/features/updates/components/update-panel";
 import { ProcessingPanel } from "../src/features/processing/components/processing-panel";
-import { TooltipProvider } from "../src/components/ui/tooltip";
-import { MemoryRouter } from "react-router";
-import { createQueryClient } from "../src/lib/queries/resource-queries";
+import { UpdatePanel } from "../src/features/updates/components/update-panel";
 import { emptySnapshot } from "../src/lib/queries/resource-defaults";
+import { createQueryClient } from "../src/lib/queries/resource-queries";
 import { useConfiguration } from "../src/lib/queries/saved-queries";
 
 const snapshot = structuredClone(emptySnapshot);

@@ -1,7 +1,7 @@
-import i18n from "@/i18n";
-import type { TextProcessing, VocabularyEntry } from "@/lib/backend";
 import { textProcessingSchema } from "@/features/prompts/lib/prompt-schemas";
 import { vocabularySchema } from "@/features/vocabulary/lib/vocabulary-schemas";
+import i18n from "@/i18n";
+import type { TextProcessing, VocabularyEntry } from "@/lib/backend";
 
 export {
   vocabularyDraft,

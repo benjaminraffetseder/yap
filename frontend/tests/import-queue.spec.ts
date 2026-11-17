@@ -221,7 +221,7 @@ test("minimizes completely and keeps updates hidden until reopened from any view
   await queue(page, [job("interview", "done"), job("notes", "done"), job("extra", "done")]);
   await queue(page, [job("new")]);
   await expect(pane).toBeHidden();
-  await page.getByRole("link", { name: "Vocabulary", exact: true }).click();
+  await page.getByRole("link", { name: "Dictionary", exact: true }).click();
   await expect(pane).toBeHidden();
   await toggle.click();
   await expect(pane).toBeVisible();

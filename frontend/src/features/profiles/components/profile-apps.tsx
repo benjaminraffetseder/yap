@@ -1,4 +1,3 @@
-import { useTranslation } from "react-i18next";
 import { Badge } from "@/components/ui/badge";
 import {
   Select,
@@ -9,6 +8,7 @@ import {
 } from "@/components/ui/select";
 import type { AppProfileRule, DictationProfile, ProfileApplication } from "@/lib/backend";
 import { Plus, X } from "lucide-react";
+import { useTranslation } from "react-i18next";
 
 const ruleLimit = 50;
 

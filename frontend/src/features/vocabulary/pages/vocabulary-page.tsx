@@ -1,15 +1,5 @@
-import { useVocabulary, useSavedActions } from "@/lib/queries/saved-queries";
-import { nativeText } from "@/i18n/native-text";
-import { useTranslation } from "react-i18next";
 import { AutoSaveStatus } from "@/components/shared/auto-save-status";
-import {
-  useDictationActions,
-  useDictationConnection,
-  useDictationPhase,
-  useSavedVocabulary,
-} from "@/features/dictation/hooks/use-dictation-state";
 import { PageHeading } from "@/components/shared/page-heading";
-import { RevisionHistory } from "@/features/transcripts/components/revision-history";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -23,17 +13,27 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { toastManager } from "@/components/ui/toast";
+import {
+  useDictationActions,
+  useDictationConnection,
+  useDictationPhase,
+  useSavedVocabulary,
+} from "@/features/dictation/hooks/use-dictation-state";
+import { RevisionHistory } from "@/features/transcripts/components/revision-history";
+import { useAutoSave } from "@/hooks/use-auto-save";
+import { useSavedDraft } from "@/hooks/use-saved-draft";
+import { nativeText } from "@/i18n/native-text";
 import { isBusy, isDesktop, message, type VocabularyEntry } from "@/lib/backend";
+import { useSavedActions, useVocabulary } from "@/lib/queries/saved-queries";
 import {
   vocabularyDraft as draftOf,
   validateVocabulary,
   vocabularyPayload,
   type VocabularyDraft as Draft,
 } from "@/lib/validation/draft-validation";
-import { useAutoSave } from "@/hooks/use-auto-save";
-import { useSavedDraft } from "@/hooks/use-saved-draft";
 import { BookOpen, History, Plus, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 
 const PAGE_SIZE = 10;
 

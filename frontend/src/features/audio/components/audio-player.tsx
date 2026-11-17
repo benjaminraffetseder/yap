@@ -1,6 +1,3 @@
-import i18n from "@/i18n";
-import { nativeText } from "@/i18n/native-text";
-import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -10,9 +7,12 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
+import i18n from "@/i18n";
+import { nativeText } from "@/i18n/native-text";
 import { cn } from "@/lib/utils";
 import { Loader2, Pause, Play, Volume2, VolumeX, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 
 const speeds = [0.75, 1, 1.25, 1.5, 2].map((value) => ({
   value: String(value),

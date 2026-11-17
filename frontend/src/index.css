@@ -1,15 +1,44 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 
+@font-face {
+  font-family: "Space Grotesk";
+  src: url("./assets/fonts/SpaceGrotesk-Variable.ttf") format("truetype");
+  font-style: normal;
+  font-weight: 300 700;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "JetBrains Mono";
+  src: url("./assets/fonts/JetBrainsMono-Variable.ttf") format("truetype");
+  font-style: normal;
+  font-weight: 100 800;
+  font-display: swap;
+}
+
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
+  --font-sans: "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
   --text-xs: 0.8125rem;
   --text-xs--line-height: 1.5;
-  --radius-sm: calc(var(--radius) - 4px);
-  --radius-md: calc(var(--radius) - 2px);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) + 4px);
+  --radius-xs: 0px;
+  --radius-sm: 0px;
+  --radius-md: 0px;
+  --radius-lg: 0px;
+  --radius-xl: 0px;
+  --radius-2xl: 0px;
+  --radius-3xl: 0px;
+  --radius-4xl: 0px;
+  --shadow-2xs: 0 0 #0000;
+  --shadow-xs: 0 0 #0000;
+  --shadow-sm: 0 0 #0000;
+  --shadow-md: 0 0 #0000;
+  --shadow-lg: 0 0 #0000;
+  --shadow-xl: 0 0 #0000;
+  --shadow-2xl: 0 0 #0000;
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -29,6 +58,7 @@
   --color-border: var(--border);
   --color-input: var(--input);
   --color-control: var(--control);
+  --color-brand: var(--brand);
   --color-ring: var(--ring);
   --color-chart-1: var(--chart-1);
   --color-chart-2: var(--chart-2);
@@ -46,34 +76,36 @@
 }
 
 :root {
-  --motion-ease-out: cubic-bezier(0.23, 1, 0.32, 1);
-  --radius: 0.625rem;
-  --background: oklch(0.985 0 0);
-  --foreground: oklch(0.22 0 0);
-  --card: oklch(1 0 0);
-  --surface-variant: oklch(0.97 0 0);
-  --card-foreground: oklch(0.22 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.22 0 0);
-  --primary: oklch(0.47 0.095 164);
-  --primary-foreground: oklch(0.99 0 0);
-  --secondary: oklch(0.955 0 0);
-  --secondary-foreground: oklch(0.27 0 0);
-  --muted: oklch(0.96 0 0);
-  --muted-foreground: oklch(0.47 0 0);
-  --accent: oklch(0.94 0 0);
-  --accent-foreground: oklch(0.27 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.9 0 0);
-  --input: oklch(0.82 0 0);
-  --control: oklch(1 0 0);
-  --ring: var(--primary);
+  color-scheme: light;
+  --motion-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --radius: 0px;
+  --background: #f4f0e6;
+  --foreground: #1a1a1a;
+  --card: #f8f5ed;
+  --surface-variant: #ebe6d6;
+  --card-foreground: var(--foreground);
+  --popover: #f8f5ed;
+  --popover-foreground: var(--foreground);
+  --primary: #42603a;
+  --primary-foreground: #f4f0e6;
+  --brand: #7b9a6d;
+  --secondary: #ebe6d6;
+  --secondary-foreground: #1a1a1a;
+  --muted: #ebe6d6;
+  --muted-foreground: #6b6259;
+  --accent: #e3e5d7;
+  --accent-foreground: #42603a;
+  --destructive: #a4382c;
+  --border: #1a1a1a1f;
+  --input: #1a1a1a38;
+  --control: #f8f5ed;
+  --ring: #a35430;
   --chart-1: oklch(0.646 0.222 41.116);
   --chart-2: oklch(0.6 0.118 184.704);
   --chart-3: oklch(0.398 0.07 227.392);
   --chart-4: oklch(0.828 0.189 84.429);
   --chart-5: oklch(0.769 0.188 70.08);
-  --sidebar: oklch(0.97 0 0);
+  --sidebar: #ebe6d6;
   --sidebar-foreground: var(--foreground);
   --sidebar-primary: var(--primary);
   --sidebar-primary-foreground: var(--primary-foreground);
@@ -84,29 +116,29 @@
 }
 
 .dark {
-  --background: oklch(0.2 0 0);
-  --foreground: oklch(0.965 0 0);
-  --card: oklch(0.235 0 0);
-  --surface-variant: oklch(0.22 0 0);
-  --card-foreground: oklch(0.965 0 0);
-  --popover: oklch(0.245 0 0);
-  --popover-foreground: oklch(0.965 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.28 0 0);
-  --secondary-foreground: oklch(0.965 0 0);
-  --muted: oklch(0.265 0 0);
-  --muted-foreground: oklch(0.76 0 0);
-  --accent: oklch(0.3 0 0);
-  --accent-foreground: oklch(0.965 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 10%);
-  --control: oklch(0.22 0 0);
-  --ring: var(--primary);
-  --sidebar: oklch(0.21 0 0);
-  --primary: oklch(0.74 0.12 164);
-  --primary-foreground: oklch(0.19 0.03 164);
+  color-scheme: dark;
+  --background: #1a1a1a;
+  --foreground: #f4f0e6;
+  --card: #252525;
+  --surface-variant: #252525;
+  --card-foreground: var(--foreground);
+  --popover: #252525;
+  --popover-foreground: var(--foreground);
+  --primary: #bad0ae;
+  --primary-foreground: #1a1a1a;
+  --brand: #8fa680;
+  --secondary: #252525;
+  --secondary-foreground: #f4f0e6;
+  --muted: #252525;
+  --muted-foreground: #aaa496;
+  --accent: #30372d;
+  --accent-foreground: #bad0ae;
+  --destructive: #eea18c;
+  --border: #f4f0e61f;
+  --input: #f4f0e62e;
+  --control: #333333;
+  --ring: #e0a476;
+  --sidebar: #252525;
 }
 
 .settings-section {
@@ -382,13 +414,11 @@
     @apply bg-background text-foreground antialiased;
     margin: 0;
     min-width: 0;
-    font-family:
-      ui-sans-serif,
-      system-ui,
-      -apple-system,
-      BlinkMacSystemFont,
-      "Segoe UI",
-      sans-serif;
+    font-family: var(--font-sans);
+  }
+  time,
+  kbd {
+    @apply font-mono;
   }
   button:not(:disabled),
   [role="button"]:not([aria-disabled="true"]) {

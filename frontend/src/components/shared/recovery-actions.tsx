@@ -1,8 +1,8 @@
-import { useTranslation } from "react-i18next";
 import i18n from "@/i18n";
 import { isDesktop } from "@/lib/desktop";
 import { Clipboard } from "@wailsio/runtime";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { version } from "../../../package.json";
 
 const buttonClass =

@@ -1,7 +1,7 @@
 import i18n from "i18next";
 import { initReactI18next } from "react-i18next";
-import en from "./locales/en.json" with { type: "json" };
 import de from "./locales/de.json" with { type: "json" };
+import en from "./locales/en.json" with { type: "json" };
 
 export const languages = [
   { code: "en", label: "English" },

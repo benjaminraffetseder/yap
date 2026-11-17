@@ -123,10 +123,10 @@ opens a reader for the full failure message. Failed drafts also survive closing 
 reopening Settings during the app session. Turning on automatic history deletion
 still asks for confirmation first.
 
-Prompts, chains, the text model, and Vocabulary save automatically after a short
+Prompts, chains, the text model, and Dictionary save automatically after a short
 pause, including while you type instructions. Valid edits also save when you leave
 the page. The status shows progress; invalid drafts pause saving and explain what
-needs fixing. Completely empty new vocabulary rows are skipped. Failed saves keep
+needs fixing. Completely empty new dictionary rows are skipped. Failed saves keep
 the draft and offer **Retry** or **Discard changes**. Deleting a prompt or chain
 shows an **Undo** action. Background updates preserve edited fields and refresh
 untouched settings. Unsaved drafts stay in memory for the current app session;
@@ -149,7 +149,7 @@ Apps without a rule, audio imports, and recordings started in Yap or the tray us
 your manually selected settings. Automatic selection leaves those saved settings
 in place. If a matching profile's model or prompt is unavailable, Yap reports the
 problem before recording; repair the profile or remove its rule. Deleting a
-profile also removes its app rules. Vocabulary remains shared across profiles.
+profile also removes its app rules. Dictionary remains shared across profiles.
 
 Set an optional **Cycle profiles shortcut**, such as `Ctrl+Alt+P`, under
 **Settings → Dictation → Shortcuts**. It must differ from the recording shortcut; leave it empty to disable
@@ -185,7 +185,7 @@ Both are off by default. They apply to packaged builds; development builds stay
 visible and don't register for startup. If you move the app, open it from its new
 location and turn **Launch at login** off and on again.
 
-## History and vocabulary
+## History and dictionary
 
 History lets you search titles, original and edited text, open a dictation, and copy or
 export it. Each History row has a **Copy dictation** button for copying the saved
@@ -234,13 +234,13 @@ transcription. It opens an inline editor; **Compare with original** shows a read
 reference alongside the draft where space allows. Edits save after a short pause;
 **Done** or Escape in the text field also saves before closing. Empty text is never
 saved. Ctrl/Cmd+Enter saves immediately and keeps the editor open. To reuse a
-corrected spelling, select a name or phrase, right-click, and choose **Add to vocabulary**;
+corrected spelling, select a name or phrase, right-click, and choose **Add to dictionary**;
 the transcript continues to save automatically.
 
 To fix a spelling, select a word or short phrase, right-click, and choose **Correct and remember**.
 Enter the correct spelling and choose **Apply correction**. **Remember for future
 dictations** saves the selected spelling as an alias, adding it to an existing term
-when that preferred spelling is already in Vocabulary. Uncheck it for a correction
+when that preferred spelling is already in Dictionary. Uncheck it for a correction
 that only applies to this text. The action is available while reading or editing a
 History transcript and on Home's transcript result or editor. Home editor corrections
 remain drafts until **Apply changes**; History editor corrections save automatically.
@@ -249,9 +249,9 @@ The same context menu offers **Copy selection**, and History readers offer **Ask
 selection** to open chat with that passage. In an editor, **Shift+F10** opens the menu
 for the highlighted text. Closing a menu or correction dialog keeps your scroll position.
 
-Vocabulary entries have a preferred spelling and optional aliases. For example,
+Dictionary entries have a preferred spelling and optional aliases. For example,
 `postgres` can map to `PostgreSQL`. Matching uses whole words or phrases, not
-fuzzy matching. Vocabulary also gives Whisper and Moonshine V2 recognition hints, but it won't
+fuzzy matching. Dictionary also gives Whisper and Moonshine V2 recognition hints, but it won't
 guarantee a particular transcription. The limit is 100 terms, with ten aliases each.
 
 **Light cleanup**, under **Settings → Dictation → Text & delivery**, tidies spacing,
@@ -423,7 +423,7 @@ and choose a saved prompt. For each step, choose **Use text from**:
 
 - **Original transcription** uses the speech recognizer's unedited text.
 - **Saved transcript** uses the transcript captured when the
-  run starts, including light cleanup, vocabulary replacements, and saved edits.
+  run starts, including light cleanup, dictionary replacements, and saved edits.
 - **Step N: Prompt name** uses the result of that particular earlier step.
 
 New steps default to the preceding step's result. For example, Cleanup can use
@@ -466,14 +466,14 @@ remain available when text processing is disabled.
 ### Version history
 
 Open **Version history** from a prompt's **More prompt actions** menu, a chain's
-actions, the Vocabulary header, or **Tools → Version history** in the transcript
+actions, the Dictionary header, or **Tools → Version history** in the transcript
 editor. Select a version to preview it, then choose **Restore version** to
 load it into the draft. Restored content saves automatically. Transcript and prompt
 previews also show a text comparison. A chain cannot be restored if one of its
 steps refers to a prompt that no longer exists.
 
 History is tracked separately for each prompt, chain, and transcript, and for the
-whole vocabulary list. The first change preserves the prior content. Saves within
+whole dictionary list. The first change preserves the prior content. Saves within
 a ten-minute editing window are grouped, with up to 50 versions kept per item.
 Restoring preserves the version you restored from, so you can undo a restore.
 The original transcription remains available separately. Transcript versions stay
@@ -520,7 +520,7 @@ downloads, not custom files. **Repair & use** replaces a damaged model;
 **Check & repair runtime** checks the managed Windows runtime.
 
 **Settings → History & data → Backup & restore** exports a `.yap-backup.zip` with
-history, titles, edited text, generated outputs, prompts, chains, vocabulary, and
+history, titles, edited text, generated outputs, prompts, chains, dictionary, and
 portable preferences.
 **Include retained recordings** is off by default. Models and runtimes aren't
 included. Save backups outside Yap's data folder and keep them private: they

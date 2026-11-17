@@ -1,6 +1,6 @@
 /* eslint-disable no-control-regex -- These checks mirror native text validation. */
-import { z } from "zod";
 import i18n from "@/i18n";
+import { z } from "zod";
 
 export const codePointLength = (value: string) => Array.from(value).length;
 const validText = (value: string) => !/[\uD800-\uDFFF]/u.test(value);

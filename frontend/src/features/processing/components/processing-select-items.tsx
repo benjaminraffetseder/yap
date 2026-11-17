@@ -1,8 +1,8 @@
-import { useTranslation } from "react-i18next";
-import { ProcessingOptionLabel } from "@/features/processing/components/processing-option-label";
 import { SelectGroup, SelectItem, SelectLabel, SelectSeparator } from "@/components/ui/select";
+import { ProcessingOptionLabel } from "@/features/processing/components/processing-option-label";
 import type { ProcessingOption } from "@/lib/backend";
 import { Fragment } from "react";
+import { useTranslation } from "react-i18next";
 
 export function ProcessingSelectItems({ options }: { options: ProcessingOption[] }) {
   const { t } = useTranslation();

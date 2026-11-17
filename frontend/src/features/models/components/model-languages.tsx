@@ -1,9 +1,3 @@
-import { Languages, Search } from "lucide-react";
-import { useRef, useState } from "react";
-import { useTranslation } from "react-i18next";
-import i18n from "@/i18n";
-import { languageAutonym, languageName } from "@/lib/languages";
-import { Input } from "@/components/ui/input";
 import {
   Dialog,
   DialogContent,
@@ -12,6 +6,12 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import i18n from "@/i18n";
+import { languageAutonym, languageName } from "@/lib/languages";
+import { Languages, Search } from "lucide-react";
+import { useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 
 const normalize = (value: string) =>
   value
@@ -53,11 +53,11 @@ export function ModelLanguages({
       <DialogTrigger
         data-model-language={id}
         aria-label={`${title} · ${caption}`}
-        className="inline-flex min-h-8 max-w-full items-center gap-1 rounded px-1 text-xs text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+        className="inline-flex min-h-8 max-w-full shrink-0 items-center gap-1 rounded px-1 text-xs whitespace-nowrap text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
       >
-        <Languages aria-hidden="true" className="size-3.5" />
+        <Languages aria-hidden="true" className="size-3.5 shrink-0" />
         <span className="underline decoration-current/50 underline-offset-3">{caption}</span>
-        <Search aria-hidden="true" className="size-3" />
+        <Search aria-hidden="true" className="size-3 shrink-0" />
       </DialogTrigger>
       <DialogContent
         initialFocus={(type) => (type === "touch" ? true : search.current)}

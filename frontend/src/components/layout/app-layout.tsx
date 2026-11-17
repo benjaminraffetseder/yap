@@ -1,6 +1,11 @@
 import appIcon from "@/assets/app-icon.svg";
-import { AudioDropImport } from "@/features/audio/components/audio-drop-import";
 import { CommandMenu } from "@/components/layout/command-menu";
+import { RecoveryActions } from "@/components/shared/recovery-actions";
+import { Button } from "@/components/ui/button";
+import { toastManager } from "@/components/ui/toast";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { AudioDropImport } from "@/features/audio/components/audio-drop-import";
+import { RecordingStatus } from "@/features/dictation/components/recording-status";
 import {
   useAppUpdates,
   useDictationActions,
@@ -11,25 +16,12 @@ import {
   ProcessingPanel,
   ProcessingPanelToggle,
 } from "@/features/processing/components/processing-panel";
-import { RecordingStatus } from "@/features/dictation/components/recording-status";
-import { RecoveryActions } from "@/components/shared/recovery-actions";
-import { Button } from "@/components/ui/button";
-import { toastManager } from "@/components/ui/toast";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { nativeText } from "@/i18n/native-text";
 import { backendVersionMismatchMessage, isDesktop, message } from "@/lib/backend";
 import { cn } from "@/lib/utils";
 import { Events } from "@wailsio/runtime";
 import { BookOpen, HardDriveDownload, History, Mic, Settings2, Sparkles } from "lucide-react";
-import {
-  Fragment,
-  useEffect,
-  useLayoutEffect,
-  useRef,
-  useState,
-  type CSSProperties,
-  type Ref,
-} from "react";
+import { Fragment, useEffect, useLayoutEffect, useRef, useState, type Ref } from "react";
 import { useTranslation } from "react-i18next";
 import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router";
 
@@ -56,7 +48,6 @@ export function AppLayout({ saveNoticeRef }: { saveNoticeRef?: Ref<HTMLDivElemen
   const location = useLocation();
   const navigate = useNavigate();
   const [dismissedUpdate, setDismissedUpdate] = useState("");
-  const sidebarWidth = "clamp(56px, 10vw, 5.75rem)";
   const sidebar = useRef<HTMLElement>(null);
   const [compactNavigation, setCompactNavigation] = useState(false);
   useLayoutEffect(() => {
@@ -137,14 +128,9 @@ export function AppLayout({ saveNoticeRef }: { saveNoticeRef?: Ref<HTMLDivElemen
     <TooltipProvider delay={250}>
       <div
         className={cn(
-          "group/layout flex lg:has-[[data-chat-open]]:h-dvh lg:has-[[data-chat-open]]:overflow-hidden",
+          "group/layout flex [--sidebar-width:clamp(56px,10vw,5.75rem)] lg:has-[[data-chat-open]]:h-dvh lg:has-[[data-chat-open]]:overflow-hidden",
           homeSurface ? "h-dvh overflow-hidden" : "min-h-screen",
         )}
-        style={
-          {
-            "--sidebar-width": sidebarWidth,
-          } as CSSProperties
-        }
       >
         <aside
           ref={sidebar}
@@ -164,7 +150,7 @@ export function AppLayout({ saveNoticeRef }: { saveNoticeRef?: Ref<HTMLDivElemen
             <Link
               to="/"
               className={cn(
-                "flex items-center justify-center rounded-lg outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring",
+                "flex items-center justify-center outline-none hover:text-primary focus-visible:ring-2 focus-visible:ring-ring",
                 compactNavigation ? "size-[44px]" : "size-11",
               )}
               aria-label={t("appLayout.yapHome")}
@@ -183,7 +169,7 @@ export function AppLayout({ saveNoticeRef }: { saveNoticeRef?: Ref<HTMLDivElemen
             {navigation.map(({ to, label, shortLabel, icon: Icon }) => (
               <Fragment key={to}>
                 {to === "/settings" && (
-                  <div className="mt-auto">
+                  <div className="mt-auto border-t pt-3">
                     <ProcessingPanelToggle compact={compactNavigation} />
                   </div>
                 )}
@@ -195,7 +181,7 @@ export function AppLayout({ saveNoticeRef }: { saveNoticeRef?: Ref<HTMLDivElemen
                         end={to !== "/history"}
                         aria-label={label}
                         className={cn(
-                          "flex shrink-0 flex-col items-center justify-center gap-1 rounded-lg text-sm text-muted-foreground outline-none transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring aria-[current=page]:bg-primary/10 aria-[current=page]:font-medium aria-[current=page]:text-primary",
+                          "relative flex shrink-0 flex-col items-center justify-center gap-1 border-l-2 border-transparent text-sm text-muted-foreground outline-none transition-colors duration-150 hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring aria-[current=page]:border-primary aria-[current=page]:bg-primary/5 aria-[current=page]:font-medium aria-[current=page]:text-primary",
                           compactNavigation ? "h-[44px] px-0" : "h-14 px-1",
                         )}
                       />

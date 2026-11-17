@@ -1,6 +1,6 @@
-import { useTranslation } from "react-i18next";
-import { useEffect, useRef, useState } from "react";
+import { MarkdownContent } from "@/components/shared/markdown-content";
 import { Button } from "@/components/ui/button";
+import { DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -9,15 +9,15 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
   useDictationPhase,
   useSavedConfiguration,
 } from "@/features/dictation/hooks/use-dictation-state";
-import { backend, isBusy } from "@/lib/backend";
 import { useTextRequest } from "@/features/processing/hooks/use-text-request";
 import { TextPanel } from "@/features/transcripts/components/text-panel";
-import { MarkdownContent } from "@/components/shared/markdown-content";
+import { backend, isBusy } from "@/lib/backend";
+import { useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 
 export function TranscriptProcessor({
   input,

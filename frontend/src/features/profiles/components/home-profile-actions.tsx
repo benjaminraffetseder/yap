@@ -1,15 +1,3 @@
-import { useQueryClient } from "@tanstack/react-query";
-import { refreshSaved, resourceKeys } from "@/lib/queries/resource-queries";
-import { useSavedActions } from "@/lib/queries/saved-queries";
-import { nativeText } from "@/i18n/native-text";
-import { useTranslation } from "react-i18next";
-import {
-  useDictationActions,
-  useDictationConnection,
-  useDictationPhase,
-  useSavedConfiguration,
-  useSavedModelCatalog,
-} from "@/features/dictation/hooks/use-dictation-state";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -21,19 +9,31 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Collapsible } from "@base-ui/react/collapsible";
-import { Check, ChevronDown, Plus, RotateCcw } from "lucide-react";
+import {
+  useDictationActions,
+  useDictationConnection,
+  useDictationPhase,
+  useSavedConfiguration,
+  useSavedModelCatalog,
+} from "@/features/dictation/hooks/use-dictation-state";
+import { nativeText } from "@/i18n/native-text";
 import {
   backend,
   isBusy,
   isDesktop,
   message,
   processingOptions,
-  type DictationProfile,
   type Configuration,
+  type DictationProfile,
 } from "@/lib/backend";
 import { useLanguages } from "@/lib/languages";
+import { refreshSaved, resourceKeys } from "@/lib/queries/resource-queries";
+import { useSavedActions } from "@/lib/queries/saved-queries";
+import { Collapsible } from "@base-ui/react/collapsible";
+import { useQueryClient } from "@tanstack/react-query";
+import { Check, ChevronDown, Plus, RotateCcw } from "lucide-react";
 import { useId, useRef, useState, type RefObject } from "react";
+import { useTranslation } from "react-i18next";
 
 type Review = { kind: "update" | "new"; baseline: string; choices: DictationProfile };
 

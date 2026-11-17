@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Events } from "@wailsio/runtime";
 import { backend, isDesktop, message, type UpdateStatus } from "@/lib/backend";
+import { Events } from "@wailsio/runtime";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 export function useAppUpdateState(loading: boolean) {
   const [update, setUpdate] = useState<UpdateStatus | null>(null);

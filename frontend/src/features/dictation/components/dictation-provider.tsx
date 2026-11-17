@@ -1,15 +1,15 @@
-import { useCallback, useMemo, useRef, useState, type ReactNode } from "react";
-import { useQuery } from "@tanstack/react-query";
 import { AudioLevelProvider } from "@/features/dictation/components/audio-level-provider";
-import { isDesktop, message, type ImportJob, type Snapshot } from "@/lib/backend";
+import { useDictationRuntime } from "@/features/dictation/hooks/use-dictation-runtime";
 import { dictationContexts as contexts } from "@/features/dictation/hooks/use-dictation-state";
+import { useAppUpdateState } from "@/features/updates/hooks/use-app-updates";
+import { isDesktop, message, type ImportJob, type Snapshot } from "@/lib/backend";
 import {
   configurationQuery,
-  vocabularyQuery,
   modelCatalogQuery,
+  vocabularyQuery,
 } from "@/lib/queries/resource-queries";
-import { useAppUpdateState } from "@/features/updates/hooks/use-app-updates";
-import { useDictationRuntime } from "@/features/dictation/hooks/use-dictation-runtime";
+import { useQuery } from "@tanstack/react-query";
+import { useCallback, useMemo, useRef, useState, type ReactNode } from "react";
 
 // eslint-disable-next-line react-refresh/only-export-components -- Preserve the existing public hooks during the context split.
 export { useDictation, useDictationState } from "@/features/dictation/hooks/use-dictation-state";

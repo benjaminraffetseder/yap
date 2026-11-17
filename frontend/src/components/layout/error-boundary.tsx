@@ -1,6 +1,6 @@
-import { Component, type ErrorInfo, type ReactNode } from "react";
 import { RecoveryActions } from "@/components/shared/recovery-actions";
 import i18n from "@/i18n";
+import { Component, type ErrorInfo, type ReactNode } from "react";
 
 type Failure = { message: string; stack: string };
 type State = { failure: Failure | null; componentStack: string };

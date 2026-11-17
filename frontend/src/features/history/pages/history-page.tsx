@@ -1,6 +1,19 @@
-import { AudioImportButton } from "@/features/audio/components/audio-import-button";
-import { BulkTextDialog } from "@/features/processing/components/bulk-text-dialog";
 import { CopyButton } from "@/components/shared/copy-button";
+import { PageHeading } from "@/components/shared/page-heading";
+import { ActionMenu, ActionMenuItem } from "@/components/ui/action-menu";
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "@/components/ui/empty";
+import { toastManager } from "@/components/ui/toast";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { AudioImportButton } from "@/features/audio/components/audio-import-button";
 import {
   useDictationActions,
   useDictationActivity,
@@ -8,14 +21,10 @@ import {
 } from "@/features/dictation/hooks/use-dictation-state";
 import { HistorySearch } from "@/features/history/components/history-search";
 import { HistoryTable } from "@/features/history/components/history-table";
-import { PageHeading } from "@/components/shared/page-heading";
+import { deleteTranscriptions } from "@/features/history/lib/delete-transcriptions";
+import { BulkTextDialog } from "@/features/processing/components/bulk-text-dialog";
 import { SessionTitleAction } from "@/features/transcripts/components/session-title-action";
 import { TranscriptExportDialog } from "@/features/transcripts/components/transcript-export-dialog";
-import { ActionMenu, ActionMenuItem } from "@/components/ui/action-menu";
-import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
-import { toastManager } from "@/components/ui/toast";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { nativeText } from "@/i18n/native-text";
 import {
   backend,
@@ -33,8 +42,17 @@ import {
   type InfiniteData,
   type QueryKey,
 } from "@tanstack/react-query";
-import { deleteTranscriptions } from "@/features/history/lib/delete-transcriptions";
-import { Download, History, Loader2, RotateCcw, Sparkles, Trash2, Workflow, X } from "lucide-react";
+import {
+  Download,
+  History,
+  Loader2,
+  RotateCcw,
+  Search,
+  Sparkles,
+  Trash2,
+  Workflow,
+  X,
+} from "lucide-react";
 import {
   useCallback,
   useEffect,
@@ -451,11 +469,11 @@ function HistoryList({ viewToggle, active }: { viewToggle: ReactNode; active: bo
     setSelected(checked ? entries.map((entry) => entry.id) : []);
   }
   return (
-    <div className="space-y-7 pb-32">
+    <div className="-mt-4 space-y-4 pb-[max(8rem,calc(var(--history-selection-height,0px)+2.25rem+env(safe-area-inset-bottom)))] lg:mt-0 lg:space-y-7">
       <div
         ref={toolbar}
         data-slot="history-toolbar"
-        className="sticky top-0 z-20 space-y-4 border-b bg-background py-4"
+        className="sticky top-0 z-20 space-y-3 border-b bg-background py-3 lg:space-y-4 lg:py-4"
       >
         <PageHeading
           title={deleted ? t("historyPage.recentlyDeleted") : t("common.history")}
@@ -464,9 +482,9 @@ function HistoryList({ viewToggle, active }: { viewToggle: ReactNode; active: bo
               ? t("historyPage.restoreDictationsWithin30DaysOrDelete")
               : t("historyPage.yourDictationsReadyToRevisit")
           }
-          className="items-center"
+          className="items-start gap-3 border-b-0 pb-0 lg:items-center lg:gap-4"
         >
-          <div className="flex w-full min-w-0 flex-wrap items-center gap-3 sm:ml-auto sm:w-auto">
+          <div className="flex w-full min-w-0 flex-wrap items-center gap-2.5 lg:ml-auto lg:w-auto lg:gap-3">
             <HistorySearch
               active={active}
               ref={searchInput}
@@ -477,6 +495,13 @@ function HistoryList({ viewToggle, active }: { viewToggle: ReactNode; active: bo
             {!deleted && <AudioImportButton showDownloadProgress={false} />}
             {viewToggle}
           </div>
+          <p role="status" className="sr-only">
+            {loading || searchPending
+              ? t("historyPage.loadingHistory")
+              : t(query ? "historyPage.matchingDictationCount" : "historyPage.dictationCount", {
+                  count: total,
+                })}
+          </p>
         </PageHeading>
         {snapshot.status.historyError && (
           <p role="alert" className="text-sm text-destructive">
@@ -496,61 +521,56 @@ function HistoryList({ viewToggle, active }: { viewToggle: ReactNode; active: bo
             {deleteError}
           </p>
         )}
-        <div className="flex flex-wrap items-center gap-3">
-          <p role="status" className="mr-auto text-xs text-muted-foreground">
-            {loading || searchPending
-              ? t("historyPage.loadingHistory")
-              : t("historyPage.dictationCount", { count: total })}
-          </p>
-          {!!entries.length && (
-            <label className="flex items-center gap-2 text-xs">
-              <Checkbox
-                ref={selectPage}
-                disabled={unavailable}
-                checked={selectedOnPage === entries.length}
-                indeterminate={selectedOnPage > 0 && selectedOnPage < entries.length}
-                onCheckedChange={selectLoaded}
-              />
-              {t("historyPage.selectLoaded")}
-            </label>
+        {!deleted &&
+          !allMatching &&
+          total > entries.length &&
+          entries.length > 0 &&
+          entries.every((entry) => selected.includes(entry.id)) && (
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-auto max-w-full justify-start whitespace-normal text-left"
+              disabled={unavailable}
+              onClick={() => {
+                setAllMatching(true);
+                setSelected([]);
+                setExcluded([]);
+              }}
+            >
+              {t("transcriptExport.selectAllMatching", { count: total })}
+            </Button>
           )}
-          {!deleted &&
-            !allMatching &&
-            total > entries.length &&
-            entries.length > 0 &&
-            entries.every((entry) => selected.includes(entry.id)) && (
-              <Button
-                size="sm"
-                variant="ghost"
-                className="h-auto max-w-full justify-start whitespace-normal text-left"
-                disabled={unavailable}
-                onClick={() => {
-                  setAllMatching(true);
-                  setSelected([]);
-                  setExcluded([]);
-                }}
-              >
-                {t("transcriptExport.selectAllMatching", { count: total })}
-              </Button>
-            )}
-        </div>
       </div>
       {!entries.length && !loading && !error ? (
-        <div className="rounded-2xl border border-dashed py-12 text-center">
-          <History className="mx-auto mb-4 size-7 text-muted-foreground/50" />
-          <h2 className="text-sm font-medium">
-            {query
-              ? t("historyPage.noMatchingTranscripts")
-              : deleted
-                ? t("historyPage.noRecentlyDeletedDictations")
-                : t("historyPage.noDictationsYet")}
-          </h2>
+        <Empty className="rounded-2xl border bg-card py-12">
+          <EmptyHeader>
+            <EmptyMedia variant="icon">
+              {query ? <Search aria-hidden="true" /> : <History aria-hidden="true" />}
+            </EmptyMedia>
+            <EmptyTitle className="text-base">
+              {query
+                ? t("historyPage.noMatchingTranscripts")
+                : deleted
+                  ? t("historyPage.noRecentlyDeletedDictations")
+                  : t("historyPage.noDictationsYet")}
+            </EmptyTitle>
+            {query && <EmptyDescription>{t("historyPage.tryADifferentSearch")}</EmptyDescription>}
+          </EmptyHeader>
           {query && (
-            <p className="mt-2 text-xs text-muted-foreground">
-              {t("historyPage.tryADifferentSearch")}
-            </p>
+            <EmptyContent>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  changeSearch("");
+                  searchInput.current?.focus();
+                }}
+              >
+                <X aria-hidden="true" />
+                {t("uiPolish.clearSearch")}
+              </Button>
+            </EmptyContent>
           )}
-        </div>
+        </Empty>
       ) : (
         <HistoryTable
           toolbar={toolbar}
@@ -565,6 +585,7 @@ function HistoryList({ viewToggle, active }: { viewToggle: ReactNode; active: bo
           loading={loading || searchPending}
           selectAll={
             <Checkbox
+              ref={selectPage}
               aria-label={t("historyPage.selectAllLoaded")}
               disabled={unavailable || !entries.length}
               checked={entries.length > 0 && selectedOnPage === entries.length}

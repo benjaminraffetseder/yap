@@ -1,7 +1,7 @@
-import { useEffect, useState, type ReactNode } from "react";
-import { Events } from "@wailsio/runtime";
-import { isDesktop } from "@/lib/backend";
 import { dictationContexts } from "@/features/dictation/hooks/use-dictation-state";
+import { isDesktop } from "@/lib/backend";
+import { Events } from "@wailsio/runtime";
+import { useEffect, useState, type ReactNode } from "react";
 
 export function AudioLevelProvider({ children }: { children: ReactNode }) {
   const [level, setLevel] = useState(0);

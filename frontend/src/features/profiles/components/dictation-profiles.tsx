@@ -1,16 +1,4 @@
-import { useSavedActions } from "@/lib/queries/saved-queries";
 import { AutoSaveStatus } from "@/components/shared/auto-save-status";
-import {
-  useDictationActions,
-  useDictationActivity,
-  useDictationConnection,
-  useSavedConfiguration,
-  useSavedModelCatalog,
-} from "@/features/dictation/hooks/use-dictation-state";
-import { HomeProfileActions } from "@/features/profiles/components/home-profile-actions";
-import { ProcessingSelectItems } from "@/features/processing/components/processing-select-items";
-import { ProfileApps } from "@/features/profiles/components/profile-apps";
-import { ModifiedMarker } from "@/features/profiles/components/profile-setting-indicator";
 import { SettingsSection } from "@/components/shared/settings-section";
 import { Button } from "@/components/ui/button";
 import {
@@ -34,6 +22,19 @@ import {
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import {
+  useDictationActions,
+  useDictationActivity,
+  useDictationConnection,
+  useSavedConfiguration,
+  useSavedModelCatalog,
+} from "@/features/dictation/hooks/use-dictation-state";
+import { ProcessingSelectItems } from "@/features/processing/components/processing-select-items";
+import { HomeProfileActions } from "@/features/profiles/components/home-profile-actions";
+import { ProfileApps } from "@/features/profiles/components/profile-apps";
+import { ModifiedMarker } from "@/features/profiles/components/profile-setting-indicator";
+import { useAutoSave } from "@/hooks/use-auto-save";
+import { useSavedDraft } from "@/hooks/use-saved-draft";
 import { nativeText } from "@/i18n/native-text";
 import {
   backend,
@@ -47,8 +48,7 @@ import {
   type ProfileApplication,
 } from "@/lib/backend";
 import { useLanguages } from "@/lib/languages";
-import { useAutoSave } from "@/hooks/use-auto-save";
-import { useSavedDraft } from "@/hooks/use-saved-draft";
+import { useSavedActions } from "@/lib/queries/saved-queries";
 import { ArrowLeft, Pencil, Plus, Settings2, Trash2, Workflow } from "lucide-react";
 import { useEffect, useRef, useState, type RefObject } from "react";
 import { useTranslation } from "react-i18next";

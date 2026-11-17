@@ -1,16 +1,4 @@
-import { useSavedActions } from "@/lib/queries/saved-queries";
-import {
-  useDictationActions,
-  useDictationConnection,
-  useDictationStatus,
-  useModelDownload,
-  useSavedConfiguration,
-  useSavedModelCatalog,
-} from "@/features/dictation/hooks/use-dictation-state";
-import { ModelCard } from "@/features/models/components/model-card";
-import { ModelGuidance } from "@/features/models/components/model-guidance";
 import { PageHeading } from "@/components/shared/page-heading";
-import { TextModelLibrary } from "@/features/models/components/text-model-library";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -22,15 +10,27 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent } from "@/components/ui/tabs";
-import i18n from "@/i18n";
-import { nativeText } from "@/i18n/native-text";
-import { backend, isBusy, isDesktop, message, type Model } from "@/lib/backend";
-import { languageName } from "@/lib/languages";
+import {
+  useDictationActions,
+  useDictationConnection,
+  useDictationStatus,
+  useModelDownload,
+  useSavedConfiguration,
+  useSavedModelCatalog,
+} from "@/features/dictation/hooks/use-dictation-state";
+import { ModelCard } from "@/features/models/components/model-card";
+import { ModelGuidance } from "@/features/models/components/model-guidance";
+import { TextModelLibrary } from "@/features/models/components/text-model-library";
 import {
   initialGuidanceLanguage,
   recommendSpeechModel,
 } from "@/features/models/lib/model-guidance";
 import { modelProfiles, modelUseCases } from "@/features/models/lib/model-profiles";
+import i18n from "@/i18n";
+import { nativeText } from "@/i18n/native-text";
+import { backend, isBusy, isDesktop, message, type Model } from "@/lib/backend";
+import { languageName } from "@/lib/languages";
+import { useSavedActions } from "@/lib/queries/saved-queries";
 import { cn } from "@/lib/utils";
 import { Tabs as TabsPrimitive } from "@base-ui/react/tabs";
 import { Check, ChevronDown, ChevronUp, FolderOpen, Search, ShieldCheck } from "lucide-react";
@@ -326,7 +326,7 @@ export function ModelsPage({ embedded = false }: { embedded?: boolean }) {
               <div className="relative w-full min-w-0 max-w-xs">
                 <Search
                   aria-hidden="true"
-                  className="pointer-events-none absolute top-2.5 left-3 size-4 text-muted-foreground"
+                  className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"
                 />
                 <Input
                   aria-label={t("uiPolish.searchModels")}
@@ -389,7 +389,7 @@ export function ModelsPage({ embedded = false }: { embedded?: boolean }) {
             </p>
           )}
           <div className="@container/models overflow-hidden rounded-xl border bg-card/30">
-            <div className="hidden grid-cols-[minmax(0,1fr)_10rem_12rem_10rem] gap-x-4 border-b bg-muted/30 px-5 py-2 text-xs font-medium text-muted-foreground @min-[48rem]/models:grid">
+            <div className="hidden grid-cols-[minmax(0,1fr)_10rem_14rem_10rem] gap-x-4 border-b bg-muted/30 px-5 py-3 font-mono text-xs text-muted-foreground @min-[48rem]/models:grid">
               <span>{t("common.speechModel")}</span>
               <span>{t("uiPolish.performanceColumn")}</span>
               <span>{t("uiPolish.languageSizeColumn")}</span>

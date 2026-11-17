@@ -1,18 +1,5 @@
-import { useSavedActions } from "@/lib/queries/saved-queries";
-import { useState } from "react";
-import { Check, Download, Trash2, Wrench } from "lucide-react";
-import { useTranslation } from "react-i18next";
-import { Link } from "react-router";
-import {
-  useDictationActions,
-  useDictationConnection,
-  useDictationStatus,
-  useSavedConfiguration,
-  useSavedModelCatalog,
-} from "@/features/dictation/hooks/use-dictation-state";
-import { Button } from "@/components/ui/button";
-import { Progress } from "@/components/ui/progress";
 import { ActionMenu, ActionMenuItem } from "@/components/ui/action-menu";
+import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
@@ -21,9 +8,22 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { backend, isBusy, isDesktop, message, type TextModel } from "@/lib/backend";
+import { Progress } from "@/components/ui/progress";
+import {
+  useDictationActions,
+  useDictationConnection,
+  useDictationStatus,
+  useSavedConfiguration,
+  useSavedModelCatalog,
+} from "@/features/dictation/hooks/use-dictation-state";
 import { nativeText } from "@/i18n/native-text";
+import { backend, isBusy, isDesktop, message, type TextModel } from "@/lib/backend";
+import { useSavedActions } from "@/lib/queries/saved-queries";
 import { cn } from "@/lib/utils";
+import { Check, Download, Trash2, Wrench } from "lucide-react";
+import { useState } from "react";
+import { useTranslation } from "react-i18next";
+import { Link } from "react-router";
 
 export function TextModelLibrary({
   embedded = false,

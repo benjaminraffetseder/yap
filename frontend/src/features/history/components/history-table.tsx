@@ -1,4 +1,3 @@
-import { DictationPreview } from "@/features/history/components/dictation-preview";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -9,6 +8,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { DictationPreview } from "@/features/history/components/dictation-preview";
 import i18n from "@/i18n";
 import { duration, type HistorySortColumn, type Session } from "@/lib/backend";
 import { ArrowDown, ArrowUp, ArrowUpDown } from "lucide-react";
@@ -101,7 +101,7 @@ export function HistoryTable({
           className="relative z-10 bg-card shadow-[inset_0_-1px_0_var(--border)]"
         >
           <TableRow>
-            <TableHead scope="col" className="w-12 px-4">
+            <TableHead scope="col" className="w-10 px-3 lg:w-12 lg:px-4">
               {selectAll}
             </TableHead>
             {columns.map(({ key, label }) => {
@@ -127,7 +127,7 @@ export function HistoryTable({
                 </TableHead>
               );
             })}
-            <TableHead scope="col" className="w-24">
+            <TableHead scope="col" className="w-18 lg:w-20">
               <span className="sr-only">{t("historyPage.actionsColumn")}</span>
             </TableHead>
           </TableRow>
@@ -156,7 +156,7 @@ export function HistoryTable({
         >
           {entries.map((entry, index) => (
             <TableRow key={entry.id} data-state={isSelected(entry) ? "selected" : undefined}>
-              <TableCell className="px-4">
+              <TableCell className="px-3 lg:px-4">
                 <Checkbox
                   aria-label={t("historyPage.selectDictation", { index: index + 1 })}
                   checked={isSelected(entry)}
@@ -205,8 +205,8 @@ export function HistoryTable({
               <TableCell className="text-muted-foreground tabular-nums">
                 {duration(entry.durationMs)}
               </TableCell>
-              <TableCell className="pr-4">
-                <div className="flex items-center justify-end gap-2">{renderActions(entry)}</div>
+              <TableCell className="pr-3 pl-1 lg:pr-4 lg:pl-2">
+                <div className="flex items-center justify-end gap-1">{renderActions(entry)}</div>
               </TableCell>
             </TableRow>
           ))}
@@ -219,12 +219,20 @@ export function HistoryTable({
 function HistoryDate({ value }: { value?: string }) {
   const { t } = useTranslation();
   if (!value || Number.isNaN(Date.parse(value))) return t("historyPage.unknownDate");
+  const date = new Date(value);
+  const language = i18n.resolvedLanguage;
   return (
     <time dateTime={value}>
-      {new Date(value).toLocaleString(i18n.resolvedLanguage, {
-        dateStyle: "medium",
-        timeStyle: "short",
-      })}
+      <span className="hidden lg:inline">
+        {date.toLocaleString(language, {
+          dateStyle: "medium",
+          timeStyle: "short",
+        })}
+      </span>
+      <span className="flex flex-col leading-tight lg:hidden">
+        <span>{date.toLocaleDateString(language, { dateStyle: "medium" })}</span>
+        <span className="text-xs">{date.toLocaleTimeString(language, { timeStyle: "short" })}</span>
+      </span>
     </time>
   );
 }

@@ -1,6 +1,5 @@
-import { nativeText } from "@/i18n/native-text";
-import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
+import { nativeText } from "@/i18n/native-text";
 import { Events } from "@wailsio/runtime";
 import {
   useCallback,
@@ -11,6 +10,7 @@ import {
   type CSSProperties,
   type PointerEvent,
 } from "react";
+import { useTranslation } from "react-i18next";
 
 type Frame = {
   revision: number;

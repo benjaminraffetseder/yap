@@ -1,14 +1,4 @@
-import { useSavedActions } from "@/lib/queries/saved-queries";
 import { AutoSaveStatus } from "@/components/shared/auto-save-status";
-import {
-  useDictationPhase,
-  useSavedConfiguration,
-} from "@/features/dictation/hooks/use-dictation-state";
-import { RevisionHistory } from "@/features/transcripts/components/revision-history";
-import { TextPanel } from "@/features/transcripts/components/text-panel";
-import { TranscriptContextMenu } from "@/features/transcripts/components/transcript-context-menu";
-import { TranscriptDiff } from "@/features/transcripts/components/transcript-diff";
-import { TranscriptProcessor } from "@/features/processing/components/transcript-processor";
 import { ActionMenu, ActionMenuItem } from "@/components/ui/action-menu";
 import { Button } from "@/components/ui/button";
 import {
@@ -22,10 +12,20 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { nativeText } from "@/i18n/native-text";
-import { backend, isBusy, isDesktop, message, type Session } from "@/lib/backend";
+import {
+  useDictationPhase,
+  useSavedConfiguration,
+} from "@/features/dictation/hooks/use-dictation-state";
+import { TranscriptProcessor } from "@/features/processing/components/transcript-processor";
+import { RevisionHistory } from "@/features/transcripts/components/revision-history";
+import { TextPanel } from "@/features/transcripts/components/text-panel";
+import { TranscriptContextMenu } from "@/features/transcripts/components/transcript-context-menu";
+import { TranscriptDiff } from "@/features/transcripts/components/transcript-diff";
 import { useAutoSave } from "@/hooks/use-auto-save";
 import { useSavedDraft } from "@/hooks/use-saved-draft";
+import { nativeText } from "@/i18n/native-text";
+import { backend, isBusy, isDesktop, message, type Session } from "@/lib/backend";
+import { useSavedActions } from "@/lib/queries/saved-queries";
 import { useEffect, useRef, useState, type RefObject } from "react";
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router";

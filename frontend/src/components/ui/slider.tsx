@@ -1,6 +1,6 @@
-import { useTranslation } from "react-i18next";
 import { cn } from "@/lib/utils";
 import { Slider as SliderPrimitive } from "@base-ui/react/slider";
+import { useTranslation } from "react-i18next";
 
 function Slider({
   className,

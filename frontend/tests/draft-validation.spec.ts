@@ -1,10 +1,10 @@
 import { expect, test } from "@playwright/test";
+import { textProcessingSchema } from "../src/features/prompts/lib/prompt-schemas";
+import { correctionSchema } from "../src/features/transcripts/lib/correction-schema";
+import { vocabularySchema } from "../src/features/vocabulary/lib/vocabulary-schemas";
+import i18n from "../src/i18n";
 import type { TextProcessing } from "../src/lib/backend";
 import { validateTextProcessing, validateVocabulary } from "../src/lib/validation/draft-validation";
-import i18n from "../src/i18n";
-import { textProcessingSchema } from "../src/features/prompts/lib/prompt-schemas";
-import { vocabularySchema } from "../src/features/vocabulary/lib/vocabulary-schemas";
-import { correctionSchema } from "../src/features/transcripts/lib/correction-schema";
 
 const config = (): TextProcessing => ({
   enabled: false,

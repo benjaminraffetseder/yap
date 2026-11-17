@@ -1,13 +1,5 @@
-import { ChatCitationContent } from "@/features/chat/components/chat-citation-content";
 import { CopyButton } from "@/components/shared/copy-button";
-import {
-  useDictationStatus,
-  useSavedConfiguration,
-} from "@/features/dictation/hooks/use-dictation-state";
-import { InferenceStats } from "@/features/transcripts/components/inference-stats";
 import { MarkdownContent } from "@/components/shared/markdown-content";
-import { ProcessingSelectItems } from "@/features/processing/components/processing-select-items";
-import { TranscriptExportDialog } from "@/features/transcripts/components/transcript-export-dialog";
 import { ActionMenu, ActionMenuItem } from "@/components/ui/action-menu";
 import { Button } from "@/components/ui/button";
 import {
@@ -27,6 +19,15 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { ChatCitationContent } from "@/features/chat/components/chat-citation-content";
+import {
+  useDictationStatus,
+  useSavedConfiguration,
+} from "@/features/dictation/hooks/use-dictation-state";
+import { ProcessingCombobox } from "@/features/processing/components/processing-combobox";
+import { useTextRequest } from "@/features/processing/hooks/use-text-request";
+import { InferenceStats } from "@/features/transcripts/components/inference-stats";
+import { TranscriptExportDialog } from "@/features/transcripts/components/transcript-export-dialog";
 import i18n from "@/i18n";
 import { nativeText } from "@/i18n/native-text";
 import {
@@ -39,7 +40,6 @@ import {
 } from "@/lib/backend";
 import { outputsQuery } from "@/lib/queries/resource-queries";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { useTextRequest } from "@/features/processing/hooks/use-text-request";
 import {
   Download,
   FileText,
@@ -190,32 +190,15 @@ export function GeneratedOutputs({
               <Label htmlFor="output-prompt" className="text-xs text-muted-foreground">
                 {t("generatedOutputs.outputPrompt")}
               </Label>
-              <Select
-                items={options}
+              <ProcessingCombobox
+                ref={promptTrigger}
+                id="output-prompt"
+                options={options}
                 value={selected || null}
                 disabled={!canGenerate || !options.length}
-                onValueChange={(value) => {
-                  if (value) {
-                    setSelected(value);
-                  }
-                }}
-              >
-                <SelectTrigger
-                  ref={promptTrigger}
-                  id="output-prompt"
-                  aria-description={selectedChain ? t("dictationProfiles.promptChain") : undefined}
-                  className="w-full bg-background data-[size=default]:h-9 dark:bg-control"
-                >
-                  {selectedChain && <Workflow aria-hidden="true" className="size-4" />}
-                  <SelectValue
-                    className="min-w-0 truncate"
-                    placeholder={t("generatedOutputs.chooseAPrompt")}
-                  />
-                </SelectTrigger>
-                <SelectContent alignItemWithTrigger={false}>
-                  <ProcessingSelectItems options={options} />
-                </SelectContent>
-              </Select>
+                onValueChange={setSelected}
+                className="h-9"
+              />
             </div>
             {!enabled && (
               <Link

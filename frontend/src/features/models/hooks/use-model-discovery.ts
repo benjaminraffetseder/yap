@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from "react";
 import { backend, message } from "@/lib/backend";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 type Discovery = {
   endpoint: string;

@@ -1,4 +1,3 @@
-import { createContext, useContext, useMemo, type Context } from "react";
 import type {
   Configuration,
   ImportJob,
@@ -11,6 +10,7 @@ import type {
 } from "@/lib/backend";
 import { emptySnapshot } from "@/lib/queries/resource-defaults";
 import { useConfiguration, useModelCatalog, useVocabulary } from "@/lib/queries/saved-queries";
+import { createContext, useContext, useMemo, type Context } from "react";
 
 type Actions = {
   refresh: () => Promise<void>;

@@ -1,14 +1,3 @@
-import { useSavedActions } from "@/lib/queries/saved-queries";
-import {
-  useAppUpdates,
-  useDictationActions,
-  useDictationConnection,
-  useDictationMetadata,
-  useDictationPhase,
-  useProcessingPanelState,
-  useSavedConfiguration,
-  useSavedModelCatalog,
-} from "@/features/dictation/hooks/use-dictation-state";
 import { useTheme } from "@/components/shared/theme-provider";
 import {
   Command,
@@ -19,8 +8,19 @@ import {
   CommandList,
   CommandShortcut,
 } from "@/components/ui/command";
+import {
+  useAppUpdates,
+  useDictationActions,
+  useDictationConnection,
+  useDictationMetadata,
+  useDictationPhase,
+  useProcessingPanelState,
+  useSavedConfiguration,
+  useSavedModelCatalog,
+} from "@/features/dictation/hooks/use-dictation-state";
 import i18n from "@/i18n";
 import { backend, isBusy, isDesktop, type Session } from "@/lib/backend";
+import { useSavedActions } from "@/lib/queries/saved-queries";
 import {
   Activity,
   BookOpen,
@@ -234,7 +234,7 @@ function CommandMenuContent({
             label: t("common.vocabulary"),
             to: "/vocabulary",
             icon: BookOpen,
-            keywords: ["dictionary", "words"],
+            keywords: ["dictionary", "vocabulary", "words"],
           },
           {
             label: t("promptsPage.prompts"),

@@ -1,5 +1,3 @@
-import i18n from "@/i18n";
-import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import {
@@ -9,7 +7,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import type { Model } from "@/lib/backend";
 import {
   guidanceLanguages,
   guidanceTasks,
@@ -18,9 +15,12 @@ import {
   type GuidanceTask,
 } from "@/features/models/lib/model-guidance";
 import { modelProfiles } from "@/features/models/lib/model-profiles";
+import i18n from "@/i18n";
+import type { Model } from "@/lib/backend";
 import { languageName } from "@/lib/languages";
 import { ArrowDown, Check, Download } from "lucide-react";
 import { useId, useState } from "react";
+import { useTranslation } from "react-i18next";
 
 export function ModelGuidance({
   models,

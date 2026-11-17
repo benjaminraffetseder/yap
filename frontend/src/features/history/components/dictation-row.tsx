@@ -1,7 +1,7 @@
-import { DictationPreview } from "@/features/history/components/dictation-preview";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { DictationPreview } from "@/features/history/components/dictation-preview";
 import i18n from "@/i18n";
 import { duration, type Session } from "@/lib/backend";
 import { ChevronRight, RotateCcw, Trash2 } from "lucide-react";

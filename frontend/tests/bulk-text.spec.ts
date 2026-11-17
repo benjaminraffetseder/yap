@@ -163,7 +163,9 @@ test.beforeEach(async ({ page }) => {
     });
   });
   await page.goto("/#/history");
-  await expect(page.getByRole("checkbox", { name: "Select loaded", exact: true })).toBeEnabled();
+  await expect(
+    page.getByRole("checkbox", { name: "Select all loaded dictations", exact: true }),
+  ).toBeEnabled();
 });
 
 test("queues titles for selected transcripts and keeps the selection for a second action", async ({
@@ -213,12 +215,15 @@ test("queues a prompt or chain for all search matches with exclusions", async ({
   await expect(
     page.getByRole("checkbox", { name: "Select dictation 1", exact: true }),
   ).toBeEnabled();
-  await page.getByRole("checkbox", { name: "Select loaded", exact: true }).check();
+  await page.getByRole("checkbox", { name: "Select all loaded dictations", exact: true }).check();
   await page.getByRole("button", { name: /Select all 55 matching/ }).click();
   await page.getByRole("checkbox", { name: "Select dictation 2", exact: true }).uncheck();
   const dialog = await openAction(page, "Run prompt or chain");
   await expect(dialog).toContainText("54 transcripts selected");
   await dialog.getByRole("combobox", { name: "Prompt or chain", exact: true }).click();
+  const search = page.getByRole("combobox", { name: "Search prompts and chains…", exact: true });
+  await search.fill("workflow");
+  await expect(page.getByRole("option")).toHaveCount(1);
   await page.getByRole("option", { name: "Meeting workflow", exact: true }).click();
   await dialog.getByRole("button", { name: "Add to queue", exact: true }).click();
   const request = await page.evaluate(() => Reflect.get(window, "bulkTest").requests[0]);
@@ -236,7 +241,7 @@ test("queues a prompt or chain for all search matches with exclusions", async ({
   const queue = page.getByRole("region", { name: "Transcript processing queue", exact: true });
   await expect(queue).toContainText("0/54");
   await expect(queue.getByRole("listitem")).toHaveCount(54);
-  await page.getByRole("link", { name: "Vocabulary", exact: true }).click();
+  await page.getByRole("link", { name: "Dictionary", exact: true }).click();
   await expect(queue).toBeVisible();
   await queue.getByRole("button", { name: "Cancel remaining", exact: true }).click();
   await expect(queue).toContainText("54/54");
@@ -346,7 +351,7 @@ test("floats beside the page without reflow and keeps long queues usable in smal
   const toggle = page.getByRole("button", { name: "Processing activity", exact: true });
   await expect(toggle).toBeFocused();
   await expect(toggle).toHaveAttribute("aria-expanded", "false");
-  await page.getByRole("link", { name: "Vocabulary", exact: true }).click();
+  await page.getByRole("link", { name: "Dictionary", exact: true }).click();
   await expect(panel).toBeHidden();
   await toggle.press("Enter");
   await expect(panel).toBeVisible();

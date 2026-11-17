@@ -1,13 +1,13 @@
-import { useTranslation } from "react-i18next";
-import { nativeText } from "@/i18n/native-text";
-import i18n from "@/i18n";
-import { useDictationActions } from "@/features/dictation/hooks/use-dictation-state";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
-import { backend, importPending, type ImportJob } from "@/lib/backend";
+import { useDictationActions } from "@/features/dictation/hooks/use-dictation-state";
 import { useMotionPreference } from "@/hooks/use-motion-preference";
+import i18n from "@/i18n";
+import { nativeText } from "@/i18n/native-text";
+import { backend, importPending, type ImportJob } from "@/lib/backend";
 import { ArrowUpRight, Copy, GripVertical, RotateCcw, X } from "lucide-react";
 import { Reorder, useDragControls } from "motion/react";
+import { useTranslation } from "react-i18next";
 import { Link } from "react-router";
 
 function importLabel(job: ImportJob) {

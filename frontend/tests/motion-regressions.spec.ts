@@ -143,7 +143,7 @@ test("popup transitions preserve centering and recover from interrupted dismissa
   await expect(select).toHaveCSS("transform", "matrix(1, 0, 0, 1, 0, 0)");
   await expect(select).toHaveCSS(
     "transition-timing-function",
-    "cubic-bezier(0.23, 1, 0.32, 1), cubic-bezier(0.23, 1, 0.32, 1)",
+    "cubic-bezier(0.16, 1, 0.3, 1), cubic-bezier(0.16, 1, 0.3, 1)",
   );
   await page.keyboard.press("Escape");
   await trigger.click();

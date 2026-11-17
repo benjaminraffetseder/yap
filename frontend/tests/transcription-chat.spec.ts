@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { referenceRanges } from "../src/features/chat/lib/chat-references";
 import type {
   ChatMessage,
   ChatReference,
@@ -8,7 +9,6 @@ import type {
   SessionChat,
   Snapshot,
 } from "../src/lib/backend";
-import { referenceRanges } from "../src/features/chat/lib/chat-references";
 import { openSelectionMenu } from "./transcript-menu";
 
 async function scenario(page: Page) {

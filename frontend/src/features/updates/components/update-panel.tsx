@@ -1,6 +1,6 @@
-import { useAppUpdates } from "@/features/dictation/hooks/use-dictation-state";
 import { SettingsSection } from "@/components/shared/settings-section";
 import { Button } from "@/components/ui/button";
+import { useAppUpdates } from "@/features/dictation/hooks/use-dictation-state";
 import i18n from "@/i18n";
 import { isDesktop } from "@/lib/backend";
 import { useTranslation } from "react-i18next";
