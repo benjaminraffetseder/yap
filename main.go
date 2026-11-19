@@ -8,6 +8,7 @@ import (
 
 	"yap/internal/indicator"
 	"yap/internal/inference/speech"
+	"yap/internal/platform"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"github.com/wailsapp/wails/v3/pkg/events"
@@ -27,12 +28,16 @@ func main() {
 		}
 		return
 	}
+	if err := platform.PrepareDesktopEntry(); err != nil {
+		log.Printf("prepare desktop launcher: %v", err)
+	}
 	service := NewApp()
 	app := application.New(application.Options{
 		Name:           "Yap",
 		Icon:           appIcon,
 		Mac:            application.MacOptions{ApplicationShouldTerminateAfterLastWindowClosed: true},
 		Windows:        indicator.WindowsOptions(),
+		Linux:          application.LinuxOptions{ApplicationID: "com.yap.desktop", ProgramName: "com.yap.desktop"},
 		Services:       []application.Service{application.NewService(service)},
 		Assets:         application.AssetOptions{Handler: application.AssetFileServerFS(assets)},
 		SingleInstance: singleInstanceLock(service),
@@ -59,7 +64,11 @@ func main() {
 		}
 	})
 	window.OnWindowEvent(events.Common.WindowFilesDropped, func(event *application.WindowEvent) {
-		app.Event.Emit("audio:files-dropped", event.Context().DroppedFiles())
+		// Deliver only to this webview; native GTK drops have no DOM drop event.
+		// Broadcasting would also import in attached development browser previews.
+		window.DispatchWailsEvent(&application.CustomEvent{
+			Name: "audio:files-dropped", Data: event.Context().DroppedFiles(),
+		})
 	})
 	if err := app.Run(); err != nil {
 		log.Fatal(err)

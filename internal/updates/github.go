@@ -37,6 +37,10 @@ func (p verifiedGitHub) Check(ctx context.Context, req updater.CheckRequest) (*u
 	if req.Platform == "darwin" {
 		validName = name == prefix+"-macos-"+req.Arch+".zip" || name == prefix+"-macos-universal.zip"
 	}
+	if req.Platform == "linux" {
+		expected, err := AssetName(release.Version, req.Platform, req.Arch)
+		validName = err == nil && name == expected
+	}
 	if !validName {
 		return nil, errors.New("the update asset filename does not match the release version")
 	}
@@ -61,6 +65,10 @@ func matchAsset(req updater.CheckRequest, assets []github.ReleaseAsset) int {
 		if req.Arch == "amd64" || req.Arch == "arm64" {
 			// Prefer the architecture-specific bundle over a universal bundle.
 			suffixes = append(suffixes, "-macos-"+req.Arch+".zip", "-macos-universal.zip")
+		}
+	case "linux":
+		if req.Arch == "amd64" || req.Arch == "arm64" {
+			suffixes = append(suffixes, "-linux-"+req.Arch+".deb")
 		}
 	}
 	for _, suffix := range suffixes {

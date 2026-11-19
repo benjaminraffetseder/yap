@@ -16,11 +16,5 @@ func RecommendedTextContext() int {
 	if ok == 0 {
 		return 4096
 	}
-	if status.TotalPhys < 12<<30 {
-		return 4096
-	}
-	if status.TotalPhys < 24<<30 {
-		return 8192
-	}
-	return 16384
+	return recommendedTextContextForMemory(status.TotalPhys)
 }

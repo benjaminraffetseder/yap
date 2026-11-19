@@ -1,4 +1,4 @@
-//go:build windows || (darwin && cgo)
+//go:build windows || ((darwin || linux) && cgo)
 
 package indicator
 
@@ -63,6 +63,9 @@ func New(app *application.App, actions Actions, dataDir string) (Controller, err
 	if app == nil {
 		return nil, errors.New("floating indicator requires a Wails application")
 	}
+	if err := checkSupport(); err != nil {
+		return nil, err
+	}
 	c := newWailsIndicator(actions, application.InvokeAsync)
 	options := application.WebviewWindowOptions{
 		Name: windowName, Title: "Yap — Dictation status", URL: "/indicator.html",
@@ -77,7 +80,7 @@ func New(app *application.App, actions Actions, dataDir string) (Controller, err
 	window := app.Window.NewWithOptions(options)
 	platform := newPlatformWindow(app, window, dataDir)
 	c.focused, c.place, c.drag = platform.focused, platform.place, platform.drag
-	c.show = func() { window.Show() }
+	c.show = platform.show
 	c.hide = func() { window.Hide() }
 	c.send = func(f frame) { app.Event.Emit("indicator:frame", f) }
 	c.destroy = func() {

@@ -8849,6 +8849,25 @@ test("shortcut capture waits for key release, then saves alongside other setting
     .toBe(0);
 });
 
+test("shortcut capture accepts WebKit modifier releases with pre-release flags", async ({
+  page,
+}) => {
+  await page.goto("/#/settings");
+  const dialog = await recordShortcut(page);
+  const area = dialog.getByRole("group", { name: "Shortcut capture" });
+  await area.dispatchEvent("keydown", { key: "Control", code: "ControlLeft", ctrlKey: true });
+  await area.dispatchEvent("keydown", { key: "F12", code: "F12", ctrlKey: true });
+  await area.dispatchEvent("keyup", { key: "F12", code: "F12", ctrlKey: true });
+  await expect(dialog.getByRole("button", { name: "Use shortcut", exact: true })).toBeDisabled();
+  await area.dispatchEvent("keyup", { key: "Control", code: "ControlLeft", ctrlKey: true });
+  await expect(dialog.getByRole("button", { name: "Use shortcut", exact: true })).toBeEnabled();
+  await dialog.getByRole("button", { name: "Use shortcut", exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect
+    .poll(() => page.evaluate(() => window.dictationTest.snapshot.settings.shortcut))
+    .toBe("Ctrl+F12");
+});
+
 test("recorder accepts the existing Space shortcut and function keys without starting dictation", async ({
   page,
 }) => {
@@ -10279,7 +10298,11 @@ test("audio drag and drop ignores native broadcasts from another window", async 
   await page.goto("/");
   await expect(page.getByRole("button", { name: "Import audio", exact: true })).toBeEnabled();
   await page.evaluate(() => {
-    window.dictationTest.callbacks["wails:file-drop"](100, 100, ["C:\\Audio\\meeting.wav"]);
+    // A broadcast is distinct from the receiving window's resolved-path event.
+    Reflect.get(window, "_wails").dispatchWailsEvent({
+      name: "wails:file-drop",
+      data: [100, 100, ["C:\\Audio\\meeting.wav"]],
+    });
   });
   await settle(page);
   expect(await page.evaluate(() => window.dictationTest.droppedAudio)).toEqual([]);
@@ -10343,7 +10366,7 @@ test("audio drag and drop shows feedback and imports across navigation", async (
   ).toBeVisible();
 });
 
-test("audio drag and drop ignores repeated native notifications but accepts the same file in a new drag", async ({
+test("audio drag and drop ignores repeated broadcasts but accepts the same file in a new drag", async ({
   page,
 }) => {
   await page.goto("/");
@@ -10356,7 +10379,10 @@ test("audio drag and drop ignores repeated native notifications but accepts the 
     const transfer = new DataTransfer();
     transfer.items.add(new File(["audio"], "meeting.wav"));
     window.dispatchEvent(new DragEvent("dragenter", { dataTransfer: transfer }));
-    window.dictationTest.callbacks["wails:file-drop"](100, 100, ["C:\\Audio\\meeting.wav"]);
+    Reflect.get(window, "_wails").dispatchWailsEvent({
+      name: "wails:file-drop",
+      data: [100, 100, ["C:\\Audio\\meeting.wav"]],
+    });
   });
   await settle(page);
   await expect(page.getByRole("alert")).toHaveCount(0);

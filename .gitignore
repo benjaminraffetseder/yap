@@ -24,6 +24,9 @@ frontend/.playwright/
 !/build/linux/
 /build/linux/*
 !/build/linux/Taskfile.yml
+!/build/linux/package.go
+!/build/linux/package_test.go
+!/build/linux/com.yap.desktop.desktop
 !/build/windows/
 /build/windows/*
 !/build/windows/icon.ico

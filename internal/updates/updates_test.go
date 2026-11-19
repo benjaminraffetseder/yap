@@ -33,12 +33,17 @@ func (*fakeEngine) CheckAndInstall(context.Context) error { panic("a check must 
 func (*fakeEngine) Restart(context.Context) error         { panic("a check must not restart") }
 func (*fakeEngine) State() updater.State                  { return updater.StateIdle }
 
+// Native updater tests exercise executable staging on every host OS.
+func nativeChecker(current, repository, cachePath string, engine Engine) *Checker {
+	return NewForPlatform(current, repository, cachePath, engine, "windows", "amd64")
+}
+
 func TestDailyChecksCacheStatusAndManualChecksRetry(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "update-check.json")
 	e := &fakeEngine{release: &updater.Release{Version: "0.2.0", Notes: "# Fixes\n" + strings.Repeat("漢", 4000)}}
 	now := time.Now()
 	newChecker := func(current, repo string) *Checker {
-		c := New(current, repo, path, e)
+		c := nativeChecker(current, repo, path, e)
 		c.now = func() time.Time { return now }
 		return c
 	}
@@ -82,7 +87,7 @@ func TestLegacyInstallerCacheCannotBecomeAWailsUpdate(t *testing.T) {
 		t.Fatal(err)
 	}
 	e := &fakeEngine{}
-	c := New("0.1.0", "owner/yap", path, e)
+	c := nativeChecker("0.1.0", "owner/yap", path, e)
 	if c.Status().Available {
 		t.Fatal("offered a cached legacy installer")
 	}
@@ -90,7 +95,7 @@ func TestLegacyInstallerCacheCannotBecomeAWailsUpdate(t *testing.T) {
 	if e.calls != 1 {
 		t.Fatal("legacy cache suppressed the first Wails check")
 	}
-	if s := New("0.1.0", "", path, e).Check(context.Background(), true); s.Configured || e.calls != 1 {
+	if s := nativeChecker("0.1.0", "", path, e).Check(context.Background(), true); s.Configured || e.calls != 1 {
 		t.Fatal("unconfigured build contacted a provider")
 	}
 }

@@ -273,7 +273,11 @@ export function AppLayout({ saveNoticeRef }: { saveNoticeRef?: Ref<HTMLDivElemen
                       Yap {update.latestVersion} {t("appLayout.isAvailable")}
                     </p>
                     <p className="text-sm text-muted-foreground">
-                      {t("appLayout.installUpdateInstructions")}
+                      {t(
+                        update.manualInstall
+                          ? "updatePanel.packageInstructions"
+                          : "appLayout.installUpdateInstructions",
+                      )}
                     </p>
                     {updateError && (
                       <p role="alert" className="text-sm text-destructive">
@@ -287,11 +291,13 @@ export function AppLayout({ saveNoticeRef }: { saveNoticeRef?: Ref<HTMLDivElemen
                         onClick={() => void installUpdate()}
                       >
                         {t(
-                          installingUpdate
-                            ? "updatePanel.installing"
-                            : update.ready
-                              ? "appLayout.restartUpdate"
-                              : "appLayout.installUpdate",
+                          update.manualInstall
+                            ? "appLayout.downloadUpdate"
+                            : installingUpdate
+                              ? "updatePanel.installing"
+                              : update.ready
+                                ? "appLayout.restartUpdate"
+                                : "appLayout.installUpdate",
                         )}
                       </Button>
                       <Link

@@ -1,4 +1,4 @@
-//go:build windows
+//go:build windows || linux
 
 package models_test
 
@@ -19,7 +19,10 @@ func TestRealWhisperInstallationAndTranscription(t *testing.T) {
 	if os.Getenv("YAP_INTEGRATION") != "1" {
 		t.Skip("set YAP_INTEGRATION=1 for the real runtime/model download smoke test")
 	}
-	dir := t.TempDir()
+	dir := os.Getenv("YAP_NATIVE_INTEGRATION_DIR")
+	if dir == "" {
+		dir = t.TempDir()
+	}
 	os.MkdirAll(filepath.Join(dir, "models"), 0700)
 	os.MkdirAll(filepath.Join(dir, "runtime"), 0700)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)

@@ -178,10 +178,12 @@ function ShortcutCapture({
           keys.current.delete(event.code || event.key);
           setHeld(
             keys.current.size > 0 ||
-              event.ctrlKey ||
-              event.altKey ||
-              event.shiftKey ||
-              event.metaKey,
+              // WebKitGTK can report the modifier state before this release.
+              // The released modifier itself is no longer held.
+              (event.ctrlKey && event.key !== "Control") ||
+              (event.altKey && event.key !== "Alt") ||
+              (event.shiftKey && event.key !== "Shift") ||
+              (event.metaKey && event.key !== "Meta"),
           );
         }}
       >

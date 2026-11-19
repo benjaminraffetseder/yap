@@ -404,7 +404,13 @@ function CommandMenuContent({
         ...(update?.available
           ? [
               {
-                label: t(update.ready ? "appLayout.restartUpdate" : "appLayout.installUpdate"),
+                label: t(
+                  update.manualInstall
+                    ? "appLayout.downloadUpdate"
+                    : update.ready
+                      ? "appLayout.restartUpdate"
+                      : "appLayout.installUpdate",
+                ),
                 icon: Download,
                 keywords: ["version", "upgrade"],
                 disabled: unavailable || busy || checkingUpdates || installingUpdate,

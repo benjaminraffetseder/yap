@@ -209,6 +209,7 @@ export type DiagnosticCheck = {
 };
 export type Microphone = { id: string; name: string };
 export type UpdateStatus = {
+  manualInstall?: boolean;
   currentVersion: string;
   latestVersion: string;
   available: boolean;

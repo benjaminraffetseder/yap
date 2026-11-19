@@ -8,6 +8,7 @@ import (
 	"runtime"
 
 	"yap/internal/indicator"
+	"yap/internal/platform"
 	"yap/internal/tray"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
@@ -20,10 +21,12 @@ func (a *App) ServiceStartup(ctx context.Context, _ application.ServiceOptions) 
 	if a.closing {
 		return nil
 	}
-	a.ctx = ctx
+	a.ctx, a.lifecycleCancel = context.WithCancel(ctx)
+	ctx = a.ctx
 	a.development = a.desktop.Env.Info().Debug
 	a.notify = func(topic string, data ...interface{}) { a.desktop.Event.Emit(topic, data...) }
 	a.copyText = a.clipboardSetText
+	a.copyTextContext = a.clipboardSetTextContext
 	a.showWindow = func() { a.window.Show(); a.window.UnMinimise(); a.window.Focus() }
 	a.hideWindow = func() { a.window.Hide() }
 	a.quitApplication = a.desktop.Quit
@@ -90,6 +93,7 @@ func (a *App) openDesktopPage(path string) {
 
 func (a *App) ServiceShutdown() error {
 	a.shutdown(a.ctx)
+	platform.CloseClipboard()
 	return nil
 }
 
@@ -105,6 +109,19 @@ func (a *App) openShortcutSettings() {
 }
 
 func (a *App) clipboardSetText(text string) error {
+	return a.clipboardSetTextContext(a.ctx, text)
+}
+
+func (a *App) clipboardSetTextContext(ctx context.Context, text string) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if handled, err := platform.SetClipboardContext(ctx, text); handled {
+		return err
+	}
 	if !a.desktop.Clipboard.SetText(text) {
 		return errors.New("could not copy text to the clipboard")
 	}

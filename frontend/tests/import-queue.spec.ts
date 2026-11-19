@@ -82,6 +82,7 @@ test.beforeEach(async ({ page }) => {
       retryCalls: [] as string[],
       copied: "",
       dropped: [] as string[],
+      dropCalls: [] as string[][],
       rejectReorder: false,
       cancelCalls: 0,
       queue(jobs: ImportJob[]) {
@@ -130,6 +131,7 @@ test.beforeEach(async ({ page }) => {
             ImportAudio: async () => {},
             ImportDroppedAudio: async (paths: string[]) => {
               state.dropped = paths;
+              state.dropCalls.push(paths);
             },
             ReorderImportQueue: async (ids: string[]) => {
               state.reorderCalls.push(ids);
@@ -497,4 +499,37 @@ test("accepts multi-path drops while recording and keeps picker enabled", async 
   await expect
     .poll(() => page.evaluate(() => Reflect.get(window, "queueTest").dropped))
     .toEqual(["/one.wav", "/two.mp3"]);
+});
+
+test("shows and clears native Linux drag feedback without DOM drag events", async ({ page }) => {
+  await page.evaluate(() => {
+    const runtime = Reflect.get(window, "_wails");
+    runtime.handleDragEnter();
+    runtime.handleDragOver(400, 300);
+  });
+  await expect(page.getByText("Drop audio files to import", { exact: true })).toBeVisible();
+  await page.evaluate(() => Reflect.get(window, "_wails").handleDragLeave());
+  await expect(page.getByText("Drop audio files to import", { exact: true })).toBeHidden();
+  expect(await page.evaluate(() => Reflect.get(window, "queueTest").dropCalls)).toEqual([]);
+});
+
+test("imports repeated native Linux drops once per batch without a DOM drop", async ({ page }) => {
+  const batches = [["/home/ben/My audio.wav", "/home/ben/Sprachnotiz ä.mp3"], ["/next.m4a"]];
+  await page.evaluate(() => Reflect.get(window, "queueTest").status({ phase: "recording" }));
+  for (const [index, paths] of batches.entries()) {
+    await page.evaluate(() => {
+      const runtime = Reflect.get(window, "_wails");
+      runtime.handleDragEnter();
+      runtime.handleDragOver(400, 300);
+    });
+    await page.evaluate(
+      (paths) => Reflect.get(window, "_wails").handlePlatformFileDrop(paths, 400, 300),
+      paths,
+    );
+    await expect
+      .poll(() => page.evaluate(() => Reflect.get(window, "queueTest").dropCalls))
+      .toEqual(batches.slice(0, index + 1));
+    await expect(page.getByText("Drop audio files to import", { exact: true })).toBeHidden();
+  }
+  await expect(page.getByRole("button", { name: "Import audio", exact: true })).toBeEnabled();
 });

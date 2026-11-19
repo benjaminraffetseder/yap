@@ -256,6 +256,7 @@ func testApp(t *testing.T) *App {
 	a.settings.ModelPath = filepath.Join(a.store.Dir, "models", "test.bin")
 	os.WriteFile(a.settings.ModelPath, []byte("model"), 0600)
 	a.copyText = func(string) error { return nil }
+	a.registerKey = func(string, func(), func()) (shortcutRegistration, error) { return &fakeShortcutRegistration{}, nil }
 	return a
 }
 func TestRecordingPipelineRetention(t *testing.T) {

@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 )
 
+type point struct{ X, Y int32 }
+
 // Geometry is separate from dictation settings, so saving a settings draft can
 // never overwrite a position changed by dragging the native window.
 func loadPosition(path string) (point, bool, error) {

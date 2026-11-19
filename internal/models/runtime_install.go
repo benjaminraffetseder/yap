@@ -1,72 +1,36 @@
 package models
 
 import (
-	"archive/zip"
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
 )
 
-func installRuntimeArchive(ctx context.Context, dir, archive string) (string, error) {
+func installRuntimeArchive(ctx context.Context, dir, archive string, tgz bool) (string, error) {
 	root, err := managedRuntimeRoot(dir)
 	if err != nil {
 		return "", err
 	}
-	r, err := zip.OpenReader(archive)
-	if err != nil {
-		return "", err
-	}
-	defer r.Close()
 	temp, err := os.MkdirTemp(root, ".extract-")
 	if err != nil {
 		return "", err
 	}
 	defer os.RemoveAll(temp)
-	for _, file := range r.File {
-		name := filepath.FromSlash(file.Name)
-		if !filepath.IsLocal(name) || strings.Contains(name, ":") {
-			return "", fmt.Errorf("invalid archive path")
-		}
-		dest := filepath.Join(temp, name)
-		if file.FileInfo().IsDir() {
-			if err = os.MkdirAll(dest, 0700); err != nil {
-				return "", err
-			}
-			continue
-		}
-		if err = os.MkdirAll(filepath.Dir(dest), 0700); err != nil {
-			return "", err
-		}
-		src, err := file.Open()
-		if err != nil {
-			return "", err
-		}
-		out, err := os.OpenFile(dest, os.O_CREATE|os.O_WRONLY|os.O_EXCL, 0600)
-		if err != nil {
-			src.Close()
-			return "", err
-		}
-		_, err = io.Copy(out, src)
-		src.Close()
-		closeErr := out.Close()
-		if err != nil {
-			return "", err
-		}
-		if closeErr != nil {
-			return "", closeErr
-		}
-		if err = ctx.Err(); err != nil {
-			return "", err
-		}
+	if err = extractNativeArchive(ctx, archive, temp, tgz, tgz); err != nil {
+		return "", err
 	}
 	// Validate the replacement while the previous installation is untouched.
 	path := runtimePathIn(temp)
 	if path == "" {
 		return "", fmt.Errorf("Whisper executable missing from archive")
+	}
+	if tgz {
+		if err = ValidateRuntime(ctx, path); err != nil {
+			return "", err
+		}
 	}
 	relative, err := filepath.Rel(temp, path)
 	if err != nil {

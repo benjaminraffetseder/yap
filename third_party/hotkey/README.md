@@ -9,6 +9,12 @@ Keep the sequence stamping in every platform emitter when updating this
 dependency. The macOS implementation also follows the active layout for logical
 letter shortcuts and uses a CGEventTap for press/release delivery.
 
+The X11 connection requests detectable auto-repeat before grabbing shortcuts.
+This suppresses artificial releases while a key is held without changing the
+user's repeat settings. Servers without that feature use the matching
+keycode/timestamp release/press-pair filter. Preserve this handling when updating
+the dependency; otherwise hold-to-talk stops at the keyboard repeat delay.
+
 On macOS, registration requests Accessibility trust with
 `AXIsProcessTrustedWithOptions` and `kAXTrustedCheckOptionPrompt` once per process
 when access is missing. The asynchronous prompt does not count as permission:

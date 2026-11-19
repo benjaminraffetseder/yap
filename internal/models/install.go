@@ -233,10 +233,17 @@ func RuntimePath(dir string) string {
 	return runtimePathIn(filepath.Join(dir, "runtime", "whisper-1.9.2"))
 }
 
+func whisperExecutableName() string {
+	if runtime.GOOS == "windows" {
+		return "whisper-cli.exe"
+	}
+	return "whisper-cli"
+}
+
 func runtimePathIn(root string) string {
 	var found string
 	filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
-		if err == nil && entry.Type().IsRegular() && entry.Name() == "whisper-cli.exe" {
+		if err == nil && entry.Type().IsRegular() && entry.Name() == whisperExecutableName() {
 			if info, err := entry.Info(); err == nil && info.Size() > 0 {
 				found = path
 			}
@@ -245,6 +252,13 @@ func runtimePathIn(root string) string {
 	})
 	return found
 }
+
+var whisperRuntimes = map[string]runtimeAsset{
+	"windows/amd64": {"https://github.com/ggml-org/whisper.cpp/releases/download/v1.9.2/whisper-bin-x64.zip", "49dcc16de826f20bd53d44f947a1ae49dfa81f86cad67a64d80820cb192d674a", 8194445, false},
+	"linux/amd64":   {"https://github.com/ggml-org/whisper.cpp/releases/download/v1.9.2/whisper-bin-ubuntu-x64.tar.gz", "46811a3ecf584307480a220b9ef5ff81b7b22dc41577cbc274ce3afc61f753b1", 9497583, true},
+	"linux/arm64":   {"https://github.com/ggml-org/whisper.cpp/releases/download/v1.9.2/whisper-bin-ubuntu-arm64.tar.gz", "7e26fa6a36d9174d5c0bf033ccbc026c3b5e569e2ee787058241346ef5392719", 4572842, true},
+}
+
 func InstallRuntime(ctx context.Context, dir string, report func(int64, int64)) (string, error) {
 	if runtime.GOOS == "darwin" {
 		if path := PreferredRuntime(""); path != "" {
@@ -252,8 +266,9 @@ func InstallRuntime(ctx context.Context, dir string, report func(int64, int64)) 
 		}
 		return "", fmt.Errorf("this Mac build is missing its bundled Whisper runtime; select a local whisper-cli executable in Settings")
 	}
-	if runtime.GOOS != "windows" || runtime.GOARCH != "amd64" {
-		return "", fmt.Errorf("select your platform's whisper-cli executable in Settings; automatic runtime installation supports Windows x64")
+	asset, ok := whisperRuntimes[runtime.GOOS+"/"+runtime.GOARCH]
+	if !ok {
+		return "", fmt.Errorf("Whisper runtime is not available for %s %s; select a local whisper-cli executable in Settings", runtime.GOOS, runtime.GOARCH)
 	}
 	root, err := managedRuntimeRoot(dir)
 	if err != nil {
@@ -267,7 +282,7 @@ func InstallRuntime(ctx context.Context, dir string, report func(int64, int64)) 
 			return "", err
 		}
 	}
-	archive := filepath.Join(root, "whisper.zip")
+	archive := filepath.Join(root, "whisper.archive")
 	validate := func() error {
 		actual, err := managedRuntimeRoot(dir)
 		if err != nil {
@@ -278,7 +293,7 @@ func InstallRuntime(ctx context.Context, dir string, report func(int64, int64)) 
 		}
 		return nil
 	}
-	if err := download(ctx, "https://github.com/ggml-org/whisper.cpp/releases/download/v1.9.2/whisper-bin-x64.zip", archive, "49dcc16de826f20bd53d44f947a1ae49dfa81f86cad67a64d80820cb192d674a", 8194445, report, validate); err != nil {
+	if err := download(ctx, asset.URL, archive, asset.SHA, asset.Size, report, validate); err != nil {
 		return "", err
 	}
 	defer func() {
@@ -286,5 +301,5 @@ func InstallRuntime(ctx context.Context, dir string, report func(int64, int64)) 
 			_ = os.Remove(archive)
 		}
 	}()
-	return installRuntimeArchive(ctx, dir, archive)
+	return installRuntimeArchive(ctx, dir, archive, asset.Tar)
 }

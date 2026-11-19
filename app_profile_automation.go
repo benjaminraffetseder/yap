@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strings"
@@ -76,12 +77,16 @@ func (a *App) SaveProfileAutomation(rules []storage.AppProfileRule, shortcut str
 	changed := old.ProfileShortcut != shortcut
 	if changed {
 		a.closeProfileShortcut()
-		a.profileLibrary = library
-		a.registerProfileShortcut()
+		registrationErr := a.registerProfileShortcutFor(shortcut)
+		if err := a.available(); err != nil {
+			return err
+		}
 		if shortcut != "" && a.profileShortcut == nil {
 			failure := a.status.ProfileShortcutError
 			a.profileLibrary = old
-			a.registerProfileShortcut()
+			if !errors.Is(registrationErr, context.Canceled) && !errors.Is(registrationErr, context.DeadlineExceeded) {
+				a.registerProfileShortcut()
+			}
 			a.emit()
 			return fmt.Errorf("profile shortcut could not be registered: %s; your saved shortcut is unchanged", failure)
 		}
@@ -108,20 +113,24 @@ func (a *App) closeProfileShortcut() {
 	}
 }
 
-func (a *App) registerProfileShortcut() {
+func (a *App) registerProfileShortcut() error {
+	return a.registerProfileShortcutFor(a.profileLibrary.ProfileShortcut)
+}
+
+func (a *App) registerProfileShortcutFor(value string) error {
 	a.profileShortcutGeneration++
 	generation := a.profileShortcutGeneration
 	a.status.ProfileShortcutError = ""
-	if a.profileLibrary.ProfileShortcut == "" {
-		return
+	if value == "" {
+		return nil
 	}
 	register := a.registerKey
 	if register == nil {
 		register = func(value string, down, up func()) (shortcutRegistration, error) {
-			return platform.Register(value, down, up)
+			return a.registerNativeShortcutLocked(value, down, up)
 		}
 	}
-	s, err := register(a.profileLibrary.ProfileShortcut, func() {
+	s, err := register(value, func() {
 		a.mu.Lock()
 		defer a.mu.Unlock()
 		if a.closing || generation != a.profileShortcutGeneration || !a.settings.SetupComplete || a.busy() || a.textJobID != "" {
@@ -142,9 +151,11 @@ func (a *App) registerProfileShortcut() {
 	}, func() {})
 	if err != nil {
 		a.status.ProfileShortcutError = err.Error()
-		return
+		return err
 	}
 	a.profileShortcut = s
+	a.watchShortcutLocked(s, generation, true)
+	return nil
 }
 
 func (a *App) CycleDictationProfile() error {

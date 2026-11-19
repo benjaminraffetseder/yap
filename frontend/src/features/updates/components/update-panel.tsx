@@ -59,18 +59,24 @@ export function UpdatePanel() {
                   </p>
                 )}
                 <p className="text-sm text-muted-foreground">
-                  {t("updatePanel.installInstructions")}
+                  {t(
+                    update.manualInstall
+                      ? "updatePanel.packageInstructions"
+                      : "updatePanel.installInstructions",
+                  )}
                 </p>
                 <Button
                   disabled={checkingUpdates || installingUpdate}
                   onClick={() => void installUpdate()}
                 >
                   {t(
-                    installingUpdate
-                      ? "updatePanel.installing"
-                      : update.ready
-                        ? "appLayout.restartUpdate"
-                        : "appLayout.installUpdate",
+                    update.manualInstall
+                      ? "appLayout.downloadUpdate"
+                      : installingUpdate
+                        ? "updatePanel.installing"
+                        : update.ready
+                          ? "appLayout.restartUpdate"
+                          : "appLayout.installUpdate",
                   )}
                 </Button>
               </>

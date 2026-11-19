@@ -8,6 +8,7 @@
 
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
+#include <X11/XKBlib.h>
 #include <stdint.h>
 #include <string.h> // memset
 
@@ -42,6 +43,13 @@ Display *openDisplay() {
     break;
   }
   return d;
+}
+
+// Detectable repeat emits repeated presses without artificial releases. This
+// flag belongs to this connection; it does not change the user's repeat setting.
+int enableDetectableAutoRepeat(Display *d) {
+  Bool supported = False;
+  return XkbSetDetectableAutoRepeat(d, True, &supported) && supported;
 }
 
 // Creates an invisible window, which can receive ClientMessage events. On
@@ -124,7 +132,7 @@ int grabHotkey(Display *d, unsigned int *mods, int nmods, int key) {
 // (see sendCancel) breaks the loop out of XNextEvent so an unregister can take
 // effect without waiting for the next keypress. The grab is established once
 // by grabHotkey and held until cleanupConnection.
-void waitHotkey(uintptr_t hkhandle, Display *d) {
+void waitHotkey(uintptr_t hkhandle, Display *d, int detectableRepeat) {
   XEvent ev;
   while (1) {
     XNextEvent(d, &ev);
@@ -133,6 +141,16 @@ void waitHotkey(uintptr_t hkhandle, Display *d) {
       hotkeyDown(hkhandle);
       continue;
     case KeyRelease:
+      // Legacy servers represent repeat as a release/press pair with the same
+      // keycode and timestamp. Keep the press, but do not end a held shortcut.
+      if (!detectableRepeat && XEventsQueued(d, QueuedAfterReading) > 0) {
+        XEvent next;
+        XPeekEvent(d, &next);
+        if (next.type == KeyPress && next.xkey.keycode == ev.xkey.keycode &&
+            next.xkey.time == ev.xkey.time) {
+          continue;
+        }
+      }
       hotkeyUp(hkhandle);
       continue;
     case ClientMessage:

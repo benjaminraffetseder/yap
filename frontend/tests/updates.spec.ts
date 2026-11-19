@@ -289,3 +289,25 @@ test("a native-window retry can make the update ready after the initial download
   expect(await page.evaluate(() => Reflect.get(window, "updateTest").restarts)).toBe(1);
   expect(await page.evaluate(() => Reflect.get(window, "updateTest").downloads)).toBe(1);
 });
+
+test("Linux updates offer package downloads without native staging or restart", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    Reflect.get(window, "updateTest").update.manualInstall = true;
+  });
+  await page.goto("/");
+  const notice = page.getByRole("region", { name: "App update available" });
+  await expect(notice).toContainText("Download the Debian package");
+  await notice.getByRole("button", { name: "Download update" }).click();
+  await expect.poll(() => page.evaluate(() => Reflect.get(window, "updateTest").downloads)).toBe(1);
+  await expect(notice.getByRole("button", { name: "Restart & Apply" })).toHaveCount(0);
+  await page.goto("/#/settings?section=general");
+  const settings = page
+    .locator("section")
+    .filter({ has: page.getByRole("heading", { name: "App updates", exact: true }) });
+  await expect(settings).toContainText("package manager");
+  await settings.getByRole("button", { name: "Download update" }).click();
+  await expect.poll(() => page.evaluate(() => Reflect.get(window, "updateTest").downloads)).toBe(2);
+  expect(await page.evaluate(() => Reflect.get(window, "updateTest").restarts)).toBe(0);
+});

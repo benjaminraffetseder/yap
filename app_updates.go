@@ -52,8 +52,7 @@ func (a *App) updateCheckerLocked() (*updates.Checker, error) {
 }
 
 func updatesSupported() bool {
-	return (goruntime.GOOS == "windows" && goruntime.GOARCH == "amd64") ||
-		(goruntime.GOOS == "darwin" && (goruntime.GOARCH == "amd64" || goruntime.GOARCH == "arm64"))
+	return updates.Supported(goruntime.GOOS, goruntime.GOARCH)
 }
 
 func configureUpdater(engine *updater.Updater) error {
@@ -129,7 +128,7 @@ func (a *App) InstallUpdate() error {
 	}
 	if !updatesSupported() || updateRepository == "" || a.development {
 		a.mu.Unlock()
-		return errors.New("install updates from a packaged Windows or macOS build")
+		return errors.New("install updates from a packaged Windows, macOS or Linux build")
 	}
 	if a.updateRunning || checker.Busy() {
 		a.mu.Unlock()
@@ -150,7 +149,22 @@ func (a *App) InstallUpdate() error {
 	}()
 	// Keep the context alive after staging: the native window uses it for
 	// retries and Restart & Apply. Shutdown cancels it with the other workers.
+	if checker.Status().ManualInstall {
+		return openPackageUpdate(ctx, checker, func(_ context.Context, url string) error {
+			return a.desktop.Browser.OpenURL(url)
+		})
+	}
 	return checker.Install(ctx)
+}
+
+func openPackageUpdate(ctx context.Context, checker *updates.Checker, open func(context.Context, string) error) error {
+	// Recheck through the Wails provider; cached display metadata is never an
+	// installation target. The system package manager owns Debian upgrades.
+	s := checker.Check(ctx, true)
+	if !s.ManualInstall || !s.Available || s.Error != "" || s.DownloadURL == "" {
+		return errors.New("no Debian update download is available; check for updates and retry")
+	}
+	return open(ctx, s.DownloadURL)
 }
 
 // RestartUpdate also lets users apply an already staged update after closing
@@ -162,7 +176,7 @@ func (a *App) RestartUpdate() error {
 		a.mu.Unlock()
 		return err
 	}
-	if !updatesSupported() || updateRepository == "" || a.development || a.updateRunning {
+	if !updatesSupported() || checker.Status().ManualInstall || updateRepository == "" || a.development || a.updateRunning {
 		a.mu.Unlock()
 		return errors.New("an update is not ready to restart")
 	}
