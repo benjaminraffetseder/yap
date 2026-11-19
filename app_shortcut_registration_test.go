@@ -3,11 +3,13 @@ package main
 import (
 	"context"
 	"errors"
+	"reflect"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	textmodel "yap/internal/inference/text"
+	"yap/internal/storage"
 )
 
 func TestShortcutPermissionWaitLeavesStateResponsiveAndCancellable(t *testing.T) {
@@ -235,6 +237,89 @@ func TestCancelShortcutSavePreservesConfigurationWithoutAnotherPrompt(t *testing
 			}
 			if err != nil || calls.Load() != 1 || current != old || saved != old {
 				t.Fatalf("cancel changed saved shortcut or prompted again: current=%q saved=%q calls=%d err=%v", current, saved, calls.Load(), err)
+			}
+		})
+	}
+}
+
+func TestShortcutPermissionSaveKeepsCommittedConfiguration(t *testing.T) {
+	for _, profile := range []bool{false, true} {
+		name := "recording"
+		if profile {
+			name = "profile"
+		}
+		t.Run(name, func(t *testing.T) {
+			a := testApp(t)
+			next := a.settings
+			next.Shortcut, next.HistoryRetentionDays = "Ctrl+Alt+Q", 7
+			save := func() error { return a.SaveSettings(next) }
+			if profile {
+				automationProfiles(t, a)
+				if err := a.SaveProfileAutomation(nil, "Ctrl+Alt+P"); err != nil {
+					t.Fatal(err)
+				}
+				save = func() error { return a.SaveProfileAutomation(nil, "Ctrl+Alt+Q") }
+			}
+			if err := a.store.SaveSettings(a.settings); err != nil {
+				t.Fatal(err)
+			}
+			previous, err := a.GetConfiguration()
+			if err != nil {
+				t.Fatal(err)
+			}
+			session := storage.NewSession("retained", 1000, "Keep this history.", "base", "auto", "")
+			session.CreatedAt = time.Now().Add(-14 * 24 * time.Hour).Format(time.RFC3339)
+			if err := a.store.Add(session); err != nil {
+				t.Fatal(err)
+			}
+			a.registerKey = nil
+			started := make(chan struct{})
+			a.registerKeyContext = func(ctx context.Context, value string, _, _ func()) (shortcutRegistration, error) {
+				if value != "Ctrl+Alt+Q" {
+					t.Errorf("requested saved shortcut instead of candidate: %q", value)
+				}
+				close(started)
+				<-ctx.Done()
+				return nil, ctx.Err()
+			}
+			t.Cleanup(func() { _ = a.Cancel() })
+			done := make(chan error, 1)
+			go func() { done <- save() }()
+			select {
+			case <-started:
+			case err := <-done:
+				t.Fatalf("save did not request registration: %v", err)
+			case <-time.After(time.Second):
+				t.Fatal("save did not start")
+			}
+			if current, err := a.GetConfiguration(); err != nil || !reflect.DeepEqual(current, previous) {
+				t.Errorf("permission wait exposed an uncommitted configuration: %v", err)
+			}
+			a.mu.Lock()
+			a.pruneHistoryLocked()
+			a.mu.Unlock()
+			if _, err := a.store.Session(session.ID); err != nil {
+				t.Errorf("unapproved retention policy removed history: %v", err)
+			}
+			if err := a.SetSaveHistory(false); err == nil {
+				t.Error("history preference changed during shortcut registration")
+			}
+			if saved, err := a.store.Settings(); err != nil || saved != previous.Settings {
+				t.Errorf("permission wait persisted uncommitted settings: %v", err)
+			}
+			if err := a.Cancel(); err != nil {
+				t.Fatal(err)
+			}
+			select {
+			case err := <-done:
+				if err == nil {
+					t.Fatal("cancelled shortcut was saved")
+				}
+			case <-time.After(time.Second):
+				t.Fatal("save did not cancel")
+			}
+			if current, err := a.GetConfiguration(); err != nil || !reflect.DeepEqual(current, previous) {
+				t.Errorf("cancelled registration changed committed configuration: %v", err)
 			}
 		})
 	}

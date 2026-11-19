@@ -507,6 +507,10 @@ func (a *App) busy() bool {
 	return a.shortcutRegistrationCancel != nil || a.homeResultOperation || a.importActive != "" || a.status.Phase == "backup" || a.shortcutCaptureID != "" || a.status.Phase == "text-processing" || a.status.Phase == "recording" || a.status.Phase == "transcribing" || a.status.Phase == "downloading" || a.status.Phase == "mic-test" || a.status.Phase == "diagnostic-recording" || a.status.Phase == "diagnostic-transcribing"
 }
 func (a *App) registerShortcut() error {
+	return a.registerShortcutFor(a.settings.Shortcut)
+}
+
+func (a *App) registerShortcutFor(value string) error {
 	// Retired registrations can still have queued callbacks waiting on a.mu.
 	a.shortcutGeneration++
 	generation := a.shortcutGeneration
@@ -527,9 +531,9 @@ func (a *App) registerShortcut() error {
 	var s shortcutRegistration
 	var err error
 	if a.registerKey != nil {
-		s, err = a.registerKey(a.settings.Shortcut, down, up)
+		s, err = a.registerKey(value, down, up)
 	} else {
-		s, err = a.registerNativeShortcutLocked(a.settings.Shortcut, down, up)
+		s, err = a.registerNativeShortcutLocked(value, down, up)
 	}
 	if err != nil {
 		a.status.ShortcutError = err.Error()
@@ -1018,7 +1022,7 @@ func (a *App) SaveSettings(settings storage.Settings) error {
 		}
 	}
 	restoreSettings := func() {
-		if a.settings.Shortcut != old.Shortcut && a.shortcut != nil {
+		if settings.Shortcut != old.Shortcut && a.shortcut != nil {
 			a.shortcut.Close()
 			a.shortcut = nil
 		}
@@ -1033,8 +1037,9 @@ func (a *App) SaveSettings(settings storage.Settings) error {
 		if oldKey != nil {
 			oldKey.Close()
 		}
-		a.settings = settings
-		registrationErr := a.registerShortcut()
+		// Permission requests release App.mu. Keep candidate settings private
+		// until registration and persistence succeed.
+		registrationErr := a.registerShortcutFor(settings.Shortcut)
 		if err := a.available(); err != nil {
 			return err
 		}

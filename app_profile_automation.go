@@ -77,8 +77,7 @@ func (a *App) SaveProfileAutomation(rules []storage.AppProfileRule, shortcut str
 	changed := old.ProfileShortcut != shortcut
 	if changed {
 		a.closeProfileShortcut()
-		a.profileLibrary = library
-		registrationErr := a.registerProfileShortcut()
+		registrationErr := a.registerProfileShortcutFor(shortcut)
 		if err := a.available(); err != nil {
 			return err
 		}
@@ -115,10 +114,14 @@ func (a *App) closeProfileShortcut() {
 }
 
 func (a *App) registerProfileShortcut() error {
+	return a.registerProfileShortcutFor(a.profileLibrary.ProfileShortcut)
+}
+
+func (a *App) registerProfileShortcutFor(value string) error {
 	a.profileShortcutGeneration++
 	generation := a.profileShortcutGeneration
 	a.status.ProfileShortcutError = ""
-	if a.profileLibrary.ProfileShortcut == "" {
+	if value == "" {
 		return nil
 	}
 	register := a.registerKey
@@ -127,7 +130,7 @@ func (a *App) registerProfileShortcut() error {
 			return a.registerNativeShortcutLocked(value, down, up)
 		}
 	}
-	s, err := register(a.profileLibrary.ProfileShortcut, func() {
+	s, err := register(value, func() {
 		a.mu.Lock()
 		defer a.mu.Unlock()
 		if a.closing || generation != a.profileShortcutGeneration || !a.settings.SetupComplete || a.busy() || a.textJobID != "" {

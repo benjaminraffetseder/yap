@@ -12,6 +12,9 @@ func (a *App) setSaveHistoryLocked(enabled bool) error {
 	if err := a.available(); err != nil {
 		return err
 	}
+	if a.shortcutRegistrationCancel != nil {
+		return errors.New("finish shortcut registration before changing history preferences")
+	}
 	if a.homeResultOperation {
 		return errors.New("finish the result action before changing history preferences")
 	}
