@@ -277,7 +277,7 @@ export function ShortcutStep({
                 {t("setupPage.applyShortcut")}
               </Button>
             ) : (
-              <span className="inline-flex min-h-9 items-center gap-1.5 px-2 text-xs text-muted-foreground">
+              <span className="inline-flex min-h-11 items-center gap-1.5 px-2 text-xs text-muted-foreground">
                 <Check aria-hidden="true" />
                 {t("uiPolish.saved")}
               </span>
