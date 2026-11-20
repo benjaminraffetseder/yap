@@ -79,6 +79,9 @@ export function ProfileStep({
               </div>
             ))}
           </dl>
+          <p className="mt-4 text-xs leading-5 text-muted-foreground">
+            {t("onboarding.profileAppWideNote")}
+          </p>
         </CardContent>
       </Card>
       <Card>

@@ -10,7 +10,7 @@ import {
   initialGuidanceLanguage,
   recommendSpeechModel,
 } from "@/features/models/lib/model-guidance";
-import { modelProfiles, modelUseCases } from "@/features/models/lib/model-profiles";
+import { modelProfiles } from "@/features/models/lib/model-profiles";
 import { nativeText } from "@/i18n/native-text";
 import { backend, isBusy, isDesktop, type Model, type Settings } from "@/lib/backend";
 import { useSavedActions } from "@/lib/queries/saved-queries";
@@ -165,16 +165,9 @@ export function SpeechModelStep({
             : t("uiPolish.showAllModels", { count: models.length })}
         </Button>
       )}
-      <div className="flex flex-col gap-1 text-xs leading-5 text-muted-foreground">
-        {recommended && (
-          <p>
-            {nativeText(
-              modelUseCases[recommended.id] ?? modelProfiles[recommended.id]?.tagline ?? "",
-            )}
-          </p>
-        )}
-        <p>{t("onboarding.downloadOnlyOnClick")}</p>
-      </div>
+      <p className="text-xs leading-5 text-muted-foreground">
+        {t("onboarding.downloadOnlyOnClick")}
+      </p>
     </div>
   );
 }

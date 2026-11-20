@@ -19,6 +19,7 @@ import { validateTextProcessing } from "@/lib/validation/draft-validation";
 import {
   ArrowLeft,
   ArrowRight,
+  AudioLines,
   Check,
   HardDriveDownload,
   Keyboard,
@@ -83,7 +84,7 @@ export function SetupPage() {
     {
       label: t("onboarding.step.practice"),
       shortLabel: t("onboarding.stepShort.practice"),
-      icon: Mic,
+      icon: AudioLines,
       title: t("onboarding.practiceHeading"),
       description: t("onboarding.practiceDescription"),
     },
@@ -135,6 +136,9 @@ export function SetupPage() {
   const [micAttempted, setMicAttempted] = useState(false);
   const [practiceAttempted, setPracticeAttempted] = useState(false);
   const [practiceCompletedKey, setPracticeCompletedKey] = useState("");
+  const [continueAfterPreview, setContinueAfterPreview] = useState<{ animate: boolean } | null>(
+    null,
+  );
   const stepHeading = useRef<HTMLHeadingElement>(null);
   const footer = useRef<HTMLElement>(null);
   const microphoneRequest = useRef(0);
@@ -194,6 +198,12 @@ export function SetupPage() {
   const currentSpeechModel = snapshot.models.find(
     (model) => model.path && model.path === snapshot.settings.modelPath,
   );
+  const currentTextModelName =
+    baseTextConfig.provider === "builtin"
+      ? (snapshot.textModels?.find((model) => model.id === baseTextConfig.model)?.name ??
+        baseTextConfig.model)
+      : baseTextConfig.model;
+  const trialProcessing = step === 5 && snapshot.status.phase === "text-processing";
 
   useEffect(() => {
     setBaseTextConfig(snapshot.textProcessing);
@@ -265,6 +275,11 @@ export function SetupPage() {
       setPracticeAttempted(false);
     }
   }, [practiceAttempted, snapshot.diagnostic, snapshot.status.phase, speechSettingsKey]);
+  useEffect(() => {
+    if (!continueAfterPreview || step !== 5 || busy || pending) return;
+    setContinueAfterPreview(null);
+    setNavigation({ step: 6, direction: 1, animate: continueAfterPreview.animate });
+  }, [continueAfterPreview, step, busy, pending]);
 
   async function action(work: () => Promise<unknown>) {
     setPending(true);
@@ -337,22 +352,45 @@ export function SetupPage() {
     !nameError,
   ];
   const canContinue = completed[step];
-  const guidance =
-    step === 0
-      ? t("onboarding.goalGuidance")
-      : step === 1 && !snapshot.ready
-        ? t("setupPage.downloadOrSelectAModelToContinue")
-        : step === 2 && !micPassed
-          ? t("setupPage.testYourMicrophoneToContinue")
-          : step === 3 && !shortcutPassed
-            ? shortcut !== snapshot.settings.shortcut
-              ? t("setupPage.applyYourShortcutThenPressItOnce")
-              : t("setupPage.pressYourShortcutOnceToFinishSetup")
-            : step === 4 && !practiceCompleted
-              ? t("onboarding.practiceGuidance")
-              : step === 6
-                ? t("onboarding.finishGuidance")
-                : t("onboarding.continueGuidance");
+  const guidance = trialProcessing
+    ? t("onboarding.trialBusyGuidance")
+    : step === 0
+      ? t("onboarding.goalSelection", {
+          language: languages.find((item) => item.value === language)?.label ?? language,
+          preference: t(`onboarding.preference.${preference}`),
+        })
+      : step === 1
+        ? snapshot.ready
+          ? t("onboarding.speechReadyGuidance")
+          : t("setupPage.downloadOrSelectAModelToContinue")
+        : step === 2
+          ? micPassed
+            ? t("onboarding.microphoneReadyGuidance")
+            : t("setupPage.testYourMicrophoneToContinue")
+          : step === 3
+            ? shortcutPassed
+              ? t("onboarding.shortcutReadyGuidance")
+              : shortcut !== snapshot.settings.shortcut
+                ? t("setupPage.applyYourShortcutThenPressItOnce")
+                : t("setupPage.pressYourShortcutOnceToFinishSetup")
+            : step === 4
+              ? practiceCompleted
+                ? t("onboarding.practiceReadyGuidance")
+                : t("onboarding.practiceGuidance")
+              : step === 5
+                ? t("onboarding.continueGuidance")
+                : step === 6
+                  ? t("onboarding.finishGuidance")
+                  : t("onboarding.continueGuidance");
+
+  function continueFromWorkflow(animate: boolean) {
+    if (!canContinue || pending) return;
+    if (busy) {
+      setContinueAfterPreview({ animate });
+      return;
+    }
+    navigate(6, 1, animate);
+  }
 
   return (
     <div className="@container/setup flex min-h-[calc(100dvh-2rem)] flex-col gap-7">
@@ -512,6 +550,7 @@ export function SetupPage() {
                 setRecipeKind(value);
               }}
               onPracticeStart={startPractice}
+              onContinue={continueFromWorkflow}
             />
           )}
           {step === 6 && (
@@ -525,7 +564,7 @@ export function SetupPage() {
                 snapshot.settings.language
               }
               cleanText={snapshot.settings.cleanText}
-              textModel={!basicRequested && textReady ? baseTextConfig.model : ""}
+              textModel={!basicRequested && textReady ? currentTextModelName : ""}
               recipeKind={effectiveKind}
               recipeName={
                 effectiveKind === "prompt" ? workflowDraft.prompt.name : workflowDraft.chain.name
@@ -542,12 +581,14 @@ export function SetupPage() {
       </AnimatePresence>
       <footer
         ref={footer}
-        className="sticky bottom-0 z-20 -mb-8 mt-auto flex flex-wrap items-center justify-between gap-3 border-t bg-background py-5"
+        className="sticky bottom-0 z-20 -mb-8 mt-auto flex flex-wrap items-center justify-between gap-2 border-t bg-background py-3 @min-[40rem]/setup:gap-3 @min-[40rem]/setup:py-5"
       >
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
           {step > 0 && (
             <Button
               variant="outline"
+              size="sm"
+              className="@min-[40rem]/setup:h-11 @min-[40rem]/setup:px-4 @min-[40rem]/setup:has-[>svg]:px-3"
               disabled={busy || pending}
               onClick={(event) => navigate(step - 1, -1, event.detail > 0)}
             >
@@ -558,7 +599,10 @@ export function SetupPage() {
           {step === 5 && (
             <Button
               variant="ghost"
+              size="sm"
+              className="h-auto min-h-8 max-w-full whitespace-normal @min-[40rem]/setup:h-11 @min-[40rem]/setup:px-4"
               disabled={busy || pending || !practiceCompleted}
+              title={t("onboarding.finishBasicHelp")}
               onClick={(event) => {
                 setBasicRequested(true);
                 setRecipeKind("none");
@@ -569,12 +613,20 @@ export function SetupPage() {
             </Button>
           )}
         </div>
-        <div className="flex flex-wrap items-center gap-3">
-          <p className="text-xs text-muted-foreground">{guidance}</p>
+        <div className="flex min-w-0 flex-wrap items-center justify-end gap-2 @min-[40rem]/setup:gap-3">
+          <p
+            className={cn(
+              "text-xs text-muted-foreground",
+              !trialProcessing && step !== 0 && "hidden @min-[40rem]/setup:block",
+            )}
+          >
+            {guidance}
+          </p>
           {step < steps.length - 1 ? (
             <Button
               pressFeedback
-              className="disabled:bg-muted disabled:text-muted-foreground"
+              size="sm"
+              className="disabled:bg-muted disabled:text-muted-foreground @min-[40rem]/setup:h-11 @min-[40rem]/setup:px-4 @min-[40rem]/setup:has-[>svg]:px-3"
               disabled={busy || pending || !canContinue}
               onClick={(event) => next(event.detail > 0)}
             >
@@ -586,7 +638,10 @@ export function SetupPage() {
               {effectiveKind !== "none" && (
                 <Button
                   variant="outline"
+                  size="sm"
+                  className="h-auto min-h-8 max-w-full whitespace-normal @min-[40rem]/setup:h-11 @min-[40rem]/setup:px-4"
                   disabled={busy || pending || !dictationReady || !!nameError}
+                  title={t("onboarding.finishBasicHelp")}
                   onClick={() => finish(true)}
                 >
                   {t("onboarding.finishBasic")}
@@ -594,8 +649,10 @@ export function SetupPage() {
               )}
               <Button
                 pressFeedback
-                className="disabled:bg-muted disabled:text-muted-foreground"
+                size="sm"
+                className="disabled:bg-muted disabled:text-muted-foreground @min-[40rem]/setup:h-11 @min-[40rem]/setup:px-4 @min-[40rem]/setup:has-[>svg]:px-3"
                 disabled={busy || pending || !dictationReady || !!nameError}
+                title={basicRequested || !textReady ? t("onboarding.finishBasicHelp") : undefined}
                 onClick={() => finish(false)}
               >
                 {basicRequested || !textReady

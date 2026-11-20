@@ -47,15 +47,18 @@ export function useTextRequest({ cancelOnUnmount = true }: { cancelOnUnmount?: b
   }
   async function cancel() {
     const id = current.current;
-    if (!id) return;
+    if (!id) return true;
     cancelled.current = true;
     // Keep ownership until the processing promise settles. This prevents a
     // retry from racing the server's cleanup. Hide any late successful reply.
+    // Returning false means the cancel RPC failed; ownership stays with this job.
     setError("Cancelling…");
     try {
       await backend.cancelTextProcessing(id);
+      return true;
     } catch (cause) {
       if (current.current === id) setError(message(cause));
+      return false;
     }
   }
   return {

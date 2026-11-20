@@ -48,15 +48,15 @@ export function GoalStep({
   const { t } = useTranslation();
   const languages = useLanguages();
   return (
-    <FieldGroup className="gap-7">
+    <FieldGroup className="gap-5">
       <FieldSet disabled={disabled}>
         <FieldLegend>{t("onboarding.primaryUseCase")}</FieldLegend>
         <FieldDescription>{t("onboarding.primaryUseCaseHelp")}</FieldDescription>
-        <div className="grid gap-3 sm:grid-cols-2">
+        <div className="grid gap-1.5 sm:grid-cols-2">
           {useCases.map((value) => (
             <FieldLabel
               key={value}
-              className="min-w-0 cursor-pointer rounded-xl border p-4 has-checked:border-primary/40 has-checked:bg-primary/5 has-focus-visible:ring-2 has-focus-visible:ring-ring"
+              className="cursor-pointer rounded-lg border px-3 py-2 has-checked:border-primary/40 has-checked:bg-primary/5 has-focus-visible:ring-2 has-focus-visible:ring-ring *:data-[slot=field]:p-0"
             >
               <Field orientation="horizontal">
                 <input
@@ -69,14 +69,16 @@ export function GoalStep({
                 />
                 <FieldContent>
                   <FieldTitle>{t(`onboarding.useCase.${value}`)}</FieldTitle>
-                  <FieldDescription>{t(`onboarding.useCaseHelp.${value}`)}</FieldDescription>
                 </FieldContent>
               </Field>
             </FieldLabel>
           ))}
         </div>
+        <p className="text-sm leading-6 text-muted-foreground">
+          {t(`onboarding.useCaseHelp.${useCase}`)}
+        </p>
       </FieldSet>
-      <div className="grid gap-6 lg:grid-cols-2">
+      <div className="grid gap-5 sm:grid-cols-2">
         <Field>
           <FieldLabel htmlFor="onboarding-language">{t("settingsPage.spokenLanguage")}</FieldLabel>
           <Select
@@ -104,11 +106,11 @@ export function GoalStep({
         </Field>
         <FieldSet disabled={disabled}>
           <FieldLegend variant="label">{t("onboarding.speedOrQuality")}</FieldLegend>
-          <div className="flex flex-col gap-2">
+          <div className="flex flex-wrap gap-1.5">
             {preferences.map((value) => (
               <FieldLabel
                 key={value}
-                className="cursor-pointer rounded-lg border px-3 py-2 has-checked:border-primary/40 has-checked:bg-primary/5 has-focus-visible:ring-2 has-focus-visible:ring-ring"
+                className="cursor-pointer rounded-lg border px-3 py-2 has-checked:border-primary/40 has-checked:bg-primary/5 has-focus-visible:ring-2 has-focus-visible:ring-ring *:data-[slot=field]:p-0 has-[>[data-slot=field]]:w-auto"
               >
                 <Field orientation="horizontal">
                   <input
@@ -121,14 +123,12 @@ export function GoalStep({
                   />
                   <FieldContent>
                     <FieldTitle>{t(`onboarding.preference.${value}`)}</FieldTitle>
-                    <FieldDescription className="text-xs">
-                      {t(`onboarding.preferenceHelp.${value}`)}
-                    </FieldDescription>
                   </FieldContent>
                 </Field>
               </FieldLabel>
             ))}
           </div>
+          <FieldDescription>{t(`onboarding.preferenceHelp.${preference}`)}</FieldDescription>
         </FieldSet>
       </div>
       <Field orientation="horizontal">

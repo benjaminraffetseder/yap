@@ -424,6 +424,9 @@ test("setup enables a downloaded text model, saves context, and tests it before 
   const row = setup.getByRole("article", { name: "Gemma 4 E2B", exact: true });
   await row.getByRole("button", { name: "Download", exact: true }).click();
   await row.getByRole("button", { name: "Use model", exact: true }).click();
+  await setup
+    .getByRole("button", { name: en["onboarding.changeModelOptions"], exact: true })
+    .click();
   await setup.getByRole("combobox", { name: "Context length", exact: true }).click();
   await page.getByRole("option", { name: "16,384 tokens", exact: true }).click();
   await expect
@@ -486,6 +489,9 @@ test("setup keeps an existing external text-model configuration", async ({ page 
     state.textProcessing.model = "existing-local-model";
   });
   await openOnboardingWorkflow(page);
+  await page
+    .getByRole("button", { name: en["onboarding.changeModelOptions"], exact: true })
+    .click();
   await expect(
     page.getByText(
       "Your external text model existing-local-model is enabled. Keep it, or choose a built-in model above.",

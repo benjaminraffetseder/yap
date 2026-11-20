@@ -1887,7 +1887,7 @@ test("setup retries shortcut permission and still requires a real shortcut test"
   await page.getByRole("button", { name: "Next", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Add a text model (optional)" })).toBeVisible();
   await expect(
-    page.getByRole("button", { name: "Finish with basic dictation", exact: true }),
+    page.getByRole("button", { name: en["onboarding.finishBasic"], exact: true }),
   ).toBeEnabled();
 });
 
@@ -3409,6 +3409,8 @@ declare global {
       outputs: GeneratedOutput[];
       failOutputs: boolean;
       failProcessing: boolean;
+      deferWorkflowPreview: boolean;
+      failPreviewCancel: boolean;
       textModels: string[];
       modelListError: string;
       deferModelList: boolean;
@@ -3582,6 +3584,8 @@ async function installDictationFixture(page: Page) {
       failOutputs: false,
       processing: null,
       failProcessing: false,
+      deferWorkflowPreview: false,
+      failPreviewCancel: false,
       cancelledProcessing: [],
       workflowPreviews: [],
       completionRequests: [],
@@ -4327,6 +4331,7 @@ async function installDictationFixture(page: Page) {
             },
             CancelTextProcessing: async (id: string) => {
               state.cancelledProcessing.push(id);
+              if (state.failPreviewCancel) throw new Error("Could not cancel trial");
               // Deliberately leave the reply pending to exercise late results.
             },
             TestTextModel: async () => {
@@ -4396,6 +4401,24 @@ async function installDictationFixture(page: Page) {
                 recipeID,
               });
               if (state.failProcessing) throw new Error("Model unavailable");
+              if (state.deferWorkflowPreview) {
+                state.status("text-processing");
+                return new Promise<string>((resolve, reject) => {
+                  state.processing = {
+                    id,
+                    input: transcript,
+                    prompt: recipeID,
+                    resolve: (result) => {
+                      state.processing = null;
+                      resolve(result);
+                    },
+                    reject: (cause) => {
+                      state.processing = null;
+                      reject(cause);
+                    },
+                  };
+                });
+              }
               return `Processed: ${transcript}`;
             },
             CompleteOnboarding: async (profile: DictationProfile, config: TextProcessing) => {
@@ -5162,10 +5185,10 @@ for (const theme of ["dark", "light"] as const) {
     await next.click();
     await expect(page.getByRole("heading", { name: "Add a text model (optional)" })).toBeVisible();
     await expect(page.getByText("Suggested text model", { exact: true })).toBeVisible();
-    await page.getByRole("button", { name: "Finish with basic dictation", exact: true }).click();
+    await page.getByRole("button", { name: en["onboarding.finishBasic"], exact: true }).click();
     await expect(page.getByRole("heading", { name: "Name your active profile" })).toBeVisible();
     await page.getByLabel("Name", { exact: true }).fill("Notes profile");
-    await page.getByRole("button", { name: "Finish with basic dictation", exact: true }).click();
+    await page.getByRole("button", { name: en["onboarding.finishBasic"], exact: true }).click();
     await expect(
       page.getByRole("region", { name: "Dictation recorder", exact: true }),
     ).toBeVisible();
@@ -5395,8 +5418,8 @@ test("first run guides installation, mic testing and shortcut verification", asy
   await completeDiagnosticPractice(page);
   await page.getByRole("button", { name: "Next", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Add a text model (optional)" })).toBeVisible();
-  await page.getByRole("button", { name: "Finish with basic dictation", exact: true }).click();
-  await page.getByRole("button", { name: "Finish with basic dictation", exact: true }).click();
+  await page.getByRole("button", { name: en["onboarding.finishBasic"], exact: true }).click();
+  await page.getByRole("button", { name: en["onboarding.finishBasic"], exact: true }).click();
   await expect(page.getByRole("region", { name: "Dictation recorder", exact: true })).toBeVisible();
   await expect
     .poll(() => page.evaluate(() => window.dictationTest.snapshot.history.length))
@@ -5411,6 +5434,156 @@ test("first run guides installation, mic testing and shortcut verification", asy
   expect(await page.evaluate(() => window.dictationTest.snapshot.dictationProfiles)).toHaveLength(
     1,
   );
+});
+
+async function openPolishedOnboarding(page: Page) {
+  await page.addInitScript(() => {
+    const state = window.dictationTest;
+    state.snapshot.settings.setupComplete = false;
+    state.snapshot.microphoneTested = true;
+    state.snapshot.shortcutTested = true;
+    state.snapshot.textRuntimeAvailable = true;
+    state.snapshot.textModels = [
+      {
+        id: "gemma-4-e2b",
+        name: "Gemma 4 E2B",
+        size: 3_349_516_256,
+        maxContext: 131072,
+        installed: true,
+      },
+    ];
+    state.snapshot.textProcessing = {
+      ...state.snapshot.textProcessing,
+      enabled: true,
+      provider: "builtin",
+      model: "gemma-4-e2b",
+      contextLength: 4096,
+      chains: [],
+    };
+  });
+  await page.goto("/");
+  await reachWorkflow(page, "email");
+}
+
+test("onboarding trial error replaces the empty result and model disclosure preserves the draft", async ({
+  page,
+}) => {
+  await openPolishedOnboarding(page);
+  await page.getByLabel("Prompt name", { exact: true }).fill("My edited workflow");
+  await page.getByLabel("Typed sample", { exact: true }).fill("Please send the proposal Friday");
+  await page.evaluate(() => {
+    window.dictationTest.failProcessing = true;
+  });
+  await page.getByRole("button", { name: "Run trial", exact: true }).click();
+  const result = page.getByRole("region", { name: "Result", exact: true });
+  await expect(result.getByRole("alert")).toContainText("Model unavailable");
+  await expect(result).not.toContainText(en["onboarding.noTrialResult"]);
+  await page.evaluate(() => {
+    window.dictationTest.failProcessing = false;
+  });
+  await page.getByRole("button", { name: "Run trial", exact: true }).click();
+  await expect(result).toContainText("Processed: Please send the proposal Friday");
+  await expect(result.getByRole("alert")).toHaveCount(0);
+  const options = page.getByRole("button", { name: /Change model/ });
+  await options.click();
+  await expect(
+    page.getByRole("heading", { name: "Built-in text models", exact: true }),
+  ).toBeVisible();
+  await options.click();
+  await expect(page.getByLabel("Prompt name", { exact: true })).toHaveValue("My edited workflow");
+  await expect(page.getByLabel("Typed sample", { exact: true })).toHaveValue(
+    "Please send the proposal Friday",
+  );
+  await expect(result).toContainText("Processed: Please send the proposal Friday");
+  expect(await page.evaluate(() => window.dictationTest.snapshot.history)).toHaveLength(0);
+  expect(await page.evaluate(() => window.dictationTest.clipboard)).toBe("");
+});
+
+test("onboarding cancel and continue waits for the owned preview and global job to settle", async ({
+  page,
+}) => {
+  await openPolishedOnboarding(page);
+  await page.getByLabel("Prompt name", { exact: true }).fill("Kept after cancellation");
+  await page.getByLabel("Typed sample", { exact: true }).fill("A temporary sample");
+  await page.evaluate(() => {
+    window.dictationTest.deferWorkflowPreview = true;
+  });
+  await page.getByRole("button", { name: "Run trial", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Next", exact: true })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Back", exact: true })).toBeDisabled();
+  await page.getByRole("button", { name: /Cancel trial.*continue/i }).click();
+  await expect
+    .poll(() => page.evaluate(() => window.dictationTest.cancelledProcessing.length))
+    .toBe(1);
+  const profileHeading = page.getByRole("heading", {
+    name: "Name your active profile",
+    exact: true,
+  });
+  await expect(profileHeading).toHaveCount(0);
+  // The cancellation API only acknowledges a request. A late result must not
+  // navigate or become visible while the application still owns the busy job.
+  await page.evaluate(() =>
+    window.dictationTest.processing!.resolve("Late result must stay hidden"),
+  );
+  await expect(page.getByRole("region", { name: "Result", exact: true })).not.toContainText(
+    "Late result must stay hidden",
+  );
+  await expect(profileHeading).toHaveCount(0);
+  expect(await page.evaluate(() => window.dictationTest.completionRequests)).toHaveLength(0);
+  await page.evaluate(() => window.dictationTest.status("idle"));
+  await expect(profileHeading).toBeVisible();
+  await expect(page.getByRole("definition").filter({ hasText: /^Gemma 4 E2B$/ })).toBeVisible();
+  await page.getByRole("button", { name: "Back", exact: true }).click();
+  await expect(page.getByLabel("Prompt name", { exact: true })).toHaveValue(
+    "Kept after cancellation",
+  );
+});
+
+test("onboarding failed preview cancellation stays local and can be retried", async ({ page }) => {
+  await openPolishedOnboarding(page);
+  await page.getByLabel("Typed sample", { exact: true }).fill("A temporary sample");
+  await page.evaluate(() => {
+    window.dictationTest.deferWorkflowPreview = true;
+    window.dictationTest.failPreviewCancel = true;
+  });
+  await page.getByRole("button", { name: "Run trial", exact: true }).click();
+  const cancelContinue = page.getByRole("button", { name: /Cancel trial.*continue/i });
+  await cancelContinue.click();
+  await expect(
+    page.getByRole("alert").filter({ hasText: en["onboarding.trialCancelFailed"] }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Name your active profile", exact: true }),
+  ).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Next", exact: true })).toBeDisabled();
+  await page.evaluate(() => {
+    window.dictationTest.failPreviewCancel = false;
+  });
+  await cancelContinue.click();
+  await expect
+    .poll(() => page.evaluate(() => window.dictationTest.cancelledProcessing.length))
+    .toBe(2);
+  await page.evaluate(() => {
+    window.dictationTest.processing!.reject(new Error("Processing cancelled"));
+    window.dictationTest.status("idle");
+  });
+  await expect(
+    page.getByRole("heading", { name: "Name your active profile", exact: true }),
+  ).toBeVisible();
+});
+
+test("onboarding never offers owned-preview cancellation for unrelated work", async ({ page }) => {
+  await openPolishedOnboarding(page);
+  await page.evaluate(() => window.dictationTest.status("text-processing"));
+  await expect(page.getByRole("button", { name: "Next", exact: true })).toBeDisabled();
+  await expect(
+    page.locator("footer").getByText(en["onboarding.trialBusyGuidance"], { exact: true }),
+  ).toBeVisible();
+  await expect(page.locator("footer")).not.toContainText(/live trial|cancel it in the step/i);
+  await expect(page.getByRole("button", { name: /Cancel trial.*continue/i })).toHaveCount(0);
+  expect(await page.evaluate(() => window.dictationTest.cancelledProcessing)).toHaveLength(0);
+  await page.evaluate(() => window.dictationTest.status("idle"));
+  await expect(page.getByRole("button", { name: "Next", exact: true })).toBeEnabled();
 });
 
 test("onboarding prompt trial stays isolated and completion retry keeps its identity", async ({
@@ -5447,8 +5620,10 @@ test("onboarding prompt trial stays isolated and completion retry keeps its iden
     fullPage: true,
   });
   await reachWorkflow(page, "email");
-  await expect(page.getByText("Suggested text model", { exact: true })).toBeVisible();
-  await expect(page.getByText(/Keep your existing gemma-4-e2b connection/)).toBeVisible();
+  await expect(page.getByRole("button", { name: /Change model/ })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Built-in text models", exact: true }),
+  ).not.toBeVisible();
   await page.getByLabel("Prompt name", { exact: true }).fill("Warm follow-up");
   await page
     .getByLabel("Starter instructions", { exact: true })
@@ -5577,8 +5752,8 @@ test("onboarding blocks failed speech practice and diagnostics invalidated by sp
   });
   await page.goto("/");
   await reachWorkflow(page);
-  await page.getByRole("button", { name: "Finish with basic dictation", exact: true }).click();
-  const finish = page.getByRole("button", { name: "Finish with basic dictation", exact: true });
+  await page.getByRole("button", { name: en["onboarding.finishBasic"], exact: true }).click();
+  const finish = page.getByRole("button", { name: en["onboarding.finishBasic"], exact: true });
   await expect(finish).toBeEnabled();
   await page.evaluate(() => {
     const state = window.dictationTest;
