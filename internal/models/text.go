@@ -18,15 +18,16 @@ var textLicenses embed.FS
 // TextCatalog pins both the conversion and the weights; model downloads never
 // execute code from a model repository. Projectors are unnecessary for text.
 type TextModel struct {
-	ID         string `json:"id"`
-	Name       string `json:"name"`
-	Size       int64  `json:"size"`
-	MaxContext int    `json:"maxContext"`
-	Installed  bool   `json:"installed"`
-	DiskBytes  int64  `json:"diskBytes"`
-	SHA        string `json:"-"`
-	URL        string `json:"-"`
-	Filename   string `json:"-"`
+	ID                     string `json:"id"`
+	Name                   string `json:"name"`
+	Size                   int64  `json:"size"`
+	MaxContext             int    `json:"maxContext"`
+	Installed              bool   `json:"installed"`
+	DiskBytes              int64  `json:"diskBytes"`
+	RuntimeUpdateAvailable bool   `json:"runtimeUpdateAvailable"`
+	SHA                    string `json:"-"`
+	URL                    string `json:"-"`
+	Filename               string `json:"-"`
 }
 
 var TextCatalog = []TextModel{
@@ -74,6 +75,7 @@ func ListTextModels(dir string) []TextModel {
 	for i := range list {
 		_, err := TextModelPath(dir, list[i].ID)
 		list[i].Installed = err == nil
+		list[i].RuntimeUpdateAvailable = list[i].Installed && RuntimeUpdateAvailable(dir, "text")
 		if root, err := managedModelDirectory(dir); err == nil {
 			if st, e := os.Lstat(filepath.Join(root, list[i].Filename)); e == nil && st.Mode().IsRegular() {
 				list[i].DiskBytes += st.Size()
@@ -160,15 +162,16 @@ func RemoveTextModel(dir, id string) error {
 	return nil
 }
 
-const textRuntimeVersion = "llama-b12110"
+// Binary build b12359 is the exact commit tagged as llama.cpp v1.0.0.
+const textRuntimeVersion = "llama-b12359"
 
 var textRuntimeAssets = map[string]runtimeAsset{
-	"windows/amd64/cpu":    {URL: "https://github.com/ggml-org/llama.cpp/releases/download/b12110/llama-b12110-bin-win-cpu-x64.zip", SHA: "98901e327c252875accaf2d1bf364e10e868843b0b63468baad1aa945cdc5da2", Size: 24708445},
-	"windows/amd64/vulkan": {URL: "https://github.com/ggml-org/llama.cpp/releases/download/b12110/llama-b12110-bin-win-vulkan-x64.zip", SHA: "9732a5e48887ca54d0bfe4af4324dc85fd56cd8cda19b52df3542fa6ebe6874f", Size: 37661146},
-	"linux/amd64/cpu":      {URL: "https://github.com/ggml-org/llama.cpp/releases/download/b12110/llama-b12110-bin-ubuntu-x64.tar.gz", SHA: "368227edcc229be5f9bed16a2223d79b5e41d0ac2e19bcf5825e82291c060e55", Size: 23051958, Tar: true},
-	"linux/amd64/vulkan":   {URL: "https://github.com/ggml-org/llama.cpp/releases/download/b12110/llama-b12110-bin-ubuntu-vulkan-x64.tar.gz", SHA: "a5d741940956ec62e8783aee7e5a4c7c761af867d6f027c3277a51e1a3ac59b0", Size: 35858360, Tar: true},
-	"linux/arm64/cpu":      {URL: "https://github.com/ggml-org/llama.cpp/releases/download/b12110/llama-b12110-bin-ubuntu-arm64.tar.gz", SHA: "4758b51335e37b4346251f2687d64841ff1c07ecb27fc46323945bb2ec9c44d2", Size: 18723578, Tar: true},
-	"linux/arm64/vulkan":   {URL: "https://github.com/ggml-org/llama.cpp/releases/download/b12110/llama-b12110-bin-ubuntu-vulkan-arm64.tar.gz", SHA: "1c68bf23d35230cc607e3d30f8d447d21fef500d9fa8d65e15520dfa3619ad73", Size: 29168359, Tar: true},
+	"windows/amd64/cpu":    {URL: "https://github.com/ggml-org/llama.cpp/releases/download/b12359/llama-b12359-bin-win-cpu-x64.zip", SHA: "837c1655e87df3b66989f4be33a792a1399c785bf259038dc75c900096683e69", Size: 25097509},
+	"windows/amd64/vulkan": {URL: "https://github.com/ggml-org/llama.cpp/releases/download/b12359/llama-b12359-bin-win-vulkan-x64.zip", SHA: "e8d18c6e4210cca87e7307c2ea78363ac8d158e4e1397358ec96ab70b53a0d5e", Size: 38090643},
+	"linux/amd64/cpu":      {URL: "https://github.com/ggml-org/llama.cpp/releases/download/b12359/llama-b12359-bin-ubuntu-x64.tar.gz", SHA: "0bc1f091e8916102b6d8f2cf944233a620e90a0f856c72d0ce41150c65c2e72e", Size: 23311084, Tar: true},
+	"linux/amd64/vulkan":   {URL: "https://github.com/ggml-org/llama.cpp/releases/download/b12359/llama-b12359-bin-ubuntu-vulkan-x64.tar.gz", SHA: "19b60f00395a3f4954e46a5037695bc1d843404fc9d3124f82a612ecd8fbe9f0", Size: 36153377, Tar: true},
+	"linux/arm64/cpu":      {URL: "https://github.com/ggml-org/llama.cpp/releases/download/b12359/llama-b12359-bin-ubuntu-arm64.tar.gz", SHA: "dc7aa17a67884619b7223870aca9fd6addbc01717713b04a714add1c31137359", Size: 18949862, Tar: true},
+	"linux/arm64/vulkan":   {URL: "https://github.com/ggml-org/llama.cpp/releases/download/b12359/llama-b12359-bin-ubuntu-vulkan-arm64.tar.gz", SHA: "3f8ae812a58ac92e5a596ca9fbc988f52854d147c5a7fe1264dddc90c1d085b4", Size: 29435221, Tar: true},
 }
 
 // App-local C++ runtime from Microsoft's signed Desktop framework package.

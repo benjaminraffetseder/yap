@@ -30,7 +30,7 @@ func TestRuntimeInstallRejectsRedirectedStorageBeforeDownload(t *testing.T) {
 				t.Fatal(err)
 			}
 			if installed {
-				root := filepath.Join(outside, "whisper-1.9.2")
+				root := filepath.Join(outside, "whisper-"+WhisperRuntimeVersion)
 				if err := os.Mkdir(root, 0700); err != nil {
 					t.Fatal(err)
 				}
@@ -62,7 +62,7 @@ func runtimeFixture(t *testing.T, files map[string]string) (string, string, stri
 	if err := os.Mkdir(runtimeDir, 0700); err != nil {
 		t.Fatal(err)
 	}
-	dest := filepath.Join(runtimeDir, "whisper-1.9.2")
+	dest := filepath.Join(runtimeDir, "whisper-"+WhisperRuntimeVersion)
 	if err := os.Mkdir(dest, 0700); err != nil {
 		t.Fatal(err)
 	}

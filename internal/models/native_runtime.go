@@ -31,10 +31,10 @@ var nativeRuntimes = map[string]runtimeAsset{
 	"parakeet/windows/amd64":  {"https://github.com/NVIDIA/NeMo-Speech.cpp/releases/download/v0.3.0/nemo-speech-0.3.0-windows-x86_64-cpu.zip", "4ed9740e361e4653f56c3dce7d1e81883a1c8b831c1bd7d01567fff1130b5b05", 8694509, false},
 	"parakeet/darwin/arm64":   {"https://github.com/NVIDIA/NeMo-Speech.cpp/releases/download/v0.3.0/nemo-speech-0.3.0-macos-aarch64-metal.tar.gz", "2b972ed8b5dba07492212acf8cb75cbf34ecb141198ffa1997febe84b7c4d9ed", 7239335, true},
 	"parakeet/darwin/amd64":   {"https://github.com/NVIDIA/NeMo-Speech.cpp/releases/download/v0.3.0/nemo-speech-0.3.0-macos-x86_64-cpu.tar.gz", "97e98aa5eb82dffa4f513f26336b5301d792c9fb43f720ac8f9520a0e92ffe3f", 7742012, true},
-	"moonshine/windows/amd64": {"https://files.pythonhosted.org/packages/ea/05/ad3457baa56170a13829c98327598a4d99d6cd4bdff8ae59df4c47ebdd11/moonshine_voice-0.1.5-py3-none-win_amd64.whl", "7fc9a84e827360ddb85c2735f44a1502c5575c27dcb476a2555646cd20a70e9d", 16542073, false},
-	"moonshine/darwin/arm64":  {"https://files.pythonhosted.org/packages/86/2a/9eca2f000e4990315d18aa360c6eb679417b29252e6307c273bcbef38461/moonshine_voice-0.1.5-py3-none-macosx_15_0_arm64.whl", "9866b1956d12fff11923ad42f1140bcb314bf05bf8d8576fb7b3aa819ec40e51", 18589534, false},
-	"moonshine/linux/amd64":   {"https://files.pythonhosted.org/packages/a9/9d/228f738b48e0e7cc1de97c3f842b5470c6a3c5f7a0bffbf13c3d00eefb87/moonshine_voice-0.1.5-py3-none-manylinux_2_34_x86_64.whl", "1ed9e0ccf94be4845d69e7fa862dcf4c8b5801a758796966494c694f48184496", 19897307, false},
-	"moonshine/linux/arm64":   {"https://files.pythonhosted.org/packages/23/1c/cb821747b2a7b40216dd576a62d1ebc77d04fab97064efc97fa460f137ed/moonshine_voice-0.1.5-py3-none-manylinux_2_31_aarch64.whl", "605300afe33eb7920301e73f11e0ea7493770eb655f389ba65be4aa1db8dedd6", 18505651, false},
+	"moonshine/windows/amd64": {"https://files.pythonhosted.org/packages/7f/07/aafde753e2819bc5dca333b45a90f3dad475a41da2c97ddd60ccc6e37479/moonshine_voice-0.1.6-py3-none-win_amd64.whl", "29a54f9249d41735db62b1f97272905cf114554f293c166f0f4f81655a4a2cfc", 16616460, false},
+	"moonshine/darwin/arm64":  {"https://files.pythonhosted.org/packages/25/ad/91ef5908f592faff47dd4e03073b3eb073ce88f984f6bc86031e02057a69/moonshine_voice-0.1.6-py3-none-macosx_15_0_arm64.whl", "71f0fa9d0b01fa317f86a85e846e9faa247be985f92b50970817dd999e400ff4", 18670056, false},
+	"moonshine/linux/amd64":   {"https://files.pythonhosted.org/packages/54/47/20993e0676642cf05273b6b2fed13076a5b4028156c938dd86136bb71797/moonshine_voice-0.1.6-py3-none-manylinux_2_34_x86_64.whl", "04e438f393af3f963ac7988204f379d04a9c8949801595cab4bd68a7ceedf6c7", 20020861, false},
+	"moonshine/linux/arm64":   {"https://files.pythonhosted.org/packages/3f/ad/f6cad5893e822303fed6c0931127274e7bfc19ebdad5aaa7af87888d242b/moonshine_voice-0.1.6-py3-none-manylinux_2_31_aarch64.whl", "16589b0e86e4a66fbbb7bb1429deaa56a47f33fdc1cd0aef4b781ccbf49c95df", 18607530, false},
 }
 
 func EnsureModelRuntime(ctx context.Context, dir, id, whisper string, report func(int64, int64)) (string, error) {
@@ -94,7 +94,7 @@ func EnsureModelRuntime(ctx context.Context, dir, id, whisper string, report fun
 	if err = extractNativeArchive(ctx, archive, temp, asset.Tar, m.Kind == "parakeet"); err != nil {
 		return "", err
 	}
-	name := "moonshine-0.1.5"
+	name := "moonshine-" + speech.MoonshineRuntimeVersion
 	if m.Kind == "parakeet" {
 		name = "nemo-speech-" + speech.ParakeetRuntimeVersion
 	}

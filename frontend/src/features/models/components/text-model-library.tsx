@@ -84,6 +84,15 @@ export function TextModelLibrary({
       setPending(false);
     }
   }
+  async function updateRuntime(model: TextModel) {
+    if (busy || !supported) return;
+    setPending(true);
+    try {
+      await run(() => savedActions.updateTextRuntime(model.id));
+    } finally {
+      setPending(false);
+    }
+  }
   return (
     <section
       id="text-models"
@@ -181,28 +190,41 @@ export function TextModelLibrary({
                     }),
                   })}
                 </p>
-                <div className="ml-auto flex min-w-0 max-w-full flex-wrap items-center justify-end gap-1 @min-[54rem]/models:w-full">
-                  {(!model.installed || !active) && (
+                <div className="ml-auto flex min-w-0 max-w-full items-center justify-end gap-1 @min-[54rem]/models:w-full">
+                  {model.installed && model.runtimeUpdateAvailable ? (
                     <Button
                       size="sm"
-                      variant={model.installed ? "outline" : "ghost"}
-                      className="h-auto min-h-8 max-w-full whitespace-normal"
+                      variant="outline"
+                      className="h-auto min-h-8 min-w-0 max-w-full shrink whitespace-normal"
                       disabled={busy || !supported}
-                      onClick={() =>
-                        model.installed
-                          ? void selectModel(model)
-                          : void run(() => savedActions.installTextModel(model.id))
-                      }
+                      title={t("textModels.runtimeUpdateDescription")}
+                      onClick={() => void updateRuntime(model)}
                     >
-                      {!model.installed && <Download aria-hidden="true" className="size-3.5" />}
-                      {t(
-                        model.installed
-                          ? "modelCard.useModel"
-                          : model.diskBytes
-                            ? "textModels.resume"
-                            : "textModels.download",
-                      )}
+                      {t("modelsPage.updateRuntime")}
                     </Button>
+                  ) : (
+                    (!model.installed || !active) && (
+                      <Button
+                        size="sm"
+                        variant={model.installed ? "outline" : "ghost"}
+                        className="h-auto min-h-8 max-w-full whitespace-normal"
+                        disabled={busy || !supported}
+                        onClick={() =>
+                          model.installed
+                            ? void selectModel(model)
+                            : void run(() => savedActions.installTextModel(model.id))
+                        }
+                      >
+                        {!model.installed && <Download aria-hidden="true" className="size-3.5" />}
+                        {t(
+                          model.installed
+                            ? "modelCard.useModel"
+                            : model.diskBytes
+                              ? "textModels.resume"
+                              : "textModels.download",
+                        )}
+                      </Button>
+                    )
                   )}
                   {(model.installed || !!model.diskBytes) && (
                     <ActionMenu

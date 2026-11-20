@@ -87,7 +87,7 @@ func TestRealNativeModels(t *testing.T) {
 
 func downloadNativeSample(t *testing.T, ctx context.Context, dir string) string {
 	t.Helper()
-	req, err := http.NewRequestWithContext(ctx, "GET", "https://raw.githubusercontent.com/ggml-org/whisper.cpp/v1.9.2/samples/jfk.wav", nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", "https://raw.githubusercontent.com/ggml-org/whisper.cpp/v1.9.5/samples/jfk.wav", nil)
 	if err != nil {
 		t.Fatal(err)
 	}

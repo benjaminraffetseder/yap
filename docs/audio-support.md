@@ -9,7 +9,7 @@ Conversion runs on your computer.
 
 On Windows x64, choose **Download audio support** when importing a file, or open
 **Settings → Advanced → Audio support (FFmpeg)**. Yap asks before downloading
-the 73.4 MiB archive, checks its size and SHA-256, and installs it in its own
+the 73.0 MiB archive, checks its size and SHA-256, and installs it in its own
 data folder. It doesn't change PATH or need administrator access.
 
 Progress and Cancel are available in Settings, Dictate, and History. If the
@@ -38,14 +38,14 @@ imported files other than PCM WAV. See [Linux setup](linux.md#build-and-run).
 
 ## The Mac bundle
 
-`bash scripts/build-macos.sh` builds FFmpeg 9.0.2 from its pinned upstream source
+`bash scripts/build-macos.sh` builds FFmpeg 9.1 from its pinned upstream source
 and includes it at `Contents/Resources/ffmpeg/ffmpeg`. This standalone executable
 uses LGPL v2.1 or later, with GPL/nonfree/version3 components disabled and no
 external codec libraries. Yap runs it as a separate process. The bundle contains
 the exact source archive, licence texts, build script, source notice, and each
 architecture's configuration. Keep these files when distributing the app.
 The source SHA-256 is
-`8c3850283eb25fa026482078a04051e0be17347b09ef81a0849bec15a96e002e`.
+`1a4d394ae63d190a526cd052eb4415c156b5c5e2df37efab41a7de0b8fde2433`.
 
 The build enables local-file audio decoding and PCM output for Yap. FLAC and
 AAC encoding are included for the packaging smoke test. It is not a general
@@ -59,12 +59,12 @@ The pinned build is defined in [`internal/models/ffmpeg.go`](../internal/models/
 | Field | Value |
 | --- | --- |
 | Provider | [BtbN/FFmpeg-Builds](https://github.com/BtbN/FFmpeg-Builds) |
-| Release | [autobuild-2026-09-30-13-08](https://github.com/BtbN/FFmpeg-Builds/releases/tag/autobuild-2026-09-30-13-08) |
-| Package | `ffmpeg-n9.0.2-17-g2a571b6068-win64-lgpl-shared-9.0.zip` |
-| Size | 76,972,461 bytes (73.4 MiB) |
-| SHA-256 | `7157177b8a6cb2174c1650ba8c71b363f2c78cba5330f88c4c02cf5b2b880646` |
-| FFmpeg source | [`2a571b606854520cf89804d8030c8b328e621689`](https://github.com/FFmpeg/FFmpeg/tree/2a571b606854520cf89804d8030c8b328e621689) |
-| Build scripts and dependency sources | [`6c9aec5fc9a72ec3abedd1fa84db141fa18cf52b`](https://github.com/BtbN/FFmpeg-Builds/tree/6c9aec5fc9a72ec3abedd1fa84db141fa18cf52b) |
+| Release | [autobuild-2026-10-31-12-59](https://github.com/BtbN/FFmpeg-Builds/releases/tag/autobuild-2026-10-31-12-59) |
+| Package | `ffmpeg-n9.0.2-39-g7adfbe40dc-win64-lgpl-shared-9.0.zip` |
+| Size | 76,576,818 bytes (73.0 MiB) |
+| SHA-256 | `e907b01fa4783913151237e37df2a10fa97d99a1598a021bf59d4ae62ffed4c0` |
+| FFmpeg source | [`7adfbe40dcde598f93a6963d2f7b22cd75202ccc`](https://github.com/FFmpeg/FFmpeg/tree/7adfbe40dcde598f93a6963d2f7b22cd75202ccc) |
+| Build scripts and dependency sources | [`5031c6f1082414e53688d39e521849905071070d`](https://github.com/BtbN/FFmpeg-Builds/tree/5031c6f1082414e53688d39e521849905071070d) |
 
 This is an **LGPL v3 or later** shared build, with neither GPL nor nonfree
 components enabled. The extracted package keeps its upstream license and docs.

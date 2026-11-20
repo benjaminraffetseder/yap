@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"yap/internal/app/modelmanagement"
+	"yap/internal/models"
 )
 
 func (a *App) SelectFile(kind string) (string, error) {
@@ -66,7 +67,30 @@ func (a *App) installSpeechModel(id string, runtimeOnly bool) error {
 		var result modelmanagement.SpeechResult
 		var err error
 		if runtimeOnly {
-			err = plan.UpdateRuntime(ctx, a.store.Dir, progress)
+			err = plan.UpdateRuntime(ctx, a.store.Dir, progress, func(path string) error {
+				a.mu.Lock()
+				defer a.mu.Unlock()
+				if err := ctx.Err(); err != nil {
+					return err
+				}
+				if a.settings.WhisperPath != "" && !models.IsManagedRuntime(a.store.Dir, a.settings.WhisperPath) {
+					linked, err := models.ReferencesSupersededRuntime(a.store.Dir, a.settings.WhisperPath, "whisper")
+					if err != nil {
+						return err
+					}
+					if linked {
+						return errors.New("your custom Whisper selection points into the old Yap runtime; choose a separate executable in Settings before updating; the old runtime has been kept")
+					}
+					return nil
+				}
+				settings := a.settings
+				settings.WhisperPath = path
+				if err := a.saveSettingsWithDefaultLocked(settings); err != nil {
+					return err
+				}
+				a.settings = settings
+				return nil
+			})
 		} else {
 			result, err = plan.Run(ctx, a.store.Dir, executable, progress, stage)
 		}

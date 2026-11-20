@@ -35,8 +35,8 @@ func (plan SpeechInstall) Run(ctx context.Context, dir, executable string, progr
 	return SpeechResult{executable: executable, model: model}, err
 }
 
-func (plan SpeechInstall) UpdateRuntime(ctx context.Context, dir string, progress func(int64, int64)) error {
-	return models.UpdateModelRuntime(ctx, dir, plan.id, progress)
+func (plan SpeechInstall) UpdateRuntime(ctx context.Context, dir string, progress func(int64, int64), selectRuntime func(string) error) error {
+	return models.UpdateModelRuntimeWithSelection(ctx, dir, plan.id, progress, selectRuntime)
 }
 
 func (result SpeechResult) Settings(current storage.Settings) storage.Settings {
@@ -64,6 +64,10 @@ func (plan TextInstall) Run(ctx context.Context, dir string, progress func(int64
 		err = models.InstallTextModel(ctx, dir, plan.id, progress)
 	}
 	return err
+}
+
+func (plan TextInstall) UpdateRuntime(ctx context.Context, dir string, progress func(int64, int64)) error {
+	return models.UpdateTextRuntime(ctx, dir, progress)
 }
 
 func RemoveText(dir, id string, config textmodel.Config, release func()) error {

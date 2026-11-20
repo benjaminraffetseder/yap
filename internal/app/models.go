@@ -7,6 +7,14 @@ import (
 )
 
 func (a *App) InstallTextModel(id string) error {
+	return a.installTextModel(id, false)
+}
+
+func (a *App) UpdateTextRuntime(id string) error {
+	return a.installTextModel(id, true)
+}
+
+func (a *App) installTextModel(id string, runtimeOnly bool) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if err := a.availableLocked(); err != nil {
@@ -27,6 +35,9 @@ func (a *App) InstallTextModel(id string) error {
 	ctx, cancel := context.WithCancel(parent)
 	a.cancel = cancel
 	a.status.Phase, a.status.Message, a.status.Progress = "downloading", "Checking or downloading text runtime…", 0
+	if runtimeOnly {
+		a.status.Message = "Updating text runtime…"
+	}
 	a.emitStatusLocked()
 	a.wg.Add(1)
 	go func() {
@@ -40,12 +51,18 @@ func (a *App) InstallTextModel(id string) error {
 				a.emitStatusLocked()
 			}
 		}
-		err := plan.Run(ctx, a.store.Dir, progress, func(message string) {
+		stage := func(message string) {
 			a.mu.Lock()
 			a.status.Message, a.status.Progress = message, 0
 			a.emitStatusLocked()
 			a.mu.Unlock()
-		})
+		}
+		var err error
+		if runtimeOnly {
+			err = plan.UpdateRuntime(ctx, a.store.Dir, progress)
+		} else {
+			err = plan.Run(ctx, a.store.Dir, progress, stage)
+		}
 		a.mu.Lock()
 		defer a.mu.Unlock()
 		a.cancel = nil
@@ -60,6 +77,9 @@ func (a *App) InstallTextModel(id string) error {
 			return
 		} else {
 			a.status.Phase, a.status.Message = "idle", "Text model installed. Select it in Prompts to get started."
+			if runtimeOnly {
+				a.status.Message = "Text runtime updated."
+			}
 		}
 		a.status.Progress = 0
 		a.emitStatusLocked()

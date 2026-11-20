@@ -46,8 +46,8 @@ func TestLinuxWhisperManagedInstallation(t *testing.T) {
 			}
 			write(&tar.Header{Name: "bundle/whisper-cli", Mode: tc.mode, Size: int64(len(script))}, script)
 			if tc.dependency {
-				write(&tar.Header{Name: "bundle/libwhisper.so.1.9.2", Mode: 0644, Size: 7}, "library")
-				write(&tar.Header{Name: "bundle/libwhisper.so.1", Typeflag: tar.TypeSymlink, Linkname: "libwhisper.so.1.9.2"}, "")
+				write(&tar.Header{Name: "bundle/libwhisper.so.1.9.5", Mode: 0644, Size: 7}, "library")
+				write(&tar.Header{Name: "bundle/libwhisper.so.1", Typeflag: tar.TypeSymlink, Linkname: "libwhisper.so.1.9.5"}, "")
 				write(&tar.Header{Name: "bundle/libwhisper.so", Typeflag: tar.TypeSymlink, Linkname: "libwhisper.so.1"}, "")
 			}
 			if err := w.Close(); err != nil {

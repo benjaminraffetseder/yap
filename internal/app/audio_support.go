@@ -48,6 +48,12 @@ func (a *App) InstallAudioSupport() error {
 	}, models.InstallFFmpeg)
 }
 
+// UpdateAudioSupport reuses download ownership and cancellation without
+// starting an import or changing a system/custom decoder installation.
+func (a *App) UpdateAudioSupport() error {
+	return a.installAudioSupport(func() (bool, error) { return true, nil }, models.UpdateFFmpegRuntime)
+}
+
 func (a *App) audioSupportAvailableLocked() error {
 	if err := a.availableLocked(); err != nil {
 		return err

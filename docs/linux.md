@@ -3,8 +3,8 @@
 The Linux desktop app has been tested on Ubuntu x64 with GNOME Wayland, including
 Debian installation, application search, and the app icon.
 
-Yap installs verified Linux x64 and arm64 runtimes for Whisper 1.9.2, NVIDIA
-Parakeet via NeMo-Speech.cpp 0.3.0, and Moonshine Voice 0.1.5. Choose a speech
+Yap installs verified Linux x64 and arm64 runtimes for Whisper 1.9.5, NVIDIA
+Parakeet via NeMo-Speech.cpp 0.3.0, and Moonshine Voice 0.1.6. Choose a speech
 model in **Models** or the setup guide to download its runtime and model together.
 The managed runtimes use the CPU; Python, pip, and CUDA are not required.
 
@@ -115,7 +115,7 @@ AppIndicator extension as described below.
 
 Gemma 4 E2B, E4B, and 12B are available under **Models → Text models**. Download
 one, then choose **Use model** for text correction, prompts, titles, and chat.
-Yap installs verified llama.cpp b12110 CPU and Vulkan runtimes automatically.
+Yap installs verified llama.cpp b12359 (v1.0.0) CPU and Vulkan runtimes automatically.
 Vulkan setup is optional once the CPU runtime is usable. Yap tries GPU
 acceleration first and falls back to CPU if loading fails. GPU
 acceleration needs a working Vulkan loader and driver; CUDA is not required.

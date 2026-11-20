@@ -28,6 +28,8 @@ const BundleManifest = "yap-model.json"
 // NeMo 0.3.0 avoids duplicate ASR weight storage on CPU and Metal.
 const ParakeetRuntimeVersion = "0.3.0"
 
+const MoonshineRuntimeVersion = "0.1.6"
+
 func Kind(model string) string {
 	if strings.EqualFold(filepath.Ext(model), ".gguf") {
 		return "parakeet"
@@ -54,7 +56,7 @@ func RuntimePath(dir, kind string) string {
 		if runtime.GOOS == "darwin" {
 			name = "libmoonshine.dylib"
 		}
-		return filepath.Join(dir, "runtime", "moonshine-0.1.5", "moonshine_voice", name)
+		return filepath.Join(dir, "runtime", "moonshine-"+MoonshineRuntimeVersion, "moonshine_voice", name)
 	}
 	return ""
 }

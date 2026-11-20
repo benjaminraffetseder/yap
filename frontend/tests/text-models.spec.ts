@@ -95,8 +95,8 @@ test.beforeEach(async ({ page }) => {
       diagnostic: {},
     };
     const calls: unknown[] = [];
-    Reflect.set(window, "textModelTest", { state, calls });
     const callbacks: Record<string, (data?: unknown) => void> = {};
+    Reflect.set(window, "textModelTest", { state, calls, callbacks, failUpdate: false });
     Reflect.set(window, "mockEvents", {
       subscribe: (name: string, cb: (data?: unknown) => void) => {
         callbacks[name] = cb;
@@ -140,6 +140,17 @@ test.beforeEach(async ({ page }) => {
             state.textModels.find((m) => m.id === id)!.installed = true;
             callbacks["setup:changed"]?.();
           },
+          UpdateTextRuntime: async (id: string) => {
+            calls.push(`runtime:${id}`);
+            if (Reflect.get(window, "textModelTest").failUpdate)
+              throw new Error("Synthetic text runtime update failure");
+            Object.assign(state.status, {
+              phase: "downloading",
+              message: "Updating text runtime…",
+              progress: 0.42,
+            });
+            callbacks["dictation:status"]?.(structuredClone(state.status));
+          },
           RemoveTextModel: async (id: string) => {
             calls.push(`remove:${id}`);
             state.textModels.find((m) => m.id === id)!.installed = false;
@@ -148,6 +159,62 @@ test.beforeEach(async ({ page }) => {
       },
     });
   });
+});
+
+test("text runtime updates keep model and prompt selections through failure, cancel and success", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const fixture = Reflect.get(window, "textModelTest");
+    fixture.state.textModels
+      .filter((model: { installed: boolean }) => model.installed)
+      .forEach((model: object) => Object.assign(model, { runtimeUpdateAvailable: true }));
+  });
+  await page.goto("/#/models?type=text");
+  const row = page.getByRole("article", { name: "Gemma 4 E2B", exact: true });
+  const update = row.getByRole("button", { name: "Update runtime", exact: true });
+  const before = await page.evaluate(() =>
+    structuredClone(Reflect.get(window, "textModelTest").state.textProcessing),
+  );
+  await expect(update).toBeEnabled();
+  await page.evaluate(() => {
+    Reflect.get(window, "textModelTest").failUpdate = true;
+  });
+  await update.click();
+  await expect(
+    page.getByRole("alert").filter({ hasText: "Synthetic text runtime update failure" }),
+  ).toBeVisible();
+  await page.evaluate(() => {
+    Reflect.get(window, "textModelTest").failUpdate = false;
+  });
+  await update.click();
+  const section = page.getByRole("region", { name: "Built-in text models", exact: true });
+  await expect(section.getByRole("progressbar")).toHaveAttribute("aria-valuenow", "42");
+  await section.getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(update).toBeEnabled();
+  await update.click();
+  await page.evaluate(() => {
+    const fixture = Reflect.get(window, "textModelTest");
+    fixture.state.textModels.forEach((model: object) =>
+      Object.assign(model, { runtimeUpdateAvailable: false }),
+    );
+    Object.assign(fixture.state.status, {
+      phase: "idle",
+      message: "Text runtime updated.",
+      progress: 0,
+    });
+    fixture.callbacks["dictation:status"]?.(structuredClone(fixture.state.status));
+    fixture.callbacks["setup:changed"]?.(["catalogs"]);
+  });
+  await expect(page.getByRole("button", { name: "Update runtime", exact: true })).toHaveCount(0);
+  const after = await page.evaluate(() => ({
+    config: Reflect.get(window, "textModelTest").state.textProcessing,
+    calls: Reflect.get(window, "textModelTest").calls,
+  }));
+  expect(after.config).toEqual(before);
+  expect(
+    after.calls.filter((call: unknown) => typeof call === "string" && call.startsWith("install:")),
+  ).toEqual([]);
 });
 
 test("context controls save, follow model limits, and preserve automatic selection", async ({

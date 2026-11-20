@@ -62,8 +62,8 @@ Silicon requires Rosetta; an Intel Mac cannot execute an ARM-only bundle.
 The script verifies pinned source archive hashes, builds each architecture
 separately, combines universal binaries, and places them at:
 
-- `Contents/Resources/whisper/whisper-cli` (Whisper.cpp 1.9.2, Metal enabled).
-- `Contents/Resources/ffmpeg/ffmpeg` (FFmpeg 9.0.2, LGPL v2.1 or later).
+- `Contents/Resources/whisper/whisper-cli` (Whisper.cpp 1.9.5, Metal enabled).
+- `Contents/Resources/ffmpeg/ffmpeg` (FFmpeg 9.1, LGPL v2.1 or later).
 
 It rejects non-system dynamic library dependencies, runs Go tests/vet and
 frontend typechecking, signs the tools and app, and runs a native smoke test.

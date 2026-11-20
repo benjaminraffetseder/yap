@@ -85,6 +85,7 @@ func List(dir string) []Model {
 		p := modelPath(dir, list[i])
 		if len(list[i].Files) > 0 {
 			list[i] = listBundle(dir, list[i], p)
+			list[i].RuntimeUpdateAvailable = list[i].Installed && nativeRuntimeUpdateAvailable(dir, list[i].Kind)
 			continue
 		}
 		if st, err := os.Lstat(p); err == nil && st.Mode().IsRegular() {
@@ -94,7 +95,11 @@ func List(dir string) []Model {
 			if valid, err := verifyModel(context.Background(), p, list[i], true); err == nil && valid {
 				list[i].Installed = true
 				list[i].Path = p
-				list[i].RuntimeUpdateAvailable = nativeRuntimeUpdateAvailable(dir, list[i].Kind)
+				kind := list[i].Kind
+				if kind == "" {
+					kind = "whisper"
+				}
+				list[i].RuntimeUpdateAvailable = nativeRuntimeUpdateAvailable(dir, kind)
 			}
 		}
 	}
@@ -231,8 +236,11 @@ func installModel(ctx context.Context, dir string, model Model, url string, repo
 		return managedModelPath(dir, dest)
 	})
 }
+
+const WhisperRuntimeVersion = "1.9.5"
+
 func RuntimePath(dir string) string {
-	return runtimePathIn(filepath.Join(dir, "runtime", "whisper-1.9.2"))
+	return runtimePathIn(filepath.Join(dir, "runtime", "whisper-"+WhisperRuntimeVersion))
 }
 
 func whisperExecutableName() string {
@@ -256,9 +264,10 @@ func runtimePathIn(root string) string {
 }
 
 var whisperRuntimes = map[string]runtimeAsset{
-	"windows/amd64": {"https://github.com/ggml-org/whisper.cpp/releases/download/v1.9.2/whisper-bin-x64.zip", "49dcc16de826f20bd53d44f947a1ae49dfa81f86cad67a64d80820cb192d674a", 8194445, false},
-	"linux/amd64":   {"https://github.com/ggml-org/whisper.cpp/releases/download/v1.9.2/whisper-bin-ubuntu-x64.tar.gz", "46811a3ecf584307480a220b9ef5ff81b7b22dc41577cbc274ce3afc61f753b1", 9497583, true},
-	"linux/arm64":   {"https://github.com/ggml-org/whisper.cpp/releases/download/v1.9.2/whisper-bin-ubuntu-arm64.tar.gz", "7e26fa6a36d9174d5c0bf033ccbc026c3b5e569e2ee787058241346ef5392719", 4572842, true},
+	// b5454 is the binary build associated with stable Whisper 1.9.5.
+	"windows/amd64": {"https://github.com/ggml-org/whisper.cpp/releases/download/b5454/whisper-bin-x64.zip", "6ba69e3482d7826214f90a6a9c84ca07782aec1e1d0c6a7c30c994fd5d816ccb", 8928640, false},
+	"linux/amd64":   {"https://github.com/ggml-org/whisper.cpp/releases/download/b5454/whisper-bin-ubuntu-x64.tar.gz", "a72becf15d7917f990f6313867a52638b82b7f9ef237fb0c980dac56a135781c", 10364195, true},
+	"linux/arm64":   {"https://github.com/ggml-org/whisper.cpp/releases/download/b5454/whisper-bin-ubuntu-arm64.tar.gz", "6b95ebfc60447df48e70ef00a73bdc3f41679ed2d01ef465827206a2ff325149", 4608377, true},
 }
 
 func InstallRuntime(ctx context.Context, dir string, report func(int64, int64)) (string, error) {

@@ -36,7 +36,7 @@ func TestRealWhisperInstallationAndTranscription(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	req, _ := http.NewRequestWithContext(ctx, "GET", "https://raw.githubusercontent.com/ggml-org/whisper.cpp/v1.9.2/samples/jfk.wav", nil)
+	req, _ := http.NewRequestWithContext(ctx, "GET", "https://raw.githubusercontent.com/ggml-org/whisper.cpp/v1.9.5/samples/jfk.wav", nil)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatal(err)

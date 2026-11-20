@@ -63,6 +63,11 @@ test.beforeEach(async ({ page }) => {
     };
     Object.assign(window, {
       audioSupportTest: {
+        support,
+        snapshot,
+        callbacks,
+        calls: [] as string[],
+        failUpdate: false,
         decline: false,
         complete() {
           Object.assign(support, {
@@ -70,6 +75,7 @@ test.beforeEach(async ({ page }) => {
             managed: true,
             path: "C:\\Yap\\runtime\\ffmpeg\\bin\\ffmpeg.exe",
             message: "Installed by Yap",
+            updateAvailable: false,
           });
           Object.assign(snapshot.status, {
             phase: "idle",
@@ -104,6 +110,17 @@ test.beforeEach(async ({ page }) => {
               });
               callbacks["dictation:status"](structuredClone(snapshot.status));
             },
+            UpdateAudioSupport: async () => {
+              const fixture = Reflect.get(window, "audioSupportTest");
+              fixture.calls.push("update");
+              if (fixture.failUpdate) throw new Error("Synthetic FFmpeg update failure");
+              Object.assign(snapshot.status, {
+                phase: "downloading",
+                message: "Downloading audio support…",
+                progress: 0.42,
+              });
+              callbacks["dictation:status"](structuredClone(snapshot.status));
+            },
             ImportAudio: async () => {
               Object.assign(snapshot.status, {
                 phase: "downloading",
@@ -125,6 +142,58 @@ test.beforeEach(async ({ page }) => {
       },
     });
   });
+});
+
+test("older managed FFmpeg offers an update without importing audio", async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.assign(Reflect.get(window, "audioSupportTest").support, {
+      installed: true,
+      managed: true,
+      updateAvailable: true,
+      path: "C:/Yap/runtime/old-ffmpeg/bin/ffmpeg.exe",
+      message: "Installed by Yap",
+    });
+  });
+  await page.goto("/#/settings?section=advanced");
+  const panel = page.getByRole("region", { name: "Audio support (FFmpeg)", exact: true });
+  const update = panel.getByRole("button", { name: /^Update audio support/ });
+  await expect(update).toBeEnabled();
+  await page.evaluate(() => {
+    Reflect.get(window, "audioSupportTest").failUpdate = true;
+  });
+  await update.click();
+  await expect(
+    panel.getByRole("alert").filter({ hasText: "Synthetic FFmpeg update failure" }),
+  ).toBeVisible();
+  await page.evaluate(() => {
+    Reflect.get(window, "audioSupportTest").failUpdate = false;
+  });
+  await update.click();
+  await expect(panel.getByRole("progressbar")).toHaveAttribute("aria-valuenow", "42");
+  await panel.getByRole("button", { name: "Cancel download", exact: true }).click();
+  await expect(update).toBeEnabled();
+  await update.click();
+  await page.evaluate(() => Reflect.get(window, "audioSupportTest").complete());
+  await expect(update).toHaveCount(0);
+  expect(await page.evaluate(() => Reflect.get(window, "audioSupportTest").calls)).toEqual([
+    "update",
+    "update",
+    "update",
+  ]);
+});
+
+test("external FFmpeg is never offered a managed runtime update", async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.assign(Reflect.get(window, "audioSupportTest").support, {
+      installed: true,
+      managed: false,
+      updateAvailable: false,
+      path: "C:/custom/ffmpeg.exe",
+      message: "Using an existing FFmpeg installation",
+    });
+  });
+  await page.goto("/#/settings?section=advanced");
+  await expect(page.getByRole("button", { name: /^Update audio support/ })).toHaveCount(0);
 });
 
 test("audio support download progress and cancel survive navigation", async ({

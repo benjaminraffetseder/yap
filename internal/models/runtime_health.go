@@ -34,10 +34,15 @@ func IsManagedRuntime(dir, path string) bool {
 	if path == "" {
 		return false
 	}
-	root, _ := filepath.Abs(filepath.Join(dir, "runtime", "whisper-1.9.2"))
 	path, _ = filepath.Abs(path)
-	rel, err := filepath.Rel(root, path)
-	return err == nil && filepath.IsLocal(rel) && rel != "." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
+	for _, name := range []string{"whisper-" + WhisperRuntimeVersion, "whisper-1.9.2"} {
+		root, _ := filepath.Abs(filepath.Join(dir, "runtime", name))
+		rel, err := filepath.Rel(root, path)
+		if err == nil && filepath.IsLocal(rel) && rel != "." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			return true
+		}
+	}
+	return false
 }
 
 // Managed paths are repaired in place; custom selections are never replaced.

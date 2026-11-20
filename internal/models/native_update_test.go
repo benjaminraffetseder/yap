@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -186,5 +187,157 @@ func TestNativeRuntimeUpdateCatalogState(t *testing.T) {
 	}
 	if List(dir)[0].RuntimeUpdateAvailable {
 		t.Fatal("offered an update without an older managed runtime")
+	}
+}
+
+func TestWhisperRuntimeUpdateCommitsSelectionBeforeCleanup(t *testing.T) {
+	for _, failSave := range []bool{false, true} {
+		t.Run(fmt.Sprintf("saveFailure=%t", failSave), func(t *testing.T) {
+			dir := t.TempDir()
+			legacy := filepath.Join(dir, "runtime", "whisper-1.9.2")
+			current := filepath.Join(dir, "runtime", "whisper-"+WhisperRuntimeVersion, whisperExecutableName())
+			for _, folder := range []string{legacy, filepath.Dir(current)} {
+				if err := os.MkdirAll(folder, 0700); err != nil {
+					t.Fatal(err)
+				}
+			}
+			self, err := os.Executable()
+			if err != nil {
+				t.Fatal(err)
+			}
+			data, err := os.ReadFile(self)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(current, data, 0700); err != nil {
+				t.Fatal(err)
+			}
+			called := false
+			saveFailure := errors.New("settings save failed")
+			err = UpdateModelRuntimeWithSelection(context.Background(), dir, "tiny", func(int64, int64) {}, func(path string) error {
+				called = true
+				if path != current {
+					t.Errorf("selected wrong replacement: %s", path)
+				}
+				if _, err := os.Stat(legacy); err != nil {
+					t.Error("removed selected runtime before saving replacement", err)
+				}
+				if failSave {
+					return saveFailure
+				}
+				return nil
+			})
+			if !called || (failSave && !errors.Is(err, saveFailure)) || (!failSave && err != nil) {
+				t.Fatal("unexpected update outcome", called, err)
+			}
+			_, statErr := os.Stat(legacy)
+			if failSave && statErr != nil {
+				t.Fatal("failed save removed the selected runtime", statErr)
+			}
+			if !failSave && !os.IsNotExist(statErr) {
+				t.Fatal("old runtime remains after selection was saved", statErr)
+			}
+		})
+	}
+}
+
+func TestKnownRuntimeCleanupKeepsOtherEngines(t *testing.T) {
+	for _, kind := range []string{"whisper", "moonshine", "text", "ffmpeg"} {
+		t.Run(kind, func(t *testing.T) {
+			dir := t.TempDir()
+			for _, names := range supersededNativeRuntimes {
+				for _, name := range names {
+					if err := os.MkdirAll(filepath.Join(dir, "runtime", name), 0700); err != nil {
+						t.Fatal(err)
+					}
+				}
+			}
+			if !RuntimeUpdateAvailable(dir, kind) {
+				t.Fatal("old runtime not detected")
+			}
+			if err := RemoveSupersededRuntimes(context.Background(), dir, kind); err != nil {
+				t.Fatal(err)
+			}
+			for other, names := range supersededNativeRuntimes {
+				for _, name := range names {
+					_, err := os.Stat(filepath.Join(dir, "runtime", name))
+					if other == kind && !os.IsNotExist(err) {
+						t.Errorf("did not remove %s: %v", name, err)
+					}
+					if other != kind && err != nil {
+						t.Errorf("removed another engine's runtime %s: %v", name, err)
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestSpeechRuntimeUpdateCatalogSupportsWhisperAndMoonshine(t *testing.T) {
+	previous := Catalog
+	t.Cleanup(func() { Catalog = previous })
+	for _, kind := range []string{"whisper", "moonshine"} {
+		t.Run(kind, func(t *testing.T) {
+			dir := t.TempDir()
+			legacy := filepath.Join(dir, "runtime", supersededNativeRuntimes[kind][0])
+			if err := os.MkdirAll(legacy, 0700); err != nil {
+				t.Fatal(err)
+			}
+			m := Model{ID: "tiny", Filename: "fixture.bin", Size: 4, SHA: fmt.Sprintf("%x", sha256.Sum256([]byte("keep")))}
+			if kind == "moonshine" {
+				m = Model{ID: "moonshine-base", Kind: "moonshine", Arch: 1, Files: []ModelFile{{Name: "encoder.ort", Size: 4, SHA: m.SHA}}}
+			}
+			path := modelPath(dir, m)
+			if kind == "moonshine" {
+				if err := os.MkdirAll(path, 0700); err != nil {
+					t.Fatal(err)
+				}
+				data, err := json.Marshal(speech.Bundle{Arch: 1, Files: []speech.BundleFile{{Name: "encoder.ort", Size: 4}}})
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(filepath.Join(path, speech.BundleManifest), data, 0600); err != nil {
+					t.Fatal(err)
+				}
+				path = filepath.Join(path, "encoder.ort")
+			}
+			if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(path, []byte("keep"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			Catalog = []Model{m}
+			list := List(dir)
+			if len(list) != 1 || !list[0].Installed || !list[0].RuntimeUpdateAvailable {
+				t.Fatal("installed speech model lost its runtime update action", list)
+			}
+		})
+	}
+}
+
+func TestRuntimeReferencesResolvePATHAliases(t *testing.T) {
+	dir := t.TempDir()
+	legacy := filepath.Join(dir, "runtime", "whisper-1.9.2")
+	if err := os.MkdirAll(legacy, 0700); err != nil {
+		t.Fatal(err)
+	}
+	name := whisperExecutableName()
+	path := filepath.Join(legacy, name)
+	if err := os.WriteFile(path, []byte("executable fixture"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", legacy)
+	linked, err := ReferencesSupersededRuntime(dir, name, "whisper")
+	if err != nil || !linked {
+		t.Fatal("PATH alias into previous runtime was not detected", linked, err)
+	}
+	custom := filepath.Join(dir, name)
+	if err := os.WriteFile(custom, []byte("custom fixture"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	linked, err = ReferencesSupersededRuntime(dir, custom, "whisper")
+	if err != nil || linked {
+		t.Fatal("independent custom executable treated as an old managed runtime", linked, err)
 	}
 }
