@@ -148,7 +148,7 @@ func TestBackupAppPreviewRestoreAndDeviceState(t *testing.T) {
 	if _, err := a.RestoreBackup(preview.ID, true); err != nil {
 		t.Fatal(err)
 	}
-	if a.settings != local || a.pendingBackup != nil {
+	if a.settings != local || a.backups.HasPreview() {
 		t.Fatal("local device state changed or archive remained open")
 	}
 	if _, err := a.RestoreBackup(preview.ID, true); err == nil {
@@ -161,7 +161,7 @@ func TestBackupAppPreviewRestoreAndDeviceState(t *testing.T) {
 	if err := a.DiscardBackupPreview(preview.ID); err != nil {
 		t.Fatal(err)
 	}
-	if a.pendingBackup != nil {
+	if a.backups.HasPreview() {
 		t.Fatal("cancelled preview remained open")
 	}
 	for _, phase := range []string{"backup", "recording", "transcribing", "downloading", "mic-test", "diagnostic-transcribing", "text-processing"} {
@@ -176,7 +176,7 @@ func TestBackupAppPreviewRestoreAndDeviceState(t *testing.T) {
 	a.status.Phase = "idle"
 	a.previewBackup(path)
 	a.shutdown(a.ctx)
-	if a.pendingBackup != nil {
+	if a.backups.HasPreview() {
 		t.Fatal("shutdown leaked preview")
 	}
 	if err := os.Remove(path); err != nil {
@@ -209,14 +209,14 @@ func TestBackupBlocksOtherOperationsAndDeferredDiscard(t *testing.T) {
 	if err := a.DiscardBackupPreview(preview.ID); err != nil {
 		t.Fatal(err)
 	}
-	if a.pendingBackup == nil {
+	if !a.backups.HasPreview() {
 		t.Fatal("closed in-use preview too early")
 	}
 	a.mu.Lock()
 	a.finishBackupLocked(previous)
 	a.mu.Unlock()
 	a.wg.Done()
-	if a.pendingBackup != nil {
+	if a.backups.HasPreview() {
 		t.Fatal("navigation leaked in-use preview")
 	}
 }

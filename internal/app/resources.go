@@ -56,13 +56,14 @@ func (a *App) GetConfiguration() (Configuration, error) {
 
 func (a *App) configurationLocked() Configuration {
 	config, _ := textmodel.Normalize(a.textConfig)
+	library := a.profiles.Library()
 	modified := false
-	for _, p := range a.profileLibrary.Profiles {
-		if p.ID == a.profileLibrary.ActiveID {
+	for _, p := range library.Profiles {
+		if p.ID == library.ActiveID {
 			modified = !p.Matches(a.settings, a.textConfig)
 		}
 	}
-	return Configuration{Settings: a.settings, TextProcessing: config, AppProfileRules: append([]storage.AppProfileRule{}, a.profileLibrary.AppRules...), ProfileShortcut: a.profileLibrary.ProfileShortcut, DictationProfiles: append([]storage.DictationProfile{}, a.profileLibrary.Profiles...), ActiveProfileID: a.profileLibrary.ActiveID, DefaultProfileID: a.profileLibrary.DefaultID, ProfileModified: modified, Ready: speech.Validate(speech.Options{Executable: a.settings.WhisperPath, Model: a.settings.ModelPath}) == nil}
+	return Configuration{Settings: a.settings, TextProcessing: config, AppProfileRules: append([]storage.AppProfileRule{}, library.AppRules...), ProfileShortcut: library.ProfileShortcut, DictationProfiles: append([]storage.DictationProfile{}, library.Profiles...), ActiveProfileID: library.ActiveID, DefaultProfileID: library.DefaultID, ProfileModified: modified, Ready: speech.Validate(speech.Options{Executable: a.settings.WhisperPath, Model: a.settings.ModelPath}) == nil}
 }
 
 func (a *App) GetVocabulary() ([]vocabulary.Entry, error) {

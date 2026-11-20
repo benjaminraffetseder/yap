@@ -39,6 +39,13 @@ shortcuts through Wails. Use the desktop app to test those.
 | -------------------- | --------------------------------------------------------------------------- |
 | `main.go`            | App entry point, embedded assets, and release metadata                       |
 | `internal/app`       | Desktop setup, recording state, and methods exposed to the frontend          |
+| `internal/app/profiles` | Profile library, default baseline, application rules, and selection policy |
+| `internal/app/conversations` | Saved chat turns, model context, compaction, and reply actions          |
+| `internal/app/transcriptexport` | Saved transcript selection, export snapshots, formatting, and files |
+| `internal/app/backups` | Preview archive ownership, restore tokens, and portable preferences        |
+| `internal/app/homeresult` | Current result resolution, revisions, and edit/save/copy actions          |
+| `internal/app/updating` | Update operation policy, staging context, and package-download workflow    |
+| `internal/app/textprocessing` | Text request preparation, prompt recipes, titles, and inference stats |
 | `internal/audio`     | Capture, decoding, and WAV import                                           |
 | `internal/platform`  | Global shortcuts and text insertion                                         |
 | `internal/tray`      | Wails v3 system tray menu and recording-state adapter                       |
@@ -58,10 +65,24 @@ Keep platform-specific code in the existing `_windows`, `_darwin`, `_linux`, and
 `_other` files with matching build tags. Bound Go structs use camelCase JSON fields.
 Wails generates `frontend/bindings`; don't edit it by hand.
 
-Application files and their tests share the `internal/app` package. `main.go`
-passes embedded assets and release metadata to `app.Run`; desktop lifecycle
-hooks and mutable application state stay inside the package. After changing
-bound Go types or methods, regenerate with `wails3 generate bindings -ts -i -names`.
+`main.go` passes embedded assets and release metadata to `app.Run`. `App` stays
+the Wails API and owns desktop integration, operation arbitration, cancellation,
+and shutdown. Its feature packages own business rules and storage workflows;
+they do not import the parent `app` package or start background workers.
+
+Serialize stateful profile, backup, and update service methods with `App.mu`;
+shutdown can close backup handles after all workers have drained.
+Conversation and text request preparation run under that lock; inference runs
+outside it, and each completed recipe step is committed under the lock before
+dependent steps start. Home result actions and export file writes run outside
+the lock within their existing reservations or snapshots.
+
+Check cancellation before publishing a backup preview. Its archive stays open
+until restore completes or a pending discard can finish. The updater context
+survives staging and native-window retries until shutdown cancels it. Keep tests
+for feature rules in their package and cross-feature/lifecycle tests against
+`App`. After changing bound Go types or methods, regenerate with
+`wails3 generate bindings -ts -i -names`.
 
 The main UI and floating indicator are separate Vite entry points. Keep the
 indicator in `frontend/src/features/indicator/components/indicator.tsx`, mounted by

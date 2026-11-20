@@ -26,30 +26,12 @@ func (a *App) currentProfileApplication() string {
 // Rules affect the captured settings only. The manual profile and its unsaved
 // modifications remain the fallback for unassigned apps, imports and UI recording.
 func (a *App) recordingConfiguration(external bool) (storage.Settings, textmodel.Config, string, error) {
-	settings, config, id := a.settings, a.textConfig, a.profileLibrary.ActiveID
-	if !external {
-		return settings, config, id, nil
+	application := ""
+	if external {
+		application = a.currentProfileApplication()
 	}
-	app := a.currentProfileApplication()
-	if a.profileOverridePending && app == a.profileOverrideApp {
-		return settings, config, id, nil
-	}
-	for _, rule := range a.profileLibrary.AppRules {
-		if app != rule.ApplicationID {
-			continue
-		}
-		for _, profile := range a.profileLibrary.Profiles {
-			if profile.ID == rule.ProfileID {
-				settings, config, err := a.profileConfiguration(profile)
-				if err != nil {
-					return settings, config, id, fmt.Errorf("automatic profile %s: %w", profile.Name, err)
-				}
-				return settings, config, profile.ID, nil
-			}
-		}
-		return settings, config, id, errors.New("automatic dictation profile is unavailable; update its application rule in Settings")
-	}
-	return settings, config, id, nil
+	selection, err := a.profiles.Resolve(external, application, a.settings, a.textConfig)
+	return selection.Settings, selection.Config, selection.ID, err
 }
 
 func (a *App) SaveProfileAutomation(rules []storage.AppProfileRule, shortcut string) error {
@@ -58,23 +40,12 @@ func (a *App) SaveProfileAutomation(rules []storage.AppProfileRule, shortcut str
 	if err := a.profilesAvailableLocked(); err != nil {
 		return err
 	}
-	shortcut = strings.TrimSpace(shortcut)
-	if shortcut != "" {
-		if _, _, err := platform.ParseShortcut(shortcut); err != nil {
-			return err
-		}
-		if platform.SameShortcut(shortcut, a.settings.Shortcut) {
-			return errors.New("recording and profile cycling must use different shortcuts")
-		}
-	}
-	library := a.profileLibrary
-	library.AppRules, library.ProfileShortcut = rules, shortcut
-	library, err := storage.NormalizeProfiles(library)
+	automation, err := a.profiles.PrepareAutomation(rules, shortcut, a.settings.Shortcut)
 	if err != nil {
 		return err
 	}
-	old := a.profileLibrary
-	changed := old.ProfileShortcut != shortcut
+	shortcut = automation.Shortcut()
+	changed := a.profiles.Shortcut() != shortcut
 	if changed {
 		a.closeProfileShortcut()
 		registrationErr := a.registerProfileShortcutFor(shortcut)
@@ -83,7 +54,6 @@ func (a *App) SaveProfileAutomation(rules []storage.AppProfileRule, shortcut str
 		}
 		if shortcut != "" && a.profileShortcut == nil {
 			failure := a.status.ProfileShortcutError
-			a.profileLibrary = old
 			if !errors.Is(registrationErr, context.Canceled) && !errors.Is(registrationErr, context.DeadlineExceeded) {
 				a.registerProfileShortcut()
 			}
@@ -91,16 +61,13 @@ func (a *App) SaveProfileAutomation(rules []storage.AppProfileRule, shortcut str
 			return fmt.Errorf("profile shortcut could not be registered: %s; your saved shortcut is unchanged", failure)
 		}
 	}
-	if err := a.store.SaveDictationProfiles(library); err != nil {
+	if err := a.profiles.SaveAutomation(a.store, automation); err != nil {
 		if changed {
 			a.closeProfileShortcut()
-			a.profileLibrary = old
 			a.registerProfileShortcut()
 		}
 		return err
 	}
-	a.profileLibrary = library
-	a.profileOverridePending = false
 	a.event("setup:changed", []string{"configuration"})
 	return nil
 }
@@ -114,7 +81,7 @@ func (a *App) closeProfileShortcut() {
 }
 
 func (a *App) registerProfileShortcut() error {
-	return a.registerProfileShortcutFor(a.profileLibrary.ProfileShortcut)
+	return a.registerProfileShortcutFor(a.profiles.Shortcut())
 }
 
 func (a *App) registerProfileShortcutFor(value string) error {
@@ -169,35 +136,10 @@ func (a *App) CycleDictationProfile() error {
 }
 
 func (a *App) cycleDictationProfileLocked() (string, error) {
-	profiles := a.profileLibrary.Profiles
-	if len(profiles) == 0 {
-		return "", errors.New("create a dictation profile in Settings first")
+	selection, err := a.profiles.Cycle(a.store, a.currentProfileApplication(), a.settings, a.textConfig)
+	if err != nil {
+		return "", err
 	}
-	app := a.currentProfileApplication()
-	id := a.profileLibrary.ActiveID
-	if !a.profileOverridePending || a.profileOverrideApp != app {
-		for _, rule := range a.profileLibrary.AppRules {
-			if rule.ApplicationID == app {
-				id = rule.ProfileID
-			}
-		}
-	}
-	index := -1
-	for i, p := range profiles {
-		if p.ID == id {
-			index = i
-		}
-	}
-	for offset := 1; offset <= len(profiles); offset++ {
-		p := profiles[(index+offset)%len(profiles)]
-		if _, _, err := a.profileConfiguration(p); err != nil {
-			continue
-		}
-		if err := a.applyDictationProfileLocked(p.ID); err != nil {
-			return "", err
-		}
-		a.profileOverrideApp, a.profileOverridePending = app, true
-		return p.Name, nil
-	}
-	return "", errors.New("no available profiles; check speech models and prompts in Settings")
+	a.publishProfileLocked(selection)
+	return selection.Name, nil
 }

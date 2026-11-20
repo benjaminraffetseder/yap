@@ -56,7 +56,7 @@ func TestAutomaticProfileCapturesConfigurationWithoutChangingManualFallback(t *t
 	if fake.options.Language != "de" || a.status.Transcript != "Email result" {
 		t.Fatal("automatic configuration did not reach inference", fake.options, a.status)
 	}
-	if a.settings != before || !reflect.DeepEqual(config, a.textConfig) || a.profileLibrary.ActiveID != manual.ID {
+	if a.settings != before || !reflect.DeepEqual(config, a.textConfig) || a.profiles.ActiveID() != manual.ID {
 		t.Fatal("automatic rule changed manual settings")
 	}
 	a.hotkeyDown()
@@ -106,7 +106,7 @@ func TestCycleProfilesSkipsUnavailableAndOverridesRuleForOneRecording(t *testing
 	if err := a.CycleDictationProfile(); err != nil {
 		t.Fatal(err)
 	}
-	if a.profileLibrary.ActiveID != manual.ID || a.profileLibrary.ActiveID == broken.ID {
+	if a.profiles.ActiveID() != manual.ID || a.profiles.ActiveID() == broken.ID {
 		t.Fatal("cycle did not skip unavailable profile")
 	}
 	a.hotkeyDown()
@@ -158,11 +158,11 @@ func TestProfileShortcutRollbackCaptureAndStaleCallbacks(t *testing.T) {
 		t.Fatal("accepted occupied shortcut")
 	}
 	saved, _ := a.store.DictationProfiles()
-	if saved.ProfileShortcut != "Ctrl+Alt+P" || a.profileLibrary.ProfileShortcut != saved.ProfileShortcut || a.profileShortcut == nil || oldKey.closed != 1 {
+	if saved.ProfileShortcut != "Ctrl+Alt+P" || a.profiles.Shortcut() != saved.ProfileShortcut || a.profileShortcut == nil || oldKey.closed != 1 {
 		t.Fatal("conflicting shortcut did not restore old state")
 	}
 	oldCallback()
-	if a.profileLibrary.ActiveID != manual.ID {
+	if a.profiles.ActiveID() != manual.ID {
 		t.Fatal("retired registration cycled profiles")
 	}
 	currentKey := registrations["Ctrl+Alt+P"]
@@ -172,7 +172,7 @@ func TestProfileShortcutRollbackCaptureAndStaleCallbacks(t *testing.T) {
 		t.Fatal("capture retained profile shortcut", err)
 	}
 	currentCallback()
-	if a.profileLibrary.ActiveID != manual.ID {
+	if a.profiles.ActiveID() != manual.ID {
 		t.Fatal("profile cycled during capture")
 	}
 	if err := a.EndShortcutCapture(token); err != nil || a.profileShortcut == nil {
@@ -193,7 +193,7 @@ func TestProfileShortcutRollbackCaptureAndStaleCallbacks(t *testing.T) {
 		t.Fatal("shortcut not disabled", err)
 	}
 	lastCallback()
-	if a.profileLibrary.ActiveID != manual.ID {
+	if a.profiles.ActiveID() != manual.ID {
 		t.Fatal("disabled shortcut callback was not retired")
 	}
 }
@@ -217,7 +217,7 @@ func TestProfileAutomationDeleteAndSaveFailurePreserveLibrary(t *testing.T) {
 	if err := a.SaveProfileAutomation(nil, "Ctrl+Alt+Q"); err == nil {
 		t.Fatal("save succeeded with unavailable storage")
 	}
-	if a.profileLibrary.ProfileShortcut != "Ctrl+Alt+P" || a.profileShortcut == nil {
+	if a.profiles.Shortcut() != "Ctrl+Alt+P" || a.profileShortcut == nil {
 		t.Fatal("failed persistence changed registered shortcut")
 	}
 }

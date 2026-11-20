@@ -13,7 +13,7 @@ func (a *App) RetryShortcut() error {
 	if a.busy() {
 		return errors.New("finish the current operation before retrying the shortcut")
 	}
-	if a.shortcut != nil && (a.profileShortcut != nil || a.profileLibrary.ProfileShortcut == "") {
+	if a.shortcut != nil && (a.profileShortcut != nil || a.profiles.Shortcut() == "") {
 		return nil
 	}
 	a.registerMissingShortcutsLocked()

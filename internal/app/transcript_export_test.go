@@ -129,8 +129,8 @@ func TestTranscriptExportSingleFileFormatsSelectionAndSnapshot(t *testing.T) {
 	request := TranscriptExportRequest{SessionIDs: []string{"one"}, Format: "markdown", Destination: "file", IncludeOutputs: true, OutputIDs: []string{outputs[1]}}
 	destination := filepath.Join(t.TempDir(), "output.md")
 	summary, err := a.exportTranscripts(request, func(plan transcriptExportPlan) (string, error) {
-		if !strings.HasSuffix(plan.filename, ".md") || strings.Contains(plan.filename, "/") {
-			t.Fatal("invalid suggested filename:", plan.filename)
+		if !strings.HasSuffix(plan.Filename(), ".md") || strings.Contains(plan.Filename(), "/") {
+			t.Fatal("invalid suggested filename:", plan.Filename())
 		}
 		// Opening the picker must release the app lock and keep the saved snapshot.
 		if err := a.DeleteSessionOutput("one", outputs[1]); err != nil {
@@ -296,23 +296,5 @@ func TestTranscriptExportCancellationAndWriteErrors(t *testing.T) {
 		if result != nil || err == nil {
 			t.Fatalf("%s write failure reported as success", destination)
 		}
-	}
-}
-
-func TestTranscriptExportNamesStayPortable(t *testing.T) {
-	for _, input := range []string{"../\\bad:*?\"<>|", "CON", "NUL.txt", "COM1", "LPT¹", " . ", "é日本語😀", strings.Repeat("界", 200), "a\n\x00b"} {
-		name := safeExportName(input, "output")
-		if name == "" || name == "." || name == ".." || strings.ContainsAny(name, "<>:\"/\\|?*\n\x00") || len(name) > 200 || strings.HasSuffix(name, ".") {
-			t.Fatalf("unsafe filename %q for %q", name, input)
-		}
-		if strings.HasPrefix(input, "CON") || strings.HasPrefix(input, "NUL") || strings.HasPrefix(input, "COM1") || strings.HasPrefix(input, "LPT") {
-			if !strings.HasPrefix(name, "_") {
-				t.Fatalf("reserved device name: %s", name)
-			}
-		}
-	}
-	used := map[string]bool{}
-	if uniqueExportName("Summary", ".md", used) != "Summary.md" || uniqueExportName("summary", ".md", used) != "summary-2.md" {
-		t.Fatal("case-insensitive collision was not handled")
 	}
 }

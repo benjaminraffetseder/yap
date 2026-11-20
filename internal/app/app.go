@@ -12,6 +12,9 @@ import (
 	"sync/atomic"
 	"time"
 
+	"yap/internal/app/backups"
+	"yap/internal/app/profiles"
+	"yap/internal/app/updating"
 	"yap/internal/audio"
 	"yap/internal/cleanup"
 	"yap/internal/indicator"
@@ -22,7 +25,6 @@ import (
 	"yap/internal/startup"
 	"yap/internal/storage"
 	"yap/internal/tray"
-	"yap/internal/updates"
 	"yap/internal/vocabulary"
 
 	"github.com/google/uuid"
@@ -96,24 +98,17 @@ type App struct {
 	importPumpPending                bool
 	profileShortcut                  shortcutRegistration
 	profileShortcutGeneration        uint64
-	profileOverrideApp               string
-	profileOverridePending           bool
 	activeApplication                func() string
-	profileLibrary                   storage.ProfileLibrary
+	profiles                         profiles.Service
 	latestResult                     *TemporaryResult
 	homeResult                       *HomeResult
 	homeResultHidden                 bool
 	homeResultOperation              bool
 	homeResultReadMu                 sync.Mutex
 	homeHistory                      []storage.Session
-	updateChecker                    *updates.Checker
-	updateContext                    context.Context
-	updateCancel                     context.CancelFunc
-	updateRunning                    bool
-	pendingBackup                    *storage.BackupArchive
-	backupPreviewID                  string
+	updating                         updating.Service
+	backups                          backups.Service
 	backupHistory                    []storage.Session
-	discardBackupAfterOperation      bool
 	textConfig                       textmodel.Config
 	recordTextConfig                 textmodel.Config
 	textEngine                       textmodel.Engine
@@ -219,8 +214,7 @@ func (a *App) startup(ctx context.Context) {
 		return
 	}
 	a.settings.WhisperPath = models.PreferredRuntime(a.settings.WhisperPath)
-	a.profileLibrary, err = a.store.DictationProfiles()
-	if err != nil {
+	if err := a.profiles.Load(a.store); err != nil {
 		a.fail(fmt.Errorf("could not load dictation profiles: %w", err))
 		return
 	}
@@ -412,9 +406,7 @@ func (a *App) shutdown(ctx context.Context) {
 		a.latestResult = nil
 		a.clearHomeResultLocked()
 		a.status.Transcript = ""
-		if a.updateCancel != nil {
-			a.updateCancel()
-		}
+		a.updating.Cancel()
 		a.shortcutCaptureID = ""
 		if a.shortcutCaptureTimer != nil {
 			a.shortcutCaptureTimer.Stop()
@@ -454,10 +446,7 @@ func (a *App) shutdown(ctx context.Context) {
 		if engine, ok := a.textEngine.(interface{ Close() }); ok {
 			engine.Close()
 		}
-		if a.pendingBackup != nil {
-			a.pendingBackup.Close()
-			a.pendingBackup = nil
-		}
+		_ = a.backups.Close()
 		if a.indicator != nil {
 			a.indicator.Close()
 		}
@@ -481,12 +470,7 @@ func (a *App) emit() {
 			if !a.recordSettings.SaveHistory {
 				historyMode = "Not saving"
 			}
-			profileName := ""
-			for _, p := range a.profileLibrary.Profiles {
-				if p.ID == a.status.ProfileID {
-					profileName = p.Name
-				}
-			}
+			profileName := a.profiles.ProfileName(a.status.ProfileID)
 			a.indicator.Update(indicator.State{SessionID: a.id, ProfileName: profileName, HistoryMode: historyMode, Phase: a.status.Phase, Message: a.status.Message, StartedAt: a.status.StartedAt, Warning: a.status.CompletionWarning})
 			if a.status.Phase != "recording" && a.status.Phase != "transcribing" {
 				a.indicatorActive = false
@@ -673,7 +657,7 @@ func (a *App) start(external bool) error {
 	a.status.Transcript = ""
 	a.status.StartedAt = time.Now().UnixMilli()
 	if external {
-		a.profileOverridePending = false
+		a.profiles.ClearOverride()
 	}
 	a.status.Progress = 0
 	a.emit()
@@ -998,7 +982,7 @@ func (a *App) SaveSettings(settings storage.Settings) error {
 	if _, _, err := platform.ParseShortcut(settings.Shortcut); err != nil {
 		return err
 	}
-	if platform.SameShortcut(settings.Shortcut, a.profileLibrary.ProfileShortcut) {
+	if platform.SameShortcut(settings.Shortcut, a.profiles.Shortcut()) {
 		return errors.New("recording and profile cycling must use different shortcuts")
 	}
 	if settings.MicrophoneID != "" && settings.MicrophoneID != a.settings.MicrophoneID {

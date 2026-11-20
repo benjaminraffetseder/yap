@@ -5,9 +5,8 @@ import (
 	"errors"
 	"time"
 
+	"yap/internal/app/backups"
 	"yap/internal/storage"
-
-	"github.com/google/uuid"
 )
 
 func (a *App) backupAvailableLocked() error {
@@ -55,11 +54,7 @@ func (a *App) beginBackupLocked(message string) (Status, context.Context, error)
 func (a *App) finishBackupLocked(previous Status) {
 	a.cancel()
 	a.cancel = nil
-	if a.discardBackupAfterOperation && a.pendingBackup != nil {
-		a.pendingBackup.Close()
-		a.pendingBackup, a.backupPreviewID = nil, ""
-	}
-	a.discardBackupAfterOperation = false
+	a.backups.Finish()
 	a.backupHistory = nil
 	a.status = previous
 	a.emit()
@@ -94,17 +89,14 @@ func (a *App) exportBackup(path string, includeAudio bool) (*storage.BackupSumma
 		return nil, err
 	}
 	defer a.wg.Done()
-	summary, err := a.store.ExportBackup(ctx, path, includeAudio)
-	if err != nil && ctx.Err() != nil {
-		err = errors.New("backup cancelled; no changes were saved")
-	}
+	summary, err := backups.Export(ctx, a.store, path, includeAudio)
 	a.mu.Lock()
 	a.finishBackupLocked(previous)
 	a.mu.Unlock()
 	if err != nil {
 		return nil, err
 	}
-	return &summary, nil
+	return summary, nil
 }
 
 func (a *App) PreviewBackup() (*storage.BackupPreview, error) {
@@ -126,22 +118,14 @@ func (a *App) previewBackup(path string) (*storage.BackupPreview, error) {
 		a.mu.Unlock()
 		return nil, err
 	}
-	if a.pendingBackup != nil {
-		a.pendingBackup.Close()
-		a.pendingBackup = nil
-		a.backupPreviewID = ""
-	}
+	_ = a.backups.Close()
 	previous, ctx, err := a.beginBackupLocked("Checking backup…")
 	a.mu.Unlock()
 	if err != nil {
 		return nil, err
 	}
 	defer a.wg.Done()
-	archive, err := storage.ReadBackup(ctx, path)
-	var summary storage.BackupSummary
-	if err == nil {
-		summary, err = a.store.PreviewBackup(ctx, archive)
-	}
+	preview, err := backups.Inspect(ctx, a.store, path)
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	// Check under the same lock as Cancel before publishing the preview.
@@ -153,18 +137,13 @@ func (a *App) previewBackup(path string) (*storage.BackupPreview, error) {
 	}
 	a.finishBackupLocked(previous)
 	if err != nil || a.closing {
-		if archive != nil {
-			archive.Close()
-		}
+		_ = preview.Close()
 		if err == nil {
 			err = errors.New("app is shutting down")
 		}
 		return nil, err
 	}
-	a.pendingBackup, a.backupPreviewID = archive, uuid.NewString()
-	preview := archive.Preview(summary, path)
-	preview.ID = a.backupPreviewID
-	return &preview, nil
+	return a.backups.Publish(preview), nil
 }
 
 func (a *App) DiscardBackupPreview(id string) error {
@@ -173,16 +152,7 @@ func (a *App) DiscardBackupPreview(id string) error {
 	if a.closing {
 		return nil
 	}
-	if id != a.backupPreviewID || a.pendingBackup == nil {
-		return nil
-	}
-	if a.status.Phase == "backup" {
-		a.discardBackupAfterOperation = true
-		return nil
-	}
-	err := a.pendingBackup.Close()
-	a.pendingBackup, a.backupPreviewID = nil, ""
-	return err
+	return a.backups.Discard(id, a.status.Phase == "backup")
 }
 
 func (a *App) RestoreBackup(id string, preferences bool) (storage.BackupSummary, error) {
@@ -191,36 +161,29 @@ func (a *App) RestoreBackup(id string, preferences bool) (storage.BackupSummary,
 		a.mu.Unlock()
 		return storage.BackupSummary{}, err
 	}
-	if id == "" || id != a.backupPreviewID || a.pendingBackup == nil {
+	archive, err := a.backups.Archive(id)
+	if err != nil {
 		a.mu.Unlock()
-		return storage.BackupSummary{}, errors.New("select and preview a backup before restoring")
+		return storage.BackupSummary{}, err
 	}
-	archive := a.pendingBackup
 	previous, ctx, err := a.beginBackupLocked("Restoring backup…")
 	a.mu.Unlock()
 	if err != nil {
 		return storage.BackupSummary{}, err
 	}
 	defer a.wg.Done()
-	result, err := a.store.RestoreBackup(ctx, archive, preferences)
-	if err != nil && ctx.Err() != nil {
-		err = errors.New("restore cancelled; no changes were saved")
-	}
+	result, err := backups.Restore(ctx, a.store, archive, preferences)
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if err == nil {
 		// Startup reconciles some machine settings in memory. A SQL snapshot
 		// cannot replace those effective values, even on a portable restore.
 		if preferences {
-			v := result.Settings
-			a.settings.Language, a.settings.Interaction, a.settings.AutoPaste, a.settings.SaveAudio, a.settings.CleanText = v.Language, v.Interaction, v.AutoPaste, v.SaveAudio, v.CleanText
-			a.settings.AutoCopy = v.AutoCopy
-			a.settings.SaveHistory = v.SaveHistory
+			a.settings = backups.PortableSettings(a.settings, result.Settings)
 		}
 		a.textConfig, a.vocabulary = result.TextProcessing, result.Vocabulary
 		a.diagnostic = DiagnosticResult{}
-		archive.Close()
-		a.pendingBackup, a.backupPreviewID = nil, ""
+		_ = a.backups.Close()
 	}
 	a.finishBackupLocked(previous)
 	if err == nil && !a.closing {

@@ -14,7 +14,13 @@ import (
 
 func TestShortcutPermissionWaitLeavesStateResponsiveAndCancellable(t *testing.T) {
 	a := testApp(t)
-	a.profileLibrary.ProfileShortcut = "Ctrl+Alt+P"
+	automation, err := a.profiles.PrepareAutomation(nil, "Ctrl+Alt+P", a.settings.Shortcut)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := a.profiles.SaveAutomation(a.store, automation); err != nil {
+		t.Fatal(err)
+	}
 	a.registerKey = nil
 	started := make(chan struct{})
 	var calls atomic.Int32
@@ -193,7 +199,7 @@ func TestCancelShortcutSavePreservesConfigurationWithoutAnotherPrompt(t *testing
 				if err := a.SaveProfileAutomation(nil, "Ctrl+Alt+P"); err != nil {
 					t.Fatal(err)
 				}
-				old = a.profileLibrary.ProfileShortcut
+				old = a.profiles.Shortcut()
 				save = func() error { return a.SaveProfileAutomation(nil, "Ctrl+Alt+Q") }
 			}
 			a.registerKey = nil
@@ -231,7 +237,7 @@ func TestCancelShortcutSavePreservesConfigurationWithoutAnotherPrompt(t *testing
 			settings, err := a.store.Settings()
 			saved := settings.Shortcut
 			if profile {
-				current = a.profileLibrary.ProfileShortcut
+				current = a.profiles.Shortcut()
 				library, readErr := a.store.DictationProfiles()
 				saved, err = library.ProfileShortcut, readErr
 			}

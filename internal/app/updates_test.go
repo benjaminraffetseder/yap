@@ -68,8 +68,7 @@ func (e *testUpdateEngine) Restart(context.Context) error {
 }
 
 func setTestUpdater(a *App, engine updates.Engine) {
-	a.updateChecker = updates.NewForPlatform(a.version, a.updateRepository, filepath.Join(a.store.Dir, "update-check.json"), engine, "windows", "amd64")
-	a.updateContext, a.updateCancel = context.WithCancel(a.ctx)
+	a.updating.Initialize(a.ctx, updates.NewForPlatform(a.version, a.updateRepository, filepath.Join(a.store.Dir, "update-check.json"), engine, "windows", "amd64"))
 }
 
 func TestUpdateInstallUsesWailsAndKeepsWindowContextAlive(t *testing.T) {
@@ -192,32 +191,5 @@ func TestUpdaterUsesSuppliedReleaseMetadata(t *testing.T) {
 				}
 			}
 		})
-	}
-}
-
-func TestLinuxPackageDownloadRechecksWithoutStagingOrRestarting(t *testing.T) {
-	engine := &testUpdateEngine{release: &updater.Release{
-		Version: "99.0.0", Artifact: updater.Artifact{Filename: "yap-99.0.0-linux-amd64.deb"},
-		Metadata: map[string]any{"github.release.tag": "v99.0.0"},
-	}}
-	checker := updates.NewForPlatform("0.11.0", "owner/yap", filepath.Join(t.TempDir(), "updates.json"), engine, "linux", "amd64")
-	checker.Check(context.Background(), true)
-	opened := ""
-	open := func(_ context.Context, url string) error { opened = url; return nil }
-	if err := openPackageUpdate(context.Background(), checker, open); err != nil {
-		t.Fatal(err)
-	}
-	if opened != "https://github.com/owner/yap/releases/download/v99.0.0/yap-99.0.0-linux-amd64.deb" || engine.checks != 2 || engine.installs != 0 || engine.restarts != 0 {
-		t.Fatalf("incorrect package download: %q, %+v", opened, engine)
-	}
-	engine.checkError = errors.New("offline")
-	opened = ""
-	if err := openPackageUpdate(context.Background(), checker, open); err == nil || opened != "" {
-		t.Fatal("opened a cached download after a failed recheck")
-	}
-	engine.checkError = nil
-	browserError := errors.New("browser unavailable")
-	if err := openPackageUpdate(context.Background(), checker, func(context.Context, string) error { return browserError }); !errors.Is(err, browserError) {
-		t.Fatalf("browser error hidden: %v", err)
 	}
 }

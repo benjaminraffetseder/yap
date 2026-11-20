@@ -97,7 +97,7 @@ func TestDictationProfilesUnavailableResourcesPreserveConfiguration(t *testing.T
 			if err := a.ApplyDictationProfile(p.ID); err == nil {
 				t.Fatal("unavailable profile applied")
 			}
-			if settings != a.settings || !reflect.DeepEqual(config, a.textConfig) || a.profileLibrary.ActiveID != "" {
+			if settings != a.settings || !reflect.DeepEqual(config, a.textConfig) || a.profiles.ActiveID() != "" {
 				t.Fatal("failed application changed configuration")
 			}
 		})
@@ -135,14 +135,14 @@ func TestDictationProfilesBusyEditsAndDeletion(t *testing.T) {
 	if _, err := a.SaveDictationProfile(p); err != nil {
 		t.Fatal(err)
 	}
-	if len(a.profileLibrary.Profiles) != 1 {
+	if len(a.profiles.Library().Profiles) != 1 {
 		t.Fatal("edit duplicated profile")
 	}
 	settings := a.settings
 	if err := a.DeleteDictationProfile(p.ID); err != nil {
 		t.Fatal(err)
 	}
-	if len(a.profileLibrary.Profiles) != 0 || a.profileLibrary.ActiveID != "" || settings != a.settings {
+	if len(a.profiles.Library().Profiles) != 0 || a.profiles.ActiveID() != "" || settings != a.settings {
 		t.Fatal("deleting profile changed dictation settings")
 	}
 }
@@ -255,7 +255,7 @@ func TestModifiedProfileTracksOnlyProfileSettings(t *testing.T) {
 			if err := a.ensureDefaultProfileLocked(); err != nil {
 				t.Fatal(err)
 			}
-			baseline := a.profileLibrary.Profiles[0]
+			baseline := a.profiles.Library().Profiles[0]
 			modified := true
 			switch field {
 			case "model":
@@ -286,7 +286,7 @@ func TestDefaultCannotBeDeletedAndSelectedDeletionKeepsLiveSettings(t *testing.T
 	if err := a.ensureDefaultProfileLocked(); err != nil {
 		t.Fatal(err)
 	}
-	baseline := a.profileLibrary.Profiles[0]
+	baseline := a.profiles.Library().Profiles[0]
 	if err := a.DeleteDictationProfile(baseline.ID); err == nil {
 		t.Fatal("deleted Default")
 	}
