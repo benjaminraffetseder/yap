@@ -11,8 +11,9 @@ import {
 import { DictationPreview } from "@/features/history/components/dictation-preview";
 import i18n from "@/i18n";
 import { duration, type HistorySortColumn, type Session } from "@/lib/backend";
+import { cn } from "@/lib/utils";
 import { ArrowDown, ArrowUp, ArrowUpDown } from "lucide-react";
-import { useLayoutEffect, useRef, type ReactNode, type RefObject } from "react";
+import { useLayoutEffect, useRef, type CSSProperties, type ReactNode, type RefObject } from "react";
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router";
 
@@ -27,6 +28,7 @@ export function HistoryTable({
   onSort,
   disabled,
   loading,
+  selectionActive,
   selectAll,
   isSelected,
   onSelect,
@@ -42,9 +44,10 @@ export function HistoryTable({
   onSort: (column: HistorySortColumn) => void;
   disabled: boolean;
   loading: boolean;
+  selectionActive: boolean;
   selectAll: ReactNode;
   isSelected: (entry: Session) => boolean;
-  onSelect: (entry: Session, checked: boolean) => void;
+  onSelect: (entry: Session, checked: boolean, range?: boolean) => void;
   renderActions: (entry: Session) => ReactNode;
 }) {
   const { t } = useTranslation();
@@ -112,7 +115,11 @@ export function HistoryTable({
                   key={key}
                   scope="col"
                   aria-sort={active ? (descending ? "descending" : "ascending") : undefined}
-                  className={key === "dictation" ? "w-full min-w-60" : undefined}
+                  className={
+                    key === "dictation"
+                      ? cn("w-full", deleted ? "min-w-44" : "min-w-60")
+                      : undefined
+                  }
                 >
                   <Button
                     variant="ghost"
@@ -154,62 +161,102 @@ export function HistoryTable({
             }
           }}
         >
-          {entries.map((entry, index) => (
-            <TableRow key={entry.id} data-state={isSelected(entry) ? "selected" : undefined}>
-              <TableCell className="px-3 lg:px-4">
-                <Checkbox
-                  aria-label={t("historyPage.selectDictation", { index: index + 1 })}
-                  checked={isSelected(entry)}
-                  disabled={disabled}
-                  onCheckedChange={(checked) => onSelect(entry, checked)}
-                />
-              </TableCell>
-              <TableCell className="max-w-0 whitespace-normal">
-                {deleted ? (
-                  <div className="flex flex-col gap-1 py-1.5">
-                    <DictationPreview entry={entry} query={query} />
-                  </div>
-                ) : (
-                  <Link
-                    to={`/history/${encodeURIComponent(entry.id)}${detailSearch}`}
-                    aria-disabled={disabled}
-                    onClick={(event) => {
-                      if (disabled) event.preventDefault();
-                    }}
-                    className="flex flex-col gap-1 rounded-sm py-1.5 outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                  >
-                    <DictationPreview entry={entry} query={query} />
-                  </Link>
-                )}
-              </TableCell>
-              <TableCell className="text-muted-foreground tabular-nums">
-                <HistoryDate value={entry.createdAt} />
-              </TableCell>
-              {deleted && (
-                <TableCell className="text-muted-foreground tabular-nums">
-                  <HistoryDate value={entry.deletedAt} />
-                  {entry.deletedAt && !Number.isNaN(Date.parse(entry.deletedAt)) && (
-                    <p className="mt-1 text-xs">
-                      {t("historyPage.daysToRestore", {
-                        days: Math.max(
-                          0,
-                          Math.ceil(
-                            (Date.parse(entry.deletedAt) + 30 * 86400000 - Date.now()) / 86400000,
-                          ),
-                        ),
-                      })}
-                    </p>
+          {entries.map((entry, index) => {
+            const deletedAt = Date.parse(entry.deletedAt ?? "");
+            const daysLeft =
+              deleted && !Number.isNaN(deletedAt)
+                ? Math.max(0, Math.ceil((deletedAt + 30 * 86400000 - Date.now()) / 86400000))
+                : null;
+            const fading =
+              "opacity-[var(--deletion-opacity,1)] group-hover:opacity-100 group-focus-within:opacity-100 group-data-[state=selected]:opacity-100";
+            return (
+              <TableRow
+                key={entry.id}
+                data-state={isSelected(entry) ? "selected" : undefined}
+                className={cn("group", selectionActive && !disabled && "cursor-pointer")}
+                style={
+                  daysLeft === null
+                    ? undefined
+                    : ({
+                        "--deletion-opacity": 0.65 + (0.35 * Math.min(daysLeft, 30)) / 30,
+                      } as CSSProperties)
+                }
+                onClickCapture={(event) => {
+                  if (
+                    (!selectionActive && !event.shiftKey) ||
+                    disabled ||
+                    !(event.target instanceof Element) ||
+                    !event.currentTarget.contains(event.target)
+                  )
+                    return;
+                  const checkbox = event.target.closest(
+                    '[role="checkbox"], input[type="checkbox"]',
+                  );
+                  if (checkbox && !event.shiftKey) return;
+                  // Keep native controls and portalled dialogs independent of row selection.
+                  if (
+                    !checkbox &&
+                    event.target.closest(
+                      'button, input, label, [role="checkbox"], [role="menuitem"]',
+                    )
+                  )
+                    return;
+                  event.preventDefault();
+                  event.stopPropagation();
+                  onSelect(entry, !isSelected(entry), event.shiftKey);
+                }}
+                onMouseDown={(event) => {
+                  if (selectionActive && event.shiftKey) event.preventDefault();
+                }}
+              >
+                <TableCell className="px-3 lg:px-4">
+                  <Checkbox
+                    aria-label={t("historyPage.selectDictation", { index: index + 1 })}
+                    checked={isSelected(entry)}
+                    disabled={disabled}
+                    onCheckedChange={(checked) => onSelect(entry, checked)}
+                  />
+                </TableCell>
+                <TableCell className={cn("max-w-0 whitespace-normal", fading)}>
+                  {deleted ? (
+                    <div className="flex flex-col gap-1 py-1.5">
+                      <DictationPreview entry={entry} query={query} />
+                      {daysLeft !== null && (
+                        <p className="text-xs leading-5 text-muted-foreground [overflow-wrap:anywhere]">
+                          {t("historyPage.daysToRestore", { days: daysLeft })}
+                        </p>
+                      )}
+                    </div>
+                  ) : (
+                    <Link
+                      to={`/history/${encodeURIComponent(entry.id)}${detailSearch}`}
+                      aria-disabled={disabled}
+                      onClick={(event) => {
+                        if (disabled) event.preventDefault();
+                      }}
+                      className="flex flex-col gap-1 rounded-sm py-1.5 outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    >
+                      <DictationPreview entry={entry} query={query} />
+                    </Link>
                   )}
                 </TableCell>
-              )}
-              <TableCell className="text-muted-foreground tabular-nums">
-                {duration(entry.durationMs)}
-              </TableCell>
-              <TableCell className="pr-3 pl-1 lg:pr-4 lg:pl-2">
-                <div className="flex items-center justify-end gap-1">{renderActions(entry)}</div>
-              </TableCell>
-            </TableRow>
-          ))}
+                <TableCell className={cn("text-muted-foreground tabular-nums", fading)}>
+                  <HistoryDate value={entry.createdAt} />
+                </TableCell>
+                {deleted && (
+                  <TableCell className={cn("text-muted-foreground tabular-nums", fading)}>
+                    <HistoryDate value={entry.deletedAt} />
+                  </TableCell>
+                )}
+                <TableCell className={cn("text-muted-foreground tabular-nums", fading)}>
+                  {duration(entry.durationMs)}
+                </TableCell>
+                <TableCell className="pr-3 pl-1 lg:pr-4 lg:pl-2">
+                  <div className="flex items-center justify-end gap-1">{renderActions(entry)}</div>
+                </TableCell>
+              </TableRow>
+            );
+          })}
         </TableBody>
       </Table>
     </div>
@@ -222,17 +269,14 @@ function HistoryDate({ value }: { value?: string }) {
   const date = new Date(value);
   const language = i18n.resolvedLanguage;
   return (
-    <time dateTime={value}>
-      <span className="hidden lg:inline">
-        {date.toLocaleString(language, {
-          dateStyle: "medium",
-          timeStyle: "short",
-        })}
-      </span>
-      <span className="flex flex-col leading-tight lg:hidden">
-        <span>{date.toLocaleDateString(language, { dateStyle: "medium" })}</span>
-        <span className="text-xs">{date.toLocaleTimeString(language, { timeStyle: "short" })}</span>
-      </span>
+    <time
+      dateTime={value}
+      title={date.toLocaleString(language, {
+        dateStyle: "medium",
+        timeStyle: "short",
+      })}
+    >
+      {date.toLocaleDateString(language, { dateStyle: "medium" })}
     </time>
   );
 }

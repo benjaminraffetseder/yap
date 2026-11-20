@@ -1,4 +1,3 @@
-import { CopyButton } from "@/components/shared/copy-button";
 import { MarkdownContent } from "@/components/shared/markdown-content";
 import { ActionMenu, ActionMenuItem } from "@/components/ui/action-menu";
 import { Button } from "@/components/ui/button";
@@ -61,11 +60,13 @@ export function GeneratedOutputs({
   unavailable,
   onDiscuss,
   onReveal,
+  onCopyTargetChange,
 }: {
   sessionID: string;
   unavailable: boolean;
   onDiscuss?: (output: GeneratedOutput) => void;
   onReveal?: (output: GeneratedOutput, references: ChatReference[]) => void;
+  onCopyTargetChange: (output: GeneratedOutput | null) => void;
 }) {
   const { t } = useTranslation();
   const snapshot = { ...useSavedConfiguration(), status: useDictationStatus() };
@@ -138,6 +139,9 @@ export function GeneratedOutputs({
   );
   const ordered = [...outputs].sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
   const output = ordered.find((item) => item.id === activeOutput) ?? ordered[0];
+  useEffect(() => {
+    onCopyTargetChange(disabled ? null : (output ?? null));
+  }, [output, disabled, onCopyTargetChange]);
   const generationStatus = selectedChain
     ? nativeText(snapshot.status.message)
     : t("generatedOutputs.generatingOutput");
@@ -391,13 +395,6 @@ export function GeneratedOutputs({
           </Tooltip>
           {output && (
             <>
-              <CopyButton
-                key={output.id}
-                iconOnly
-                text={output.text}
-                label={t("generatedOutputs.copyOutput")}
-                disabled={disabled}
-              />
               <Tooltip>
                 <TooltipTrigger
                   render={

@@ -36,6 +36,7 @@ import {
   type GeneratedOutput,
   type Session,
 } from "@/lib/backend";
+import { hasOpenKeyboardOverlay } from "@/lib/keyboard-shortcuts";
 import { resourceKeys, sessionQuery } from "@/lib/queries/resource-queries";
 import { cn } from "@/lib/utils";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -88,6 +89,7 @@ function EntryDetail({ id }: { id: string }) {
   const [chatSource, setChatSource] = useState<"transcript" | "original">("transcript");
   const [chatSelection, setChatSelection] = useState<ChatSelection | null>(null);
   const [chatOutput, setChatOutput] = useState<GeneratedOutput | null>(null);
+  const [copyOutput, setCopyOutput] = useState<GeneratedOutput | null>(null);
   const [highlights, setHighlights] = useState<{
     source: "transcript" | "original";
     references: ChatReference[];
@@ -124,8 +126,8 @@ function EntryDetail({ id }: { id: string }) {
     return () => observer.disconnect();
   }, [audio]);
   useEffect(() => {
-    title.current?.focus();
-  }, []);
+    if (!loading) title.current?.focus();
+  }, [loading]);
   useEffect(() => {
     if (detail.isSuccess && !entry) setAudio("");
   }, [detail.isSuccess, entry]);
@@ -133,6 +135,29 @@ function EntryDetail({ id }: { id: string }) {
   const text = entry?.finalTranscript ?? entry?.rawTranscript ?? "";
   const changed = !!entry && text !== entry.rawTranscript;
   if (!changed && activeTab === "changes") setActiveTab("transcription");
+  useEffect(() => {
+    function keydown(event: KeyboardEvent) {
+      if (
+        event.key !== "Escape" ||
+        event.defaultPrevented ||
+        event.repeat ||
+        event.isComposing ||
+        event.ctrlKey ||
+        event.metaKey ||
+        event.altKey ||
+        event.shiftKey ||
+        editing ||
+        deletingNow ||
+        hasOpenKeyboardOverlay() ||
+        document.querySelector('[data-slot="session-title-form"]')
+      )
+        return;
+      event.preventDefault();
+      navigate(back);
+    }
+    window.addEventListener("keydown", keydown);
+    return () => window.removeEventListener("keydown", keydown);
+  }, [back, navigate, editing, deletingNow]);
   async function play() {
     setLoadingAudio(true);
     await run(async () => {
@@ -210,18 +235,22 @@ function EntryDetail({ id }: { id: string }) {
                 data-slot="dictation-title"
                 className="min-w-0 text-lg leading-7 text-balance break-words @min-[44rem]/detail:text-xl [&_[data-dictation-title-action]]:align-middle @max-[44rem]/detail:[&_[data-dictation-title-action]]:size-[44px]"
               >
-                <h1
-                  ref={title}
-                  tabIndex={-1}
-                  className="inline font-semibold tracking-tight outline-none"
-                >
-                  {entry?.title || sessionTitle || t("historyEntryPage.dictation")}
-                </h1>
+                {(!entry || editing) && (
+                  <h1
+                    ref={title}
+                    tabIndex={-1}
+                    className="inline font-semibold tracking-tight outline-none"
+                  >
+                    {entry?.title || sessionTitle || t("historyEntryPage.dictation")}
+                  </h1>
+                )}
                 {entry && !editing && (
                   <>
                     {" "}
                     <SessionTitleAction
                       contextual
+                      inlineTitle={entry.title || sessionTitle || t("historyEntryPage.dictation")}
+                      headingRef={title}
                       entry={entry}
                       disabled={unavailable}
                       onSaved={(value) => {
@@ -256,20 +285,27 @@ function EntryDetail({ id }: { id: string }) {
                     <MessageSquare aria-hidden="true" className="size-3.5" />
                     {t("chat.title")}
                   </Button>
-                  {activeTab !== "outputs" && (
-                    <CopyButton
-                      compact
-                      text={activeTab === "original" ? entry.rawTranscript : text}
-                      label={
-                        activeTab === "original"
+                  <CopyButton
+                    compact
+                    shortcut
+                    text={
+                      activeTab === "outputs"
+                        ? (copyOutput?.text ?? "")
+                        : activeTab === "original"
+                          ? entry.rawTranscript
+                          : text
+                    }
+                    label={
+                      activeTab === "outputs"
+                        ? t("generatedOutputs.copyOutput")
+                        : activeTab === "original"
                           ? t("historyEntryPage.copyOriginal")
                           : changed
                             ? t("historyEntryPage.copyResult")
                             : t("historyEntryPage.copyTranscription")
-                      }
-                      disabled={unavailable}
-                    />
-                  )}
+                    }
+                    disabled={unavailable || (activeTab === "outputs" && !copyOutput)}
+                  />
 
                   <Button
                     ref={editTrigger}
@@ -537,6 +573,7 @@ function EntryDetail({ id }: { id: string }) {
               <TabsContent value="outputs" keepMounted>
                 <GeneratedOutputs
                   sessionID={id}
+                  onCopyTargetChange={setCopyOutput}
                   unavailable={unavailable}
                   onDiscuss={(output) => {
                     setChatOutput(output);
