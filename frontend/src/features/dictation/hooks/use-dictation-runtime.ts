@@ -24,7 +24,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 export function useDictationRuntime() {
   const queryClient = useQueryClient();
-  const { install } = useSavedActions();
+  const { install, updateModelRuntime } = useSavedActions();
   const [runtime, setSnapshot] = useState<RuntimeSnapshot>({
     status: empty.status,
     history: [],
@@ -122,7 +122,7 @@ export function useDictationRuntime() {
   const current = useRef({ loading, phase: runtime.status.phase });
   current.current = { loading, phase: runtime.status.phase };
   const installModel = useCallback(
-    async (model: Model) => {
+    async (model: Model, runtimeOnly = false) => {
       if (
         !isDesktop ||
         current.current.loading ||
@@ -135,7 +135,8 @@ export function useDictationRuntime() {
       setError("");
       toastManager.close("speech-model-download");
       try {
-        await install(model.id);
+        if (runtimeOnly) await updateModelRuntime(model.id);
+        else await install(model.id);
       } catch (cause) {
         modelDownload.current = null;
         setDownloadingModelId(null);
@@ -150,7 +151,7 @@ export function useDictationRuntime() {
       }
       await refresh().catch((cause) => setError(message(cause)));
     },
-    [install, refresh],
+    [install, updateModelRuntime, refresh],
   );
   useEffect(() => {
     if (
@@ -260,6 +261,12 @@ export function useDictationRuntime() {
             title: i18n.t("dictationProvider.downloadedAndReadyToUse", {
               name: download.model.name,
             }),
+          });
+        else if (status.message === "Speech runtime updated.")
+          toastManager.add({
+            id: "speech-model-download",
+            type: "success",
+            title: i18n.t("dictationProvider.runtimeUpdated", { name: download.model.name }),
           });
       }
     });

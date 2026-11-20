@@ -54,6 +54,7 @@ export function useSavedActions() {
     vocabulary: useSavedMutation(backend.vocabulary, ["vocabulary"]),
     addVocabularyTerm: useSavedMutation(backend.addVocabularyTerm, ["vocabulary"]),
     install: useSavedMutation(backend.install, ["configuration", "catalogs"]),
+    updateModelRuntime: useSavedMutation(backend.updateModelRuntime, ["configuration", "catalogs"]),
     removeModel: useSavedMutation(backend.removeModel, ["catalogs"]),
     installTextModel: useSavedMutation(backend.installTextModel, ["catalogs"]),
     removeTextModel: useSavedMutation(backend.removeTextModel, ["catalogs"]),

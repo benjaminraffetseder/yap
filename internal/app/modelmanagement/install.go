@@ -35,6 +35,10 @@ func (plan SpeechInstall) Run(ctx context.Context, dir, executable string, progr
 	return SpeechResult{executable: executable, model: model}, err
 }
 
+func (plan SpeechInstall) UpdateRuntime(ctx context.Context, dir string, progress func(int64, int64)) error {
+	return models.UpdateModelRuntime(ctx, dir, plan.id, progress)
+}
+
 func (result SpeechResult) Settings(current storage.Settings) storage.Settings {
 	if speech.Kind(result.model) == "whisper" {
 		current.WhisperPath = result.executable

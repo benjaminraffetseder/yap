@@ -42,25 +42,7 @@ func TestRealNativeModels(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Minute)
 	defer cancel()
-	req, _ := http.NewRequestWithContext(ctx, "GET", "https://raw.githubusercontent.com/ggml-org/whisper.cpp/v1.9.2/samples/jfk.wav", nil)
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != 200 {
-		t.Fatal(resp.Status)
-	}
-	path := filepath.Join(dir, "sample.wav")
-	f, err := os.Create(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, err = io.Copy(f, resp.Body)
-	f.Close()
-	if err != nil {
-		t.Fatal(err)
-	}
+	path := downloadNativeSample(t, ctx, dir)
 	for _, id := range []string{"moonshine-v2-tiny", "moonshine-v2-small", "moonshine-v2-medium", "moonshine-base", "parakeet-tdt-0.6b-v3"} {
 		t.Run(id, func(t *testing.T) {
 			report := func(int64, int64) {}
@@ -101,4 +83,34 @@ func TestRealNativeModels(t *testing.T) {
 			}
 		})
 	}
+}
+
+func downloadNativeSample(t *testing.T, ctx context.Context, dir string) string {
+	t.Helper()
+	req, err := http.NewRequestWithContext(ctx, "GET", "https://raw.githubusercontent.com/ggml-org/whisper.cpp/v1.9.2/samples/jfk.wav", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		t.Fatal(resp.Status)
+	}
+	path := filepath.Join(dir, "sample.wav")
+	f, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = io.Copy(f, resp.Body)
+	closeErr := f.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if closeErr != nil {
+		t.Fatal(closeErr)
+	}
+	return path
 }

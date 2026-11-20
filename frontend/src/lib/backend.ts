@@ -88,6 +88,7 @@ import {
   StopMicrophoneTest,
   StopRecording,
   TestTextModel,
+  UpdateModelRuntime,
 } from "@bindings/yap/internal/app/app";
 import type { Config } from "@bindings/yap/internal/inference/text/models";
 export { isDesktop } from "@/lib/desktop";
@@ -368,6 +369,7 @@ export type Model = {
   path: string;
   diskBytes: number;
   removable: boolean;
+  runtimeUpdateAvailable?: boolean;
 };
 export type TextModel = {
   id: string;
@@ -616,6 +618,7 @@ export const backend = {
   dismissLatestResult: DismissLatestResult,
   selectFile: SelectFile,
   install: InstallModel,
+  updateModelRuntime: UpdateModelRuntime,
   vocabulary: SaveVocabulary,
   testMic: StartMicrophoneTest,
   stopMicTest: StopMicrophoneTest,

@@ -389,7 +389,7 @@ export function ModelsPage({ embedded = false }: { embedded?: boolean }) {
             </p>
           )}
           <div className="@container/models overflow-hidden rounded-xl border bg-card/30">
-            <div className="hidden grid-cols-[minmax(0,1fr)_10rem_14rem_10rem] gap-x-4 border-b bg-muted/30 px-5 py-3 font-mono text-xs text-muted-foreground @min-[48rem]/models:grid">
+            <div className="hidden grid-cols-[minmax(0,1fr)_10rem_12rem_14rem] gap-x-4 border-b bg-muted/30 px-5 py-3 font-mono text-xs text-muted-foreground @min-[48rem]/models:grid">
               <span>{t("common.speechModel")}</span>
               <span>{t("uiPolish.performanceColumn")}</span>
               <span>{t("uiPolish.languageSizeColumn")}</span>
@@ -412,6 +412,7 @@ export function ModelsPage({ embedded = false }: { embedded?: boolean }) {
                 }
                 onUse={() => selectModel(model)}
                 onRepair={model.installed ? () => void installModel(model) : undefined}
+                onUpdateRuntime={() => void installModel(model, true)}
                 onRemove={() => {
                   setError("");
                   setRemoving(model);

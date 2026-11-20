@@ -13,20 +13,21 @@ import (
 )
 
 type Model struct {
-	ID          string      `json:"id"`
-	Name        string      `json:"name"`
-	Size        int64       `json:"size"`
-	Description string      `json:"description"`
-	SHA         string      `json:"-"`
-	Installed   bool        `json:"installed"`
-	Path        string      `json:"path"`
-	DiskBytes   int64       `json:"diskBytes"`
-	Removable   bool        `json:"removable"`
-	Kind        string      `json:"-"`
-	Filename    string      `json:"-"`
-	URL         string      `json:"-"`
-	Arch        uint32      `json:"-"`
-	Files       []ModelFile `json:"-"`
+	ID                     string      `json:"id"`
+	Name                   string      `json:"name"`
+	Size                   int64       `json:"size"`
+	Description            string      `json:"description"`
+	SHA                    string      `json:"-"`
+	Installed              bool        `json:"installed"`
+	Path                   string      `json:"path"`
+	DiskBytes              int64       `json:"diskBytes"`
+	Removable              bool        `json:"removable"`
+	RuntimeUpdateAvailable bool        `json:"runtimeUpdateAvailable"`
+	Kind                   string      `json:"-"`
+	Filename               string      `json:"-"`
+	URL                    string      `json:"-"`
+	Arch                   uint32      `json:"-"`
+	Files                  []ModelFile `json:"-"`
 }
 
 type ModelFile struct {
@@ -93,6 +94,7 @@ func List(dir string) []Model {
 			if valid, err := verifyModel(context.Background(), p, list[i], true); err == nil && valid {
 				list[i].Installed = true
 				list[i].Path = p
+				list[i].RuntimeUpdateAvailable = nativeRuntimeUpdateAvailable(dir, list[i].Kind)
 			}
 		}
 	}

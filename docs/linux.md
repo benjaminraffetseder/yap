@@ -4,7 +4,7 @@ The Linux desktop app has been tested on Ubuntu x64 with GNOME Wayland, includin
 Debian installation, application search, and the app icon.
 
 Yap installs verified Linux x64 and arm64 runtimes for Whisper 1.9.2, NVIDIA
-Parakeet via NeMo-Speech.cpp 0.2.0, and Moonshine Voice 0.1.5. Choose a speech
+Parakeet via NeMo-Speech.cpp 0.3.0, and Moonshine Voice 0.1.5. Choose a speech
 model in **Models** or the setup guide to download its runtime and model together.
 The managed runtimes use the CPU; Python, pip, and CUDA are not required.
 

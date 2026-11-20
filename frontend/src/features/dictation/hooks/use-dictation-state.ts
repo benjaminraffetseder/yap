@@ -15,7 +15,7 @@ import { createContext, useContext, useMemo, type Context } from "react";
 type Actions = {
   refresh: () => Promise<void>;
   run: (action: () => Promise<unknown>, reload?: boolean) => Promise<void>;
-  installModel: (model: Model) => Promise<void>;
+  installModel: (model: Model, runtimeOnly?: boolean) => Promise<void>;
   clearError: () => void;
 };
 type Connection = { loading: boolean; error: string; savedReadError: Error | null };
