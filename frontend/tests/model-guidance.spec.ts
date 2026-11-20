@@ -1,4 +1,5 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
+import en from "../src/i18n/locales/en.json" with { type: "json" };
 import type { Settings, Snapshot } from "../src/lib/backend";
 
 // Synthetic catalog state, using the shipping catalog's actual IDs and byte sizes.
@@ -882,19 +883,21 @@ test("embedded setup, reduced motion and long model names remain usable", async 
   });
   await page.setViewportSize({ width: 760, height: 560 });
   await page.goto("/");
+  await expect(page.getByRole("heading", { name: en["onboarding.goalTitle"] })).toBeVisible();
+  await page.getByRole("button", { name: "Next", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Choose your speech model" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Models", exact: true })).toHaveCount(0);
-  await expect(help(page)).toHaveAttribute("aria-expanded", "false");
-  await expect(guide(page)).toBeHidden();
+  await expect(help(page)).toHaveCount(0);
+  await expect(
+    page.getByText(en["onboarding.recommendedStartingPoint"], { exact: true }),
+  ).toBeVisible();
   await page.screenshot({
     path: testInfo.outputPath("embedded-default.png"),
     animations: "disabled",
   });
-  await revealGuidance(page);
-  await expect(guide(page).getByRole("status")).toContainText("NVIDIA Parakeet");
-  await guide(page).getByRole("button", { name: "Show model" }).click();
   const heading = page.locator('[id="model-parakeet-tdt-0.6b-v3-heading"]');
-  await expect(heading).toBeFocused();
+  await expect(heading).toBeVisible();
+  await expect(page.getByRole("button", { name: "Download & use", exact: true })).toBeEnabled();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await page.screenshot({
     path: testInfo.outputPath("embedded-long-name-reduced-motion.png"),

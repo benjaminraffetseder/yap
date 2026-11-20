@@ -61,6 +61,9 @@ func TestDiagnosticTranscriptionUsesSavedPipelineWithoutSideEffects(t *testing.T
 	if snapshot.Diagnostic.Phase != "done" || snapshot.Diagnostic.Transcript != "Test PostgreSQL." || snapshot.Diagnostic.DurationMS != 2000 {
 		t.Fatalf("diagnostic failed: %+v", snapshot.Diagnostic)
 	}
+	if snapshot.Diagnostic.RawTranscript != "um, test postgres" {
+		t.Fatal("diagnostic lost original speech for workflow trials", snapshot.Diagnostic)
+	}
 	if engine.opts.Prompt != "PostgreSQL" || engine.opts.Language != "en" {
 		t.Fatalf("saved preferences ignored: %+v", engine.opts)
 	}

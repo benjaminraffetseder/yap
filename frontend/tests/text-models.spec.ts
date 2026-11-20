@@ -1,4 +1,6 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
+import en from "../src/i18n/locales/en.json" with { type: "json" };
+import type { DictationProfile } from "../src/lib/backend";
 import { validateTextProcessing } from "../src/lib/validation/draft-validation";
 
 test("built-in context validation respects each model limit", () => {
@@ -72,6 +74,11 @@ test.beforeEach(async ({ page }) => {
         saveHistory: true,
         autoCopy: true,
         autoPaste: true,
+        cleanText: false,
+        saveAudio: false,
+        launchAtLogin: false,
+        startInTray: false,
+        historyRetentionDays: 0,
       },
       status: {
         phase: "idle",
@@ -92,7 +99,16 @@ test.beforeEach(async ({ page }) => {
       microphoneTested: true,
       shortcutTested: true,
       dataDir: "",
-      diagnostic: {},
+      diagnostic: {
+        phase: "",
+        message: "",
+        details: "",
+        transcript: "",
+        rawTranscript: "",
+        durationMs: 0,
+      },
+      dictationProfiles: [] as DictationProfile[],
+      activeProfileId: "",
     };
     const calls: unknown[] = [];
     const callbacks: Record<string, (data?: unknown) => void> = {};
@@ -115,6 +131,39 @@ test.beforeEach(async ({ page }) => {
             if (!skip && (!state.ready || !state.microphoneTested || !state.shortcutTested))
               throw new Error("Complete the dictation checks first");
             state.settings.setupComplete = true;
+          },
+          CompleteOnboarding: async (profile: DictationProfile, value: typeof config) => {
+            if (
+              !state.ready ||
+              !state.microphoneTested ||
+              !state.shortcutTested ||
+              state.diagnostic.phase !== "done"
+            )
+              throw new Error("Complete the dictation checks first");
+            calls.push("setup:false");
+            state.textProcessing = structuredClone(value);
+            state.dictationProfiles.push(structuredClone(profile));
+            state.activeProfileId = profile.id;
+            state.settings.setupComplete = true;
+          },
+          StartDiagnosticTest: async () => {
+            state.diagnostic.phase = "recording";
+            state.status.phase = "diagnostic-recording";
+            callbacks["dictation:status"]?.(structuredClone(state.status));
+            callbacks["setup:changed"]?.();
+          },
+          StopDiagnosticTest: async () => {
+            state.diagnostic = {
+              phase: "done",
+              message: "Runtime and model verified",
+              details: "",
+              rawTranscript: "My sample text",
+              transcript: "My sample text.",
+              durationMs: 1000,
+            };
+            state.status.phase = "idle";
+            callbacks["dictation:status"]?.(structuredClone(state.status));
+            callbacks["setup:changed"]?.();
           },
           SaveTextProcessing: async (value: typeof config) => {
             calls.push(structuredClone(value));
@@ -343,6 +392,19 @@ test("using a downloaded text model enables it and resets an oversized context",
   });
 });
 
+async function openOnboardingWorkflow(page: Page) {
+  await page.goto("/");
+  await expect(page.getByRole("heading", { name: en["onboarding.goalTitle"] })).toBeVisible();
+  for (let index = 0; index < 4; index++)
+    await page.getByRole("button", { name: "Next", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Next", exact: true })).toBeDisabled();
+  await page.getByRole("button", { name: en["onboarding.practiceDictation"], exact: true }).click();
+  await page.getByRole("button", { name: "Stop dictation test", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Next", exact: true })).toBeEnabled();
+  await page.getByRole("button", { name: "Next", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Add a text model (optional)" })).toBeVisible();
+}
+
 test("setup enables a downloaded text model, saves context, and tests it before finishing", async ({
   page,
 }) => {
@@ -354,16 +416,14 @@ test("setup enables a downloaded text model, saves context, and tests it before 
       model.installed = false;
     });
   });
-  await page.goto("/");
-  for (let i = 0; i < 3; i++) await page.getByRole("button", { name: "Next", exact: true }).click();
-  const setup = page.getByRole("region", { name: "Text model setup", exact: true });
-  await expect(setup).toBeVisible();
-  const finish = page.getByRole("button", { name: "Finish setup", exact: true });
-  await expect(finish).toBeDisabled();
+  await openOnboardingWorkflow(page);
+  const setup = page.locator("main");
+  await expect(
+    page.getByRole("button", { name: en["onboarding.finishBasic"], exact: true }),
+  ).toBeEnabled();
   const row = setup.getByRole("article", { name: "Gemma 4 E2B", exact: true });
   await row.getByRole("button", { name: "Download", exact: true }).click();
   await row.getByRole("button", { name: "Use model", exact: true }).click();
-  await expect(finish).toBeEnabled();
   await setup.getByRole("combobox", { name: "Context length", exact: true }).click();
   await page.getByRole("option", { name: "16,384 tokens", exact: true }).click();
   await expect
@@ -373,7 +433,10 @@ test("setup enables a downloaded text model, saves context, and tests it before 
     .toBe(16384);
   await setup.getByRole("button", { name: "Test model", exact: true }).click();
   await expect(setup.getByText("Model responded successfully.", { exact: true })).toBeVisible();
-  await finish.click();
+  await page.getByRole("button", { name: "Next", exact: true }).click();
+  await page
+    .getByRole("button", { name: en["onboarding.saveActivateProfile"], exact: true })
+    .click();
   await expect(page.getByRole("heading", { name: "Set up Yap", exact: true })).toBeHidden();
   expect(
     await page.evaluate(() => Reflect.get(window, "textModelTest").state.textProcessing),
@@ -397,11 +460,12 @@ for (const previouslyEnabled of [false, true]) {
         model.installed = false;
       });
     }, previouslyEnabled);
-    await page.goto("/");
-    for (let i = 0; i < 3; i++)
-      await page.getByRole("button", { name: "Next", exact: true }).click();
-    await expect(page.getByRole("button", { name: "Finish setup", exact: true })).toBeDisabled();
-    await page.getByRole("button", { name: "Skip for now", exact: true }).click();
+    await openOnboardingWorkflow(page);
+    await page.getByRole("button", { name: en["onboarding.finishBasic"], exact: true }).click();
+    await expect(
+      page.getByRole("heading", { name: en["onboarding.profileHeading"], exact: true }),
+    ).toBeVisible();
+    await page.getByRole("button", { name: en["onboarding.finishBasic"], exact: true }).click();
     await expect(page.getByRole("heading", { name: "Set up Yap", exact: true })).toBeHidden();
     expect(
       await page.evaluate(() => Reflect.get(window, "textModelTest").state.textProcessing.enabled),
@@ -421,15 +485,17 @@ test("setup keeps an existing external text-model configuration", async ({ page 
     state.textProcessing.provider = "external";
     state.textProcessing.model = "existing-local-model";
   });
-  await page.goto("/");
-  for (let i = 0; i < 3; i++) await page.getByRole("button", { name: "Next", exact: true }).click();
+  await openOnboardingWorkflow(page);
   await expect(
     page.getByText(
       "Your external text model existing-local-model is enabled. Keep it, or choose a built-in model above.",
       { exact: true },
     ),
   ).toBeVisible();
-  await page.getByRole("button", { name: "Finish setup", exact: true }).click();
+  await page.getByRole("button", { name: "Next", exact: true }).click();
+  await page
+    .getByRole("button", { name: en["onboarding.saveActivateProfile"], exact: true })
+    .click();
   await expect(page.getByRole("heading", { name: "Set up Yap", exact: true })).toBeHidden();
   expect(await page.evaluate(() => Reflect.get(window, "textModelTest").calls)).toEqual([
     "setup:false",

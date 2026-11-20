@@ -5,6 +5,7 @@ package profiles
 import (
 	"errors"
 	"fmt"
+	"reflect"
 	"strings"
 
 	"github.com/google/uuid"
@@ -44,10 +45,16 @@ func (s *Service) Load(store *storage.Store) error {
 	return nil
 }
 
-// Library returns detached slices so snapshots cannot mutate service state.
+// Library returns detached slices and connections so snapshots cannot mutate service state.
 func (s *Service) Library() storage.ProfileLibrary {
 	library := s.library
 	library.Profiles = append([]storage.DictationProfile(nil), library.Profiles...)
+	for i, profile := range library.Profiles {
+		if profile.TextModel != nil {
+			connection := *profile.TextModel
+			library.Profiles[i].TextModel = &connection
+		}
+	}
 	library.AppRules = append([]storage.AppProfileRule(nil), library.AppRules...)
 	return library
 }
@@ -92,6 +99,63 @@ func (s *Service) SaveSettings(store *storage.Store, settings storage.Settings, 
 	return nil
 }
 
+// FinishSetup commits the final setup configuration, its Default baseline, and
+// the new named selection together. A value-identical stable profile ID makes a
+// retry after a successful commit safe without overwriting a different profile.
+func (s *Service) FinishSetup(store *storage.Store, profile storage.DictationProfile, settings storage.Settings, config textmodel.Config) (Selection, error) {
+	settings.SetupComplete = true
+	normalized, err := textmodel.Normalize(config)
+	if err != nil {
+		return Selection{}, err
+	}
+	config = normalized
+	library, _, err := storage.WithDefaultProfile(s.library, settings, config)
+	if err != nil {
+		return Selection{}, err
+	}
+	if profile.ID == "" {
+		return Selection{}, errors.New("setup profile identifier is required")
+	}
+	if profile.ID == library.DefaultID {
+		return Selection{}, errors.New("the setup profile must be separate from Default")
+	}
+	found := false
+	var existingProfile storage.DictationProfile
+	for i, existing := range library.Profiles {
+		if existing.ID == profile.ID {
+			existingProfile, found = existing, true
+			library.Profiles[i] = profile
+		}
+	}
+	if !found {
+		library.Profiles = append(library.Profiles, profile)
+	}
+	library.ActiveID = profile.ID
+	library, err = storage.NormalizeProfiles(library)
+	if err != nil {
+		return Selection{}, err
+	}
+	for _, saved := range library.Profiles {
+		if saved.ID != profile.ID {
+			continue
+		}
+		if found && !reflect.DeepEqual(existingProfile, saved) {
+			return Selection{}, errors.New("setup profile identifier already belongs to a different profile")
+		}
+		selection, err := configuration(saved, settings, config)
+		if err != nil {
+			return Selection{}, err
+		}
+		if err := store.ApplyDictationProfile(library, selection.Settings, selection.Config); err != nil {
+			return Selection{}, err
+		}
+		s.library = library
+		s.ClearOverride()
+		return selection, nil
+	}
+	return Selection{}, errors.New("setup profile was not saved")
+}
+
 func (s *Service) Save(store *storage.Store, profile storage.DictationProfile, config textmodel.Config) (storage.DictationProfile, error) {
 	if profile.ID == "" {
 		profile.ID = uuid.NewString()
@@ -125,7 +189,7 @@ func (s *Service) Save(store *storage.Store, profile storage.DictationProfile, c
 		return storage.DictationProfile{}, err
 	}
 	s.library = library
-	for _, p := range library.Profiles {
+	for _, p := range s.Library().Profiles {
 		if p.ID == profile.ID {
 			return p, nil
 		}
@@ -168,6 +232,10 @@ func (s *Service) Delete(store *storage.Store, id string) error {
 
 func configuration(p storage.DictationProfile, settings storage.Settings, config textmodel.Config) (Selection, error) {
 	settings.ModelPath, settings.Language, settings.CleanText = p.ModelPath, p.Language, p.CleanText
+	if p.TextModel != nil {
+		config.Provider, config.ContextLength = p.TextModel.Provider, p.TextModel.ContextLength
+		config.Enabled, config.Endpoint, config.Model = p.TextModel.Enabled, p.TextModel.Endpoint, p.TextModel.Model
+	}
 	config.AutoPromptID = p.AutoPromptID
 	selection := Selection{Settings: settings, Config: config, ID: p.ID, Name: p.Name}
 	if err := speech.Validate(speech.Options{Executable: settings.WhisperPath, Model: settings.ModelPath}); err != nil {
@@ -184,6 +252,11 @@ func configuration(p storage.DictationProfile, settings storage.Settings, config
 			return selection, err
 		}
 	}
+	normalized, err := textmodel.Normalize(config)
+	if err != nil {
+		return selection, err
+	}
+	selection.Config = normalized
 	return selection, nil
 }
 

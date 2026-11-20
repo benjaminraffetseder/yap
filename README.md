@@ -40,16 +40,21 @@ On Windows 10/11 x64, [build from source](#build-from-source) and open
 [Debian installation instructions](docs/linux.md#package-and-install) and open
 **Yap** from the desktop application menu.
 
-1. Open Yap and follow the setup guide to download a speech model and test your
-   microphone. Small balances speed and accuracy; Base and Tiny are smaller options.
+1. Open Yap and choose what you want to use it for. Setup recommends a speech
+   model and settings from your spoken language and speed/quality preference;
+   review the download sizes and adjust the choices before installing.
+   Small balances speed and accuracy; Base and Tiny are smaller options.
    Medium and Large v3 are also available; they use more disk space and memory.
    [Parakeet TDT 0.6B v3](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3)
    supports 25 European languages with automatic detection (CC BY 4.0).
    [Moonshine](https://huggingface.co/moonshine-ai/models) V2 Tiny, Small, Medium,
    and Base are English-only options (MIT).
-   Setup also offers an optional Gemma text model for prompt-based cleanup,
-   summaries, title suggestions, and chat. Download one and choose **Use model**,
-   or choose **Skip for now** to finish with dictation only.
+   Test your microphone and shortcut, then try dictation. You can optionally add
+   a Gemma text model, edit a starter prompt or chain, and compare a typed or
+   dictated sample with the processed result. Trial content stays out of history
+   and the clipboard. Finish by naming your profile, or skip text processing to
+   start with basic dictation. Your profile remembers its speech and text model
+   settings and can be changed later in **Settings → Profiles**.
 2. Put the cursor in a text field in another app.
 3. Hold **Ctrl+Alt+Space**, speak, then release **Space**.
 

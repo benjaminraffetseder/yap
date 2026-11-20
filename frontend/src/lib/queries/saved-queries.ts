@@ -60,6 +60,7 @@ export function useSavedActions() {
     updateTextRuntime: useSavedMutation(backend.updateTextRuntime, ["catalogs"]),
     removeTextModel: useSavedMutation(backend.removeTextModel, ["catalogs"]),
     completeSetup: useSavedMutation(backend.completeSetup, ["configuration"]),
+    completeOnboarding: useSavedMutation(backend.completeOnboarding, ["configuration"]),
     restartSetup: useSavedMutation(backend.restartSetup, ["configuration"]),
     restoreBackup: useSavedMutation(backend.restoreBackup, [
       "configuration",

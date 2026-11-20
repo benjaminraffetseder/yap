@@ -19,6 +19,7 @@ import {
 import { nativeText } from "@/i18n/native-text";
 import {
   backend,
+  captureProfileTextModel,
   isBusy,
   isDesktop,
   message,
@@ -45,6 +46,7 @@ function currentChoices(snapshot: Configuration, profile: DictationProfile): Dic
     language: snapshot.settings.language,
     cleanText: snapshot.settings.cleanText,
     autoPromptId: snapshot.textProcessing.autoPromptId,
+    textModel: captureProfileTextModel(snapshot.textProcessing),
   };
 }
 
@@ -59,12 +61,14 @@ function reviewKey(snapshot: Configuration, id: string) {
       saved.language,
       saved.cleanText,
       saved.autoPromptId,
+      saved.textModel,
     ],
     snapshot.settings.modelPath,
     snapshot.settings.language,
     snapshot.settings.cleanText,
     snapshot.textProcessing.autoPromptId,
     snapshot.textProcessing.enabled,
+    captureProfileTextModel(snapshot.textProcessing),
     processingOptions(snapshot.textProcessing).map((option) => option.value),
   ]);
 }
@@ -397,6 +401,13 @@ export function HomeProfileActions({
             </dd>
             <dt className="text-muted-foreground">{t("settingsPage.lightCleanup")}</dt>
             <dd>{choices.cleanText ? t("common.on") : t("common.off")}</dd>
+            <dt className="text-muted-foreground">{t("promptsPage.textModel")}</dt>
+            <dd>
+              {choices.textModel?.enabled
+                ? (snapshot.textModels?.find((model) => model.id === choices.textModel?.model)
+                    ?.name ?? choices.textModel.model)
+                : t("profileTextModel.off")}
+            </dd>
             <dt className="text-muted-foreground">{t("dictationProfiles.afterDictation")}</dt>
             <dd>
               {processingOptions(snapshot.textProcessing).find(

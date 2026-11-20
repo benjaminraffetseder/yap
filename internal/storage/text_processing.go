@@ -29,15 +29,24 @@ func (s *Store) SaveTextProcessing(v text.Config) error {
 	if err != nil {
 		return err
 	}
-	data, err := json.Marshal(v)
-	if err != nil {
-		return err
-	}
 	tx, err := s.db.Begin()
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
+	if err := saveTextProcessingTx(tx, v); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// Save definitions and their revisions in the caller's configuration transaction.
+// Callers validate the configuration before beginning their transaction.
+func saveTextProcessingTx(tx *sql.Tx, v text.Config) error {
+	data, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
 	old := text.Defaults()
 	var raw string
 	err = tx.QueryRow("SELECT value FROM text_processing WHERE id=1").Scan(&raw)
@@ -89,5 +98,5 @@ func (s *Store) SaveTextProcessing(v text.Config) error {
 	if _, err = tx.Exec("INSERT INTO text_processing(id,value) VALUES(1,?) ON CONFLICT(id) DO UPDATE SET value=excluded.value", string(data)); err != nil {
 		return err
 	}
-	return tx.Commit()
+	return nil
 }

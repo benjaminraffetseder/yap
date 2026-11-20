@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"yap/internal/inference/speech"
+	textmodel "yap/internal/inference/text"
 	"yap/internal/storage"
 )
 
@@ -202,11 +203,11 @@ func TestDefaultProfileCapturesExistingSettingsOnce(t *testing.T) {
 		t.Fatal(err)
 	}
 	snap, _ = a.GetSnapshot()
-	if snap.ActiveProfileID != baseline.ID || !snap.ProfileModified || snap.DictationProfiles[0] != baseline {
+	if snap.ActiveProfileID != baseline.ID || !snap.ProfileModified || !reflect.DeepEqual(snap.DictationProfiles[0], baseline) {
 		t.Fatal("Default baseline was overwritten")
 	}
 	library, err := a.store.DictationProfiles()
-	if err != nil || library.DefaultID != baseline.ID || library.ActiveID != baseline.ID || library.Profiles[0] != baseline {
+	if err != nil || library.DefaultID != baseline.ID || library.ActiveID != baseline.ID || !reflect.DeepEqual(library.Profiles[0], baseline) {
 		t.Fatal("Default was not durable", library, err)
 	}
 	if err := a.ApplyDictationProfile(baseline.ID); err != nil {
@@ -249,7 +250,7 @@ func TestDefaultProfileFromSetupIncludingSkippedSetup(t *testing.T) {
 }
 
 func TestModifiedProfileTracksOnlyProfileSettings(t *testing.T) {
-	for _, field := range []string{"model", "language", "cleanup", "prompt", "microphone", "shortcut", "history"} {
+	for _, field := range []string{"model", "language", "cleanup", "prompt", "connection", "microphone", "shortcut", "history"} {
 		t.Run(field, func(t *testing.T) {
 			a := testApp(t)
 			if err := a.ensureDefaultProfileLocked(); err != nil {
@@ -266,6 +267,8 @@ func TestModifiedProfileTracksOnlyProfileSettings(t *testing.T) {
 				a.settings.CleanText = true
 			case "prompt":
 				enableText(t, a, true)
+			case "connection":
+				a.textConfig.Model = "other-model"
 			case "microphone":
 				a.settings.MicrophoneID, modified = "usb", false
 			case "shortcut":
@@ -274,10 +277,41 @@ func TestModifiedProfileTracksOnlyProfileSettings(t *testing.T) {
 				a.settings.SaveHistory, modified = false, false
 			}
 			snap, err := a.GetSnapshot()
-			if err != nil || snap.ProfileModified != modified || snap.ActiveProfileID != baseline.ID || snap.DictationProfiles[0] != baseline {
+			if err != nil || snap.ProfileModified != modified || snap.ActiveProfileID != baseline.ID || !reflect.DeepEqual(snap.DictationProfiles[0], baseline) {
 				t.Fatal("incorrect modified state", snap, err)
 			}
 		})
+	}
+}
+
+func TestProfileConnectionChangesReleaseManagedTextEngine(t *testing.T) {
+	a := testApp(t)
+	engine := &releasingTextEngine{fakeTextEngine: &fakeTextEngine{}}
+	a.textEngine = engine
+	connection := textmodel.Defaults()
+	connection.Enabled, connection.Model = true, "first-model"
+	profile, err := a.SaveDictationProfile(storage.DictationProfile{Name: "Work", ModelPath: a.settings.ModelPath, Language: "en", TextModel: storage.CaptureProfileTextModel(connection)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := a.ApplyDictationProfile(profile.ID); err != nil {
+		t.Fatal(err)
+	}
+	if engine.releases != 1 || a.textConfig.Model != "first-model" {
+		t.Fatal("applying a new text connection did not release the old engine", engine.releases, a.textConfig)
+	}
+	if err := a.ApplyDictationProfile(profile.ID); err != nil || engine.releases != 1 {
+		t.Fatal("reapplying the same connection released the engine", engine.releases, err)
+	}
+	profile.TextModel.Model = "second-model"
+	if _, err := a.SaveDictationProfile(profile); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.ApplyDictationProfile(profile.ID); err != nil {
+		t.Fatal(err)
+	}
+	if engine.releases != 2 || a.textConfig.Model != "second-model" {
+		t.Fatal("switching profile connections did not release the old engine", engine.releases, a.textConfig)
 	}
 }
 

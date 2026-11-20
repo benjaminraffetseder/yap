@@ -92,6 +92,7 @@ type App struct {
 
 	// Setup tests share the recorder. Audio callbacks update micSignal without mu.
 	diagnostic                       DiagnosticResult
+	diagnosticSettings               storage.Settings
 	microphoneTested, shortcutTested bool
 	micSignal                        atomic.Bool
 

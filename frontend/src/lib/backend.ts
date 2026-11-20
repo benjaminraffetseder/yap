@@ -10,6 +10,7 @@ import {
   ClearFinishedBulkTextJobs,
   ClearFinishedImports,
   ClearSessionChat,
+  CompleteOnboarding,
   CompleteSetup,
   CopyText,
   DeleteDictationProfile,
@@ -52,6 +53,7 @@ import {
   ListTextModels,
   PermanentlyDeleteSessions,
   PreviewBackup,
+  PreviewWorkflow,
   ProcessText,
   QueueBulkText,
   RefinePrompt,
@@ -118,7 +120,24 @@ export type DictationProfile = {
   language: string;
   cleanText: boolean;
   autoPromptId: string;
+  textModel?: ProfileTextModel | null;
 };
+export type ProfileTextModel = {
+  provider?: string;
+  contextLength?: number;
+  enabled: boolean;
+  endpoint: string;
+  model: string;
+};
+export function captureProfileTextModel(config: TextProcessing): ProfileTextModel {
+  return {
+    provider: config.provider || "external",
+    contextLength: config.contextLength ?? 0,
+    enabled: config.enabled,
+    endpoint: config.endpoint,
+    model: config.model,
+  };
+}
 export type ProfileApplication = { id: string; name: string };
 export type AppProfileRule = { applicationId: string; applicationName: string; profileId: string };
 export type TextPrompt = { id: string; name: string; instruction: string };
@@ -202,6 +221,7 @@ export type DiagnosticResult = {
   message: string;
   details: string;
   transcript: string;
+  rawTranscript?: string;
   durationMs: number;
 };
 export type DiagnosticCheck = {
@@ -558,7 +578,16 @@ export const backend = {
     return SaveProfileAutomation(rules, shortcut);
   },
   saveProfile: async (profile: DictationProfile): Promise<DictationProfile> => {
-    return SaveDictationProfile(profile);
+    return SaveDictationProfile({
+      ...profile,
+      textModel: profile.textModel
+        ? {
+            ...profile.textModel,
+            provider: profile.textModel.provider ?? "external",
+            contextLength: profile.textModel.contextLength ?? 0,
+          }
+        : null,
+    });
   },
   applyProfile: async (id: string): Promise<void> => {
     return ApplyDictationProfile(id);
@@ -629,6 +658,25 @@ export const backend = {
   testMic: StartMicrophoneTest,
   stopMicTest: StopMicrophoneTest,
   completeSetup: CompleteSetup,
+  completeOnboarding: (profile: DictationProfile, config: TextProcessing): Promise<void> =>
+    CompleteOnboarding(
+      {
+        ...profile,
+        textModel: profile.textModel
+          ? {
+              ...profile.textModel,
+              provider: profile.textModel.provider ?? "external",
+              contextLength: profile.textModel.contextLength ?? 0,
+            }
+          : null,
+      },
+      {
+        ...config,
+        provider: config.provider ?? "external",
+        contextLength: config.contextLength ?? 0,
+        chains: config.chains ?? [],
+      },
+    ),
   restartSetup: RestartSetup,
   diagnosticChecks: async (): Promise<DiagnosticCheck[]> => (await GetDiagnosticChecks()) ?? [],
   testDictation: StartDiagnosticTest,
@@ -724,6 +772,25 @@ export const backend = {
       }),
     ),
   processText: ProcessText,
+  previewWorkflow: (
+    requestID: string,
+    config: TextProcessing,
+    original: string,
+    transcript: string,
+    recipeID: string,
+  ): Promise<string> =>
+    PreviewWorkflow(
+      requestID,
+      {
+        ...config,
+        provider: config.provider ?? "external",
+        contextLength: config.contextLength ?? 0,
+        chains: config.chains ?? [],
+      },
+      original,
+      transcript,
+      recipeID,
+    ),
   startChatVoice: StartChatVoice,
   stopChatVoice: StopChatVoice,
   chat: async (sessionID: string): Promise<SessionChat> =>
