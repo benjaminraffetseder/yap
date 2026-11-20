@@ -9,9 +9,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { AudioMeter } from "@/features/dictation/components/audio-meter";
 import { ShortcutInput } from "@/features/dictation/components/shortcut-input";
 import { ShortcutStatus } from "@/features/dictation/components/shortcut-status";
-import { useAudioLevel } from "@/features/dictation/hooks/use-dictation-state";
 import { useMotionPreference } from "@/hooks/use-motion-preference";
 import { nativeText } from "@/i18n/native-text";
 import { backend, type Microphone, type Settings, type Status } from "@/lib/backend";
@@ -163,7 +163,7 @@ export function MicrophoneStep({
             <Mic className="size-7" aria-hidden="true" />
           )}
         </span>
-        {testing && <MicrophoneLevelMeter />}
+        {testing && <AudioMeter label={t("setupPage.microphoneLevel")} />}
         <div className="text-center">
           <p
             role="status"
@@ -331,37 +331,5 @@ function MicrophoneSuccess({
         <Check className="size-7" aria-hidden="true" />
       </MotionReveal>
     </>
-  );
-}
-
-function MicrophoneLevelMeter() {
-  const { t } = useTranslation();
-  const level = useAudioLevel();
-  const inputLevel = Math.min(1, Math.max(0, level));
-  return (
-    <div className="w-full max-w-xs">
-      <div aria-hidden="true" className="flex h-12 items-end gap-1.5">
-        {Array.from({ length: 24 }, (_, index) => (
-          <span
-            key={index}
-            className={cn(
-              "h-full min-w-0 flex-1 rounded-sm transition-colors motion-reduce:transition-none",
-              inputLevel * 24 > index ? "bg-primary" : "bg-muted",
-            )}
-          />
-        ))}
-      </div>
-      <div className="mt-3 flex items-center justify-between text-xs text-muted-foreground">
-        <span>{t("setupPage.inputLevel")}</span>
-        <span className="tabular-nums">{`${Math.round(inputLevel * 100)}%`}</span>
-      </div>
-      <meter
-        aria-label={t("setupPage.microphoneLevel")}
-        className="sr-only"
-        min={0}
-        max={1}
-        value={level}
-      />
-    </div>
   );
 }

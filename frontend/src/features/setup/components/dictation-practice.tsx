@@ -1,7 +1,7 @@
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { AudioMeter } from "@/features/dictation/components/audio-meter";
 import {
-  useAudioLevel,
   useDictationActions,
   useDictationMetadata,
   useDictationStatus,
@@ -25,7 +25,6 @@ export function DictationPractice({
   const { run } = useDictationActions();
   const status = useDictationStatus();
   const { diagnostic } = useDictationMetadata();
-  const level = useAudioLevel();
   const [pending, setPending] = useState(false);
   const recording = status.phase === "diagnostic-recording";
   const transcribing = status.phase === "diagnostic-transcribing";
@@ -44,12 +43,9 @@ export function DictationPractice({
     <>
       {recording && (
         <div className="flex flex-col gap-2">
-          <meter
-            aria-label={t("diagnosticsPanel.dictationTestMicrophoneLevel")}
-            className="h-4 w-full"
-            min={0}
-            max={1}
-            value={level}
+          <AudioMeter
+            label={t("diagnosticsPanel.dictationTestMicrophoneLevel")}
+            className="max-w-none"
           />
           <p role="status" className="text-sm text-muted-foreground">
             {t("onboarding.sayThenStop")}
