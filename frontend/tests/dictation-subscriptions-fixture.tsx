@@ -35,7 +35,7 @@ const update = {
   error: "",
   message: "",
 };
-Object.assign(Reflect.get(window, "mockBackend").main.App, {
+Object.assign(Reflect.get(window, "mockBackend").app.App, {
   GetSnapshot: async () => structuredClone(snapshot),
   CheckForUpdates: async () => structuredClone(update),
   GetUpdateStatus: async () => structuredClone(update),

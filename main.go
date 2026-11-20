@@ -6,12 +6,11 @@ import (
 	"log"
 	"os"
 
-	"yap/internal/indicator"
+	"yap/internal/app"
 	"yap/internal/inference/speech"
 	"yap/internal/platform"
 
-	"github.com/wailsapp/wails/v3/pkg/application"
-	"github.com/wailsapp/wails/v3/pkg/events"
+	"gopkg.in/yaml.v3"
 )
 
 //go:embed all:frontend/dist
@@ -19,6 +18,26 @@ var assets embed.FS
 
 //go:embed build/appicon.png
 var appIcon []byte
+
+// Use the same version for update checks and native executable metadata.
+//
+//go:embed build/config.yml
+var appBuildConfig []byte
+
+// A separate public release repository can be selected with -ldflags "-X main.updateRepository=owner/repo".
+var updateRepository = "benjaminraffetseder/yap"
+
+func appVersion() string {
+	var config struct {
+		Info struct {
+			Version string `yaml:"version"`
+		} `yaml:"info"`
+	}
+	if err := yaml.Unmarshal(appBuildConfig, &config); err != nil {
+		panic(err)
+	}
+	return config.Info.Version
+}
 
 func main() {
 	if handled, err := speech.RunWorker(os.Args[1:]); handled {
@@ -31,46 +50,12 @@ func main() {
 	if err := platform.PrepareDesktopEntry(); err != nil {
 		log.Printf("prepare desktop launcher: %v", err)
 	}
-	service := NewApp()
-	app := application.New(application.Options{
-		Name:           "Yap",
-		Icon:           appIcon,
-		Mac:            application.MacOptions{ApplicationShouldTerminateAfterLastWindowClosed: true},
-		Windows:        indicator.WindowsOptions(),
-		Linux:          application.LinuxOptions{ApplicationID: "com.yap.desktop", ProgramName: "com.yap.desktop"},
-		Services:       []application.Service{application.NewService(service)},
-		Assets:         application.AssetOptions{Handler: application.AssetFileServerFS(assets)},
-		SingleInstance: singleInstanceLock(service),
-		ShouldQuit:     service.shouldQuit,
-		OnShutdown:     func() { service.shutdown(service.ctx) },
-	})
-	service.desktop = app
-	if err := configureUpdater(app.Updater); err != nil {
-		log.Fatal(err)
-	}
-	window := app.Window.NewWithOptions(application.WebviewWindowOptions{
-		Name: "main", Title: "Yap", URL: "/",
-		Width: 1100, Height: 760, MinWidth: 760, MinHeight: 560,
-		BackgroundColour: application.RGBA{Red: 250, Green: 250, Blue: 250, Alpha: 255},
-		Hidden:           true, EnableFileDrop: true,
-	})
-	service.window = window
-	window.OnWindowEvent(events.Common.WindowRuntimeReady, func(*application.WindowEvent) {
-		service.onDomReady(service.ctx)
-	})
-	window.RegisterHook(events.Common.WindowClosing, func(event *application.WindowEvent) {
-		if service.beforeClose(service.ctx) {
-			event.Cancel()
-		}
-	})
-	window.OnWindowEvent(events.Common.WindowFilesDropped, func(event *application.WindowEvent) {
-		// Deliver only to this webview; native GTK drops have no DOM drop event.
-		// Broadcasting would also import in attached development browser previews.
-		window.DispatchWailsEvent(&application.CustomEvent{
-			Name: "audio:files-dropped", Data: event.Context().DroppedFiles(),
-		})
-	})
-	if err := app.Run(); err != nil {
+	if err := app.Run(app.Options{
+		Assets:           assets,
+		Icon:             appIcon,
+		Version:          appVersion(),
+		UpdateRepository: updateRepository,
+	}); err != nil {
 		log.Fatal(err)
 	}
 }

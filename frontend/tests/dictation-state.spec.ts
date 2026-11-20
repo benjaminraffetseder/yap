@@ -369,7 +369,7 @@ test("home surface successful save with failed refresh retries the refresh witho
   const dialog = activeDialog(page);
   await dialog.getByLabel("Profile name").fill("Work notes");
   await page.evaluate(() => {
-    const app = Reflect.get(window, "mockBackend").main.App;
+    const app = Reflect.get(window, "mockBackend").app.App;
     const save = app.SaveDictationProfile;
     Reflect.set(window, "profileWrites", 0);
     app.SaveDictationProfile = async (profile: DictationProfile) => {
@@ -405,7 +405,7 @@ test("home surface profile save blocks recording, selectors and repeated keyboar
   const dialog = activeDialog(page);
   await dialog.getByLabel("Profile name").fill("Work notes");
   await page.evaluate(() => {
-    const app = Reflect.get(window, "mockBackend").main.App;
+    const app = Reflect.get(window, "mockBackend").app.App;
     const save = app.SaveDictationProfile;
     Reflect.set(window, "profileWrites", 0);
     app.SaveDictationProfile = async (profile: DictationProfile) => {
@@ -573,7 +573,7 @@ test.describe("Home preview", () => {
     await page.waitForTimeout(1100);
     await page.evaluate(() => {
       const state = window.dictationTest;
-      Reflect.get(window, "mockBackend").main.App.StopRecording = async () => {
+      Reflect.get(window, "mockBackend").app.App.StopRecording = async () => {
         state.snapshot.latestResult = {
           session: { ...state.snapshot.history[0], id: "temporary-preview" },
           text: "Let’s give the Home screen more breathing room and keep the everyday controls easy to reach.",
@@ -646,7 +646,7 @@ async function settingsClarityScenario(
       state.snapshot.appProfileRules = [
         { applicationId: "windows:slack.exe", applicationName: "Slack", profileId: "work" },
       ];
-      Reflect.get(window, "mockBackend").main.App.GetAudioSupport = async () => ({
+      Reflect.get(window, "mockBackend").app.App.GetAudioSupport = async () => ({
         installed: false,
         managed: false,
         path: "",
@@ -756,7 +756,7 @@ test("settings clarity keeps pending and failed drafts protected across profile 
 }) => {
   await settingsClarityScenario(page);
   await page.evaluate(() => {
-    const app = Reflect.get(window, "mockBackend").main.App;
+    const app = Reflect.get(window, "mockBackend").app.App;
     const save = app.SaveSettings;
     app.SaveSettings = async (settings: Settings) => {
       await new Promise<void>((resolve) => Reflect.set(window, "releaseSettingsSave", resolve));
@@ -966,7 +966,7 @@ for (const [lang, width, height] of [
     await page.goto("/#/settings?section=dictation");
     await page.evaluate((raw) => {
       document.documentElement.style.fontSize = "200%";
-      Reflect.get(window, "mockBackend").main.App.SaveSettings = async () => {
+      Reflect.get(window, "mockBackend").app.App.SaveSettings = async () => {
         throw Error(raw);
       };
     }, raw);
@@ -1504,7 +1504,7 @@ for (const theme of ["dark", "light"] as const) {
     await expect(selector).toContainText("Whisper Tiny");
     await page.screenshot({ path: testInfo.outputPath("dictation-ready-desktop.png") });
     await page.evaluate(() => {
-      Reflect.get(window, "mockBackend").main.App.StopRecording = async () => {
+      Reflect.get(window, "mockBackend").app.App.StopRecording = async () => {
         window.dictationTest.status("transcribing");
       };
     });
@@ -1591,7 +1591,7 @@ test("home speech model selector shows the active model and saves installed sele
     structuredClone(window.dictationTest.snapshot.settings),
   );
   await page.evaluate(() => {
-    const app = Reflect.get(window, "mockBackend").main.App;
+    const app = Reflect.get(window, "mockBackend").app.App;
     const save = app.SaveSettings;
     app.SaveSettings = async (settings: Settings) => {
       await new Promise<void>((resolve) => Reflect.set(window, "finishModelSwitch", resolve));
@@ -1672,7 +1672,7 @@ test("home speech model selector retains custom and failed selections and blocks
 
 async function simulateModelDownload(page: Page) {
   await page.evaluate(() => {
-    Reflect.get(window, "mockBackend").main.App.InstallModel = async (id: string) => {
+    Reflect.get(window, "mockBackend").app.App.InstallModel = async (id: string) => {
       const state = window.dictationTest;
       if (state.failSave) throw new Error("Download could not start");
       state.installedModelIDs.push(id);
@@ -1794,7 +1794,7 @@ async function shortcutPermissionScenario(page: Page, setup = false) {
     state.snapshot.microphoneTested = true;
     const permission = { granted: false, attempts: 0 };
     Reflect.set(window, "shortcutPermissionTest", permission);
-    Reflect.set(Reflect.get(window, "mockBackend").main.App, "RetryShortcut", async () => {
+    Reflect.set(Reflect.get(window, "mockBackend").app.App, "RetryShortcut", async () => {
       permission.attempts++;
       if (permission.granted) state.snapshot.status.shortcutError = "";
       state.callbacks["dictation:status"](structuredClone(state.snapshot.status));
@@ -2537,7 +2537,7 @@ test("model testing stays inside its form and cancellation remains available", a
     window.dictationTest.snapshot.textProcessing.enabled = true;
     window.dictationTest.snapshot.textProcessing.model = "saved-model";
     Reflect.set(
-      Reflect.get(window, "mockBackend").main.App,
+      Reflect.get(window, "mockBackend").app.App,
       "TestTextModel",
       async () => new Promise<string>((resolve) => Reflect.set(window, "finishModelTest", resolve)),
     );
@@ -2875,7 +2875,7 @@ test("leaving prompts cancels refinement and old backends show recovery guidance
   await page.goto("/#/prompts?section=models");
   await page.getByLabel("Model identifier", { exact: true }).fill("local");
   await page.evaluate(() => {
-    Reflect.deleteProperty(Reflect.get(window, "mockBackend").main.App, "RefinePrompt");
+    Reflect.deleteProperty(Reflect.get(window, "mockBackend").app.App, "RefinePrompt");
   });
   await page.getByRole("tab", { name: "Prompts", exact: true }).click();
   await page.getByRole("button", { name: "Refine prompt", exact: true }).click();
@@ -2904,7 +2904,7 @@ test("disconnected saved microphone allows unrelated settings saves", async ({ p
 test("setup ignores an older microphone enumeration reply", async ({ page }) => {
   await page.addInitScript(() => {
     window.dictationTest.snapshot.settings.setupComplete = false;
-    const app = Reflect.get(window, "mockBackend").main.App;
+    const app = Reflect.get(window, "mockBackend").app.App;
     const pending: ((devices: { id: string; name: string }[]) => void)[] = [];
     Reflect.set(window, "micReplies", pending);
     app.GetMicrophones = () => new Promise((resolve) => pending.push(resolve));
@@ -3721,7 +3721,7 @@ async function installDictationFixture(page: Page) {
         },
       },
       mockBackend: {
-        main: {
+        app: {
           App: {
             SetIndicatorTheme: async (dark: boolean) => {
               state.indicatorThemes.push(dark);
@@ -5136,7 +5136,7 @@ test("microphone errors use a dismissible toast without adding a page banner", a
     localStorage.setItem("desktop-theme", "dark");
     const state = window.dictationTest;
     state.snapshot.settings.setupComplete = false;
-    Reflect.get(window, "mockBackend").main.App.StopMicrophoneTest = async () => {
+    Reflect.get(window, "mockBackend").app.App.StopMicrophoneTest = async () => {
       const error =
         "no microphone signal detected; check microphone access and choose another input";
       state.snapshot.microphoneTested = false;
@@ -5838,7 +5838,7 @@ test("direct dictation pages load older entries outside the snapshot, retry erro
       language: "en",
       audioPath: "",
     }));
-    Reflect.set(Reflect.get(window, "mockBackend").main.App, "GetSnapshot", async () => ({
+    Reflect.set(Reflect.get(window, "mockBackend").app.App, "GetSnapshot", async () => ({
       ...structuredClone(state.snapshot),
       history: structuredClone(state.snapshot.history.slice(0, 500)),
     }));
@@ -5931,7 +5931,7 @@ test("dictation pages ignore a late reply from another entry", async ({ page }) 
 
 test("dictation pages show restart guidance for an outdated backend", async ({ page }) => {
   await page.addInitScript(() => {
-    Reflect.deleteProperty(Reflect.get(window, "mockBackend").main.App, "GetSession");
+    Reflect.deleteProperty(Reflect.get(window, "mockBackend").app.App, "GetSession");
   });
   await page.goto("/#/history/one");
   await expect(page.getByRole("alert").filter({ hasText: "restart wails3 dev" })).toBeVisible();
@@ -6425,7 +6425,7 @@ test("an outdated outputs backend keeps the transcription visible and provides r
         audioPath: "",
       },
     ];
-    Reflect.deleteProperty(Reflect.get(window, "mockBackend").main.App, "GetSessionOutputs");
+    Reflect.deleteProperty(Reflect.get(window, "mockBackend").app.App, "GetSessionOutputs");
   });
   await page.goto("/#/history/one");
   await expect(page.getByRole("region", { name: "Result", exact: true })).toContainText(
@@ -6435,7 +6435,7 @@ test("an outdated outputs backend keeps the transcription visible and provides r
   await page.getByRole("tab", { name: "Outputs", exact: true }).click();
   await expect(page.getByRole("alert").filter({ hasText: "restart wails3 dev" })).toBeVisible();
   await page.evaluate(() => {
-    Reflect.set(Reflect.get(window, "mockBackend").main.App, "GetSessionOutputs", async () => []);
+    Reflect.set(Reflect.get(window, "mockBackend").app.App, "GetSessionOutputs", async () => []);
   });
   await page.getByRole("button", { name: "Retry outputs", exact: true }).click();
   await expect(page.getByText("No generated outputs yet.", { exact: true })).toBeVisible();
@@ -6673,8 +6673,8 @@ async function sessionTitleScenario(page: Page) {
       generationDefer: false,
       cancelledGeneration: [],
     };
-    const api = (window as unknown as { mockBackend: { main: { App: Record<string, unknown> } } })
-      .mockBackend.main.App;
+    const api = (window as unknown as { mockBackend: { app: { App: Record<string, unknown> } } })
+      .mockBackend.app.App;
     const cancelText = api.CancelTextProcessing as (id: string) => Promise<void>;
     Object.assign(api, {
       GenerateSessionTitle: async (id: string, sessionID: string) => {
@@ -9836,7 +9836,7 @@ test("older backends show discovery restart guidance without hiding Prompts", as
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await page.addInitScript(() => {
-    Reflect.deleteProperty(Reflect.get(window, "mockBackend").main.App, "ListTextModels");
+    Reflect.deleteProperty(Reflect.get(window, "mockBackend").app.App, "ListTextModels");
   });
   await page.goto("/#/prompts?section=models");
   await expect(page.getByRole("alert").filter({ hasText: "restart wails3 dev" })).toBeVisible();
@@ -10234,7 +10234,7 @@ test("an outdated backup backend provides restart guidance without hiding Settin
   page,
 }) => {
   await page.addInitScript(() => {
-    Reflect.deleteProperty(Reflect.get(window, "mockBackend").main.App, "PreviewBackup");
+    Reflect.deleteProperty(Reflect.get(window, "mockBackend").app.App, "PreviewBackup");
   });
   await page.goto("/#/settings?section=history");
   const panel = page.getByRole("region", {
@@ -10468,7 +10468,7 @@ test("audio drag and drop reports an outdated backend", async ({ page }) => {
   await page.goto("/#/history");
   await expect(page.getByRole("button", { name: "Import audio", exact: true })).toBeEnabled();
   await page.evaluate(() => {
-    Reflect.deleteProperty(Reflect.get(window, "mockBackend").main.App, "ImportDroppedAudio");
+    Reflect.deleteProperty(Reflect.get(window, "mockBackend").app.App, "ImportDroppedAudio");
   });
   await dropAudioFiles(page, ["C:\\meeting.wav"]);
   await expect(page.getByRole("alert").filter({ hasText: "different versions" })).toBeVisible();
@@ -10559,7 +10559,7 @@ test("audio import handles file-picker cancellation, unavailable models, invalid
   await button.click();
   await expect(page.getByRole("alert")).toContainText("Choose an uncompressed mono or stereo WAV");
   await page.evaluate(() => {
-    Reflect.deleteProperty(Reflect.get(window, "mockBackend").main.App, "ImportAudio");
+    Reflect.deleteProperty(Reflect.get(window, "mockBackend").app.App, "ImportAudio");
   });
   await button.click();
   await expect(page.getByRole("alert").filter({ hasText: "different versions" })).toBeVisible();
@@ -11537,7 +11537,7 @@ test("copy confirmation ignores a reply for a different transcript tab", async (
         audioPath: "",
       },
     ];
-    Reflect.get(window, "mockBackend").main.App.CopyText = (text: string) =>
+    Reflect.get(window, "mockBackend").app.App.CopyText = (text: string) =>
       new Promise<void>((resolve) => {
         Reflect.set(window, "finishDelayedCopy", () => {
           window.dictationTest.clipboard = text;
@@ -11760,7 +11760,7 @@ test("adding an app to another profile moves its badge and the picker names its 
       { applicationId: "windows:outlook.exe", applicationName: "Outlook", profileId: "email" },
       { applicationId: "windows:slack.exe", applicationName: "Slack", profileId: "casual" },
     ];
-    Reflect.get(window, "mockBackend").main.App.GetProfileApplications = async () => [
+    Reflect.get(window, "mockBackend").app.App.GetProfileApplications = async () => [
       { id: "windows:outlook.exe", name: "Outlook" },
       { id: "windows:slack.exe", name: "Slack" },
       { id: "windows:code.exe", name: "Visual Studio Code" },
@@ -12138,7 +12138,7 @@ test("auto-save vocabulary keeps submitted aliases without a loop and skips empt
 }) => {
   await page.goto("/#/vocabulary");
   await page.evaluate(() => {
-    const app = Reflect.get(window, "mockBackend").main.App;
+    const app = Reflect.get(window, "mockBackend").app.App;
     const original = app.SaveVocabulary;
     Reflect.set(window, "autoSaveCalls", []);
     app.SaveVocabulary = (entries: VocabularyEntry[]) => {
@@ -12339,7 +12339,7 @@ test("auto-save serializes requests and preserves edits made while a save is pen
 }) => {
   await page.goto("/#/prompts");
   await page.evaluate(() => {
-    const app = Reflect.get(window, "mockBackend").main.App;
+    const app = Reflect.get(window, "mockBackend").app.App;
     const original = app.SaveTextProcessing;
     Reflect.set(window, "autoSaveCalls", []);
     app.SaveTextProcessing = (config: TextProcessing) =>
@@ -12462,7 +12462,7 @@ test("auto-save revision history restores prompt content and blocks chains with 
         steps: [{ id: "other-step", promptId: "summary", input: "original" }],
       },
     ];
-    const app = Reflect.get(window, "mockBackend").main.App;
+    const app = Reflect.get(window, "mockBackend").app.App;
     app.GetRevisions = async (kind: string) => [
       {
         id: 1,
@@ -12501,7 +12501,7 @@ test("auto-save revision history restores prompt content and blocks chains with 
   await expect(chainHistory.getByRole("button", { name: "Restore version" })).toBeDisabled();
   await chainHistory.getByRole("button", { name: "Close", exact: true }).first().click();
   await page.evaluate(() => {
-    const app = Reflect.get(window, "mockBackend").main.App;
+    const app = Reflect.get(window, "mockBackend").app.App;
     app.GetRevisions = async () => [
       {
         id: 1,
@@ -12548,7 +12548,7 @@ test("auto-save history restores the vocabulary list and transcript, marks curre
         audioPath: "",
       },
     ];
-    const app = Reflect.get(window, "mockBackend").main.App;
+    const app = Reflect.get(window, "mockBackend").app.App;
     Reflect.set(window, "failRevisionLoad", true);
     app.GetRevisions = async (kind: string) => {
       if (Reflect.get(window, "failRevisionLoad")) throw new Error("History load failed");
@@ -12648,7 +12648,7 @@ test("desktop integration: Home retries a conflict once and keeps pending contro
     state.status("idle");
     const control = { calls: 0, release: () => {} };
     Reflect.set(window, "desktopRetry", control);
-    Reflect.get(window, "mockBackend").main.App.RetryShortcut = async () => {
+    Reflect.get(window, "mockBackend").app.App.RetryShortcut = async () => {
       control.calls++;
       await new Promise<void>((resolve) => {
         control.release = resolve;
@@ -13772,7 +13772,7 @@ test("history events refresh an older session and outputs outside an unchanged s
     ];
     const frozen = structuredClone(state.snapshot);
     frozen.history = [];
-    Reflect.get(window, "mockBackend").main.App.GetSnapshot = async () => structuredClone(frozen);
+    Reflect.get(window, "mockBackend").app.App.GetSnapshot = async () => structuredClone(frozen);
   });
   await page.goto("/#/history/older");
   await expect(page.getByRole("region", { name: "Result", exact: true })).toContainText(
@@ -13825,7 +13825,7 @@ test("a history event supersedes an initial read of the same session", async ({ 
     };
     state.snapshot.history = [session];
     let first = true;
-    Reflect.get(window, "mockBackend").main.App.GetSession = async () => {
+    Reflect.get(window, "mockBackend").app.App.GetSession = async () => {
       if (!first) return structuredClone(session);
       first = false;
       const obsolete = structuredClone(session);
@@ -13858,7 +13858,7 @@ test("saved Query reads and mutations remain native while offline", async ({ pag
   const language = page.getByRole("combobox", { name: "Spoken language", exact: true });
   await expect(language).toBeEnabled();
   await page.evaluate(() => {
-    const app = Reflect.get(window, "mockBackend").main.App;
+    const app = Reflect.get(window, "mockBackend").app.App;
     const save = app.SaveSettings;
     Reflect.set(window, "offlineSettingsWrites", 0);
     app.SaveSettings = async (value: Settings) => {
@@ -13933,7 +13933,7 @@ test("saved configuration discards a deferred read after a newer profile and sta
 }) => {
   await homeSurfaceScenario(page);
   await page.evaluate(() => {
-    const app = Reflect.get(window, "mockBackend").main.App;
+    const app = Reflect.get(window, "mockBackend").app.App;
     const read = app.GetConfiguration;
     let defer = true;
     app.GetConfiguration = async () => {
@@ -13952,7 +13952,7 @@ test("saved configuration discards a deferred read after a newer profile and sta
     .poll(() => page.evaluate(() => typeof Reflect.get(window, "releaseOldConfiguration")))
     .toBe("function");
   await page.evaluate(() => {
-    const app = Reflect.get(window, "mockBackend").main.App;
+    const app = Reflect.get(window, "mockBackend").app.App;
     const state = window.dictationTest;
     const old = Reflect.get(window, "releaseOldConfiguration");
     // Release the old native reply only after a newer read has supplied the profile.
@@ -14019,7 +14019,7 @@ test("a late settings receipt cannot undo a later native profile change or newer
   const shortcut = page.getByLabel("Global shortcut", { exact: true });
   await expect(shortcut).toBeEnabled();
   await page.evaluate(() => {
-    const app = Reflect.get(window, "mockBackend").main.App;
+    const app = Reflect.get(window, "mockBackend").app.App;
     const save = app.SaveSettings;
     app.SaveSettings = async (value: Settings) => {
       await save(value);
@@ -14094,7 +14094,7 @@ test("an initial saved configuration read is superseded by a newer native change
   page,
 }) => {
   await page.addInitScript(() => {
-    const app = Reflect.get(window, "mockBackend").main.App;
+    const app = Reflect.get(window, "mockBackend").app.App;
     const read = app.GetConfiguration;
     let deferred = true;
     const replies: (() => void)[] = [];
@@ -14133,7 +14133,7 @@ test("a focused saved read failure preserves protection and explicit recovery", 
   page,
 }) => {
   await page.addInitScript(() => {
-    const app = Reflect.get(window, "mockBackend").main.App;
+    const app = Reflect.get(window, "mockBackend").app.App;
     const read = app.GetConfiguration;
     let fail = true;
     app.GetConfiguration = async () => {
@@ -14163,7 +14163,7 @@ for (const form of ["settings", "prompts"] as const) {
     page,
   }) => {
     await page.addInitScript((form) => {
-      const app = Reflect.get(window, "mockBackend").main.App;
+      const app = Reflect.get(window, "mockBackend").app.App;
       const read = app.GetConfiguration;
       const method = form === "settings" ? "SaveSettings" : "SaveTextProcessing";
       const save = app[method];
@@ -14288,7 +14288,7 @@ for (const form of ["settings", "prompts"] as const) {
 
 test("scoped configuration events refresh only their saved query domain", async ({ page }) => {
   await page.addInitScript(() => {
-    const app = Reflect.get(window, "mockBackend").main.App;
+    const app = Reflect.get(window, "mockBackend").app.App;
     const counts = { GetConfiguration: 0, GetVocabulary: 0, GetModelCatalog: 0 };
     Reflect.set(window, "savedReadCounts", counts);
     for (const name of Object.keys(counts) as (keyof typeof counts)[]) {
@@ -14353,7 +14353,7 @@ test("a late saved model catalog read cannot undo a completed installation", asy
   const tiny = page.getByRole("region", { name: "Whisper Tiny", exact: true });
   await expect(tiny.getByRole("button", { name: "Download & use", exact: true })).toBeEnabled();
   await page.evaluate(() => {
-    const app = Reflect.get(window, "mockBackend").main.App;
+    const app = Reflect.get(window, "mockBackend").app.App;
     const read = app.GetModelCatalog;
     let deferred = true;
     Reflect.set(window, "allowCatalogReads", () => {

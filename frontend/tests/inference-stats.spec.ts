@@ -160,7 +160,7 @@ async function scenario(page: Page, enabled = false, legacy = false) {
           message: "",
         }),
       };
-      Reflect.set(window, "mockBackend", { main: { App: methods } });
+      Reflect.set(window, "mockBackend", { app: { App: methods } });
       Reflect.set(window, "mockEvents", {
         subscribe: (name: string, callback: (...args: unknown[]) => void) => {
           callbacks[name] = callback;

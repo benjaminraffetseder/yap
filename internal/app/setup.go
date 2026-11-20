@@ -1,0 +1,215 @@
+package app
+
+import (
+	"errors"
+	"strings"
+	"time"
+
+	"yap/internal/inference/speech"
+	"yap/internal/vocabulary"
+
+	"github.com/google/uuid"
+)
+
+func (a *App) SaveVocabulary(entries []vocabulary.Entry) ([]vocabulary.Entry, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.saveVocabularyLocked(entries)
+}
+
+// Add or merge against the current vocabulary, not a stale webview snapshot.
+func (a *App) AddVocabularyTerm(canonical string, aliases []string) ([]vocabulary.Entry, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	entries := append([]vocabulary.Entry{}, a.vocabulary...)
+	for i, entry := range entries {
+		if strings.EqualFold(entry.Canonical, strings.TrimSpace(canonical)) {
+			// Repeated corrections add aliases to the current term, including at
+			// the term limit. Clone its slice so failed saves cannot mutate it.
+			entries[i].Canonical = canonical
+			merged := append([]string{}, entry.Aliases...)
+			for _, alias := range aliases {
+				alias = strings.TrimSpace(alias)
+				found := strings.EqualFold(alias, strings.TrimSpace(canonical))
+				for _, existing := range merged {
+					found = found || strings.EqualFold(alias, existing)
+				}
+				if !found {
+					merged = append(merged, alias)
+				}
+			}
+			entries[i].Aliases = merged
+			entries[i].Enabled = true
+			return a.saveVocabularyLocked(entries)
+		}
+	}
+	entries = append(entries, vocabulary.Entry{ID: uuid.NewString(), Canonical: canonical, Aliases: aliases, Enabled: true})
+	return a.saveVocabularyLocked(entries)
+}
+
+func (a *App) saveVocabularyLocked(entries []vocabulary.Entry) ([]vocabulary.Entry, error) {
+	if err := a.available(); err != nil {
+		return nil, err
+	}
+	if a.busy() {
+		return nil, errors.New("finish the current operation before changing vocabulary")
+	}
+	normalized, err := vocabulary.Normalize(entries)
+	if err != nil {
+		return nil, err
+	}
+	if err = a.store.SaveVocabulary(normalized); err != nil {
+		return nil, err
+	}
+	a.vocabulary = normalized
+	a.diagnostic = DiagnosticResult{}
+	a.event("setup:changed", []string{"vocabulary"})
+	return vocabulary.Normalize(normalized)
+}
+
+// Microphone-only tests never invoke inference or retain their audio.
+func (a *App) StartMicrophoneTest() error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.startCaptureTest(false)
+}
+
+func (a *App) startCaptureTest(transcription bool) error {
+	if err := a.available(); err != nil {
+		return err
+	}
+	if a.busy() {
+		return errors.New("finish the current operation first")
+	}
+	f, path, err := a.store.CreateRecording()
+	if err != nil {
+		return err
+	}
+	if err = f.Close(); err != nil {
+		return errors.Join(err, a.discardAudioLocked(path))
+	}
+	a.microphoneTested = false
+	a.micSignal.Store(false)
+	if err = a.recorder.Start(path, a.settings.MicrophoneID, func(level float64) {
+		if level >= .03 && level <= 1 {
+			a.micSignal.Store(true)
+		}
+		a.event("dictation:level", level)
+	}); err != nil {
+		a.event("setup:changed")
+		return errors.Join(err, a.discardAudioLocked(path))
+	}
+	a.path = path
+	a.status.Phase, a.status.Message = "mic-test", "Speak to test your microphone"
+	if transcription {
+		a.recordSettings = a.settings
+		a.recordVocabulary, _ = vocabulary.Normalize(a.vocabulary)
+		a.status.Phase, a.status.Message = "diagnostic-recording", "Say a short sentence, then stop the test"
+		a.diagnostic = DiagnosticResult{Phase: "recording", Message: a.status.Message}
+	}
+	a.status.StartedAt = time.Now().UnixMilli()
+	a.emit()
+	a.event("setup:changed")
+	a.timer = time.AfterFunc(10*time.Second, func() {
+		a.mu.Lock()
+		defer a.mu.Unlock()
+		if !a.closing && a.path == path && (a.status.Phase == "mic-test" || a.status.Phase == "diagnostic-recording") {
+			_ = a.stopCaptureTest()
+		}
+	})
+	return nil
+}
+
+func (a *App) StopMicrophoneTest() error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if err := a.available(); err != nil {
+		return err
+	}
+	if a.status.Phase != "mic-test" {
+		return errors.New("no microphone test in progress")
+	}
+	return a.stopCaptureTest()
+}
+
+func (a *App) stopCaptureTest() error {
+	diagnostic := a.status.Phase == "diagnostic-recording"
+	if a.timer != nil {
+		a.timer.Stop()
+	}
+	duration, err := a.recorder.Stop()
+	if diagnostic && err == nil && a.micSignal.Load() && duration >= 300 {
+		a.microphoneTested = true
+		a.transcribeDiagnostic(duration)
+		return nil
+	}
+	err = errors.Join(err, a.discardAudioLocked(a.path))
+	a.microphoneTested = err == nil && a.micSignal.Load()
+	a.status.Phase, a.status.Message = "idle", "Microphone test passed"
+	a.status.StartedAt = 0
+	if err == nil && !a.microphoneTested {
+		err = errors.New("no microphone signal detected; check microphone access and choose another input")
+	}
+	if diagnostic {
+		if err == nil {
+			err = errors.New("record for at least a moment before stopping the test")
+		}
+		a.diagnostic = DiagnosticResult{Phase: "error", Message: err.Error()}
+	}
+	if err != nil {
+		a.status.Message = err.Error()
+	}
+	a.emit()
+	a.event("setup:changed")
+	return err
+}
+
+func (a *App) CompleteSetup(skip bool) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if err := a.available(); err != nil {
+		return err
+	}
+	if a.busy() {
+		return errors.New("finish the current operation first")
+	}
+	if !skip {
+		if err := speech.Validate(speech.Options{Executable: a.settings.WhisperPath, Model: a.settings.ModelPath}); err != nil {
+			return err
+		}
+		if !a.microphoneTested {
+			return errors.New("test your microphone before finishing setup")
+		}
+		if !a.shortcutTested || a.status.ShortcutError != "" {
+			return errors.New("press your registered shortcut before finishing setup")
+		}
+	}
+	settings := a.settings
+	settings.SetupComplete = true
+	if err := a.saveSettingsWithDefaultLocked(settings); err != nil {
+		return err
+	}
+	a.settings = settings
+	a.event("setup:changed")
+	return nil
+}
+
+func (a *App) RestartSetup() error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if err := a.available(); err != nil {
+		return err
+	}
+	if a.busy() {
+		return errors.New("finish the current operation first")
+	}
+	settings := a.settings
+	settings.SetupComplete = false
+	if err := a.store.SaveSettings(settings); err != nil {
+		return err
+	}
+	a.settings = settings
+	a.microphoneTested, a.shortcutTested = false, false
+	a.event("setup:changed")
+	return nil
+}

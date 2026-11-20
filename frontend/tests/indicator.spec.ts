@@ -69,7 +69,7 @@ test.beforeEach(async ({ page }) => {
     const emitted: { name: string; data: unknown }[] = [];
     Reflect.set(window, "indicatorEvents", emitted);
     Reflect.set(window, "mockBackend", {
-      main: {
+      app: {
         App: new Proxy(
           {},
           {

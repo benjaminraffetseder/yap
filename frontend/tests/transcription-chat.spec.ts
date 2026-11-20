@@ -264,7 +264,7 @@ async function scenario(page: Page) {
       },
     };
     Reflect.set(window, "chatTest", state);
-    Reflect.set(window, "mockBackend", { main: { App: methods } });
+    Reflect.set(window, "mockBackend", { app: { App: methods } });
     Reflect.set(window, "mockEvents", {
       subscribe: (name: string, callback: (...args: unknown[]) => void) => {
         callbacks[name] = callback;
@@ -316,7 +316,7 @@ test("delayed chat send replies cannot restore a conversation cleared after navi
   await scenario(page);
   await openChat(page);
   await page.evaluate(() => {
-    const app = Reflect.get(window, "mockBackend").main.App;
+    const app = Reflect.get(window, "mockBackend").app.App;
     const send = app.SendChatMessage;
     app.SendChatMessage = async (...args: [string, string, ChatRequest]) => {
       const value = await send(...args);
@@ -360,7 +360,7 @@ test("failed chat sends recover persisted turns and remain retryable after navig
   await scenario(page);
   await openChat(page);
   await page.evaluate(() => {
-    const app = Reflect.get(window, "mockBackend").main.App;
+    const app = Reflect.get(window, "mockBackend").app.App;
     const send = app.SendChatMessage;
     const get = app.GetSessionChat;
     app.GetSessionChat = async () => {
@@ -409,7 +409,7 @@ test("chat events refresh only their session and preserve external request owner
   await page.evaluate(() => {
     const state = Reflect.get(window, "chatTest");
     Reflect.set(window, "externalChatReads", 0);
-    Reflect.get(window, "mockBackend").main.App.GetSessionChat = async () => {
+    Reflect.get(window, "mockBackend").app.App.GetSessionChat = async () => {
       Reflect.set(window, "externalChatReads", Reflect.get(window, "externalChatReads") + 1);
       return structuredClone(state.chat);
     };

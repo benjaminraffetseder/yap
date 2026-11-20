@@ -1,0 +1,23 @@
+//go:build !dev
+
+package app
+
+import (
+	"testing"
+
+	"github.com/wailsapp/wails/v3/pkg/application"
+)
+
+func TestReleaseRetainsSingleInstanceReopen(t *testing.T) {
+	app := newApp(Options{})
+	shown := 0
+	app.showWindow = func() { shown++ }
+	lock := singleInstanceLock(app)
+	if lock == nil || lock.UniqueID != "com.yap.desktop" || lock.OnSecondInstanceLaunch == nil {
+		t.Fatal("packaged builds must retain the shared application lock")
+	}
+	lock.OnSecondInstanceLaunch(application.SecondInstanceData{})
+	if shown != 1 || !app.windowRequested {
+		t.Fatal("second launch must reopen the running packaged application")
+	}
+}

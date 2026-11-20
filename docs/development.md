@@ -37,8 +37,8 @@ shortcuts through Wails. Use the desktop app to test those.
 
 | Path                 | Purpose                                                                     |
 | -------------------- | --------------------------------------------------------------------------- |
-| `main.go`            | Window setup and app entry point                                            |
-| `app*.go`            | Recording state and methods exposed to the frontend                         |
+| `main.go`            | App entry point, embedded assets, and release metadata                       |
+| `internal/app`       | Desktop setup, recording state, and methods exposed to the frontend          |
 | `internal/audio`     | Capture, decoding, and WAV import                                           |
 | `internal/platform`  | Global shortcuts and text insertion                                         |
 | `internal/tray`      | Wails v3 system tray menu and recording-state adapter                       |
@@ -57,6 +57,11 @@ shared folders. Components and hooks for a product area live together under
 Keep platform-specific code in the existing `_windows`, `_darwin`, `_linux`, and
 `_other` files with matching build tags. Bound Go structs use camelCase JSON fields.
 Wails generates `frontend/bindings`; don't edit it by hand.
+
+Application files and their tests share the `internal/app` package. `main.go`
+passes embedded assets and release metadata to `app.Run`; desktop lifecycle
+hooks and mutable application state stay inside the package. After changing
+bound Go types or methods, regenerate with `wails3 generate bindings -ts -i -names`.
 
 The main UI and floating indicator are separate Vite entry points. Keep the
 indicator in `frontend/src/features/indicator/components/indicator.tsx`, mounted by
@@ -242,7 +247,7 @@ the expected end state instead of assuming two animation frames finish a transit
 
 For an optional chat smoke test against a running local model server, set
 `YAP_CHAT_ENDPOINT` to its loopback `/v1` URL and `YAP_CHAT_MODEL` to a loaded model
-ID, then run `go test . -run '^TestChatLiveLocalModel$' -v -count=1` from the repo
+ID, then run `go test ./internal/app -run '^TestChatLiveLocalModel$' -v -count=1` from the repo
 root. It uses synthetic history in a temporary database to check source updates,
 passage references, and conversation compaction without changing app settings.
 
@@ -268,7 +273,7 @@ named below; desktop smoke tests exercise live native integrations:
 | --- | --- | --- |
 | `YAP_INDICATOR_SMOKE=1` | `go test ./internal/indicator -run '^TestNativeIndicator' -v -count=1` | Build the frontend first; real Wails window, controls, focus, dragging and saved geometry on Windows |
 | `YAP_INDICATOR_SMOKE=1` | `go test ./internal/indicator -run '^TestNativeIndicatorLinux$' -v -count=1 -timeout 30s` | Linux Wails/WebKit indicator, non-activating X11/XWayland surface, controls, dismissal, and repeated recordings; build the frontend first |
-| `YAP_SHUTDOWN_SMOKE=1` | `go test . -run '^TestNativeShutdown$' -v -count=1 -timeout 15s` | Wails quits while a worker holds the app mutex and awaits the UI thread, without changing the clipboard |
+| `YAP_SHUTDOWN_SMOKE=1` | `go test ./internal/app -run '^TestNativeShutdown$' -v -count=1 -timeout 15s` | Wails quits while a worker holds the app mutex and awaits the UI thread, without changing the clipboard |
 | `YAP_TRAY_SMOKE=1` | `go test ./internal/tray -run '^TestNativeTray$' -v -count=1 -timeout 35s` | Wails native tray lifecycle and menu-state updates |
 | `YAP_TRAY_SMOKE=1` | `go test ./internal/tray -run '^TestNativeLinuxTray$' -v -count=1 -timeout 25s` | Linux StatusNotifier registration, D-Bus menu updates, native clicks, and cleanup; requires a desktop tray host |
 | `YAP_INTEGRATION=1` | `go test ./internal/models -run TestRealWhisper -v -count=1` | Downloads Whisper and Tiny, then transcribes a sample |
@@ -287,6 +292,6 @@ to the separate release setup.
 Linux startup, package selection, worker cleanup, focus checks, and portal lifecycle
 regressions run in the normal Go suite. Portal tests use a private D-Bus session;
 backend tests replace shortcut registration so test runs never ask for desktop
-permissions. Run `go test -race . ./internal/platform ./internal/startup ./internal/process ./internal/updates`
+permissions. Run `go test -race ./internal/app ./internal/platform ./internal/startup ./internal/process ./internal/updates`
 for the permission/cancellation and lifecycle checks. The desktop app has also
 been tested interactively on Ubuntu x64 with GNOME Wayland.

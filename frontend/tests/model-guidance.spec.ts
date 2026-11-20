@@ -111,7 +111,7 @@ test.beforeEach(async ({ page }) => {
       },
     });
     Reflect.set(window, "mockBackend", {
-      main: {
+      app: {
         App: {
           GetSnapshot: async () => structuredClone(state.snapshot),
           CheckForUpdates: async () => ({ available: false, error: "" }),

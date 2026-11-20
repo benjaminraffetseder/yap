@@ -1,4 +1,4 @@
-import { SetIndicatorTheme } from "@bindings/yap/app";
+import { SetIndicatorTheme } from "@bindings/yap/internal/app/app";
 import { createContext, useContext, useLayoutEffect, useState, type ReactNode } from "react";
 
 type Theme = "light" | "dark" | "system";
