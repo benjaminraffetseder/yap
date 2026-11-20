@@ -10,18 +10,20 @@ import (
 )
 
 type AudioSupport struct {
-	Installed   bool   `json:"installed"`
-	Managed     bool   `json:"managed"`
-	Path        string `json:"path"`
-	CanDownload bool   `json:"canDownload"`
-	Size        int64  `json:"size"`
-	Message     string `json:"message"`
+	Installed       bool   `json:"installed"`
+	Managed         bool   `json:"managed"`
+	Path            string `json:"path"`
+	CanDownload     bool   `json:"canDownload"`
+	Size            int64  `json:"size"`
+	Message         string `json:"message"`
+	UpdateAvailable bool   `json:"updateAvailable"`
 }
 
 func AudioStatus(ctx context.Context, dir string) AudioSupport {
 	managed := models.FFmpegPath(dir)
 	path, err := audio.FindFFmpeg(ctx, managed)
 	result := AudioSupport{Installed: err == nil, Managed: path != "" && path == managed, Path: path, CanDownload: models.CanInstallFFmpeg(), Size: models.FFmpegSize}
+	result.UpdateAvailable = result.Managed && result.CanDownload && models.RuntimeUpdateAvailable(dir, "ffmpeg")
 	switch {
 	case errors.Is(err, audio.ErrFFmpegMissing):
 		result.Message = "FFmpeg is not installed"

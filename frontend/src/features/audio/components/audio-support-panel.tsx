@@ -52,11 +52,12 @@ export function AudioSupportPanel({
       request.current++;
     };
   }, [active, status.phase, refresh]);
-  async function install() {
+  async function install(update = false) {
     setPending(true);
     setError("");
     try {
-      await backend.installAudioSupport();
+      if (update) await backend.updateAudioSupport();
+      else await backend.installAudioSupport();
     } catch (cause) {
       setError(message(cause));
     } finally {
@@ -107,6 +108,20 @@ export function AudioSupportPanel({
               <p role="alert" className="text-sm text-destructive">
                 {nativeText(error)}
               </p>
+            )}
+            {support?.installed && support.updateAvailable && support.canDownload && (
+              <div className="flex flex-col gap-2">
+                <Button
+                  variant="outline"
+                  className="h-auto min-h-8 max-w-full self-start whitespace-normal"
+                  disabled={disabled || busy || pending || checking}
+                  onClick={() => void install(true)}
+                  title={t("audioSupportPanel.updateDescription")}
+                >
+                  {t("audioSupportPanel.updateAudioSupport")} ·{" "}
+                  {(support.size / (1 << 20)).toFixed(1)} {t("audioSupportPanel.miB")}
+                </Button>
+              </div>
             )}
             {support &&
               !support.installed &&

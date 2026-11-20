@@ -329,6 +329,7 @@ named below; desktop smoke tests exercise live native integrations:
 | `YAP_TRAY_SMOKE=1` | `go test ./internal/tray -run '^TestNativeLinuxTray$' -v -count=1 -timeout 25s` | Linux StatusNotifier registration, D-Bus menu updates, native clicks, and cleanup; requires a desktop tray host |
 | `YAP_INTEGRATION=1` | `go test ./internal/models -run TestRealWhisper -v -count=1` | Downloads Whisper and Tiny, then transcribes a sample |
 | `YAP_NATIVE_INTEGRATION=1` | `go test ./internal/models -run '^TestRealNativeModels$' -v -count=1 -timeout 25m` | Downloads and transcribes with all Moonshine models and NVIDIA Parakeet; checks cancellation |
+| `YAP_NATIVE_INTEGRATION=1` | `go test ./internal/models -run '^TestRealParakeetMemoryBudget$' -v -count=1 -timeout 25m` | Windows: verifies real Parakeet transcription under a 3.25 GiB process memory limit |
 | `YAP_FFMPEG_INTEGRATION=1` | `go test ./internal/models -run TestFFmpegDownloadIntegration -v -count=1` | Downloads and verifies the pinned FFmpeg archive |
 
 In PowerShell, set the variable with `$env:YAP_TRAY_SMOKE = '1'` and remove it

@@ -5,13 +5,72 @@ import (
 	"context"
 	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"testing"
 	"unsafe"
 
 	"yap/internal/audio"
 )
+
+func TestParakeetRejectsLegacyRuntime(t *testing.T) {
+	dir := t.TempDir()
+	name := "nemo-speech"
+	if runtime.GOOS == "windows" {
+		name += ".exe"
+	}
+	legacy := filepath.Join(dir, "runtime", "nemo-speech-0.2.0", "bin", name)
+	if err := os.MkdirAll(filepath.Dir(legacy), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(legacy, []byte("legacy runtime"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	opts := Options{Model: filepath.Join(dir, "models", "parakeet.q8_0.gguf")}
+	if err := ValidateRuntimeFor(opts); err == nil {
+		t.Fatal("accepted the legacy runtime that duplicates ASR weights")
+	}
+	current := RuntimeFor(opts)
+	if err := os.MkdirAll(filepath.Dir(current), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(current, []byte("current runtime"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateRuntimeFor(opts); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestNativeTranscriptionMemoryError(t *testing.T) {
+	cause := errors.New("exit status 0xc0000409")
+	assertion := "ggml.c:1651: GGML_ASSERT(ctx->mem_buffer != NULL) failed"
+	for _, tc := range []struct {
+		name, kind, log string
+		memory          bool
+	}{
+		{"allocation failure", "parakeet", assertion, true},
+		{"long log", "parakeet", strings.Repeat("x", 3000) + assertion, true},
+		{"unrelated assertion", "parakeet", "GGML_ASSERT(ne[0] > 0) failed", false},
+		{"other engine", "moonshine", assertion, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := nativeTranscriptionError(tc.kind, cause, []byte(tc.log))
+			if !errors.Is(err, cause) || !strings.Contains(err.Error(), tc.log[max(0, len(tc.log)-2000):]) {
+				t.Fatalf("lost underlying error or diagnostic tail: %v", err)
+			}
+			if got := strings.Contains(err.Error(), "ran out of memory"); got != tc.memory {
+				t.Fatalf("incorrect memory diagnosis: %v", err)
+			}
+			if tc.memory && !strings.Contains(err.Error(), "smaller speech model in Models") {
+				t.Fatalf("missing recovery action: %v", err)
+			}
+		})
+	}
+}
 
 func TestRuntimeRoutingKeepsWhisperSelection(t *testing.T) {
 	dir := t.TempDir()

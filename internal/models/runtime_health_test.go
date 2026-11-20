@@ -18,6 +18,28 @@ func TestMissingCustomRuntimeDoesNotInstallOrOverwrite(t *testing.T) {
 	}
 }
 
+func TestManagedWhisperRuntimeRecognizesCurrentAndLegacyVersionsOnly(t *testing.T) {
+	dir := t.TempDir()
+	for _, tc := range []struct {
+		name    string
+		path    string
+		managed bool
+	}{
+		{"current", filepath.Join(dir, "runtime", "whisper-"+WhisperRuntimeVersion, "bin", whisperExecutableName()), true},
+		{"legacy", filepath.Join(dir, "runtime", "whisper-1.9.2", "bin", whisperExecutableName()), true},
+		{"lookalike", filepath.Join(dir, "runtime", "whisper-1.9.20", "bin", whisperExecutableName()), false},
+		{"custom", filepath.Join(dir, "custom-whisper", whisperExecutableName()), false},
+		{"escaped", filepath.Join(dir, "runtime", "whisper-1.9.2", "..", "custom", whisperExecutableName()), false},
+		{"version directory", filepath.Join(dir, "runtime", "whisper-1.9.2"), false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := IsManagedRuntime(dir, tc.path); got != tc.managed {
+				t.Fatalf("IsManagedRuntime(%q) = %v; want %v", tc.path, got, tc.managed)
+			}
+		})
+	}
+}
+
 func TestManagedRuntimeDoesNotReuseBrokenExecutable(t *testing.T) {
 	if _, ok := whisperRuntimes[runtime.GOOS+"/"+runtime.GOARCH]; !ok {
 		t.Skip("no managed runtime for this platform")

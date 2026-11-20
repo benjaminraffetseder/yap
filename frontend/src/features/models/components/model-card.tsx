@@ -19,6 +19,7 @@ type ModelCardProps = {
   onUse: () => void;
   onRemove: () => void;
   onRepair?: () => void;
+  onUpdateRuntime: () => void;
   onCancelDownload: () => void;
 };
 
@@ -32,6 +33,7 @@ export function ModelCard({
   onUse,
   onRemove,
   onRepair,
+  onUpdateRuntime,
   onCancelDownload,
 }: ModelCardProps) {
   const { t } = useTranslation();
@@ -49,7 +51,7 @@ export function ModelCard({
         selected && "bg-primary/5",
       )}
     >
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 @min-[48rem]/models:grid @min-[48rem]/models:grid-cols-[minmax(0,1fr)_10rem_14rem_10rem]">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 @min-[48rem]/models:grid @min-[48rem]/models:grid-cols-[minmax(0,1fr)_10rem_12rem_14rem]">
         <div className="min-w-0 flex-[1_1_15rem]">
           <div className="flex flex-wrap items-center gap-2">
             <h3
@@ -111,10 +113,21 @@ export function ModelCard({
             {sizeLabel}
           </span>
         </div>
-        <div className="ml-auto flex min-w-0 max-w-full flex-wrap items-center justify-end gap-1">
+        <div className="ml-auto flex min-w-0 max-w-full items-center justify-end gap-1">
           {download ? (
             <Button size="sm" variant="outline" onClick={onCancelDownload}>
               {t("homePage.cancelDownload")}
+            </Button>
+          ) : model.runtimeUpdateAvailable ? (
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={disabled}
+              onClick={onUpdateRuntime}
+              className="h-auto min-h-8 min-w-0 max-w-full shrink whitespace-normal"
+              title={t("modelsPage.runtimeUpdateDescription")}
+            >
+              {t("modelsPage.updateRuntime")}
             </Button>
           ) : !selected ? (
             <Button
@@ -122,7 +135,7 @@ export function ModelCard({
               variant={recommended ? "default" : model.installed ? "outline" : "ghost"}
               disabled={disabled}
               onClick={onUse}
-              className="h-auto min-h-8 max-w-full whitespace-normal"
+              className="h-auto min-h-8 min-w-0 max-w-full shrink whitespace-normal"
             >
               {!model.installed ? <Download aria-hidden="true" className="size-3.5" /> : null}
               {model.installed
@@ -158,11 +171,22 @@ export function ModelCard({
                 aria-hidden="true"
                 className="size-3.5 animate-spin motion-reduce:animate-none"
               />
-              {t("modelsPage.downloading")}
+              {t(
+                model.runtimeUpdateAvailable
+                  ? "modelsPage.updatingRuntime"
+                  : "modelsPage.downloading",
+              )}
             </span>
             <span className="tabular-nums">{download.percent}%</span>
           </div>
-          <Progress aria-label={t("modelCard.modelDownloadProgress")} value={download.percent} />
+          <Progress
+            aria-label={t(
+              model.runtimeUpdateAvailable
+                ? "modelCard.runtimeUpdateProgress"
+                : "modelCard.modelDownloadProgress",
+            )}
+            value={download.percent}
+          />
           <p className="text-xs text-muted-foreground">{nativeText(download.message)}</p>
         </div>
       )}

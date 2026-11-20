@@ -25,6 +25,11 @@ type BundleFile struct {
 
 const BundleManifest = "yap-model.json"
 
+// NeMo 0.3.0 avoids duplicate ASR weight storage on CPU and Metal.
+const ParakeetRuntimeVersion = "0.3.0"
+
+const MoonshineRuntimeVersion = "0.1.6"
+
 func Kind(model string) string {
 	if strings.EqualFold(filepath.Ext(model), ".gguf") {
 		return "parakeet"
@@ -42,7 +47,7 @@ func RuntimePath(dir, kind string) string {
 		if runtime.GOOS == "windows" {
 			name += ".exe"
 		}
-		return filepath.Join(dir, "runtime", "nemo-speech-0.2.0", "bin", name)
+		return filepath.Join(dir, "runtime", "nemo-speech-"+ParakeetRuntimeVersion, "bin", name)
 	case "moonshine":
 		name := "libmoonshine.so"
 		if runtime.GOOS == "windows" {
@@ -51,7 +56,7 @@ func RuntimePath(dir, kind string) string {
 		if runtime.GOOS == "darwin" {
 			name = "libmoonshine.dylib"
 		}
-		return filepath.Join(dir, "runtime", "moonshine-0.1.5", "moonshine_voice", name)
+		return filepath.Join(dir, "runtime", "moonshine-"+MoonshineRuntimeVersion, "moonshine_voice", name)
 	}
 	return ""
 }
@@ -148,10 +153,7 @@ func (Local) Transcribe(ctx context.Context, audio string, opts Options) (string
 		if ctx.Err() != nil {
 			return "", ctx.Err()
 		}
-		if len(log) > 2000 {
-			log = log[len(log)-2000:]
-		}
-		return "", fmt.Errorf("%s transcription failed: %w\n%s", Kind(opts.Model), err, strings.TrimSpace(string(log)))
+		return "", nativeTranscriptionError(Kind(opts.Model), err, log)
 	}
 	data, err := os.ReadFile(out)
 	if err != nil {
@@ -162,4 +164,15 @@ func (Local) Transcribe(ctx context.Context, audio string, opts Options) (string
 		return "", ErrNoSpeech
 	}
 	return text, nil
+}
+
+func nativeTranscriptionError(kind string, err error, log []byte) error {
+	if len(log) > 2000 {
+		log = log[len(log)-2000:]
+	}
+	message := strings.TrimSpace(string(log))
+	if kind == "parakeet" && strings.Contains(message, "GGML_ASSERT(ctx->mem_buffer != NULL) failed") {
+		return fmt.Errorf("Parakeet ran out of memory; close other memory-heavy apps or select a smaller speech model in Models, then retry: %w\n%s", err, message)
+	}
+	return fmt.Errorf("%s transcription failed: %w\n%s", kind, err, message)
 }

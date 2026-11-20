@@ -97,7 +97,7 @@ func RunWorker(args []string) (handled bool, err error) {
 	return true, os.WriteFile(args[4], []byte(strings.Join(lines, " ")), 0600)
 }
 
-// Layout from the pinned Moonshine v0.1.5 C header (64-bit platforms).
+// Layout from the pinned Moonshine v0.1.6 C header (64-bit platforms).
 type nativeTranscript struct {
 	Lines *nativeLine
 	Count uint64

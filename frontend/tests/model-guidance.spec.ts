@@ -123,6 +123,12 @@ test.beforeEach(async ({ page }) => {
             state.snapshot.status.progress = 0.42;
             state.status("downloading", "Synthetic download: checking model and runtime files.");
           },
+          UpdateModelRuntime: async (id: string) => {
+            state.calls.push(`runtime:${id}`);
+            if (state.failInstall) throw new Error("Synthetic runtime update failure. Try again.");
+            state.snapshot.status.progress = 0.42;
+            state.status("downloading", "Updating speech runtime…");
+          },
           SaveSettings: async (settings: Settings) => {
             state.calls.push(`use:${settings.modelPath}`);
             if (state.failSave) throw new Error("Synthetic model switch failure");
@@ -222,6 +228,130 @@ async function openModels(page: Page, showGuidance = true, browseCatalog = true)
     await expect(guide(page).getByRole("status")).toContainText("Whisper Small");
   }
 }
+
+for (const active of [false, true]) {
+  test(`runtime update preserves the ${active ? "active" : "inactive"} model through failure, cancellation and success`, async ({
+    page,
+  }) => {
+    await page.addInitScript((active) => {
+      const state = window.modelGuidanceTest;
+      const model = state.snapshot.models.find((model) => model.id === "parakeet-tdt-0.6b-v3")!;
+      Object.assign(model, {
+        installed: true,
+        removable: true,
+        diskBytes: model.size,
+        runtimeUpdateAvailable: true,
+      });
+      if (active) state.snapshot.settings.modelPath = model.path;
+    }, active);
+    await openModels(page, false);
+    const row = card(page, "NVIDIA Parakeet TDT v3");
+    const update = row.getByRole("button", { name: "Update runtime", exact: true });
+    await expect(update).toBeEnabled();
+    await expect(update).toHaveAttribute("title", /Your model stays installed/);
+    await expect(
+      card(page, "Whisper Tiny").getByRole("button", { name: "Update runtime" }),
+    ).toHaveCount(0);
+    await page.evaluate(() => window.modelGuidanceTest.status("recording"));
+    await expect(update).toBeDisabled();
+    await page.evaluate(() => {
+      window.modelGuidanceTest.status("idle");
+      window.modelGuidanceTest.failInstall = true;
+    });
+    await update.click();
+    await expect(
+      page.locator('[data-slot="toast"]').filter({ hasText: "Synthetic runtime update failure" }),
+    ).toBeVisible();
+    await expect(update).toBeEnabled();
+    await page.evaluate(() => {
+      window.modelGuidanceTest.failInstall = false;
+    });
+    await update.click();
+    await expect(row.getByRole("progressbar", { name: "Runtime update progress" })).toHaveAttribute(
+      "aria-valuenow",
+      "42",
+    );
+    await row.getByRole("button", { name: "Cancel download", exact: true }).click();
+    await expect(update).toBeEnabled();
+    await update.click();
+    await page.evaluate(() =>
+      window.modelGuidanceTest.status("error", "Synthetic runtime verification failed"),
+    );
+    await expect(update).toBeEnabled();
+    await update.click();
+    await expect(row.getByRole("progressbar")).toBeVisible();
+    await page.evaluate(() => {
+      const state = window.modelGuidanceTest;
+      state.snapshot.models.find(
+        (model) => model.id === "parakeet-tdt-0.6b-v3",
+      )!.runtimeUpdateAvailable = false;
+      state.status("idle", "Speech runtime updated.");
+      state.callbacks["setup:changed"]?.(["configuration", "catalogs"]);
+    });
+    await expect(update).toHaveCount(0);
+    await expect(
+      page
+        .locator('[data-slot="toast"]')
+        .filter({ hasText: "Speech runtime updated for NVIDIA Parakeet TDT v3." }),
+    ).toBeVisible();
+    if (active) await expectActiveModel(row);
+    else await expectActiveModel(card(page, "Whisper Tiny"));
+    const state = await page.evaluate(() => ({
+      calls: window.modelGuidanceTest.calls,
+      selected: window.modelGuidanceTest.snapshot.settings.modelPath,
+    }));
+    expect(state.selected).toBe(active ? "/parakeet-tdt-0.6b-v3" : "/tiny");
+    expect(
+      state.calls.filter(
+        (call) =>
+          call.startsWith("install:") || call.startsWith("use:") || call.startsWith("remove:"),
+      ),
+    ).toEqual([]);
+    expect(state.calls.filter((call) => call.startsWith("runtime:"))).toHaveLength(4);
+  });
+}
+
+test("runtime update is localized and fits a narrow model card", async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.addInitScript(() => {
+    localStorage.setItem("desktop-language", "de");
+    const model = window.modelGuidanceTest.snapshot.models.find(
+      (model) => model.id === "parakeet-tdt-0.6b-v3",
+    )!;
+    Object.assign(model, { installed: true, removable: true, runtimeUpdateAvailable: true });
+    window.modelGuidanceTest.snapshot.settings.modelPath = model.path;
+  });
+  await page.goto("/#/models");
+  const row = card(page, "NVIDIA Parakeet TDT v3");
+  await expect(
+    row.getByRole("button", { name: "Laufzeit aktualisieren", exact: true }),
+  ).toBeVisible();
+  await expect(
+    row.getByRole("button", { name: "Laufzeit aktualisieren", exact: true }),
+  ).toHaveAttribute("title", /Dein Modell bleibt installiert/);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
+    true,
+  );
+  await page.setViewportSize({ width: 1100, height: 844 });
+  const update = row.getByRole("button", { name: "Laufzeit aktualisieren", exact: true });
+  const menu = row.getByRole("button", { name: /^Weitere Aktionen/ });
+  await page.screenshot({ path: testInfo.outputPath("runtime-update-desktop.png") });
+  const updateBounds = await update.boundingBox();
+  const menuBounds = await menu.boundingBox();
+  expect(updateBounds).not.toBeNull();
+  expect(menuBounds).not.toBeNull();
+  expect(updateBounds!.height).toBe(menuBounds!.height);
+  expect(
+    Math.abs(updateBounds!.y + updateBounds!.height / 2 - menuBounds!.y - menuBounds!.height / 2),
+  ).toBeLessThan(1);
+  await page.addInitScript(() => {
+    localStorage.setItem("desktop-language", "en");
+    localStorage.setItem("desktop-theme", "dark");
+  });
+  await page.reload();
+  await expect(row.getByRole("button", { name: "Update runtime", exact: true })).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath("runtime-update-desktop-english.png") });
+});
 
 test("Models starts with its current model and usable catalog, with optional help beside the heading", async ({
   page,

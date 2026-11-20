@@ -43,21 +43,21 @@ export CGO_CFLAGS="${CGO_CFLAGS:-} -mmacosx-version-min=13.3"
 export CGO_LDFLAGS="${CGO_LDFLAGS:-} -mmacosx-version-min=13.3"
 work="$project_root/build/macos-work"
 mkdir -p "$work" "$project_root/build/bin"
-source_archive="$work/whisper-v1.9.2.tar.gz"
-source_sha=a6abd064fcca8b85e794d205abf328c522e9451db43a3eadc178b883b7d0e9cd
+source_archive="$work/whisper-v1.9.5.tar.gz"
+source_sha=ff1a9053feb509ff9d7729703355541ae9690073a6b1c40eb692c962e0dc1720
 if [[ ! -f "$source_archive" ]]; then
-  curl --fail --location --retry 3 'https://codeload.github.com/ggml-org/whisper.cpp/tar.gz/refs/tags/v1.9.2' -o "$source_archive.download"
+  curl --fail --location --retry 3 'https://codeload.github.com/ggml-org/whisper.cpp/tar.gz/refs/tags/v1.9.5' -o "$source_archive.download"
   mv "$source_archive.download" "$source_archive"
 fi
 printf '%s  %s\n' "$source_sha" "$source_archive" | shasum -a 256 -c -
 tar -xzf "$source_archive" -C "$work"
-source_dir="$work/whisper.cpp-1.9.2"
+source_dir="$work/whisper.cpp-1.9.5"
 
 # Keep FFmpeg independent of the builder's Homebrew libraries. The unmodified
 # source archive and this build recipe travel with the app for redistribution.
-ffmpeg_version=9.0.2
+ffmpeg_version=9.1
 ffmpeg_archive="$work/ffmpeg-$ffmpeg_version.tar.xz"
-ffmpeg_sha=8c3850283eb25fa026482078a04051e0be17347b09ef81a0849bec15a96e002e
+ffmpeg_sha=1a4d394ae63d190a526cd052eb4415c156b5c5e2df37efab41a7de0b8fde2433
 if [[ ! -f "$ffmpeg_archive" ]]; then
   curl --fail --location --retry 3 "https://ffmpeg.org/releases/ffmpeg-$ffmpeg_version.tar.xz" -o "$ffmpeg_archive.download"
   mv "$ffmpeg_archive.download" "$ffmpeg_archive"

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"yap/internal/app/modelmanagement"
+	"yap/internal/models"
 )
 
 func (a *App) SelectFile(kind string) (string, error) {
@@ -14,6 +15,14 @@ func (a *App) SelectFile(kind string) (string, error) {
 	return a.openFile("Select "+label, label, pattern)
 }
 func (a *App) InstallModel(id string) error {
+	return a.installSpeechModel(id, false)
+}
+
+func (a *App) UpdateModelRuntime(id string) error {
+	return a.installSpeechModel(id, true)
+}
+
+func (a *App) installSpeechModel(id string, runtimeOnly bool) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if err := a.availableLocked(); err != nil {
@@ -28,6 +37,9 @@ func (a *App) InstallModel(id string) error {
 	}
 	a.status.Phase = "downloading"
 	a.status.Message = "Checking or downloading speech runtime…"
+	if runtimeOnly {
+		a.status.Message = "Updating speech runtime…"
+	}
 	a.status.Progress = 0
 	a.emitStatusLocked()
 	ctx, cancel := context.WithCancel(a.ctx)
@@ -45,13 +57,43 @@ func (a *App) InstallModel(id string) error {
 		a.mu.Lock()
 		executable := a.settings.WhisperPath
 		a.mu.Unlock()
-		result, err := plan.Run(ctx, a.store.Dir, executable, progress, func(message string) {
+		stage := func(message string) {
 			a.mu.Lock()
 			a.status.Message = message
 			a.status.Progress = 0
 			a.emitStatusLocked()
 			a.mu.Unlock()
-		})
+		}
+		var result modelmanagement.SpeechResult
+		var err error
+		if runtimeOnly {
+			err = plan.UpdateRuntime(ctx, a.store.Dir, progress, func(path string) error {
+				a.mu.Lock()
+				defer a.mu.Unlock()
+				if err := ctx.Err(); err != nil {
+					return err
+				}
+				if a.settings.WhisperPath != "" && !models.IsManagedRuntime(a.store.Dir, a.settings.WhisperPath) {
+					linked, err := models.ReferencesSupersededRuntime(a.store.Dir, a.settings.WhisperPath, "whisper")
+					if err != nil {
+						return err
+					}
+					if linked {
+						return errors.New("your custom Whisper selection points into the old Yap runtime; choose a separate executable in Settings before updating; the old runtime has been kept")
+					}
+					return nil
+				}
+				settings := a.settings
+				settings.WhisperPath = path
+				if err := a.saveSettingsWithDefaultLocked(settings); err != nil {
+					return err
+				}
+				a.settings = settings
+				return nil
+			})
+		} else {
+			result, err = plan.Run(ctx, a.store.Dir, executable, progress, stage)
+		}
 		a.mu.Lock()
 		defer a.mu.Unlock()
 		a.cancel = nil
@@ -69,15 +111,20 @@ func (a *App) InstallModel(id string) error {
 			a.failLocked(err)
 			return
 		}
-		settings := result.Settings(a.settings)
-		if err = a.saveSettingsWithDefaultLocked(settings); err != nil {
-			a.failLocked(err)
-			return
+		if !runtimeOnly {
+			settings := result.Settings(a.settings)
+			if err = a.saveSettingsWithDefaultLocked(settings); err != nil {
+				a.failLocked(err)
+				return
+			}
+			a.settings = settings
 		}
-		a.settings = settings
 		a.diagnostic = DiagnosticResult{}
 		a.status.Phase = "idle"
 		a.status.Message = "Model installed. Ready to dictate."
+		if runtimeOnly {
+			a.status.Message = "Speech runtime updated."
+		}
 		a.status.Progress = 0
 		a.emitStatusLocked()
 		a.event("dictation:history")

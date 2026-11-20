@@ -8,16 +8,20 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
+
+	"yap/internal/process"
 )
 
 // Pin the monthly retained release, never the moving "latest" release.
-const FFmpegPackage = "ffmpeg-n9.0.2-17-g2a571b6068-win64-lgpl-shared-9.0"
-const FFmpegSize int64 = 76972461
-const FFmpegSHA256 = "7157177b8a6cb2174c1650ba8c71b363f2c78cba5330f88c4c02cf5b2b880646"
-const FFmpegURL = "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-09-30-13-08/" + FFmpegPackage + ".zip"
+const FFmpegPackage = "ffmpeg-n9.0.2-39-g7adfbe40dc-win64-lgpl-shared-9.0"
+const FFmpegSize int64 = 76576818
+const FFmpegSHA256 = "e907b01fa4783913151237e37df2a10fa97d99a1598a021bf59d4ae62ffed4c0"
+const FFmpegURL = "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-10-31-12-59/" + FFmpegPackage + ".zip"
 
 //go:embed ffmpeg-notice.txt
 var ffmpegNotice []byte
@@ -52,6 +56,13 @@ func ffmpegPathIn(dir string) string {
 }
 
 func FFmpegPath(dir string) string {
+	if path := currentFFmpegPath(dir); path != "" {
+		return path
+	}
+	return PreviousFFmpegPath(dir)
+}
+
+func currentFFmpegPath(dir string) string {
 	if !CanInstallFFmpeg() {
 		return ""
 	}
@@ -66,10 +77,14 @@ func InstallFFmpeg(ctx context.Context, dir string, report func(int64, int64)) (
 	if !CanInstallFFmpeg() {
 		return "", errors.New("automatic audio support installation requires Windows x64")
 	}
-	return installFFmpeg(ctx, dir, FFmpegURL, FFmpegSHA256, FFmpegSize, report)
+	return installFFmpegWithProbe(ctx, dir, FFmpegURL, FFmpegSHA256, FFmpegSize, report, validateFFmpegRuntime)
 }
 
 func installFFmpeg(ctx context.Context, dir, url, hash string, size int64, report func(int64, int64)) (string, error) {
+	return installFFmpegWithProbe(ctx, dir, url, hash, size, report, nil)
+}
+
+func installFFmpegWithProbe(ctx context.Context, dir, url, hash string, size int64, report func(int64, int64), probe func(context.Context, string) error) (string, error) {
 	root, err := managedRuntimeRoot(dir)
 	if err != nil {
 		return "", err
@@ -113,6 +128,11 @@ func installFFmpeg(ctx context.Context, dir, url, hash string, size int64, repor
 	if ffmpegPathIn(stage) == "" {
 		return "", errors.New("audio support archive is missing required files")
 	}
+	if probe != nil {
+		if err := probe(ctx, ffmpegPathIn(stage)); err != nil {
+			return "", err
+		}
+	}
 	if err = validate(); err != nil {
 		return "", err
 	}
@@ -120,6 +140,60 @@ func installFFmpeg(ctx context.Context, dir, url, hash string, size int64, repor
 		return "", err
 	}
 	return filepath.Join(root, FFmpegPackage, "bin", "ffmpeg.exe"), nil
+}
+
+func validateFFmpegRuntime(ctx context.Context, path string) error {
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, path, "-version")
+	process.Hide(cmd)
+	cmd.WaitDelay = time.Second
+	if log, err := cmd.CombinedOutput(); err != nil {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		return fmt.Errorf("audio support cannot start; the previous runtime was kept: %w\n%s", err, strings.TrimSpace(string(log)))
+	}
+	return nil
+}
+
+// PreviousFFmpegPath keeps an existing managed decoder usable until the user
+// upgrades it. Custom and system installations are not rewritten or removed.
+func PreviousFFmpegPath(dir string) string {
+	if !CanInstallFFmpeg() {
+		return ""
+	}
+	paths, err := supersededRuntimePaths(dir, "ffmpeg")
+	if err != nil {
+		return ""
+	}
+	for _, path := range paths {
+		if executable := ffmpegPathIn(path); executable != "" {
+			return executable
+		}
+	}
+	return ""
+}
+
+func UpdateFFmpegRuntime(ctx context.Context, dir string, report func(int64, int64)) (string, error) {
+	if _, err := supersededRuntimePaths(dir, "ffmpeg"); err != nil {
+		return "", err
+	}
+	path := currentFFmpegPath(dir)
+	if path == "" || validateFFmpegRuntime(ctx, path) != nil {
+		var err error
+		path, err = InstallFFmpeg(ctx, dir, report)
+		if err != nil {
+			return "", err
+		}
+	}
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	if err := RemoveSupersededRuntimes(ctx, dir, "ffmpeg"); err != nil {
+		return path, err
+	}
+	return path, nil
 }
 
 func extractFFmpeg(ctx context.Context, archive, stage string) error {

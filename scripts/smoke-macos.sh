@@ -14,7 +14,7 @@ test_dir="$(mktemp -d "${TMPDIR:-/tmp}/yap-whisper-smoke.XXXXXX")"
 trap 'rm -rf "$test_dir"' EXIT
 curl --fail --location --retry 3 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.bin' -o "$test_dir/ggml-tiny.bin"
 printf '%s  %s\n' be07e048e1e599ad46341c8d2a135645097a538221678b7acdd1b1919c6e1b21 "$test_dir/ggml-tiny.bin" | shasum -a 256 -c -
-curl --fail --location --retry 3 'https://raw.githubusercontent.com/ggml-org/whisper.cpp/v1.9.2/samples/jfk.wav' -o "$test_dir/jfk.wav"
+curl --fail --location --retry 3 'https://raw.githubusercontent.com/ggml-org/whisper.cpp/v1.9.5/samples/jfk.wav' -o "$test_dir/jfk.wav"
 printf '%s  %s\n' 59dfb9a4acb36fe2a2affc14bacbee2920ff435cb13cc314a08c13f66ba7860e "$test_dir/jfk.wav" | shasum -a 256 -c -
 "$cli" -m "$test_dir/ggml-tiny.bin" -f "$test_dir/jfk.wav" -l en -otxt -of "$test_dir/transcript" -nt -np
 grep -qi country "$test_dir/transcript.txt"

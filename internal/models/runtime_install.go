@@ -39,7 +39,7 @@ func installRuntimeArchive(ctx context.Context, dir, archive string, tgz bool) (
 	if err = publishRuntimeDirectory(ctx, dir, temp, os.Rename); err != nil {
 		return "", err
 	}
-	return filepath.Join(root, "whisper-1.9.2", relative), nil
+	return filepath.Join(root, "whisper-"+WhisperRuntimeVersion, relative), nil
 }
 
 // Never move or recursively remove an installation through redirected storage.
@@ -59,7 +59,7 @@ func managedRuntimeRoot(dir string) (string, error) {
 }
 
 func publishRuntimeDirectory(ctx context.Context, dir, temp string, rename func(string, string) error) error {
-	return publishManagedRuntimeDirectory(ctx, dir, temp, "whisper-1.9.2", rename)
+	return publishManagedRuntimeDirectory(ctx, dir, temp, "whisper-"+WhisperRuntimeVersion, rename)
 }
 
 func publishManagedRuntimeDirectory(ctx context.Context, dir, temp, name string, rename func(string, string) error) error {

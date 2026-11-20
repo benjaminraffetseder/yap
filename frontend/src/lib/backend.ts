@@ -88,6 +88,9 @@ import {
   StopMicrophoneTest,
   StopRecording,
   TestTextModel,
+  UpdateAudioSupport,
+  UpdateModelRuntime,
+  UpdateTextRuntime,
 } from "@bindings/yap/internal/app/app";
 import type { Config } from "@bindings/yap/internal/inference/text/models";
 export { isDesktop } from "@/lib/desktop";
@@ -222,6 +225,7 @@ export type UpdateStatus = {
   message: string;
 };
 export type AudioSupport = {
+  updateAvailable?: boolean;
   installed: boolean;
   managed: boolean;
   path: string;
@@ -368,8 +372,10 @@ export type Model = {
   path: string;
   diskBytes: number;
   removable: boolean;
+  runtimeUpdateAvailable?: boolean;
 };
 export type TextModel = {
+  runtimeUpdateAvailable?: boolean;
   id: string;
   name: string;
   size: number;
@@ -513,6 +519,7 @@ export const backend = {
     };
   },
   installTextModel: InstallTextModel,
+  updateTextRuntime: UpdateTextRuntime,
   removeTextModel: RemoveTextModel,
   refinePromptWithConfig: (id: string, config: TextProcessing, instruction: string) =>
     config.provider === "builtin"
@@ -586,6 +593,7 @@ export const backend = {
   installAudioSupport: async (): Promise<void> => {
     return InstallAudioSupport();
   },
+  updateAudioSupport: UpdateAudioSupport,
   importAudio: async (): Promise<void> => {
     return ImportAudio();
   },
@@ -616,6 +624,7 @@ export const backend = {
   dismissLatestResult: DismissLatestResult,
   selectFile: SelectFile,
   install: InstallModel,
+  updateModelRuntime: UpdateModelRuntime,
   vocabulary: SaveVocabulary,
   testMic: StartMicrophoneTest,
   stopMicTest: StopMicrophoneTest,

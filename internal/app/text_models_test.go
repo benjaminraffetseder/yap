@@ -1,10 +1,43 @@
 package app
 
 import (
+	"context"
 	"reflect"
 	"testing"
 	textmodel "yap/internal/inference/text"
 )
+
+func TestTextRuntimeUpdateRespectsOwnershipAndPreservesConfiguration(t *testing.T) {
+	a := testApp(t)
+	engine := &releasingTextEngine{fakeTextEngine: &fakeTextEngine{}}
+	a.textEngine = engine
+	before := a.textConfig
+	for _, phase := range []string{"recording", "transcribing", "downloading", "text-processing"} {
+		a.status.Phase = phase
+		if err := a.UpdateTextRuntime("gemma-4-e2b"); err == nil || engine.releases != 0 {
+			t.Fatal("updated a busy text runtime", phase, err)
+		}
+	}
+	a.status.Phase = "idle"
+	a.textJobID = "another-job"
+	if err := a.UpdateTextRuntime("gemma-4-e2b"); err == nil || engine.releases != 0 {
+		t.Fatal("released another text job's runtime", err)
+	}
+	a.textJobID = ""
+	if err := a.UpdateTextRuntime("unknown-model"); err == nil || engine.releases != 0 {
+		t.Fatal("invalid update released the text engine", err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	a.ctx = ctx
+	if err := a.UpdateTextRuntime("gemma-4-e2b"); err != nil {
+		t.Fatal(err)
+	}
+	a.wg.Wait()
+	if engine.releases != 1 || !reflect.DeepEqual(a.textConfig, before) || a.status.Message != "Download cancelled" {
+		t.Fatal("cancelled update changed text configuration or retained the old worker", engine.releases, a.status)
+	}
+}
 
 type releasingTextEngine struct {
 	*fakeTextEngine

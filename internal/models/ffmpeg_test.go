@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -18,6 +19,65 @@ import (
 	"yap/internal/audio"
 	"yap/internal/process"
 )
+
+func TestFFmpegUpdateProbeFailurePreservesPreviousPackage(t *testing.T) {
+	dir := t.TempDir()
+	legacy := filepath.Join(dir, "runtime", "ffmpeg-n9.0.2-17-g2a571b6068-win64-lgpl-shared-9.0")
+	if err := os.MkdirAll(legacy, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(legacy, "keep"), []byte("previous"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	data := ffmpegFixture(t, "")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write(data) }))
+	defer server.Close()
+	failure := errors.New("synthetic loader dependency failure")
+	_, err := installFFmpegWithProbe(context.Background(), dir, server.URL, fmt.Sprintf("%x", sha256.Sum256(data)), int64(len(data)), func(int64, int64) {}, func(context.Context, string) error {
+		if _, err := os.Stat(filepath.Join(legacy, "keep")); err != nil {
+			t.Fatal("old package removed before replacement startup validation", err)
+		}
+		return failure
+	})
+	if !errors.Is(err, failure) {
+		t.Fatal("startup failure was not reported", err)
+	}
+	if data, err := os.ReadFile(filepath.Join(legacy, "keep")); err != nil || string(data) != "previous" {
+		t.Fatal("startup failure changed old package", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "runtime", FFmpegPackage)); !os.IsNotExist(err) {
+		t.Fatal("unusable replacement was published", err)
+	}
+}
+
+func TestFFmpegPreviousPackageRemainsDiscoverableUntilUpdate(t *testing.T) {
+	if !CanInstallFFmpeg() {
+		t.Skip("managed FFmpeg requires Windows x64")
+	}
+	dir := t.TempDir()
+	legacy := filepath.Join(dir, "runtime", "ffmpeg-n9.0.2-17-g2a571b6068-win64-lgpl-shared-9.0")
+	for _, name := range ffmpegRequired {
+		path := filepath.Join(legacy, filepath.FromSlash(name))
+		if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte("previous"), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	want := filepath.Join(legacy, "bin", "ffmpeg.exe")
+	if FFmpegPath(dir) != want || PreviousFFmpegPath(dir) != want || !RuntimeUpdateAvailable(dir, "ffmpeg") {
+		t.Fatal("old managed package became unavailable before update")
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := UpdateFFmpegRuntime(ctx, dir, func(int64, int64) {}); !errors.Is(err, context.Canceled) {
+		t.Fatal("cancelled update did not return cancellation", err)
+	}
+	if FFmpegPath(dir) != want {
+		t.Fatal("cancelled update lost the old decoder")
+	}
+}
 
 func ffmpegFixture(t *testing.T, extra string) []byte {
 	t.Helper()
@@ -130,12 +190,32 @@ func TestFFmpegDownloadIntegration(t *testing.T) {
 	}
 	dir := t.TempDir()
 	os.Mkdir(filepath.Join(dir, "runtime"), 0700)
-	path, err := InstallFFmpeg(context.Background(), dir, func(int64, int64) {})
+	install := InstallFFmpeg
+	if archive := os.Getenv("YAP_FFMPEG_INTEGRATION_ARCHIVE"); archive != "" {
+		data, err := os.ReadFile(archive)
+		if err != nil {
+			t.Fatal(err)
+		}
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write(data) }))
+		defer server.Close()
+		install = func(ctx context.Context, dir string, report func(int64, int64)) (string, error) {
+			return installFFmpegWithProbe(ctx, dir, server.URL, FFmpegSHA256, FFmpegSize, report, validateFFmpegRuntime)
+		}
+	}
+	path, err := install(context.Background(), dir, func(int64, int64) {})
 	if err != nil || path == "" || FFmpegPath(dir) != path {
 		t.Fatal(path, err)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
+	legacy := filepath.Join(dir, "runtime", "ffmpeg-n9.0.2-17-g2a571b6068-win64-lgpl-shared-9.0")
+	if err := os.Mkdir(legacy, 0700); err != nil {
+		t.Fatal(err)
+	}
+	updated, err := UpdateFFmpegRuntime(ctx, dir, func(int64, int64) {})
+	if err != nil || updated != path || RuntimeUpdateAvailable(dir, "ffmpeg") {
+		t.Fatalf("real decoder upgrade did not reuse the verified runtime and remove the legacy installation: %s %v", updated, err)
+	}
 	wav := filepath.Join(dir, "source.wav")
 	f, err := os.Create(wav)
 	if err != nil {
