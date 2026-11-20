@@ -278,8 +278,6 @@
   "modelsPage.dictationRunsOnYourDevice": "Dictation runs on your device",
   "modelsPage.models3": "{{name}} models",
   "modelsPage.downloading": "Downloading",
-  "modelsPage.bringYourOwnModel": "Bring your own model",
-  "modelsPage.useLocalModelFilesOrAnExisting": "Use local model files or an existing Whisper installation.",
   "modelsPage.openSettings": "Open Settings",
   "modelsPage.removing": "Removing…",
   "modelsPage.removeModel": "Remove model",

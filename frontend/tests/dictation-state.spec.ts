@@ -3034,7 +3034,9 @@ test("Models compares models, updates the current selection, and fits narrow scr
   await expect(page.locator("html")).not.toHaveClass(/dark/);
   await page.screenshot({ path: testInfo.outputPath("models-redesign-light.png"), fullPage: true });
   await page.setViewportSize({ width: 480, height: 900 });
-  await expect(page.getByRole("link", { name: "Bring your own model" })).toBeVisible();
+  await expect(
+    page.getByText(en["modelsPage.dictationRunsOnYourDevice"], { exact: true }),
+  ).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
     true,
   );
