@@ -96,7 +96,7 @@ test.beforeEach(async ({ page }) => {
         },
       },
       mockBackend: {
-        main: {
+        app: {
           App: {
             GetSnapshot: async () => structuredClone(snapshot),
             GetHistory: async (query: string, page: number) => {

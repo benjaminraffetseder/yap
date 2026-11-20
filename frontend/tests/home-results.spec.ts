@@ -539,7 +539,7 @@ async function scenario(page: Page, saved = true) {
         StopRecording: async () => state.setBusy(false),
         Cancel: async () => state.setBusy(false),
       };
-      Reflect.set(window, "mockBackend", { main: { App: methods } });
+      Reflect.set(window, "mockBackend", { app: { App: methods } });
       Reflect.set(window, "mockEvents", {
         subscribe: (name: string, callback: (...args: unknown[]) => void) => {
           callbacks[name] = callback;
@@ -635,7 +635,7 @@ test("correction form validates fields, ignores IME submission and prevents dupl
   expect(await page.evaluate(() => window.homeResultsTest.snapshot.vocabulary)).toEqual([]);
   await spelling.dispatchEvent("compositionend");
   await page.evaluate(() => {
-    const app = Reflect.get(window, "mockBackend").main.App;
+    const app = Reflect.get(window, "mockBackend").app.App;
     const add = app.AddVocabularyTerm;
     Reflect.set(window, "correctionWriteCount", 0);
     app.AddVocabularyTerm = async (canonical: string, aliases: string[]) => {
@@ -1043,7 +1043,7 @@ for (const saved of [true, false]) {
       let tail = Promise.resolve();
       let started = 0;
       Reflect.set(window, "homeReadStarted", () => started);
-      Reflect.get(window, "mockBackend").main.App.GetHomeResult = () => {
+      Reflect.get(window, "mockBackend").app.App.GetHomeResult = () => {
         const read = tail.then(async () => {
           started++;
           const result = structuredClone(window.homeResultsTest.result);
@@ -1498,7 +1498,7 @@ test("late Home reads cannot resurrect expired temporary text across navigation"
   await page.evaluate(() => {
     const state = window.homeResultsTest;
     const old = structuredClone(state.result);
-    Reflect.get(window, "mockBackend").main.App.GetHomeResult = () =>
+    Reflect.get(window, "mockBackend").app.App.GetHomeResult = () =>
       new Promise((resolve) => Reflect.set(window, "releaseExpiredHomeRead", () => resolve(old)));
     state.emit();
   });
@@ -1510,7 +1510,7 @@ test("late Home reads cannot resurrect expired temporary text across navigation"
     const state = window.homeResultsTest;
     state.accept();
     state.failRead = true;
-    Reflect.get(window, "mockBackend").main.App.GetHomeResult = async () => {
+    Reflect.get(window, "mockBackend").app.App.GetHomeResult = async () => {
       throw new Error("Current read failure");
     };
     state.setBusy(false);
@@ -1532,7 +1532,7 @@ test("a delayed Home dismissal cannot hide a replacement result after navigation
     replacement.session.id = "replacement-result";
     replacement.revision = "replacement-revision";
     replacement.text = "The replacement result remains available.";
-    const app = Reflect.get(window, "mockBackend").main.App;
+    const app = Reflect.get(window, "mockBackend").app.App;
     const dismiss = app.HomeResultAction;
     app.HomeResultAction = async (...args: [string, string, string, string]) => {
       await dismiss(...args);

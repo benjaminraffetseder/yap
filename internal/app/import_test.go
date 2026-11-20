@@ -1,0 +1,479 @@
+package app
+
+import (
+	"context"
+	"encoding/base64"
+	"encoding/binary"
+	"errors"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"testing"
+	"time"
+
+	"yap/internal/audio"
+	"yap/internal/inference/speech"
+	textmodel "yap/internal/inference/text"
+	"yap/internal/storage"
+	"yap/internal/vocabulary"
+)
+
+func importedWAV(t *testing.T) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "my audio.wav")
+	f, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = audio.Header(f, 32000); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = f.Write(make([]byte, 32000)); err != nil {
+		t.Fatal(err)
+	}
+	f.Close()
+	return path
+}
+
+type importedSpeech struct {
+	seen  chan speech.Options
+	block bool
+}
+
+func (e importedSpeech) Transcribe(ctx context.Context, path string, opts speech.Options) (string, error) {
+	data, err := os.ReadFile(path)
+	if err != nil || len(data) != 32044 || binary.LittleEndian.Uint32(data[24:]) != 16000 {
+		return "", errors.New("not normalized audio")
+	}
+	if e.seen != nil {
+		e.seen <- opts
+	}
+	if e.block {
+		<-ctx.Done()
+		return "", ctx.Err()
+	}
+	return "uh, hello postgres.", nil
+}
+
+func TestAudioImportUsesPipelineWithoutClipboardOrSourceChanges(t *testing.T) {
+	for _, retain := range []bool{false, true} {
+		a := testApp(t)
+		a.settings.SaveAudio, a.settings.CleanText = retain, true
+		a.vocabulary = []vocabulary.Entry{{ID: "pg", Canonical: "PostgreSQL", Aliases: []string{"postgres"}, Enabled: true}}
+		seen := make(chan speech.Options, 1)
+		a.engine = importedSpeech{seen: seen}
+		a.copyText = func(string) error { t.Error("import touched clipboard"); return nil }
+		source := importedWAV(t)
+		before, _ := os.ReadFile(source)
+		if err := a.importAudio(source); err != nil {
+			t.Fatal(err)
+		}
+		a.wg.Wait()
+		if opts := <-seen; opts.Prompt != "PostgreSQL" {
+			t.Fatalf("lost vocabulary: %+v", opts)
+		}
+		entries, err := a.store.History()
+		if err != nil || len(entries) != 1 || entries[0].DurationMS != 1000 || entries[0].RawTranscript != "uh, hello postgres." || entries[0].FinalTranscript != "Hello PostgreSQL." {
+			t.Fatalf("import pipeline: %+v %v", entries, err)
+		}
+		if a.status.Phase != "done" || a.status.Message != "Saved to History" {
+			t.Fatalf("bad status: %+v", a.status)
+		}
+		if entries[0].AudioPath == source {
+			t.Fatal("stored source path")
+		}
+		if retain {
+			if _, err := os.Stat(entries[0].AudioPath); err != nil {
+				t.Fatal(err)
+			}
+		} else if _, err := os.Stat(a.path); !os.IsNotExist(err) {
+			t.Fatal("temporary audio leaked")
+		}
+		after, _ := os.ReadFile(source)
+		if string(before) != string(after) {
+			t.Fatal("source changed")
+		}
+	}
+}
+
+func TestRetainedMaximumAudioImportCanBePlayedAndBackedUp(t *testing.T) {
+	a := testApp(t)
+	a.settings.SaveAudio = true
+	source := filepath.Join(t.TempDir(), "twenty-five-minutes.wav")
+	f, err := os.Create(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const pcmBytes = 25 * 60 * 16000 * 2
+	if err = audio.Header(f, pcmBytes); err != nil {
+		f.Close()
+		t.Fatal(err)
+	}
+	if err = f.Truncate(44 + pcmBytes); err != nil {
+		f.Close()
+		t.Fatal(err)
+	}
+	if err = f.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err = a.importAudio(source); err != nil {
+		t.Fatal(err)
+	}
+	a.wg.Wait()
+	entry, err := a.store.Session(a.id)
+	if err != nil || a.status.Phase != "done" || entry.DurationMS != 25*60*1000 {
+		t.Fatalf("maximum import did not finish: %+v %v %v", entry, a.status, err)
+	}
+
+	t.Run("playback", func(t *testing.T) {
+		data, err := a.GetAudio(entry.ID)
+		const prefix = "data:audio/wav;base64,"
+		if err != nil || len(data) != len(prefix)+base64.StdEncoding.EncodedLen(44+pcmBytes) {
+			t.Fatalf("maximum import cannot be played: %v (encoded length %d)", err, len(data))
+		}
+	})
+	t.Run("backup round trip", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "maximum-import.zip")
+		summary, err := a.exportBackup(path, true)
+		if err != nil || summary.Recordings != 1 {
+			t.Fatalf("maximum import cannot be backed up: %+v %v", summary, err)
+		}
+		archive, err := storage.ReadBackup(context.Background(), path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer archive.Close()
+		dest, err := storage.Open(t.TempDir())
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer dest.Close()
+		if _, err = dest.RestoreBackup(context.Background(), archive, false); err != nil {
+			t.Fatal(err)
+		}
+		restored, err := dest.Session(entry.ID)
+		if err != nil || restored.DurationMS != entry.DurationMS {
+			t.Fatalf("maximum import did not restore: %+v %v", restored, err)
+		}
+		data, err := dest.ReadAudio(restored.AudioPath)
+		if err != nil || len(data) != 44+pcmBytes {
+			t.Fatalf("restored audio cannot be played: %v (length %d)", err, len(data))
+		}
+	})
+}
+
+func TestDroppedAudioImportUsesSharedPipeline(t *testing.T) {
+	a := testApp(t)
+	a.engine = importedSpeech{}
+	a.copyText = func(string) error { t.Error("drop touched clipboard"); return nil }
+	source := importedWAV(t)
+	before, err := os.ReadFile(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := a.ImportDroppedAudio([]string{source}); err != nil {
+		t.Fatal(err)
+	}
+	a.wg.Wait()
+	entries, err := a.store.History()
+	if err != nil || len(entries) != 1 || entries[0].DurationMS != 1000 || entries[0].RawTranscript != "uh, hello postgres." {
+		t.Fatalf("dropped import pipeline: %+v %v", entries, err)
+	}
+	after, err := os.ReadFile(source)
+	if err != nil || string(before) != string(after) {
+		t.Fatalf("source changed: %v", err)
+	}
+}
+
+func TestDroppedAudioImportValidatesBatchAndUnavailableState(t *testing.T) {
+	a := testApp(t)
+	a.engine = importedSpeech{}
+	source := importedWAV(t)
+	if err := a.ImportDroppedAudio(nil); err == nil {
+		t.Fatal("accepted empty drop")
+	}
+	a.status.Phase = "recording"
+	if err := a.ImportDroppedAudio([]string{source, "", filepath.Join(t.TempDir(), "missing.wav")}); err != nil {
+		t.Fatal(err)
+	}
+	if len(a.imports.Snapshot()) != 3 || a.imports.Snapshot()[0].State != "queued" || a.imports.Snapshot()[1].State != "failed" || a.imports.Snapshot()[2].State != "failed" {
+		t.Fatal(a.importSnapshotLocked())
+	}
+	a.settings.ModelPath = ""
+	if err := a.ImportDroppedAudio([]string{source}); err == nil {
+		t.Fatal("accepted drop without speech model")
+	}
+}
+
+func TestAudioImportCancellationAndValidationLeaveNoPartialData(t *testing.T) {
+	a := testApp(t)
+	a.settings.SaveAudio = true
+	seen := make(chan speech.Options, 1)
+	a.engine = importedSpeech{seen: seen, block: true}
+	if err := a.importAudio(importedWAV(t)); err != nil {
+		t.Fatal(err)
+	}
+	<-seen
+	if err := a.StartRecording(); err == nil {
+		t.Fatal("recorded during import")
+	}
+	if err := a.Cancel(); err != nil {
+		t.Fatal(err)
+	}
+	a.wg.Wait()
+	if history, _ := a.store.History(); len(history) != 0 {
+		t.Fatal("cancelled import saved history")
+	}
+	if _, err := os.Stat(a.path); !os.IsNotExist(err) {
+		t.Fatal("cancelled audio leaked")
+	}
+	bad := filepath.Join(t.TempDir(), "bad.wav")
+	os.WriteFile(bad, []byte("not audio"), 0600)
+	if err := a.importAudio(bad); err != nil {
+		t.Fatal(err)
+	}
+	a.wg.Wait()
+	if a.status.Phase != "error" {
+		t.Fatal("invalid file was accepted")
+	}
+	if files, _ := os.ReadDir(filepath.Join(a.store.Dir, "recordings")); len(files) != 0 {
+		t.Fatal("failed import left files")
+	}
+	a.status.Phase = "backup"
+	if err := a.importAudio(bad); err != nil {
+		t.Fatal("could not queue while busy", err)
+	}
+	a.status.Phase = "idle"
+	a.settings.ModelPath = ""
+	if err := a.importAudio(bad); err == nil {
+		t.Fatal("imported without speech model")
+	}
+}
+
+func TestCompressedAudioImportUsesHistoryPipeline(t *testing.T) {
+	ffmpeg, err := exec.LookPath("ffmpeg")
+	if err != nil {
+		t.Skip("local FFmpeg not installed")
+	}
+	source := filepath.Join(t.TempDir(), "recorded audio.flac")
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, ffmpeg, "-hide_banner", "-loglevel", "error", "-nostdin", "-i", importedWAV(t), "-c:a", "flac", source)
+	if log, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("make FLAC fixture: %v %s", err, log)
+	}
+	before, err := os.ReadFile(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := testApp(t)
+	a.settings.SaveAudio = true
+	a.engine = importedSpeech{}
+	a.copyText = func(string) error { t.Error("compressed import touched clipboard"); return nil }
+	if err := a.importAudio(source); err != nil {
+		t.Fatal(err)
+	}
+	a.wg.Wait()
+	entries, err := a.store.History()
+	if err != nil || len(entries) != 1 || entries[0].DurationMS != 1000 || entries[0].RawTranscript != "uh, hello postgres." {
+		t.Fatalf("compressed import pipeline: %+v %v", entries, err)
+	}
+	if data, err := os.ReadFile(entries[0].AudioPath); err != nil || len(data) != 32044 || binary.LittleEndian.Uint32(data[24:]) != 16000 {
+		t.Fatalf("retained normalized audio: %v", err)
+	}
+	if after, err := os.ReadFile(source); err != nil || string(before) != string(after) {
+		t.Fatal("compressed source changed", err)
+	}
+	if a.status.Phase != "done" {
+		t.Fatalf("compressed import failed: %+v", a.status)
+	}
+}
+
+func TestAudioImportRunsAutomaticPrompt(t *testing.T) {
+	a := testApp(t)
+	a.engine = importedSpeech{}
+	a.textConfig = textmodel.Defaults()
+	a.textConfig.Enabled, a.textConfig.Model, a.textConfig.AutoPromptID = true, "local-model", "summary"
+	a.textEngine = &fakeTextEngine{output: "Imported summary."}
+	if err := a.importAudio(importedWAV(t)); err != nil {
+		t.Fatal(err)
+	}
+	a.wg.Wait()
+	outputs, err := a.store.GeneratedOutputs(a.id)
+	if err != nil || len(outputs) != 1 || outputs[0].Text != "Imported summary." {
+		t.Fatalf("prompt pipeline: %+v %v", outputs, err)
+	}
+}
+
+func TestAudioImportShutdownRemovesPendingCopy(t *testing.T) {
+	a := testApp(t)
+	a.settings.SaveAudio = true
+	seen := make(chan speech.Options, 1)
+	a.engine = importedSpeech{seen: seen, block: true}
+	source := importedWAV(t)
+	if err := a.importAudio(source); err != nil {
+		t.Fatal(err)
+	}
+	<-seen
+	a.shutdown(a.ctx)
+	if _, err := os.Stat(a.path); !os.IsNotExist(err) {
+		t.Fatal("shutdown left imported copy")
+	}
+	if _, err := os.Stat(source); err != nil {
+		t.Fatal("shutdown touched source", err)
+	}
+}
+
+func TestAudioImportRejectsRedirectedStorage(t *testing.T) {
+	a := testApp(t)
+	recordings := filepath.Join(a.store.Dir, "recordings")
+	if err := os.Remove(recordings); err != nil {
+		t.Fatal(err)
+	}
+	external := t.TempDir()
+	if err := os.Symlink(external, recordings); err != nil {
+		t.Skip("directory symlink unavailable", err)
+	}
+	if err := a.importAudio(importedWAV(t)); err != nil {
+		t.Fatal(err)
+	}
+	a.wg.Wait()
+	if a.imports.Snapshot()[0].State != "failed" {
+		t.Fatal("import followed redirected storage")
+	}
+	if files, err := os.ReadDir(external); err != nil || len(files) != 0 {
+		t.Fatal("import changed external directory", err)
+	}
+}
+
+func TestAudioSupportRequiresConfirmationAndResumesOriginalImport(t *testing.T) {
+	for _, choice := range []string{"decline", "close", "accept", "installed", "unsupported", "busy"} {
+		t.Run(choice, func(t *testing.T) {
+			a := testApp(t)
+			a.engine = importedSpeech{}
+			source := importedWAV(t)
+			confirmed, downloads := 0, 0
+			panel := &fakeIndicator{}
+			a.indicator = panel
+			err := a.prepareAudioImport(source, audioImportSupport{
+				supported: choice != "unsupported",
+				resolve: func(ctx context.Context, got, managed string) (string, error) {
+					if got != source {
+						t.Error("lost selected file")
+					}
+					if choice == "installed" {
+						return "", nil
+					}
+					return "", audio.ErrFFmpegMissing
+				},
+				confirm: func() (bool, error) {
+					confirmed++
+					if choice == "close" {
+						return false, errors.New("dialog closed")
+					}
+					if choice == "busy" {
+						a.mu.Lock()
+						a.status.Phase = "backup"
+						a.mu.Unlock()
+					}
+					return choice != "decline", nil
+				},
+				install: func(ctx context.Context, dir string, progress func(int64, int64)) (string, error) {
+					downloads++
+					if dir != a.store.Dir {
+						t.Error("wrong install destination")
+					}
+					progress(1, 2)
+					if err := a.StartRecording(); err == nil {
+						t.Error("recording allowed during download")
+					}
+					return "", nil // WAV fixture exercises continuation without executing a binary.
+				},
+			})
+			a.wg.Wait()
+			wantError := choice == "close"
+			if (err != nil) != wantError {
+				t.Fatal("unexpected result", err)
+			}
+			if (confirmed == 1) != (choice != "installed" && choice != "unsupported") {
+				t.Fatal("wrong consent calls", confirmed)
+			}
+			if (downloads == 1) != (choice == "accept") {
+				t.Fatal("download without consent", downloads)
+			}
+			history, _ := a.store.History()
+			if (len(history) == 1) != (choice == "accept" || choice == "installed") {
+				t.Fatal("unexpected import history", history)
+			}
+			if choice == "accept" {
+				resumed := false
+				for _, state := range panel.states {
+					if state.Phase == "transcribing" {
+						resumed = true
+					}
+				}
+				if !resumed {
+					t.Fatal("floating cancel control did not resume after download")
+				}
+			}
+		})
+	}
+}
+
+func TestAudioSupportFailureAndCancellationDoNotResume(t *testing.T) {
+	for _, outcome := range []string{"cancel", "failure", "shutdown"} {
+		t.Run(outcome, func(t *testing.T) {
+			a := testApp(t)
+			a.engine = importedSpeech{}
+			source := importedWAV(t)
+			started := make(chan struct{})
+			install := func(ctx context.Context, dir string, progress func(int64, int64)) (string, error) {
+				close(started)
+				if outcome == "failure" {
+					return "", errors.New("download checksum mismatch")
+				}
+				<-ctx.Done()
+				return "", ctx.Err()
+			}
+			if err := a.prepareAudioImport(source, audioImportSupport{supported: true, resolve: func(context.Context, string, string) (string, error) { return "", audio.ErrFFmpegMissing }, confirm: func() (bool, error) { return true, nil }, install: install}); err != nil {
+				t.Fatal(err)
+			}
+			<-started
+			if outcome == "cancel" {
+				if err := a.Cancel(); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if outcome == "shutdown" {
+				a.shutdown(a.ctx)
+			}
+			a.wg.Wait()
+			if _, err := os.Stat(source); err != nil {
+				t.Fatal("source changed", err)
+			}
+			if _, err := os.Stat(a.path); !os.IsNotExist(err) {
+				t.Fatal("partial recording leaked")
+			}
+			if outcome == "shutdown" {
+				return
+			}
+			if entries, _ := a.store.History(); len(entries) != 0 {
+				t.Fatal("failed download imported audio")
+			}
+			if outcome == "cancel" && a.status.Phase != "idle" {
+				t.Fatal(a.status)
+			}
+			if outcome == "failure" && (a.status.Phase != "error" || a.status.Message != "download checksum mismatch") {
+				t.Fatal(a.status)
+			}
+			// A new import is possible after either failure or cancellation.
+			if err := a.importAudio(source); err != nil {
+				t.Fatal(err)
+			}
+			a.wg.Wait()
+			if a.status.Phase != "done" {
+				t.Fatal("retry failed", a.status)
+			}
+		})
+	}
+}

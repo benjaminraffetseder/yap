@@ -118,7 +118,7 @@ test.beforeEach(async ({ page }) => {
         },
       },
       mockBackend: {
-        main: {
+        app: {
           App: {
             GetSnapshot: async () => structuredClone(snapshot),
             Cancel: async () => {
@@ -390,7 +390,7 @@ test("keyboard reorder keeps focus across pending saves and consecutive moves", 
   page,
 }) => {
   await page.evaluate(() => {
-    const api = Reflect.get(window, "mockBackend").main.App;
+    const api = Reflect.get(window, "mockBackend").app.App;
     const reorder = api.ReorderImportQueue;
     api.ReorderImportQueue = async (ids: string[]) => {
       await new Promise((resolve) => setTimeout(resolve, 150));

@@ -8,7 +8,7 @@ async function settle(page: Page) {
 }
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {
-    Reflect.set(window, "mockBackend", { main: { App: {} } });
+    Reflect.set(window, "mockBackend", { app: { App: {} } });
   });
   await page.goto("/tests/dictation-subscriptions.html");
   await expect(page.getByTestId("connection")).toHaveText("ready");

@@ -79,7 +79,7 @@ test.beforeEach(async ({ page }) => {
       updateTest: state,
       mockEvents: { subscribe: () => () => {} },
       mockBackend: {
-        main: {
+        app: {
           App: {
             GetSnapshot: async () => structuredClone(snapshot),
             GetHomeResult: async () => null,

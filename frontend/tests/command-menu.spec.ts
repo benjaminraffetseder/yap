@@ -317,7 +317,7 @@ test.describe("desktop commands and history", () => {
           },
         },
         mockBackend: {
-          main: {
+          app: {
             App: {
               GetSnapshot: async () => structuredClone(snapshot),
               GetMicrophones: async () => [],

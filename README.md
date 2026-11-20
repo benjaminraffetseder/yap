@@ -154,9 +154,10 @@ cover upgrades and supported library versions.
 
 ## Working on Yap
 
-The Go backend lives in `app*.go` and `internal/`; the React app is in
-`frontend/src`. [Development notes](docs/development.md) cover the layout,
-frontend workflow, and optional tests.
+The Go backend lives in `internal/`, with application orchestration in
+`internal/app`; the React app is in `frontend/src`.
+[Development notes](docs/development.md) cover the layout, frontend workflow,
+and optional tests.
 
 The usual checks are:
 

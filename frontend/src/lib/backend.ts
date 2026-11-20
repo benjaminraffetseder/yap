@@ -88,14 +88,14 @@ import {
   StopMicrophoneTest,
   StopRecording,
   TestTextModel,
-} from "@bindings/yap/app";
+} from "@bindings/yap/internal/app/app";
 import type { Config } from "@bindings/yap/internal/inference/text/models";
 export { isDesktop } from "@/lib/desktop";
 export type {
   BulkTextJob,
   TranscriptExportPreview,
   TranscriptExportRequest,
-} from "@bindings/yap/models";
+} from "@bindings/yap/internal/app/models";
 export type BulkTextRequest = {
   selection: TranscriptExportSelection;
   action: "title" | "output";
@@ -381,7 +381,7 @@ export type Snapshot = {
   textModels?: TextModel[];
   textRuntimeAvailable?: boolean;
   recommendedTextContext?: number;
-  bulkTextQueue?: import("@bindings/yap/models").BulkTextJob[];
+  bulkTextQueue?: import("@bindings/yap/internal/app/models").BulkTextJob[];
   importQueue?: ImportJob[];
   appProfileRules?: AppProfileRule[];
   profileShortcut?: string;

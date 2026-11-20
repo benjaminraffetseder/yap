@@ -2,7 +2,7 @@
 // calls and event listeners still pass through the real Wails v3 runtime.
 import { setTransport } from "@wailsio/runtime";
 
-const methods = Reflect.get(window, "mockBackend")?.main?.App as
+const methods = Reflect.get(window, "mockBackend")?.app?.App as
   Record<string, (...args: unknown[]) => unknown> | undefined;
 const events = Reflect.get(window, "mockEvents") as
   | {
@@ -76,6 +76,8 @@ if (methods) {
         return;
       }
       if (objectID !== 0) return null;
+      if (!String(args.methodName).startsWith("yap/internal/app.App."))
+        throw new ReferenceError(`Unknown service method: ${args.methodName}`);
       const name = String(args.methodName).split(".").at(-1)!;
       if (name === "SetIndicatorTheme" && !methods[name]) return;
       if (typeof methods[name] !== "function") throw new ReferenceError(`Unknown method: ${name}`);

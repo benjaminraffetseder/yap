@@ -107,7 +107,7 @@ async function scenario(page: Page, theme = "dark", collapsed = true, long = fal
       window.audioPlayerTest = { fail: false, corrupt: false, defer: false, allowPlay: true };
       Reflect.set(window, "mockEvents", { subscribe: () => {} });
       Reflect.set(window, "mockBackend", {
-        main: {
+        app: {
           App: {
             GetSnapshot: async () => structuredClone(snapshot),
             GetSession: async (id: string) => ({ ...session, id }),
@@ -305,7 +305,7 @@ for (const width of [1280, 760]) {
     await page.setViewportSize({ width, height: 740 });
     await scenario(page);
     await page.evaluate(() => {
-      Reflect.get(window, "mockBackend").main.App.GetSessionChat = async () => ({
+      Reflect.get(window, "mockBackend").app.App.GetSessionChat = async () => ({
         sessionId: "recording",
         messages: [],
         sources: [],

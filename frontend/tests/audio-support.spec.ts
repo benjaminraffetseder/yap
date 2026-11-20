@@ -88,7 +88,7 @@ test.beforeEach(async ({ page }) => {
         },
       },
       mockBackend: {
-        main: {
+        app: {
           App: {
             GetSnapshot: async () => structuredClone(snapshot),
             GetHistory: async () => ({ entries: [], total: 0, page: 0, pageSize: 50 }),
@@ -224,7 +224,7 @@ test("FFmpeg settings handle old backends and preserve preferences", async ({ pa
   await page.goto("/#/settings");
   await page.getByRole("switch", { name: /^Light cleanup/ }).check();
   await page.evaluate(() => {
-    Reflect.deleteProperty(Reflect.get(window, "mockBackend").main.App, "GetAudioSupport");
+    Reflect.deleteProperty(Reflect.get(window, "mockBackend").app.App, "GetAudioSupport");
   });
   await page.getByRole("tab", { name: "Advanced", exact: true }).click();
   const panel = page.getByRole("region", { name: "Audio support (FFmpeg)", exact: true });

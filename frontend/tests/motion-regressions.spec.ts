@@ -239,7 +239,7 @@ async function recordingScenario(page: Page) {
         },
       },
       mockBackend: {
-        main: {
+        app: {
           App: {
             GetSnapshot: async () => structuredClone(snapshot),
             CheckForUpdates: async () => ({ error: "", available: false }),
