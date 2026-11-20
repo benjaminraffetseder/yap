@@ -17,7 +17,6 @@ import { useSavedActions } from "@/lib/queries/saved-queries";
 import { ChevronDown, ChevronUp } from "lucide-react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Link } from "react-router";
 import type { SpeedPreference } from "../lib/onboarding-draft";
 
 export function SpeechModelStep({
@@ -84,15 +83,7 @@ export function SpeechModelStep({
 
   return (
     <div className="flex min-w-0 flex-col gap-5 [overflow-wrap:anywhere]">
-      <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-muted-foreground">
-        <span>{t("modelsPage.dictationRunsOnYourDevice")}</span>
-        <Link
-          to="/settings?section=advanced&focus=modelPath-row"
-          className="rounded text-primary underline underline-offset-4 outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        >
-          {t("modelsPage.bringYourOwnModel")}
-        </Link>
-      </div>
+      <p className="text-xs text-muted-foreground">{t("modelsPage.dictationRunsOnYourDevice")}</p>
       <Card>
         <CardHeader>
           <CardTitle>{t("onboarding.recommendedStartingPoint")}</CardTitle>

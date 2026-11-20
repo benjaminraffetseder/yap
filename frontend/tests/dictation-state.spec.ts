@@ -14641,7 +14641,7 @@ for (const language of ["en", "de"] as const) {
   });
 }
 
-test("UI polish setup support links clear the sticky footer at normal and enlarged text", async ({
+test("UI polish setup model guidance clears the sticky footer at normal and enlarged text", async ({
   page,
 }, info) => {
   await page.addInitScript(() => {
@@ -14684,7 +14684,7 @@ test("UI polish setup support links clear the sticky footer at normal and enlarg
   });
   await page.goto("/");
   await page.getByRole("button", { name: "Next", exact: true }).click();
-  const support = page.getByRole("link", { name: "Bring your own model", exact: true });
+  const support = page.getByText(en["onboarding.downloadOnlyOnClick"], { exact: true });
   const next = page.getByRole("button", { name: "Next", exact: true });
   for (const [width, height, font] of [
     [1086, 722, 100],
