@@ -5,16 +5,27 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"yap/internal/app/shortcuts"
 )
 
 type fakeShortcutRegistration struct{ closed int }
 
 func (f *fakeShortcutRegistration) Close() { f.closed++ }
 
+func setTestShortcut(t *testing.T, a *App, kind shortcuts.Kind, registration shortcutRegistration) {
+	t.Helper()
+	_, err := a.shortcuts.Register(kind, a.settings.Shortcut, func(shortcuts.Attempt) (shortcutRegistration, error) {
+		return registration, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestShortcutCaptureRestoresRegistrationWithoutRecordingOrSaving(t *testing.T) {
 	a := testApp(t)
 	old := &fakeShortcutRegistration{}
-	a.shortcut = old
+	setTestShortcut(t, a, shortcuts.Recording, old)
 	registered := 0
 	a.registerKey = func(value string, _, _ func()) (shortcutRegistration, error) {
 		if value != a.settings.Shortcut {
@@ -25,7 +36,7 @@ func TestShortcutCaptureRestoresRegistrationWithoutRecordingOrSaving(t *testing.
 	}
 	before := a.settings
 	token, err := a.BeginShortcutCapture()
-	if err != nil || token == "" || old.closed != 1 || a.shortcut != nil {
+	if err != nil || token == "" || old.closed != 1 || a.shortcuts.Registration(shortcuts.Recording) != nil {
 		t.Fatal("capture did not release saved shortcut")
 	}
 	a.hotkeyDown()
@@ -43,7 +54,7 @@ func TestShortcutCaptureRestoresRegistrationWithoutRecordingOrSaving(t *testing.
 	if err := a.SaveSettings(a.settings); err == nil {
 		t.Fatal("settings changed during capture")
 	}
-	if err := a.EndShortcutCapture("stale"); err != nil || a.shortcutCaptureID != token {
+	if err := a.EndShortcutCapture("stale"); err != nil || a.shortcuts.CaptureToken() != token {
 		t.Fatal("stale callback ended active capture")
 	}
 	if err := a.EndShortcutCapture(token); err != nil {
@@ -52,7 +63,7 @@ func TestShortcutCaptureRestoresRegistrationWithoutRecordingOrSaving(t *testing.
 	if err := a.EndShortcutCapture(token); err != nil {
 		t.Fatal(err)
 	}
-	if registered != 1 || a.shortcut == nil || a.shortcutCaptureID != "" || a.shortcutCaptureTimer != nil || a.settings != before {
+	if registered != 1 || a.shortcuts.Registration(shortcuts.Recording) == nil || a.shortcuts.CaptureToken() != "" || a.settings != before {
 		t.Fatal("capture failed to restore saved state exactly once")
 	}
 }
@@ -70,11 +81,8 @@ func TestShortcutCaptureLeaseAndShutdownRestoreSafely(t *testing.T) {
 			done <- struct{}{}
 		}
 	}
-	if _, err := a.BeginShortcutCapture(); err != nil {
-		t.Fatal(err)
-	}
 	a.mu.Lock()
-	a.shortcutCaptureTimer.Reset(0)
+	a.beginShortcutCaptureLocked(0)
 	a.mu.Unlock()
 	select {
 	case <-done:
@@ -82,7 +90,7 @@ func TestShortcutCaptureLeaseAndShutdownRestoreSafely(t *testing.T) {
 		t.Fatal("lost webview lease did not expire")
 	}
 	a.mu.Lock()
-	if registered != 1 || a.shortcutCaptureID != "" {
+	if registered != 1 || a.shortcuts.CaptureToken() != "" {
 		t.Error("lease did not restore registration")
 	}
 	a.mu.Unlock()
@@ -91,7 +99,7 @@ func TestShortcutCaptureLeaseAndShutdownRestoreSafely(t *testing.T) {
 		t.Fatal(err)
 	}
 	a.shutdown(a.ctx)
-	if err := a.EndShortcutCapture(token); err != nil || registered != 1 || a.shortcutCaptureTimer != nil {
+	if err := a.EndShortcutCapture(token); err != nil || registered != 1 {
 		t.Fatal("late callback registered shortcut after shutdown")
 	}
 	if _, err := a.BeginShortcutCapture(); err == nil {
@@ -113,7 +121,7 @@ func TestShortcutCaptureRejectsActiveWorkAndReportsRestorationFailure(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := a.EndShortcutCapture(token); err == nil || !strings.Contains(err.Error(), "choose another") || a.status.ShortcutError != "already in use" || a.shortcutCaptureID != "" {
+	if err := a.EndShortcutCapture(token); err == nil || !strings.Contains(err.Error(), "choose another") || a.status.ShortcutError != "already in use" || a.shortcuts.CaptureToken() != "" {
 		t.Fatal("restoration failure missing or capture stayed blocked")
 	}
 }
@@ -124,7 +132,7 @@ func TestShortcutSaveConflictPreservesPreviousSavedRegistration(t *testing.T) {
 		t.Fatal(err)
 	}
 	old := &fakeShortcutRegistration{}
-	a.shortcut = old
+	setTestShortcut(t, a, shortcuts.Recording, old)
 	restored := &fakeShortcutRegistration{}
 	a.registerKey = func(value string, _, _ func()) (shortcutRegistration, error) {
 		if value == "Ctrl+Alt+P" {
@@ -135,7 +143,7 @@ func TestShortcutSaveConflictPreservesPreviousSavedRegistration(t *testing.T) {
 	next := a.settings
 	next.Shortcut = "Ctrl+Alt+P"
 	err := a.SaveSettings(next)
-	if err == nil || !strings.Contains(err.Error(), "your saved shortcut is unchanged") || a.shortcut != restored || old.closed != 1 || a.settings.Shortcut != "Ctrl+Alt+Space" {
+	if err == nil || !strings.Contains(err.Error(), "your saved shortcut is unchanged") || a.shortcuts.Registration(shortcuts.Recording) != restored || old.closed != 1 || a.settings.Shortcut != "Ctrl+Alt+Space" {
 		t.Fatal("conflict damaged old shortcut or lacked recovery guidance")
 	}
 	saved, err := a.store.Settings()

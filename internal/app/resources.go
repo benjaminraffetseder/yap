@@ -1,6 +1,7 @@
 package app
 
 import (
+	"yap/internal/app/modelmanagement"
 	"yap/internal/inference/speech"
 	textmodel "yap/internal/inference/text"
 	"yap/internal/models"
@@ -22,12 +23,37 @@ type Configuration struct {
 	Ready             bool                       `json:"ready"`
 }
 
-type ModelCatalog struct {
-	Models                 []models.Model     `json:"models"`
-	TextModels             []models.TextModel `json:"textModels"`
-	TextRuntimeAvailable   bool               `json:"textRuntimeAvailable"`
-	RecommendedTextContext int                `json:"recommendedTextContext"`
+type Snapshot struct {
+	TextModels             []models.TextModel         `json:"textModels"`
+	TextRuntimeAvailable   bool                       `json:"textRuntimeAvailable"`
+	RecommendedTextContext int                        `json:"recommendedTextContext"`
+	BulkTextQueue          []BulkTextJob              `json:"bulkTextQueue"`
+	ImportQueue            []ImportJob                `json:"importQueue"`
+	AppProfileRules        []storage.AppProfileRule   `json:"appProfileRules"`
+	ProfileShortcut        string                     `json:"profileShortcut"`
+	DictationProfiles      []storage.DictationProfile `json:"dictationProfiles"`
+	ActiveProfileID        string                     `json:"activeProfileId"`
+	DefaultProfileID       string                     `json:"defaultProfileId"`
+	ProfileModified        bool                       `json:"profileModified"`
+	RecordingSaveHistory   bool                       `json:"recordingSaveHistory"`
+	LatestResult           *TemporaryResult           `json:"latestResult"`
+	TextProcessing         textmodel.Config           `json:"textProcessing"`
+	Diagnostic             DiagnosticResult           `json:"diagnostic"`
+	Vocabulary             []vocabulary.Entry         `json:"vocabulary"`
+	MicrophoneTested       bool                       `json:"microphoneTested"`
+	ShortcutTested         bool                       `json:"shortcutTested"`
+	Settings               storage.Settings           `json:"settings"`
+	Status                 Status                     `json:"status"`
+	History                []storage.Session          `json:"history"`
+	Models                 []models.Model             `json:"models"`
+	DataDir                string                     `json:"dataDir"`
+	Ready                  bool                       `json:"ready"`
+	FloatingIndicator      bool                       `json:"floatingIndicator"`
+	LaunchAtLoginAvailable bool                       `json:"launchAtLoginAvailable"`
+	StartInTrayAvailable   bool                       `json:"startInTrayAvailable"`
 }
+
+type ModelCatalog = modelmanagement.ModelCatalog
 
 type RuntimeSnapshot struct {
 	BulkTextQueue          []BulkTextJob     `json:"bulkTextQueue"`
@@ -48,7 +74,7 @@ type RuntimeSnapshot struct {
 func (a *App) GetConfiguration() (Configuration, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	if err := a.available(); err != nil {
+	if err := a.availableLocked(); err != nil {
 		return Configuration{}, err
 	}
 	return a.configurationLocked(), nil
@@ -63,13 +89,23 @@ func (a *App) configurationLocked() Configuration {
 			modified = !p.Matches(a.settings, a.textConfig)
 		}
 	}
-	return Configuration{Settings: a.settings, TextProcessing: config, AppProfileRules: append([]storage.AppProfileRule{}, library.AppRules...), ProfileShortcut: library.ProfileShortcut, DictationProfiles: append([]storage.DictationProfile{}, library.Profiles...), ActiveProfileID: library.ActiveID, DefaultProfileID: library.DefaultID, ProfileModified: modified, Ready: speech.Validate(speech.Options{Executable: a.settings.WhisperPath, Model: a.settings.ModelPath}) == nil}
+	return Configuration{
+		Settings:          a.settings,
+		TextProcessing:    config,
+		AppProfileRules:   append([]storage.AppProfileRule{}, library.AppRules...),
+		ProfileShortcut:   library.ProfileShortcut,
+		DictationProfiles: append([]storage.DictationProfile{}, library.Profiles...),
+		ActiveProfileID:   library.ActiveID,
+		DefaultProfileID:  library.DefaultID,
+		ProfileModified:   modified,
+		Ready:             speech.Validate(speech.Options{Executable: a.settings.WhisperPath, Model: a.settings.ModelPath}) == nil,
+	}
 }
 
 func (a *App) GetVocabulary() ([]vocabulary.Entry, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	if err := a.available(); err != nil {
+	if err := a.availableLocked(); err != nil {
 		return nil, err
 	}
 	return a.vocabularyLocked(), nil
@@ -91,14 +127,14 @@ func (a *App) vocabularyLocked() []vocabulary.Entry {
 func (a *App) GetModelCatalog() (ModelCatalog, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	if err := a.available(); err != nil {
+	if err := a.availableLocked(); err != nil {
 		return ModelCatalog{}, err
 	}
 	return a.modelCatalogLocked(), nil
 }
 
 func (a *App) modelCatalogLocked() ModelCatalog {
-	return ModelCatalog{Models: models.List(a.store.Dir), TextModels: models.ListTextModels(a.store.Dir), TextRuntimeAvailable: models.TextRuntimeAvailable(), RecommendedTextContext: models.RecommendedTextContext()}
+	return modelmanagement.Catalog(a.store.Dir)
 }
 
 func (a *App) GetRuntimeSnapshot() (RuntimeSnapshot, error) {
@@ -108,7 +144,7 @@ func (a *App) GetRuntimeSnapshot() (RuntimeSnapshot, error) {
 }
 
 func (a *App) runtimeSnapshotLocked() (RuntimeSnapshot, error) {
-	if err := a.available(); err != nil {
+	if err := a.availableLocked(); err != nil {
 		return RuntimeSnapshot{}, err
 	}
 	// Backups own the single database connection. Serve the pre-operation
@@ -125,7 +161,7 @@ func (a *App) runtimeSnapshotLocked() (RuntimeSnapshot, error) {
 	}
 	if !a.homeResultOperation && a.status.Phase != "backup" {
 		a.homeHistory = history
-		a.updateTray()
+		a.updateTrayLocked()
 	}
 	var latest *TemporaryResult
 	if a.latestResult != nil {
@@ -138,5 +174,59 @@ func (a *App) runtimeSnapshotLocked() (RuntimeSnapshot, error) {
 		latest = &copy
 	}
 
-	return RuntimeSnapshot{BulkTextQueue: a.bulkTextSnapshotLocked(), ImportQueue: a.importSnapshotLocked(), RecordingSaveHistory: a.recordSettings.SaveHistory, LatestResult: latest, Diagnostic: a.diagnostic, MicrophoneTested: a.microphoneTested, ShortcutTested: a.shortcutTested, Status: a.status, History: history, DataDir: a.store.Dir, FloatingIndicator: a.indicator != nil, LaunchAtLoginAvailable: a.loginStart != nil, StartInTrayAvailable: a.tray != nil && !a.development}, nil
+	return RuntimeSnapshot{
+		BulkTextQueue:          a.bulkTextSnapshotLocked(),
+		ImportQueue:            a.importSnapshotLocked(),
+		RecordingSaveHistory:   a.recordSettings.SaveHistory,
+		LatestResult:           latest,
+		Diagnostic:             a.diagnostic,
+		MicrophoneTested:       a.microphoneTested,
+		ShortcutTested:         a.shortcutTested,
+		Status:                 a.status,
+		History:                history,
+		DataDir:                a.store.Dir,
+		FloatingIndicator:      a.indicator != nil,
+		LaunchAtLoginAvailable: a.loginStart != nil,
+		StartInTrayAvailable:   a.tray != nil && !a.development,
+	}, nil
+}
+
+func (a *App) GetSnapshot() (Snapshot, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	runtime, err := a.runtimeSnapshotLocked()
+	if err != nil {
+		return Snapshot{}, err
+	}
+	config := a.configurationLocked()
+	catalog := a.modelCatalogLocked()
+	return Snapshot{
+		TextModels:             catalog.TextModels,
+		TextRuntimeAvailable:   catalog.TextRuntimeAvailable,
+		RecommendedTextContext: catalog.RecommendedTextContext,
+		BulkTextQueue:          runtime.BulkTextQueue,
+		ImportQueue:            runtime.ImportQueue,
+		AppProfileRules:        config.AppProfileRules,
+		ProfileShortcut:        config.ProfileShortcut,
+		DefaultProfileID:       config.DefaultProfileID,
+		ProfileModified:        config.ProfileModified,
+		DictationProfiles:      config.DictationProfiles,
+		ActiveProfileID:        config.ActiveProfileID,
+		RecordingSaveHistory:   runtime.RecordingSaveHistory,
+		LatestResult:           runtime.LatestResult,
+		TextProcessing:         config.TextProcessing,
+		Diagnostic:             runtime.Diagnostic,
+		Vocabulary:             a.vocabularyLocked(),
+		MicrophoneTested:       runtime.MicrophoneTested,
+		ShortcutTested:         runtime.ShortcutTested,
+		Settings:               config.Settings,
+		Status:                 runtime.Status,
+		History:                runtime.History,
+		Models:                 catalog.Models,
+		DataDir:                runtime.DataDir,
+		Ready:                  config.Ready,
+		FloatingIndicator:      runtime.FloatingIndicator,
+		LaunchAtLoginAvailable: runtime.LaunchAtLoginAvailable,
+		StartInTrayAvailable:   runtime.StartInTrayAvailable,
+	}, nil
 }

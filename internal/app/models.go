@@ -3,27 +3,23 @@ package app
 import (
 	"context"
 	"errors"
-	"yap/internal/models"
+	"yap/internal/app/modelmanagement"
 )
 
 func (a *App) InstallTextModel(id string) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	if err := a.available(); err != nil {
+	if err := a.availableLocked(); err != nil {
 		return err
 	}
-	if a.busy() || a.textJobID != "" {
+	if a.busyLocked() || a.textJobID != "" {
 		return errors.New("finish the current operation first")
 	}
-	if _, ok := models.FindTextModel(id); !ok {
-		return errors.New("unknown text model")
+	plan, err := modelmanagement.PrepareText(id)
+	if err != nil {
+		return err
 	}
-	if !models.TextRuntimeAvailable() {
-		return errors.New("built-in text models require Windows x64 or Linux x64/arm64")
-	}
-	if engine, ok := a.textEngine.(interface{ Release() }); ok {
-		engine.Release()
-	}
+	a.releaseTextModel()
 	parent := a.ctx
 	if parent == nil {
 		parent = context.Background()
@@ -31,7 +27,7 @@ func (a *App) InstallTextModel(id string) error {
 	ctx, cancel := context.WithCancel(parent)
 	a.cancel = cancel
 	a.status.Phase, a.status.Message, a.status.Progress = "downloading", "Checking or downloading text runtime…", 0
-	a.emit()
+	a.emitStatusLocked()
 	a.wg.Add(1)
 	go func() {
 		defer a.wg.Done()
@@ -41,17 +37,15 @@ func (a *App) InstallTextModel(id string) error {
 			defer a.mu.Unlock()
 			if ctx.Err() == nil && !a.closing {
 				a.status.Progress = float64(n) / float64(total)
-				a.emit()
+				a.emitStatusLocked()
 			}
 		}
-		err := models.EnsureTextRuntime(ctx, a.store.Dir, progress)
-		if err == nil {
+		err := plan.Run(ctx, a.store.Dir, progress, func(message string) {
 			a.mu.Lock()
-			a.status.Message, a.status.Progress = "Checking or downloading "+id+"…", 0
-			a.emit()
+			a.status.Message, a.status.Progress = message, 0
+			a.emitStatusLocked()
 			a.mu.Unlock()
-			err = models.InstallTextModel(ctx, a.store.Dir, id, progress)
-		}
+		})
 		a.mu.Lock()
 		defer a.mu.Unlock()
 		a.cancel = nil
@@ -61,14 +55,14 @@ func (a *App) InstallTextModel(id string) error {
 		if ctx.Err() != nil {
 			a.status.Phase, a.status.Message = "idle", "Download cancelled"
 		} else if err != nil {
-			a.fail(err)
+			a.failLocked(err)
 			a.event("setup:changed", []string{"catalogs"})
 			return
 		} else {
 			a.status.Phase, a.status.Message = "idle", "Text model installed. Select it in Prompts to get started."
 		}
 		a.status.Progress = 0
-		a.emit()
+		a.emitStatusLocked()
 		a.event("setup:changed", []string{"catalogs"})
 	}()
 	return nil
@@ -77,19 +71,13 @@ func (a *App) InstallTextModel(id string) error {
 func (a *App) RemoveTextModel(id string) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	if err := a.available(); err != nil {
+	if err := a.availableLocked(); err != nil {
 		return err
 	}
-	if a.busy() || a.textJobID != "" {
+	if a.busyLocked() || a.textJobID != "" {
 		return errors.New("finish the current operation before removing a model")
 	}
-	if a.textConfig.Provider == "builtin" && a.textConfig.Model == id {
-		return errors.New("select another text model or an external server before removing this model")
-	}
-	if engine, ok := a.textEngine.(interface{ Release() }); ok {
-		engine.Release()
-	}
-	if err := models.RemoveTextModel(a.store.Dir, id); err != nil {
+	if err := modelmanagement.RemoveText(a.store.Dir, id, a.textConfig, a.releaseTextModel); err != nil {
 		return err
 	}
 	a.event("setup:changed", []string{"catalogs"})
@@ -99,16 +87,22 @@ func (a *App) RemoveTextModel(id string) error {
 func (a *App) RemoveModel(id string) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	if err := a.available(); err != nil {
+	if err := a.availableLocked(); err != nil {
 		return err
 	}
-	if a.busy() {
+	if a.busyLocked() {
 		return errors.New("finish the current operation before removing a model")
 	}
-	if err := models.Remove(a.store.Dir, id, a.settings.ModelPath); err != nil {
+	if err := modelmanagement.RemoveSpeech(a.store.Dir, id, a.settings.ModelPath); err != nil {
 		return err
 	}
 	a.event("dictation:history")
 	a.event("setup:changed", []string{"catalogs"})
 	return nil
+}
+
+func (a *App) releaseTextModel() {
+	if engine, ok := a.textEngine.(interface{ Release() }); ok {
+		engine.Release()
+	}
 }

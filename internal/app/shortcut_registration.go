@@ -2,21 +2,35 @@ package app
 
 import (
 	"context"
-	"errors"
 
+	"yap/internal/app/shortcuts"
 	"yap/internal/platform"
 )
 
 // Stop a sequence of permission requests when the user cancels one of them.
 func (a *App) registerMissingShortcutsLocked() {
-	if a.shortcut == nil {
-		err := a.registerShortcut()
-		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-			return
+	a.shortcuts.RegisterMissing(a.settings.Shortcut, a.profiles.Shortcut(), func(kind shortcuts.Kind, value string) error {
+		if kind == shortcuts.Profile {
+			return a.registerProfileShortcutFor(value)
 		}
+		return a.registerShortcutFor(value)
+	})
+}
+
+func (a *App) createShortcutLocked(value string, down, up func()) (shortcutRegistration, error) {
+	if a.registerKey != nil {
+		return a.registerKey(value, down, up)
 	}
-	if a.profileShortcut == nil {
-		a.registerProfileShortcut()
+	return a.registerNativeShortcutLocked(value, down, up)
+}
+
+func (a *App) shortcutCallback(attempt shortcuts.Attempt, callback func()) func() {
+	return func() {
+		a.mu.Lock()
+		defer a.mu.Unlock()
+		if a.shortcuts.Current(attempt) {
+			callback()
+		}
 	}
 }
 
@@ -26,12 +40,10 @@ func (a *App) registerNativeShortcutLocked(value string, down, up func()) (short
 	if a.closing {
 		return nil, context.Canceled
 	}
-	ctx := a.ctx
-	if ctx == nil {
-		ctx = context.Background()
+	permission, err := a.shortcuts.BeginRegistration(a.ctx)
+	if err != nil {
+		return nil, err
 	}
-	ctx, cancel := context.WithCancel(ctx)
-	a.shortcutRegistrationCancel = cancel
 	register := a.registerKeyContext
 	if register == nil {
 		register = func(ctx context.Context, value string, down, up func()) (shortcutRegistration, error) {
@@ -40,51 +52,33 @@ func (a *App) registerNativeShortcutLocked(value string, down, up func()) (short
 	}
 	a.wg.Add(1)
 	a.mu.Unlock()
-	s, err := register(ctx, value, down, up)
+	s, err := register(permission.Context(), value, down, up)
 	a.mu.Lock()
 	a.wg.Done()
-	a.shortcutRegistrationCancel = nil
-	cancelled := ctx.Err()
-	cancel()
-	if a.closing || cancelled != nil {
-		if s != nil {
-			s.Close()
-		}
-		return nil, context.Canceled
-	}
-	return s, err
+	return a.shortcuts.FinishRegistration(permission, s, err)
 }
 
-func (a *App) watchShortcutLocked(s shortcutRegistration, generation uint64, profile bool) {
-	registration, ok := s.(interface {
-		Done() <-chan struct{}
-		Err() error
-	})
-	if !ok || registration.Done() == nil {
+func (a *App) watchShortcutLocked(loss *shortcuts.Loss) {
+	if loss == nil {
 		return
 	}
+	a.wg.Add(1)
 	go func() {
-		<-registration.Done()
-		err := registration.Err()
+		defer a.wg.Done()
+		err := loss.Wait()
 		if err == nil {
 			return
 		}
 		a.mu.Lock()
 		defer a.mu.Unlock()
-		if a.closing {
+		if a.closing || !a.shortcuts.Lost(loss, err) {
 			return
 		}
-		if profile {
-			if generation != a.profileShortcutGeneration {
-				return
-			}
-			a.profileShortcut, a.status.ProfileShortcutError = nil, err.Error()
+		if loss.Kind() == shortcuts.Profile {
+			a.status.ProfileShortcutError = err.Error()
 		} else {
-			if generation != a.shortcutGeneration {
-				return
-			}
-			a.shortcut, a.status.ShortcutError = nil, err.Error()
+			a.status.ShortcutError = err.Error()
 		}
-		a.emit()
+		a.emitStatusLocked()
 	}()
 }

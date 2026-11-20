@@ -12,7 +12,7 @@ import (
 )
 
 func (a *App) ensureUpdatingLocked() error {
-	if err := a.available(); err != nil {
+	if err := a.availableLocked(); err != nil {
 		return err
 	}
 	if !a.updating.Initialized() {

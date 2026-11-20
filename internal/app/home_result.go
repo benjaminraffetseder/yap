@@ -21,7 +21,7 @@ func (a *App) beginHomeResult() (*HomeResult, bool, error) {
 	if err := a.historyAvailableLocked(); err != nil {
 		return nil, false, err
 	}
-	if a.busy() || a.textJobID != "" {
+	if a.busyLocked() || a.textJobID != "" {
 		return nil, false, errors.New("finish the current operation before using the result")
 	}
 	a.homeResultOperation = true
@@ -49,8 +49,7 @@ func (a *App) endHomeResult() {
 		a.homeHistory = history
 	}
 	a.homeResultOperation = false
-	a.pumpImportQueueLocked()
-	a.pumpBulkTextQueueLocked()
+	a.pumpQueuesLocked()
 	a.mu.Unlock()
 	a.wg.Done()
 }
@@ -83,7 +82,7 @@ func (a *App) HomeResultAction(id, revision, action, text string) error {
 		a.endHomeResult()
 		a.mu.Lock()
 		if !a.closing {
-			a.emit()
+			a.emitStatusLocked()
 			a.event("dictation:history")
 		}
 		a.mu.Unlock()
@@ -96,7 +95,7 @@ func (a *App) HomeResultAction(id, revision, action, text string) error {
 		return err
 	}
 	a.mu.Lock()
-	err = a.available()
+	err = a.availableLocked()
 	a.mu.Unlock()
 	if err != nil {
 		return err

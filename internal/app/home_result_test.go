@@ -388,7 +388,7 @@ func TestHomeConcurrentReadsAfterNavigation(t *testing.T) {
 			if secondErr != nil || second == nil || second.Text != entry.FinalTranscript || second.Saved != saved {
 				t.Fatalf("returning to Home rejected the overlapping read: result=%+v, err=%v", second, secondErr)
 			}
-			if a.busy() {
+			if a.busyLocked() {
 				t.Fatal("result read left the app busy")
 			}
 		})

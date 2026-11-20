@@ -8,7 +8,7 @@ func (a *App) discardAudioLocked(path string) error {
 	err := a.store.DiscardAudio(path)
 	if err != nil {
 		a.status.HistoryError = "Could not delete temporary audio: " + err.Error()
-		a.emit()
+		a.emitStatusLocked()
 	}
 	return err
 }

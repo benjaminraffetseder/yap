@@ -196,7 +196,7 @@ func TestDroppedAudioImportValidatesBatchAndUnavailableState(t *testing.T) {
 	if err := a.ImportDroppedAudio([]string{source, "", filepath.Join(t.TempDir(), "missing.wav")}); err != nil {
 		t.Fatal(err)
 	}
-	if len(a.importQueue) != 3 || a.importQueue[0].State != "queued" || a.importQueue[1].State != "failed" || a.importQueue[2].State != "failed" {
+	if len(a.imports.Snapshot()) != 3 || a.imports.Snapshot()[0].State != "queued" || a.imports.Snapshot()[1].State != "failed" || a.imports.Snapshot()[2].State != "failed" {
 		t.Fatal(a.importSnapshotLocked())
 	}
 	a.settings.ModelPath = ""
@@ -338,7 +338,7 @@ func TestAudioImportRejectsRedirectedStorage(t *testing.T) {
 		t.Fatal(err)
 	}
 	a.wg.Wait()
-	if a.importQueue[0].State != "failed" {
+	if a.imports.Snapshot()[0].State != "failed" {
 		t.Fatal("import followed redirected storage")
 	}
 	if files, err := os.ReadDir(external); err != nil || len(files) != 0 {

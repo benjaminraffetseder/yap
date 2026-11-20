@@ -67,7 +67,7 @@ func TestSpeechLanguageRejectedBeforeRecordingOrImport(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if len(recorder.devices) != 0 || len(files) != 0 || a.homeResult != previous || len(a.importQueue) != 0 || a.textJobID != "" {
+			if len(recorder.devices) != 0 || len(files) != 0 || a.homeResult != previous || len(a.imports.Snapshot()) != 0 || a.textJobID != "" {
 				t.Fatal("rejected language started capture/import or replaced the previous result")
 			}
 		})

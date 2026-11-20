@@ -3,25 +3,17 @@ package app
 import (
 	"context"
 	"errors"
-	"fmt"
 	"time"
 
-	"yap/internal/audio"
+	"yap/internal/app/modelmanagement"
 	"yap/internal/models"
 )
 
-type AudioSupport struct {
-	Installed   bool   `json:"installed"`
-	Managed     bool   `json:"managed"`
-	Path        string `json:"path"`
-	CanDownload bool   `json:"canDownload"`
-	Size        int64  `json:"size"`
-	Message     string `json:"message"`
-}
+type AudioSupport = modelmanagement.AudioSupport
 
 func (a *App) GetAudioSupport() (AudioSupport, error) {
 	a.mu.Lock()
-	err := a.available()
+	err := a.availableLocked()
 	var dir string
 	if err == nil {
 		dir = a.store.Dir
@@ -30,24 +22,12 @@ func (a *App) GetAudioSupport() (AudioSupport, error) {
 	if err != nil {
 		return AudioSupport{}, err
 	}
-	managed := models.FFmpegPath(dir)
-	path, err := audio.FindFFmpeg(a.ctx, managed)
-	result := AudioSupport{Installed: err == nil, Managed: path != "" && path == managed, Path: path, CanDownload: models.CanInstallFFmpeg(), Size: models.FFmpegSize}
-	if errors.Is(err, audio.ErrFFmpegMissing) {
-		result.Message = "FFmpeg is not installed"
-	} else if err != nil {
-		result.Message = err.Error()
-	} else if result.Managed {
-		result.Message = "Installed by Yap"
-	} else {
-		result.Message = "Using an existing FFmpeg installation"
-	}
-	return result, nil
+	return modelmanagement.AudioStatus(a.ctx, dir), nil
 }
 
 func (a *App) confirmAudioSupportDownload(next string) (bool, error) {
 	dialog := a.desktop.Dialog.Question().SetTitle("Download audio support").AttachToWindow(a.window)
-	dialog.SetMessage(fmt.Sprintf("Download FFmpeg audio support (%.1f MiB)?\n\nYap will download FFmpeg from GitHub, verify it, and save it in Yap's application data folder. No administrator access or PATH changes are needed. Your audio stays on this device.\n\nThis build is licensed under LGPL v3 or later. Its licence and source information will be saved beside it.\n\n%s You can cancel the download in Yap.", float64(models.FFmpegSize)/(1<<20), next))
+	dialog.SetMessage(modelmanagement.AudioConfirmation(next))
 	answer := make(chan bool, 1)
 	dialog.AddButton("Yes").OnClick(func() { answer <- true })
 	dialog.AddButton("No").SetAsDefault().SetAsCancel().OnClick(func() { answer <- false })
@@ -69,16 +49,13 @@ func (a *App) InstallAudioSupport() error {
 }
 
 func (a *App) audioSupportAvailableLocked() error {
-	if err := a.available(); err != nil {
+	if err := a.availableLocked(); err != nil {
 		return err
 	}
-	if a.busy() || a.textJobID != "" {
+	if a.busyLocked() || a.textJobID != "" {
 		return errors.New("finish the current operation before installing audio support")
 	}
-	if !models.CanInstallFFmpeg() {
-		return errors.New("automatic audio support installation requires Windows x64")
-	}
-	return nil
+	return modelmanagement.AudioInstallSupported()
 }
 
 func (a *App) installAudioSupport(confirm func() (bool, error), install audioSupportInstaller) error {
@@ -100,7 +77,7 @@ func (a *App) installAudioSupport(confirm func() (bool, error), install audioSup
 	ctx, cancel := context.WithTimeout(a.ctx, 30*time.Minute)
 	a.cancel = cancel
 	a.status.Phase, a.status.Message, a.status.Progress, a.status.StartedAt = "downloading", "Downloading audio support…", 0, 0
-	a.emit()
+	a.emitStatusLocked()
 	a.wg.Add(1)
 	go func() {
 		defer a.wg.Done()
@@ -117,7 +94,7 @@ func (a *App) installAudioSupport(confirm func() (bool, error), install audioSup
 			if n == total {
 				a.status.Message = "Installing audio support…"
 			}
-			a.emit()
+			a.emitStatusLocked()
 		})
 		a.mu.Lock()
 		defer a.mu.Unlock()
@@ -126,15 +103,13 @@ func (a *App) installAudioSupport(confirm func() (bool, error), install audioSup
 			return
 		}
 		a.status.Progress = 0
-		if ctx.Err() != nil {
-			a.status.Phase, a.status.Message = "idle", "Audio support download cancelled"
-		} else if err != nil {
-			a.fail(err)
+		outcome := modelmanagement.CompleteAudio(ctx, err)
+		if outcome.Err != nil {
+			a.failLocked(outcome.Err)
 			return
-		} else {
-			a.status.Phase, a.status.Message = "idle", "Audio support installed. Ready to import."
 		}
-		a.emit()
+		a.status.Phase, a.status.Message = outcome.Phase, outcome.Message
+		a.emitStatusLocked()
 	}()
 	return nil
 }

@@ -28,7 +28,7 @@ func TestAutomaticClipboardDelivery(t *testing.T) {
 			copied := "existing clipboard"
 			a.copyText = func(text string) error { copied = text; return nil }
 			a.mu.Lock()
-			err := a.start(tc.external)
+			err := a.startRecordingLocked(tc.external)
 			target := a.target
 			a.mu.Unlock()
 			if err != nil {

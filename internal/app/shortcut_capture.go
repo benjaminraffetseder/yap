@@ -5,41 +5,33 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/google/uuid"
+	"yap/internal/app/shortcuts"
 )
 
-type shortcutRegistration interface{ Close() }
+type shortcutRegistration = shortcuts.Registration
 
 // Release the native registration so even the existing shortcut reaches the
 // webview without starting dictation. A lease restores it if the webview is lost.
 func (a *App) BeginShortcutCapture() (string, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	if err := a.available(); err != nil {
+	if err := a.availableLocked(); err != nil {
 		return "", err
 	}
-	if a.busy() {
+	if a.busyLocked() {
 		return "", errors.New("finish the current operation before recording a shortcut")
 	}
-	token := uuid.NewString()
-	a.shortcutCaptureID = token
-	a.shortcutGeneration++
-	a.profileShortcutGeneration++
-	if a.profileShortcut != nil {
-		a.profileShortcut.Close()
-		a.profileShortcut = nil
-	}
-	if a.shortcut != nil {
-		a.shortcut.Close()
-		a.shortcut = nil
-	}
-	a.shortcutCaptureTimer = time.AfterFunc(time.Minute, func() {
+	return a.beginShortcutCaptureLocked(time.Minute), nil
+}
+
+func (a *App) beginShortcutCaptureLocked(lease time.Duration) string {
+	token := a.shortcuts.BeginCapture(lease, func(token string) {
 		a.mu.Lock()
 		defer a.mu.Unlock()
 		_ = a.endShortcutCaptureLocked(token)
 	})
-	a.updateTray()
-	return token, nil
+	a.updateTrayLocked()
+	return token
 }
 
 func (a *App) EndShortcutCapture(token string) error {
@@ -49,19 +41,14 @@ func (a *App) EndShortcutCapture(token string) error {
 }
 
 func (a *App) endShortcutCaptureLocked(token string) error {
-	if token == "" || token != a.shortcutCaptureID {
+	if !a.shortcuts.EndCapture(token) {
 		return nil
-	}
-	a.shortcutCaptureID = ""
-	if a.shortcutCaptureTimer != nil {
-		a.shortcutCaptureTimer.Stop()
-		a.shortcutCaptureTimer = nil
 	}
 	if a.closing {
 		return nil
 	}
 	a.registerMissingShortcutsLocked()
-	a.emit()
+	a.emitStatusLocked()
 	a.event("shortcut:capture-ended", token)
 	if a.status.ShortcutError != "" {
 		return fmt.Errorf("could not restore the saved shortcut: %s; choose another combination and save settings", a.status.ShortcutError)

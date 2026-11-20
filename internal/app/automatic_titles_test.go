@@ -177,7 +177,7 @@ func TestAutomaticTitlesForAudioImports(t *testing.T) {
 			t.Fatal("import title or transcript incorrect", entry)
 		}
 	}
-	for _, job := range a.importQueue {
+	for _, job := range a.imports.Snapshot() {
 		if job.State != "done" {
 			t.Fatal("title generation affected import completion", job)
 		}

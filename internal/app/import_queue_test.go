@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"yap/internal/app/imports"
 	"yap/internal/audio"
 	"yap/internal/inference/speech"
 )
@@ -54,7 +55,8 @@ func TestImportQueueFIFOReorderProgressAndResults(t *testing.T) {
 	a := testApp(t)
 	e := queueSpeech{make(chan string, 4), make(chan error)}
 	a.engine = e
-	if err := a.ImportDroppedAudio([]string{importedWAV(t), importedWAV(t), importedWAV(t)}); err != nil {
+	firstSource := importedWAV(t)
+	if err := a.ImportDroppedAudio([]string{firstSource, importedWAV(t), importedWAV(t)}); err != nil {
 		t.Fatal(err)
 	}
 	first := nextQueueStart(t, e.started)
@@ -91,7 +93,7 @@ func TestImportQueueFIFOReorderProgressAndResults(t *testing.T) {
 		}
 	}
 	data, _ := json.Marshal(jobs)
-	if strings.Contains(string(data), a.importQueue[0].source) {
+	if strings.Contains(string(data), firstSource) {
 		t.Fatal("source path exposed")
 	}
 }
@@ -106,7 +108,7 @@ func TestImportQueueWaitsForRecordingAndResumes(t *testing.T) {
 	if err := a.ImportDroppedAudio([]string{importedWAV(t), importedWAV(t)}); err != nil {
 		t.Fatal(err)
 	}
-	if a.importActive != "" || a.importQueue[0].State != "queued" {
+	if a.imports.ActiveID() != "" || a.imports.Snapshot()[0].State != "queued" {
 		t.Fatal("queue interrupted recording")
 	}
 	if err := a.Cancel(); err != nil {
@@ -140,7 +142,7 @@ func TestImportQueueRemoveCancelRetryAndClear(t *testing.T) {
 		t.Fatal(err)
 	}
 	a.wg.Wait()
-	if len(a.importQueue) != 1 || a.importQueue[0].State != "cancelled" {
+	if len(a.imports.Snapshot()) != 1 || a.imports.Snapshot()[0].State != "cancelled" {
 		t.Fatal(a.importSnapshotLocked())
 	}
 	if err := a.RetryImport(ids[0].ID); err != nil {
@@ -155,8 +157,8 @@ func TestImportQueueRemoveCancelRetryAndClear(t *testing.T) {
 	if err := a.ClearFinishedImports(); err != nil {
 		t.Fatal(err)
 	}
-	if len(a.importQueue) != 0 {
-		t.Fatal(a.importQueue)
+	if len(a.imports.Snapshot()) != 0 {
+		t.Fatal(a.imports.Snapshot())
 	}
 }
 
@@ -196,7 +198,7 @@ func TestImportQueueShutdownStopsPump(t *testing.T) {
 	}
 	nextQueueStart(t, e.started)
 	a.shutdown(a.ctx)
-	if a.importQueue[1].State != "queued" {
+	if a.imports.Snapshot()[1].State != "queued" {
 		t.Fatal("started next file during shutdown")
 	}
 	select {
@@ -214,7 +216,7 @@ func TestImportQueueMixedDropAndSingleBatchConfirmation(t *testing.T) {
 	}
 	a.wg.Wait()
 	states := []string{}
-	for _, job := range a.importQueue {
+	for _, job := range a.imports.Snapshot() {
 		states = append(states, job.State)
 	}
 	if !reflect.DeepEqual(states, []string{"failed", "done", "failed", "done"}) {
@@ -247,11 +249,11 @@ func TestImportQueueRetriesRepairedFile(t *testing.T) {
 	if err := os.WriteFile(path, data, 0600); err != nil {
 		t.Fatal(err)
 	}
-	if err := a.RetryImport(a.importQueue[0].ID); err != nil {
+	if err := a.RetryImport(a.imports.Snapshot()[0].ID); err != nil {
 		t.Fatal(err)
 	}
 	a.wg.Wait()
-	if a.importQueue[0].State != "done" {
+	if a.imports.Snapshot()[0].State != "done" {
 		t.Fatal(a.importSnapshotLocked())
 	}
 }
@@ -281,11 +283,11 @@ func TestImportQueueRetryLaterJobRechecksAudioSupport(t *testing.T) {
 	}
 	a.wg.Wait()
 	// A later dependent job must recover even though the first job owned the failed download.
-	if err := a.RetryImport(a.importQueue[1].ID); err != nil {
+	if err := a.RetryImport(a.imports.Snapshot()[1].ID); err != nil {
 		t.Fatal(err)
 	}
 	a.wg.Wait()
-	if installed != 2 || confirmed != 1 || resolved != 3 || a.importQueue[1].State != "failed" || a.importQueue[1].Error != "temporary download failure" {
+	if installed != 2 || confirmed != 1 || resolved != 3 || a.imports.Snapshot()[1].State != "failed" || a.imports.Snapshot()[1].Error != "temporary download failure" {
 		t.Fatalf("retry skipped dependency preparation: installs=%d confirms=%d resolves=%d jobs=%+v", installed, confirmed, resolved, a.importSnapshotLocked())
 	}
 }
@@ -315,11 +317,11 @@ func TestImportQueueRetryUsesNewlyInstalledAudioSupport(t *testing.T) {
 	}
 	a.wg.Wait()
 	available = true
-	if err := a.RetryImport(a.importQueue[0].ID); err != nil {
+	if err := a.RetryImport(a.imports.Snapshot()[0].ID); err != nil {
 		t.Fatal(err)
 	}
 	a.wg.Wait()
-	if resolved != 2 || installed != 1 || confirmed != 1 || a.importQueue[0].State != "done" {
+	if resolved != 2 || installed != 1 || confirmed != 1 || a.imports.Snapshot()[0].State != "done" {
 		t.Fatalf("retry did not use installed support: resolves=%d installs=%d confirms=%d jobs=%+v", resolved, installed, confirmed, a.importSnapshotLocked())
 	}
 }
@@ -328,7 +330,10 @@ func TestImportQueueScheduledPumpRechecksBusyAndProgressIsThrottled(t *testing.T
 	a := testApp(t)
 	e := queueSpeech{make(chan string, 1), make(chan error)}
 	a.engine = e
-	job := &importJob{ImportJob: ImportJob{ID: "queued", Name: "audio.wav", State: "queued", Progress: -1}, source: importedWAV(t)}
+	batch, err := imports.Prepare(a.ctx, []string{importedWAV(t)}, "", imports.Support{Resolve: audio.ImportDecoder})
+	if err != nil {
+		t.Fatal(err)
+	}
 	progressEvents := 0
 	a.notify = func(topic string, args ...interface{}) {
 		if topic == "import:queue" {
@@ -340,28 +345,29 @@ func TestImportQueueScheduledPumpRechecksBusyAndProgressIsThrottled(t *testing.T
 		}
 	}
 	a.mu.Lock()
-	a.importQueue = []*importJob{job}
+	a.imports.Enqueue(batch)
+	id := a.imports.Snapshot()[0].ID
 	a.pumpImportQueueLocked()
 	a.status.Phase = "recording"
 	a.mu.Unlock()
 	a.wg.Wait()
-	if job.State != "queued" {
+	if a.imports.Snapshot()[0].State != "queued" {
 		t.Fatal("scheduled pump did not yield")
 	}
 	a.mu.Lock()
 	a.status.Phase = "idle"
-	a.emit()
+	a.emitStatusLocked()
 	a.mu.Unlock()
 	nextQueueStart(t, e.started)
-	a.importProgress(job, 50)
-	a.importProgress(job, 60)
+	a.importProgress(id, 50)
+	a.importProgress(id, 60)
 	a.mu.Lock()
-	if progressEvents != 1 || job.Progress != 60 {
-		t.Fatal(progressEvents, job.Progress)
+	if progressEvents != 1 || a.imports.Snapshot()[0].Progress != 60 {
+		t.Fatal(progressEvents, a.imports.Snapshot()[0].Progress)
 	}
-	job.lastProgress = time.Now().Add(-time.Second)
 	a.mu.Unlock()
-	a.importProgress(job, 70)
+	time.Sleep(260 * time.Millisecond)
+	a.importProgress(id, 70)
 	a.mu.Lock()
 	if progressEvents != 2 {
 		t.Fatal("missing throttled progress", progressEvents)

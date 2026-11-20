@@ -7,6 +7,7 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+	"yap/internal/app/shortcuts"
 
 	textmodel "yap/internal/inference/text"
 	"yap/internal/storage"
@@ -62,7 +63,7 @@ func TestShortcutPermissionWaitLeavesStateResponsiveAndCancellable(t *testing.T)
 	if calls.Load() != 1 {
 		t.Fatal("cancellation opened the profile permission dialog")
 	}
-	if a.shortcut != nil || a.status.ShortcutError == "" || a.shortcutRegistrationCancel != nil {
+	if a.shortcuts.Registration(shortcuts.Recording) != nil || a.status.ShortcutError == "" || a.shortcuts.Registering() {
 		t.Fatal("cancelled registration left stale state")
 	}
 }
@@ -87,6 +88,57 @@ func TestShutdownCancelsShortcutPermissionWait(t *testing.T) {
 		t.Fatal("shutdown waited on a permission dialog")
 	}
 	<-retried
+}
+
+func TestShortcutCancellationDiscardsLateNativeSuccess(t *testing.T) {
+	a := testApp(t)
+	a.registerKey = nil
+	started := make(chan struct{})
+	late := &fakeShortcutRegistration{}
+	a.registerKeyContext = func(ctx context.Context, _ string, _, _ func()) (shortcutRegistration, error) {
+		close(started)
+		<-ctx.Done()
+		return late, nil
+	}
+	done := make(chan error, 1)
+	go func() { done <- a.RetryShortcut() }()
+	<-started
+	if err := a.Cancel(); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("cancelled native success did not finish")
+	}
+	if late.closed != 1 || a.shortcuts.Registration(shortcuts.Recording) != nil || a.shortcuts.Registering() || a.status.ShortcutError != context.Canceled.Error() {
+		t.Fatal("late native success escaped cancellation")
+	}
+}
+
+func TestShortcutShutdownRetiresNativeLossWatchers(t *testing.T) {
+	a := testApp(t)
+	a.registerKey = func(string, func(), func()) (shortcutRegistration, error) {
+		// Some registrations never signal Done after Close. Shutdown must still
+		// join its observer without waiting for a native failure notification.
+		return &failingShortcutRegistration{done: make(chan struct{})}, nil
+	}
+	if err := a.RetryShortcut(); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan struct{})
+	go func() { a.shutdown(a.ctx); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("shutdown waited for retired native loss watcher")
+	}
+	if a.shortcuts.Registration(shortcuts.Recording) != nil {
+		t.Fatal("shutdown retained native handle ownership")
+	}
 }
 
 type failingShortcutRegistration struct {
@@ -116,7 +168,7 @@ func TestLostShortcutSessionReportsErrorAndCanBeRetried(t *testing.T) {
 	deadline := time.Now().Add(time.Second)
 	for {
 		a.mu.Lock()
-		failed := a.shortcut == nil && a.status.ShortcutError == registration.err.Error()
+		failed := a.shortcuts.Registration(shortcuts.Recording) == nil && a.status.ShortcutError == registration.err.Error()
 		a.mu.Unlock()
 		if failed {
 			break
@@ -126,7 +178,7 @@ func TestLostShortcutSessionReportsErrorAndCanBeRetried(t *testing.T) {
 		}
 		time.Sleep(time.Millisecond)
 	}
-	if err := a.RetryShortcut(); err != nil || calls != 2 || a.shortcut == nil || a.status.ShortcutError != "" {
+	if err := a.RetryShortcut(); err != nil || calls != 2 || a.shortcuts.Registration(shortcuts.Recording) == nil || a.status.ShortcutError != "" {
 		t.Fatalf("retry did not recover: %v", err)
 	}
 }

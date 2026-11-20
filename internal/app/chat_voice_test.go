@@ -64,12 +64,12 @@ func TestChatVoiceCancellationDuringRecordingAndTranscriptionCleansAudio(t *test
 				}
 			} else {
 				a.CancelTextProcessing("voice")
-				<-voice.done
+				<-voice.Done()
 			}
-			if !errors.Is(voice.err, context.Canceled) || voice.text != "" {
-				t.Fatal(voice.text, voice.err)
+			if text, err := voice.Result(); !errors.Is(err, context.Canceled) || text != "" {
+				t.Fatal(text, err)
 			}
-			if _, err := os.Stat(voice.path); !errors.Is(err, os.ErrNotExist) {
+			if _, err := os.Stat(voice.Path()); !errors.Is(err, os.ErrNotExist) {
 				t.Fatal("voice audio retained", err)
 			}
 			if a.textJobID != "" || a.status.Phase != "idle" {
@@ -92,11 +92,11 @@ func TestChatVoiceHonorsEarlyCancellationAndShutdown(t *testing.T) {
 	voice := a.chatVoice
 	a.mu.Unlock()
 	a.shutdown(a.ctx)
-	<-voice.done
-	if voice.text != "" || !errors.Is(voice.err, context.Canceled) {
-		t.Fatal("shutdown delivered a voice draft", voice.text, voice.err)
+	<-voice.Done()
+	if text, err := voice.Result(); text != "" || !errors.Is(err, context.Canceled) {
+		t.Fatal("shutdown delivered a voice draft", text, err)
 	}
-	if _, err := os.Stat(voice.path); !errors.Is(err, os.ErrNotExist) {
+	if _, err := os.Stat(voice.Path()); !errors.Is(err, os.ErrNotExist) {
 		t.Fatal("shutdown retained voice audio", err)
 	}
 }

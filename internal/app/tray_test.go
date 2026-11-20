@@ -1,11 +1,13 @@
 package app
 
 import (
+	"context"
 	"os"
 	"sync"
 	"testing"
 	"time"
 
+	"yap/internal/app/imports"
 	"yap/internal/indicator"
 	"yap/internal/tray"
 )
@@ -191,7 +193,12 @@ func TestTrayResultStateUsesCacheAndSurvivesCompletion(t *testing.T) {
 	if state.Phase != "done" || !state.ResultAvailable || !state.ShortcutUnavailable || state.Completion != "Copied to clipboard" {
 		t.Fatalf("tray lost completion/recovery state: %+v", state)
 	}
-	a.importActive = "synthetic-import"
+	batch, err := imports.Prepare(a.ctx, []string{"synthetic-import.wav"}, "", imports.Support{Resolve: func(context.Context, string, string) (string, error) { return "", nil }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	a.imports.Enqueue(batch)
+	importID := a.imports.Next()
 	a.emitImportQueueLocked()
 	f.mu.Lock()
 	busy := f.states[len(f.states)-1].Busy
@@ -199,7 +206,7 @@ func TestTrayResultStateUsesCacheAndSurvivesCompletion(t *testing.T) {
 	if !busy {
 		t.Fatal("tray allowed result actions while the import worker was active")
 	}
-	a.importActive = ""
+	a.imports.Finish(importID, "", "", "Cancelled", true, nil)
 	a.emitImportQueueLocked()
 	f.mu.Lock()
 	busy = f.states[len(f.states)-1].Busy

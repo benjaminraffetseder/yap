@@ -38,7 +38,7 @@ func TestDiagnosticTranscriptionUsesSavedPipelineWithoutSideEffects(t *testing.T
 	if len(capture.devices) != 1 || capture.devices[0] != "usb" {
 		t.Fatal("diagnostic ignored selected microphone")
 	}
-	if a.status.Phase != "diagnostic-recording" || !a.busy() {
+	if a.status.Phase != "diagnostic-recording" || !a.busyLocked() {
 		t.Fatal("test capture not busy")
 	}
 	if err := a.StartRecording(); err == nil {
@@ -106,7 +106,7 @@ func TestDiagnosticChecksAndPreflightRejectMissingInputs(t *testing.T) {
 			if err := a.StartDiagnosticTest(); err == nil || a.diagnostic.Phase != "error" {
 				t.Fatal("invalid setup started capture")
 			}
-			if a.busy() || a.path != "" {
+			if a.busyLocked() || a.path != "" {
 				t.Fatal("preflight left capture busy")
 			}
 		})
@@ -140,7 +140,7 @@ func TestDiagnosticFailuresRemoveAudioAndOfferRecovery(t *testing.T) {
 				t.Fatal(err)
 			}
 			a.wg.Wait()
-			if a.diagnostic.Phase != "error" || !strings.Contains(a.diagnostic.Message, tc.message) || a.busy() {
+			if a.diagnostic.Phase != "error" || !strings.Contains(a.diagnostic.Message, tc.message) || a.busyLocked() {
 				t.Fatalf("bad failure: %+v", a.diagnostic)
 			}
 			if _, err := os.Stat(path); !os.IsNotExist(err) {
@@ -203,7 +203,7 @@ func TestDiagnosticCancellationAndShutdownCleanBothPhases(t *testing.T) {
 						t.Fatal(err)
 					}
 					a.wg.Wait()
-					if a.busy() || a.diagnostic.Phase != "cancelled" || a.diagnostic.Transcript != "" {
+					if a.busyLocked() || a.diagnostic.Phase != "cancelled" || a.diagnostic.Transcript != "" {
 						t.Fatalf("cancelled test stuck: %+v", a.diagnostic)
 					}
 				}
@@ -229,7 +229,7 @@ func TestDiagnosticTimeoutReturnsToIdle(t *testing.T) {
 		t.Fatal(err)
 	}
 	a.wg.Wait()
-	if a.busy() || a.diagnostic.Phase != "error" || !strings.Contains(a.diagnostic.Message, "timed out") {
+	if a.busyLocked() || a.diagnostic.Phase != "error" || !strings.Contains(a.diagnostic.Message, "timed out") {
 		t.Fatalf("timeout stuck: %+v", a.diagnostic)
 	}
 	if _, err := os.Stat(path); !os.IsNotExist(err) {

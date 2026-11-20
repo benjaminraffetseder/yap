@@ -8,6 +8,7 @@ import (
 	"runtime"
 
 	"yap/internal/indicator"
+	"yap/internal/inference/speech"
 	"yap/internal/platform"
 	"yap/internal/tray"
 
@@ -138,4 +139,63 @@ func (a *App) saveFile(title, filename, label, pattern string) (string, error) {
 		Title: title, Filename: filename, CanCreateDirectories: true, Window: a.window,
 		Filters: []application.FileFilter{{DisplayName: label, Pattern: pattern}},
 	}).PromptForSingleSelection()
+}
+
+// SetIndicatorTheme receives the appearance already resolved by the webview,
+// including changes to the system theme while Yap is in the background.
+func (a *App) SetIndicatorTheme(dark bool) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if !a.closing && a.indicator != nil {
+		a.indicator.SetTheme(dark)
+	}
+}
+
+func (a *App) show() {
+	a.mu.Lock()
+	a.windowRequested = true
+	show, closing := a.showWindow, a.closing
+	a.mu.Unlock()
+	if !closing && show != nil {
+		show()
+	}
+}
+
+func (a *App) onDomReady(context.Context) {
+	a.mu.Lock()
+	a.domReady = true
+	show := a.initialWindowLocked()
+	a.mu.Unlock()
+	if show != nil {
+		show()
+	}
+}
+
+// Wails creates the window hidden. Decide once both startup and the webview are
+// ready, regardless of callback order. A second launch always opens the window.
+func (a *App) initialWindowLocked() func() {
+	if a.closing || !a.domReady || !a.startupComplete || a.initialWindowApplied {
+		return nil
+	}
+	a.initialWindowApplied = true
+	ready := a.store != nil && speech.Validate(speech.Options{Executable: a.settings.WhisperPath, Model: a.settings.ModelPath}) == nil
+	background := a.settings.SetupComplete && a.settings.StartInTray && !a.development && a.tray != nil && ready && a.status.Phase != "error" && a.status.ShortcutError == "" && a.status.StartupError == ""
+	if background && !a.windowRequested {
+		return nil
+	}
+	return a.showWindow
+}
+
+func (a *App) beforeClose(ctx context.Context) bool {
+	a.mu.Lock()
+	hide := a.hideWindow
+	background := a.closeToTray && a.tray != nil && !a.quitRequested && !a.closing && hide != nil
+	a.mu.Unlock()
+	if background {
+		hide()
+		return true
+	}
+	// AppKit callbacks must be cleaned up while its main event loop still runs.
+	a.shutdown(ctx)
+	return false
 }

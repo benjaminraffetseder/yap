@@ -38,7 +38,7 @@ shortcuts through Wails. Use the desktop app to test those.
 | Path                 | Purpose                                                                     |
 | -------------------- | --------------------------------------------------------------------------- |
 | `main.go`            | App entry point, embedded assets, and release metadata                       |
-| `internal/app`       | Desktop setup, recording state, and methods exposed to the frontend          |
+| `internal/app`       | Frontend API adapters, desktop lifecycle, and cross-feature coordination     |
 | `internal/app/profiles` | Profile library, default baseline, application rules, and selection policy |
 | `internal/app/conversations` | Saved chat turns, model context, compaction, and reply actions          |
 | `internal/app/transcriptexport` | Saved transcript selection, export snapshots, formatting, and files |
@@ -46,6 +46,16 @@ shortcuts through Wails. Use the desktop app to test those.
 | `internal/app/homeresult` | Current result resolution, revisions, and edit/save/copy actions          |
 | `internal/app/updating` | Update operation policy, staging context, and package-download workflow    |
 | `internal/app/textprocessing` | Text request preparation, prompt recipes, titles, and inference stats |
+| `internal/app/recording` | Capture, recognized results, durability, delivery, and chat voice lifecycle |
+| `internal/app/imports` | Audio import preparation, decoder execution, approval, and queue state      |
+| `internal/app/bulktext` | Frozen bulk selections, title/output requests, and text queue state        |
+| `internal/app/shortcuts` | Registration ownership, callback generations, capture leases, and retry   |
+| `internal/app/preferences` | Settings validation, capability checks, and invalidation policy        |
+| `internal/app/setup` | Onboarding, microphone test rules, and diagnostic checks and results         |
+| `internal/app/dictionary` | Vocabulary correction merging and persistence                           |
+| `internal/app/modelmanagement` | Model/audio-support installation, removal policy, and catalog views |
+| `internal/app/history` | History mutation guards, current-result changes, and saved audio reads     |
+| `internal/app/operations` | Immutable shared availability and resource-ownership rules                |
 | `internal/audio`     | Capture, decoding, and WAV import                                           |
 | `internal/platform`  | Global shortcuts and text insertion                                         |
 | `internal/tray`      | Wails v3 system tray menu and recording-state adapter                       |
@@ -68,10 +78,30 @@ Wails generates `frontend/bindings`; don't edit it by hand.
 `main.go` passes embedded assets and release metadata to `app.Run`. `App` stays
 the Wails API and owns desktop integration, operation arbitration, cancellation,
 and shutdown. Its feature packages own business rules and storage workflows;
-they do not import the parent `app` package or start background workers.
+they do not import the parent `app` package. They exchange snapshots, prepared
+jobs, and narrow effect callbacks rather than sharing mutable application state.
+
+Within `internal/app`, `app.go` groups shared state by ownership and supplies
+constructor defaults. `lifecycle.go` owns startup and shutdown, `desktop.go`
+adapts windows and native actions, `tray.go` projects background controls, and
+`status.go` publishes status and arbitrates shared operations. Snapshot response
+types and projections live together in `resources.go`.
+
+Helpers ending in `Locked` require `App.mu` on entry; any helper that transfers
+or releases the lock documents that contract. `event` can also publish from
+audio callbacks without the lock. `text_jobs.go` coordinates the text engine
+reservation and cancellation identities shared by text requests, chat, voice,
+and discovery; `model_discovery.go` owns discovery calls. Text adapters use the
+feature's request types directly, with queue-only title commit metadata in App.
 
 Serialize stateful profile, backup, and update service methods with `App.mu`;
 shutdown can close backup handles after all workers have drained.
+Queue scheduling reserves the pending start and registers its worker before
+unlocking. The worker checks shared operation ownership again before claiming
+the next job. Shortcut permission waits also register their worker before
+unlocking; generations retire stale callbacks, and shutdown retires loss
+watchers before waiting for them. Capture lease timers call back through the
+application lock, where an expired or superseded token is checked again.
 Conversation and text request preparation run under that lock; inference runs
 outside it, and each completed recipe step is committed under the lock before
 dependent steps start. Home result actions and export file writes run outside

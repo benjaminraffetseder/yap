@@ -7,17 +7,17 @@ import "errors"
 func (a *App) RetryShortcut() error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	if err := a.available(); err != nil {
+	if err := a.availableLocked(); err != nil {
 		return err
 	}
-	if a.busy() {
+	if a.busyLocked() {
 		return errors.New("finish the current operation before retrying the shortcut")
 	}
-	if a.shortcut != nil && (a.profileShortcut != nil || a.profiles.Shortcut() == "") {
+	if a.shortcuts.Ready(a.profiles.Shortcut()) {
 		return nil
 	}
 	a.registerMissingShortcutsLocked()
-	a.emit()
+	a.emitStatusLocked()
 	// Registration failures remain in ShortcutError, including after an
 	// asynchronous permission prompt. Do not turn them into dictation errors.
 	return nil

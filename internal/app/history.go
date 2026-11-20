@@ -1,10 +1,9 @@
 package app
 
 import (
-	"database/sql"
-	"errors"
 	"time"
 
+	"yap/internal/app/history"
 	"yap/internal/storage"
 )
 
@@ -69,14 +68,7 @@ func (a *App) GetSession(id string) (*storage.Session, error) {
 	if err := a.historyAvailableLocked(); err != nil {
 		return nil, err
 	}
-	entry, err := a.store.Session(id)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	return &entry, nil
+	return history.Session(a.store, id)
 }
 
 func (a *App) RenameSession(id, title string) error {
@@ -98,15 +90,11 @@ func (a *App) DeleteSessions(ids []string) error {
 	if err := a.historyAvailableLocked(); err != nil {
 		return err
 	}
-	if a.status.Phase == "transcribing" {
-		for _, id := range ids {
-			if id == a.id {
-				return errors.New("finish the current dictation before deleting its transcript")
-			}
-		}
+	change, err := history.Trash(a.store, history.Current{ID: a.id, Phase: a.status.Phase}, ids)
+	if !change.Refresh {
+		return err
 	}
-	err := a.store.TrashSessions(ids, time.Now())
-	a.clearDeletedResultLocked()
+	a.publishHistoryChangeLocked(change)
 	a.event("dictation:history")
 	return err
 }
@@ -123,7 +111,7 @@ func (a *App) scheduleHistoryCleanupLocked() {
 		previousError := a.status.HistoryError
 		a.pruneHistoryLocked()
 		if previousError != a.status.HistoryError {
-			a.emit()
+			a.emitStatusLocked()
 		}
 		a.scheduleHistoryCleanupLocked()
 	})
@@ -147,12 +135,12 @@ func (a *App) pruneHistoryLocked() {
 }
 
 func (a *App) clearDeletedResultLocked() {
-	if a.id == "" || a.status.Phase != "done" {
-		return
-	}
-	if _, err := a.store.Session(a.id); errors.Is(err, sql.ErrNoRows) {
-		a.status.Transcript = ""
-		a.status.Message = "Dictation removed from History"
-		a.emit()
+	a.publishHistoryChangeLocked(history.Removed(a.store, history.Current{ID: a.id, Phase: a.status.Phase}))
+}
+
+func (a *App) publishHistoryChangeLocked(change history.Change) {
+	if change.Changed {
+		a.status.Transcript, a.status.Message = change.Text, change.Message
+		a.emitStatusLocked()
 	}
 }

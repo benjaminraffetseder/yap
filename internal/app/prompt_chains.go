@@ -23,7 +23,7 @@ func (a *App) textRecipeHooks(ctx context.Context) textprocessing.RecipeHooks {
 				return context.Canceled
 			}
 			a.status.Message = message
-			a.emit()
+			a.emitStatusLocked()
 			return nil
 		},
 		CommitStep: func(commit func() error) error {
@@ -36,7 +36,7 @@ func (a *App) textRecipeHooks(ctx context.Context) textprocessing.RecipeHooks {
 				return err
 			}
 			a.event("dictation:history")
-			a.emit()
+			a.emitStatusLocked()
 			return nil
 		},
 	}

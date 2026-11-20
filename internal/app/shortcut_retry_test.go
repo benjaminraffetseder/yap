@@ -3,6 +3,8 @@ package app
 import (
 	"errors"
 	"testing"
+	"time"
+	"yap/internal/app/shortcuts"
 )
 
 func TestRetryShortcutRecoversAfterPermissionGrantWithoutChangingSettings(t *testing.T) {
@@ -27,11 +29,11 @@ func TestRetryShortcutRecoversAfterPermissionGrantWithoutChangingSettings(t *tes
 		}
 		return &fakeShortcutRegistration{}, nil
 	}
-	if err := a.RetryShortcut(); err != nil || a.shortcut != nil || a.status.ShortcutError == "" {
+	if err := a.RetryShortcut(); err != nil || a.shortcuts.Registration(shortcuts.Recording) != nil || a.status.ShortcutError == "" {
 		t.Fatal("pending permission was treated as a successful registration", err)
 	}
 	granted = true
-	if err := a.RetryShortcut(); err != nil || a.shortcut == nil || a.status.ShortcutError != "" {
+	if err := a.RetryShortcut(); err != nil || a.shortcuts.Registration(shortcuts.Recording) == nil || a.status.ShortcutError != "" {
 		t.Fatal("permission grant did not recover the shortcut", err)
 	}
 	if err := a.RetryShortcut(); err != nil || calls != 2 || events != 2 {
@@ -56,11 +58,11 @@ func TestRetryShortcutRejectsBusyCaptureAndShutdown(t *testing.T) {
 		}
 	}
 	a.status.Phase = "idle"
-	a.shortcutCaptureID = "active-capture"
+	token := a.shortcuts.BeginCapture(time.Minute, func(string) {})
 	if err := a.RetryShortcut(); err == nil {
 		t.Fatal("retry interrupted shortcut capture")
 	}
-	a.shortcutCaptureID = ""
+	_ = a.shortcuts.EndCapture(token)
 	a.closing = true
 	if err := a.RetryShortcut(); err == nil {
 		t.Fatal("retry allowed after shutdown")

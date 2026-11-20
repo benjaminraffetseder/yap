@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"yap/internal/app/imports"
+	"yap/internal/audio"
 	"yap/internal/storage"
 )
 
@@ -23,7 +25,7 @@ func addBulkSession(t *testing.T, a *App, id string) storage.Session {
 func resumeBulkQueue(a *App) {
 	a.mu.Lock()
 	a.status.Phase = "idle"
-	a.emit()
+	a.emitStatusLocked()
 	a.mu.Unlock()
 }
 
@@ -40,7 +42,7 @@ func TestBulkTextTitlesAcrossUnloadedMatchesKeepExistingAndExclusions(t *testing
 	a.status.Phase = "recording"
 	request := BulkTextRequest{Action: "title", Selection: TranscriptExportSelection{AllMatching: true, Query: "Bulk", ExcludedSessionIDs: []string{"bulk-01"}}}
 	count, err := a.QueueBulkText(request)
-	if err != nil || count != 53 || a.bulkTextActive != "" {
+	if err != nil || count != 53 || a.bulkText.ActiveID() != "" {
 		t.Fatalf("incorrect queued selection: %d %v", count, err)
 	}
 	if count, err := a.QueueBulkText(request); err != nil || count != 0 {
@@ -64,11 +66,11 @@ func TestBulkTextTitlesAcrossUnloadedMatchesKeepExistingAndExclusions(t *testing
 			t.Fatal("title or transcript changed incorrectly", entry, err)
 		}
 	}
-	if a.bulkTextActive != "" || a.status.Phase != "idle" {
+	if a.bulkText.ActiveID() != "" || a.status.Phase != "idle" {
 		t.Fatal("queue leaked active ownership")
 	}
 	a.ClearFinishedBulkTextJobs()
-	if len(a.bulkTextQueue) != 0 {
+	if len(a.bulkText.Snapshot()) != 0 {
 		t.Fatal("finished queue not cleared")
 	}
 }
@@ -210,7 +212,7 @@ func TestBulkTextResumesAfterAudioImportAndShutdownCancels(t *testing.T) {
 		t.Fatal("bulk queue did not resume after import")
 	}
 	a.shutdown(a.ctx)
-	if a.bulkTextQueue[0].State != "cancelled" || a.bulkTextActive != "" {
+	if a.bulkText.Snapshot()[0].State != "cancelled" || a.bulkText.ActiveID() != "" {
 		t.Fatal("shutdown did not cancel active bulk job")
 	}
 }
@@ -229,7 +231,7 @@ func TestBulkTextRejectsInvalidSelectionsBeforeQueueing(t *testing.T) {
 		{Action: "title", Selection: TranscriptExportSelection{SessionIDs: []string{entry.ID, "missing"}}},
 		{Action: "title", Selection: TranscriptExportSelection{SessionIDs: []string{entry.ID}, AllMatching: true}},
 	} {
-		if _, err := a.QueueBulkText(invalid); err == nil || len(a.bulkTextQueue) != 0 {
+		if _, err := a.QueueBulkText(invalid); err == nil || len(a.bulkText.Snapshot()) != 0 {
 			t.Fatal("invalid request partially queued", invalid, err)
 		}
 	}
@@ -240,7 +242,17 @@ func TestBulkTextResumesWhenScheduledImportsWereRemoved(t *testing.T) {
 	enableText(t, a, false)
 	entry := addBulkSession(t, a, "queued")
 	a.textEngine = &fakeTextEngine{output: "A title"}
-	a.importPumpPending = true
+	batch, err := imports.Prepare(a.ctx, []string{importedWAV(t)}, "", imports.Support{Resolve: audio.ImportDecoder})
+	if err != nil {
+		t.Fatal(err)
+	}
+	a.imports.Enqueue(batch)
+	if !a.imports.Schedule() {
+		t.Fatal("import was not scheduled")
+	}
+	if _, err := a.imports.Remove(a.imports.Snapshot()[0].ID); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := a.QueueBulkText(BulkTextRequest{Action: "title", Selection: TranscriptExportSelection{SessionIDs: []string{entry.ID}}}); err != nil {
 		t.Fatal(err)
 	}
@@ -248,7 +260,7 @@ func TestBulkTextResumesWhenScheduledImportsWereRemoved(t *testing.T) {
 	a.wg.Add(1)
 	a.startNextImport()
 	a.wg.Wait()
-	if a.bulkTextQueue[0].State != "done" {
+	if a.bulkText.Snapshot()[0].State != "done" {
 		t.Fatal("text queue stalled after an empty import worker")
 	}
 }

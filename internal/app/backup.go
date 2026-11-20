@@ -10,26 +10,11 @@ import (
 )
 
 func (a *App) backupAvailableLocked() error {
-	if err := a.available(); err != nil {
+	if err := a.availableLocked(); err != nil {
 		return err
 	}
-	if a.busy() || a.textJobID != "" {
+	if a.busyLocked() || a.textJobID != "" {
 		return errors.New("finish the current operation before using backups")
-	}
-	return nil
-}
-
-// Never wait for a backup transaction while holding the application mutex:
-// cancellation and shutdown need that mutex to release the transaction.
-func (a *App) historyAvailableLocked() error {
-	if err := a.available(); err != nil {
-		return err
-	}
-	if a.status.Phase == "backup" {
-		return errors.New("finish or cancel the backup before accessing History")
-	}
-	if a.homeResultOperation {
-		return errors.New("finish the result action before accessing History")
 	}
 	return nil
 }
@@ -48,7 +33,7 @@ func (a *App) beginBackupLocked(message string) (Status, context.Context, error)
 	a.status.Phase, a.status.Message = "backup", message
 	a.status.StartedAt = time.Now().UnixMilli()
 	a.wg.Add(1)
-	a.emit()
+	a.emitStatusLocked()
 	return previous, ctx, nil
 }
 func (a *App) finishBackupLocked(previous Status) {
@@ -57,7 +42,7 @@ func (a *App) finishBackupLocked(previous Status) {
 	a.backups.Finish()
 	a.backupHistory = nil
 	a.status = previous
-	a.emit()
+	a.emitStatusLocked()
 	// Retry any History reads that were blocked while the backup owned SQLite.
 	if !a.closing {
 		a.event("dictation:history")

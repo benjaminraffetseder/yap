@@ -3,7 +3,6 @@ package app
 import (
 	"context"
 	"errors"
-	"strings"
 	"time"
 
 	"yap/internal/app/conversations"
@@ -52,14 +51,13 @@ func (a *App) SendChatMessage(requestID, sessionID string, request ChatRequest) 
 	if err := a.historyAvailableLocked(); err != nil {
 		return fail(err)
 	}
-	if requestID == "" || len(requestID) > 80 || strings.ContainsAny(requestID, "\r\n\x00") {
+	if !validTextRequestID(requestID) {
 		return fail(errors.New("invalid chat request"))
 	}
-	a.pruneTextCancellationsLocked()
-	if _, cancelled := a.cancelledTextRequests[requestID]; cancelled {
+	if a.textRequestCancelledLocked(requestID) {
 		return fail(context.Canceled)
 	}
-	if a.busy() || a.textJobID != "" {
+	if a.busyLocked() || a.textJobID != "" {
 		return fail(errors.New("finish the current operation before chatting"))
 	}
 	engine, ok := a.textEngine.(conversations.Engine)

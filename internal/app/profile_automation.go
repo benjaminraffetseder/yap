@@ -1,11 +1,10 @@
 package app
 
 import (
-	"context"
-	"errors"
 	"fmt"
 	"strings"
 
+	"yap/internal/app/shortcuts"
 	"yap/internal/indicator"
 	textmodel "yap/internal/inference/text"
 	"yap/internal/platform"
@@ -49,15 +48,15 @@ func (a *App) SaveProfileAutomation(rules []storage.AppProfileRule, shortcut str
 	if changed {
 		a.closeProfileShortcut()
 		registrationErr := a.registerProfileShortcutFor(shortcut)
-		if err := a.available(); err != nil {
+		if err := a.availableLocked(); err != nil {
 			return err
 		}
-		if shortcut != "" && a.profileShortcut == nil {
+		if shortcut != "" && a.shortcuts.Registration(shortcuts.Profile) == nil {
 			failure := a.status.ProfileShortcutError
-			if !errors.Is(registrationErr, context.Canceled) && !errors.Is(registrationErr, context.DeadlineExceeded) {
+			if !shortcuts.Cancelled(registrationErr) {
 				a.registerProfileShortcut()
 			}
-			a.emit()
+			a.emitStatusLocked()
 			return fmt.Errorf("profile shortcut could not be registered: %s; your saved shortcut is unchanged", failure)
 		}
 	}
@@ -73,11 +72,7 @@ func (a *App) SaveProfileAutomation(rules []storage.AppProfileRule, shortcut str
 }
 
 func (a *App) closeProfileShortcut() {
-	a.profileShortcutGeneration++
-	if a.profileShortcut != nil {
-		a.profileShortcut.Close()
-		a.profileShortcut = nil
-	}
+	a.shortcuts.Close(shortcuts.Profile)
 }
 
 func (a *App) registerProfileShortcut() error {
@@ -85,43 +80,32 @@ func (a *App) registerProfileShortcut() error {
 }
 
 func (a *App) registerProfileShortcutFor(value string) error {
-	a.profileShortcutGeneration++
-	generation := a.profileShortcutGeneration
 	a.status.ProfileShortcutError = ""
-	if value == "" {
-		return nil
-	}
-	register := a.registerKey
-	if register == nil {
-		register = func(value string, down, up func()) (shortcutRegistration, error) {
-			return a.registerNativeShortcutLocked(value, down, up)
-		}
-	}
-	s, err := register(value, func() {
-		a.mu.Lock()
-		defer a.mu.Unlock()
-		if a.closing || generation != a.profileShortcutGeneration || !a.settings.SetupComplete || a.busy() || a.textJobID != "" {
-			return
-		}
-		name, err := a.cycleDictationProfileLocked()
-		if err != nil {
-			a.event("profile:changed", "", err.Error())
-			if a.indicator != nil {
-				a.indicator.Update(indicator.State{Phase: "profile", Message: "Open Yap to check profiles"})
+	loss, err := a.shortcuts.Register(shortcuts.Profile, value, func(attempt shortcuts.Attempt) (shortcutRegistration, error) {
+		down := a.shortcutCallback(attempt, func() {
+			if a.closing || !a.settings.SetupComplete || a.busyLocked() || a.textJobID != "" {
+				return
 			}
-			return
-		}
-		a.event("profile:changed", name, "")
-		if a.indicator != nil {
-			a.indicator.Update(indicator.State{Phase: "profile", Message: "Profile: " + name})
-		}
-	}, func() {})
+			name, err := a.cycleDictationProfileLocked()
+			if err != nil {
+				a.event("profile:changed", "", err.Error())
+				if a.indicator != nil {
+					a.indicator.Update(indicator.State{Phase: "profile", Message: "Open Yap to check profiles"})
+				}
+				return
+			}
+			a.event("profile:changed", name, "")
+			if a.indicator != nil {
+				a.indicator.Update(indicator.State{Phase: "profile", Message: "Profile: " + name})
+			}
+		})
+		return a.createShortcutLocked(value, down, func() {})
+	})
 	if err != nil {
 		a.status.ProfileShortcutError = err.Error()
 		return err
 	}
-	a.profileShortcut = s
-	a.watchShortcutLocked(s, generation, true)
+	a.watchShortcutLocked(loss)
 	return nil
 }
 

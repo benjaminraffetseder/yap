@@ -108,7 +108,7 @@ func TestIndicatorFollowsDictationWithoutFrontend(t *testing.T) {
 	// Model/download and settings events must not reopen a dictation indicator.
 	a.mu.Lock()
 	a.status = Status{Phase: "error", Message: "model download failed"}
-	a.emit()
+	a.emitStatusLocked()
 	a.mu.Unlock()
 	if len(f.states) != 3 {
 		t.Fatal("unrelated operation displayed indicator")

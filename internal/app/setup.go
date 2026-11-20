@@ -2,13 +2,10 @@ package app
 
 import (
 	"errors"
-	"strings"
 	"time"
-
-	"yap/internal/inference/speech"
+	"yap/internal/app/dictionary"
+	"yap/internal/app/setup"
 	"yap/internal/vocabulary"
-
-	"github.com/google/uuid"
 )
 
 func (a *App) SaveVocabulary(entries []vocabulary.Entry) ([]vocabulary.Entry, error) {
@@ -21,44 +18,18 @@ func (a *App) SaveVocabulary(entries []vocabulary.Entry) ([]vocabulary.Entry, er
 func (a *App) AddVocabularyTerm(canonical string, aliases []string) ([]vocabulary.Entry, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	entries := append([]vocabulary.Entry{}, a.vocabulary...)
-	for i, entry := range entries {
-		if strings.EqualFold(entry.Canonical, strings.TrimSpace(canonical)) {
-			// Repeated corrections add aliases to the current term, including at
-			// the term limit. Clone its slice so failed saves cannot mutate it.
-			entries[i].Canonical = canonical
-			merged := append([]string{}, entry.Aliases...)
-			for _, alias := range aliases {
-				alias = strings.TrimSpace(alias)
-				found := strings.EqualFold(alias, strings.TrimSpace(canonical))
-				for _, existing := range merged {
-					found = found || strings.EqualFold(alias, existing)
-				}
-				if !found {
-					merged = append(merged, alias)
-				}
-			}
-			entries[i].Aliases = merged
-			entries[i].Enabled = true
-			return a.saveVocabularyLocked(entries)
-		}
-	}
-	entries = append(entries, vocabulary.Entry{ID: uuid.NewString(), Canonical: canonical, Aliases: aliases, Enabled: true})
-	return a.saveVocabularyLocked(entries)
+	return a.saveVocabularyLocked(dictionary.Merge(a.vocabulary, canonical, aliases))
 }
 
 func (a *App) saveVocabularyLocked(entries []vocabulary.Entry) ([]vocabulary.Entry, error) {
-	if err := a.available(); err != nil {
+	if err := a.availableLocked(); err != nil {
 		return nil, err
 	}
-	if a.busy() {
+	if a.busyLocked() {
 		return nil, errors.New("finish the current operation before changing vocabulary")
 	}
-	normalized, err := vocabulary.Normalize(entries)
+	normalized, err := dictionary.Save(a.store, entries)
 	if err != nil {
-		return nil, err
-	}
-	if err = a.store.SaveVocabulary(normalized); err != nil {
 		return nil, err
 	}
 	a.vocabulary = normalized
@@ -75,29 +46,26 @@ func (a *App) StartMicrophoneTest() error {
 }
 
 func (a *App) startCaptureTest(transcription bool) error {
-	if err := a.available(); err != nil {
+	if err := a.availableLocked(); err != nil {
 		return err
 	}
-	if a.busy() {
+	if a.busyLocked() {
 		return errors.New("finish the current operation first")
 	}
-	f, path, err := a.store.CreateRecording()
+	capture, err := setup.PrepareCapture(a.store.CreateRecording, a.discardAudioLocked)
 	if err != nil {
 		return err
 	}
-	if err = f.Close(); err != nil {
-		return errors.Join(err, a.discardAudioLocked(path))
-	}
+	path := capture.Path()
 	a.microphoneTested = false
 	a.micSignal.Store(false)
-	if err = a.recorder.Start(path, a.settings.MicrophoneID, func(level float64) {
-		if level >= .03 && level <= 1 {
+	if err = capture.Start(a.recorder, a.settings.MicrophoneID, func(level float64) {
+		if setup.IsSignal(level) {
 			a.micSignal.Store(true)
 		}
 		a.event("dictation:level", level)
-	}); err != nil {
-		a.event("setup:changed")
-		return errors.Join(err, a.discardAudioLocked(path))
+	}, func() { a.event("setup:changed") }, a.discardAudioLocked); err != nil {
+		return err
 	}
 	a.path = path
 	a.status.Phase, a.status.Message = "mic-test", "Speak to test your microphone"
@@ -108,7 +76,7 @@ func (a *App) startCaptureTest(transcription bool) error {
 		a.diagnostic = DiagnosticResult{Phase: "recording", Message: a.status.Message}
 	}
 	a.status.StartedAt = time.Now().UnixMilli()
-	a.emit()
+	a.emitStatusLocked()
 	a.event("setup:changed")
 	a.timer = time.AfterFunc(10*time.Second, func() {
 		a.mu.Lock()
@@ -123,7 +91,7 @@ func (a *App) startCaptureTest(transcription bool) error {
 func (a *App) StopMicrophoneTest() error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	if err := a.available(); err != nil {
+	if err := a.availableLocked(); err != nil {
 		return err
 	}
 	if a.status.Phase != "mic-test" {
@@ -138,28 +106,20 @@ func (a *App) stopCaptureTest() error {
 		a.timer.Stop()
 	}
 	duration, err := a.recorder.Stop()
-	if diagnostic && err == nil && a.micSignal.Load() && duration >= 300 {
+	if setup.ShouldTranscribe(diagnostic, duration, a.micSignal.Load(), err) {
 		a.microphoneTested = true
 		a.transcribeDiagnostic(duration)
 		return nil
 	}
 	err = errors.Join(err, a.discardAudioLocked(a.path))
-	a.microphoneTested = err == nil && a.micSignal.Load()
-	a.status.Phase, a.status.Message = "idle", "Microphone test passed"
-	a.status.StartedAt = 0
-	if err == nil && !a.microphoneTested {
-		err = errors.New("no microphone signal detected; check microphone access and choose another input")
-	}
+	outcome := setup.CompleteCapture(diagnostic, a.micSignal.Load(), err)
+	a.microphoneTested = outcome.Passed
+	a.status.Phase, a.status.Message, a.status.StartedAt = "idle", outcome.Message, 0
 	if diagnostic {
-		if err == nil {
-			err = errors.New("record for at least a moment before stopping the test")
-		}
-		a.diagnostic = DiagnosticResult{Phase: "error", Message: err.Error()}
+		a.diagnostic = outcome.Diagnostic
 	}
-	if err != nil {
-		a.status.Message = err.Error()
-	}
-	a.emit()
+	err = outcome.Err
+	a.emitStatusLocked()
 	a.event("setup:changed")
 	return err
 }
@@ -167,22 +127,14 @@ func (a *App) stopCaptureTest() error {
 func (a *App) CompleteSetup(skip bool) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	if err := a.available(); err != nil {
+	if err := a.availableLocked(); err != nil {
 		return err
 	}
-	if a.busy() {
+	if a.busyLocked() {
 		return errors.New("finish the current operation first")
 	}
-	if !skip {
-		if err := speech.Validate(speech.Options{Executable: a.settings.WhisperPath, Model: a.settings.ModelPath}); err != nil {
-			return err
-		}
-		if !a.microphoneTested {
-			return errors.New("test your microphone before finishing setup")
-		}
-		if !a.shortcutTested || a.status.ShortcutError != "" {
-			return errors.New("press your registered shortcut before finishing setup")
-		}
+	if err := setup.ValidateComplete(skip, a.settings, a.microphoneTested, a.shortcutTested, a.status.ShortcutError); err != nil {
+		return err
 	}
 	settings := a.settings
 	settings.SetupComplete = true
@@ -197,10 +149,10 @@ func (a *App) CompleteSetup(skip bool) error {
 func (a *App) RestartSetup() error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	if err := a.available(); err != nil {
+	if err := a.availableLocked(); err != nil {
 		return err
 	}
-	if a.busy() {
+	if a.busyLocked() {
 		return errors.New("finish the current operation first")
 	}
 	settings := a.settings

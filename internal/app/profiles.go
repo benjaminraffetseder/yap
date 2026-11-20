@@ -16,10 +16,10 @@ func (a *App) saveSettingsWithDefaultLocked(settings storage.Settings) error {
 }
 
 func (a *App) profilesAvailableLocked() error {
-	if err := a.available(); err != nil {
+	if err := a.availableLocked(); err != nil {
 		return err
 	}
-	if a.busy() || a.textJobID != "" {
+	if a.busyLocked() || a.textJobID != "" {
 		return errors.New("finish the current operation before changing dictation profiles")
 	}
 	return nil
