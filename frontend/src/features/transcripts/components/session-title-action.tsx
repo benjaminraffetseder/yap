@@ -8,13 +8,13 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import {
   InputGroup,
   InputGroupAddon,
   InputGroupButton,
   InputGroupInput,
 } from "@/components/ui/input-group";
-import { Label } from "@/components/ui/label";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   useDictationPhase,
@@ -23,8 +23,9 @@ import {
 import { useTextRequest } from "@/features/processing/hooks/use-text-request";
 import { nativeText } from "@/i18n/native-text";
 import { backend, isBusy, message, type Session } from "@/lib/backend";
-import { Loader2, Pencil, Sparkles, Square } from "lucide-react";
-import { useEffect, useId, useRef, useState } from "react";
+import { cn } from "@/lib/utils";
+import { Check, Loader2, Pencil, Sparkles, Square, X } from "lucide-react";
+import { useEffect, useId, useRef, useState, type RefObject } from "react";
 import { useTranslation } from "react-i18next";
 
 export function SessionTitleAction({
@@ -33,17 +34,74 @@ export function SessionTitleAction({
   onSaved,
   context,
   contextual = false,
+  inlineTitle,
+  headingRef,
 }: {
   entry: Session;
   disabled: boolean;
   onSaved: (title: string) => void;
   context?: string;
   contextual?: boolean;
+  inlineTitle?: string;
+  headingRef?: RefObject<HTMLHeadingElement | null>;
 }) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const [pending, setPending] = useState(false);
   const pendingRef = useRef(false);
+  function finishInline() {
+    setOpen(false);
+    requestAnimationFrame(() => headingRef?.current?.focus({ preventScroll: true }));
+  }
+  if (inlineTitle !== undefined) {
+    return open ? (
+      <>
+        <h1 ref={headingRef} tabIndex={-1} className="sr-only">
+          {inlineTitle}
+        </h1>
+        <SessionTitleForm
+          key={entry.id}
+          inline
+          entry={entry}
+          disabled={disabled}
+          onPendingChange={(value) => {
+            pendingRef.current = value;
+            setPending(value);
+          }}
+          onSaved={(title) => {
+            onSaved(title);
+            finishInline();
+          }}
+          onCancel={finishInline}
+        />
+      </>
+    ) : (
+      <>
+        <h1
+          ref={headingRef}
+          tabIndex={-1}
+          className="inline font-semibold tracking-tight outline-none"
+          onDoubleClick={() => {
+            if (!disabled) setOpen(true);
+          }}
+        >
+          {inlineTitle}
+        </h1>{" "}
+        <Tooltip>
+          <TooltipTrigger
+            render={<Button variant="ghost" size="icon-sm" disabled={disabled} />}
+            disabled={disabled}
+            aria-label={t("uiPolish.renameDictation")}
+            data-dictation-title-action={entry.id}
+            onClick={() => setOpen(true)}
+          >
+            <Pencil aria-hidden="true" />
+          </TooltipTrigger>
+          <TooltipContent>{t("uiPolish.renameDictation")}</TooltipContent>
+        </Tooltip>
+      </>
+    );
+  }
   const renameButton = (
     <Button
       variant="ghost"
@@ -110,20 +168,22 @@ export function SessionTitleAction({
   );
 }
 
-// Mount only for an open dialog: closing it cancels an unfinished suggestion
-// and prevents a late reply from replacing a draft in the next dialog.
+// Mount only while editing: closing cancels an unfinished suggestion and
+// prevents a late reply from replacing a draft in the next editor.
 function SessionTitleForm({
   entry,
   disabled,
   onPendingChange,
   onSaved,
   onCancel,
+  inline = false,
 }: {
   entry: Session;
   disabled: boolean;
   onPendingChange: (pending: boolean) => void;
   onSaved: (title: string) => void;
   onCancel: () => void;
+  inline?: boolean;
 }) {
   const { t } = useTranslation();
   const snapshot = { ...useSavedConfiguration(), status: { phase: useDictationPhase() } };
@@ -141,10 +201,14 @@ function SessionTitleForm({
   const error = saveError || generation.error;
   useEffect(() => {
     alive.current = true;
+    if (inline) {
+      input.current?.focus({ preventScroll: true });
+      input.current?.select();
+    }
     return () => {
       alive.current = false;
     };
-  }, []);
+  }, [inline]);
 
   async function suggest() {
     setSaveError("");
@@ -179,113 +243,161 @@ function SessionTitleForm({
 
   return (
     <form
-      className="space-y-4"
+      data-slot="session-title-form"
+      className={cn("flex gap-2", inline ? "flex-wrap items-start" : "flex-col gap-4")}
       onSubmit={(event) => {
         event.preventDefault();
         void save();
       }}
+      onKeyDown={(event) => {
+        if (event.key !== "Escape" || event.nativeEvent.isComposing || composing.current) return;
+        event.preventDefault();
+        event.stopPropagation();
+        if (!pendingRef.current) onCancel();
+      }}
     >
-      <div className="space-y-2">
-        <Label htmlFor={id}>{t("uiPolish.dictationTitle")}</Label>
-        <InputGroup className="h-10 has-disabled:opacity-100">
-          <InputGroupInput
-            id={id}
-            ref={input}
-            value={draft}
-            maxLength={80}
-            disabled={pending || generation.pending}
-            autoComplete="off"
-            placeholder={t("uiPolish.titlePlaceholder")}
-            aria-describedby={error ? `${id}-error` : undefined}
-            onCompositionStart={() => {
-              composing.current = true;
-            }}
-            onCompositionEnd={() => {
-              composing.current = false;
-            }}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" && (event.nativeEvent.isComposing || composing.current))
-                event.preventDefault();
-            }}
-            onChange={(event) => {
-              setDraft(event.target.value);
-              setSaveError("");
-              generation.clear();
-            }}
-          />
-          {configured && (
-            <InputGroupAddon align="inline-end">
-              <Tooltip>
-                <TooltipTrigger
-                  render={
-                    <InputGroupButton
-                      size="icon-sm"
-                      variant={generation.pending ? "outline" : "ghost"}
-                      className={generation.pending ? "text-foreground" : undefined}
-                    />
-                  }
-                  disabled={pending || (!generation.pending && busy)}
-                  aria-label={
-                    generation.pending
-                      ? t("generatedOutputs.cancelGeneration")
-                      : t("uiPolish.generateTitle")
-                  }
-                  onClick={() => void (generation.pending ? generation.cancel() : suggest())}
-                >
-                  {generation.pending ? (
-                    <Square aria-hidden="true" className="size-3.5" />
-                  ) : (
-                    <Sparkles aria-hidden="true" className="size-4" />
-                  )}
-                </TooltipTrigger>
-                <TooltipContent role="tooltip" className="block leading-5">
-                  {generation.pending ? (
-                    t("generatedOutputs.cancelGeneration")
-                  ) : (
-                    <>
-                      {t("uiPolish.generateTitle")}. {t("uiPolish.generatedTitleHelp")}
-                    </>
-                  )}
-                </TooltipContent>
-              </Tooltip>
-            </InputGroupAddon>
-          )}
-        </InputGroup>
-        {configured && (
-          <p
-            className={
-              generation.pending
-                ? "flex items-center gap-2 text-xs text-muted-foreground"
-                : "sr-only"
-            }
-            role="status"
-          >
-            {generation.pending && (
-              <Loader2
-                aria-hidden="true"
-                className="size-3.5 animate-spin motion-reduce:animate-none"
-              />
+      <FieldGroup className={cn("min-w-0 flex-1", inline && "max-w-full basis-48")}>
+        <Field>
+          <FieldLabel htmlFor={id} className={inline ? "sr-only" : undefined}>
+            {t("uiPolish.dictationTitle")}
+          </FieldLabel>
+          <InputGroup className="h-10 has-disabled:opacity-100">
+            <InputGroupInput
+              className="h-full"
+              id={id}
+              ref={input}
+              value={draft}
+              maxLength={80}
+              disabled={pending || generation.pending}
+              autoComplete="off"
+              placeholder={t("uiPolish.titlePlaceholder")}
+              aria-describedby={error ? `${id}-error` : undefined}
+              onCompositionStart={() => {
+                composing.current = true;
+              }}
+              onCompositionEnd={() => {
+                composing.current = false;
+              }}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && (event.nativeEvent.isComposing || composing.current))
+                  event.preventDefault();
+              }}
+              onChange={(event) => {
+                setDraft(event.target.value);
+                setSaveError("");
+                generation.clear();
+              }}
+            />
+            {configured && (
+              <InputGroupAddon align="inline-end" className="shrink-0 has-[>button]:mr-0">
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <InputGroupButton
+                        size="icon-sm"
+                        variant={generation.pending ? "outline" : "ghost"}
+                        disabled={pending || (!generation.pending && busy)}
+                        className={generation.pending ? "text-foreground" : undefined}
+                      />
+                    }
+                    disabled={pending || (!generation.pending && busy)}
+                    aria-label={
+                      generation.pending
+                        ? t("generatedOutputs.cancelGeneration")
+                        : t("uiPolish.generateTitle")
+                    }
+                    onClick={() => void (generation.pending ? generation.cancel() : suggest())}
+                  >
+                    {generation.pending ? (
+                      <Square aria-hidden="true" className="size-3.5" />
+                    ) : (
+                      <Sparkles aria-hidden="true" className="size-4" />
+                    )}
+                  </TooltipTrigger>
+                  <TooltipContent role="tooltip" className="block leading-5">
+                    {generation.pending ? (
+                      t("generatedOutputs.cancelGeneration")
+                    ) : (
+                      <>
+                        {t("uiPolish.generateTitle")}. {t("uiPolish.generatedTitleHelp")}
+                      </>
+                    )}
+                  </TooltipContent>
+                </Tooltip>
+              </InputGroupAddon>
             )}
-            {generation.pending ? t("uiPolish.generatingTitle") : t("uiPolish.generatedTitleHelp")}
-          </p>
-        )}
-        {error && (
-          <p id={`${id}-error`} role="alert" className="text-sm text-destructive">
-            {nativeText(error)}
-          </p>
-        )}
-      </div>
-      <DialogFooter>
-        <Button type="button" variant="outline" disabled={pending} onClick={onCancel}>
-          {t("common.cancel")}
-        </Button>
-        <Button
-          type="submit"
-          disabled={pending || busy || generation.pending || draft.trim() === (entry.title ?? "")}
-        >
-          {pending ? t("uiPolish.savingTitle") : t("uiPolish.saveTitle")}
-        </Button>
-      </DialogFooter>
+          </InputGroup>
+          {configured && (
+            <p
+              className={
+                generation.pending
+                  ? "flex items-center gap-2 text-xs text-muted-foreground"
+                  : "sr-only"
+              }
+              role="status"
+            >
+              {generation.pending && (
+                <Loader2
+                  aria-hidden="true"
+                  className="size-3.5 animate-spin motion-reduce:animate-none"
+                />
+              )}
+              {generation.pending
+                ? t("uiPolish.generatingTitle")
+                : t("uiPolish.generatedTitleHelp")}
+            </p>
+          )}
+          {error && <FieldError id={`${id}-error`}>{nativeText(error)}</FieldError>}
+        </Field>
+      </FieldGroup>
+      {inline ? (
+        <div className="flex h-10 shrink-0 items-center gap-1">
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button
+                  type="submit"
+                  variant="ghost"
+                  size="icon-sm"
+                  disabled={pending || busy || generation.pending}
+                />
+              }
+              data-dictation-title-action={entry.id}
+              aria-label={pending ? t("uiPolish.savingTitle") : t("uiPolish.saveTitle")}
+              disabled={pending || busy || generation.pending}
+            >
+              {pending ? (
+                <Loader2 aria-hidden="true" className="animate-spin motion-reduce:animate-none" />
+              ) : (
+                <Check aria-hidden="true" />
+              )}
+            </TooltipTrigger>
+            <TooltipContent>{t("uiPolish.saveTitle")}</TooltipContent>
+          </Tooltip>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            aria-label={t("common.cancel")}
+            disabled={pending}
+            onClick={onCancel}
+          >
+            <X aria-hidden="true" />
+          </Button>
+        </div>
+      ) : (
+        <DialogFooter>
+          <Button type="button" variant="outline" disabled={pending} onClick={onCancel}>
+            {t("common.cancel")}
+          </Button>
+          <Button
+            type="submit"
+            disabled={pending || busy || generation.pending || draft.trim() === (entry.title ?? "")}
+          >
+            {pending ? t("uiPolish.savingTitle") : t("uiPolish.saveTitle")}
+          </Button>
+        </DialogFooter>
+      )}
     </form>
   );
 }

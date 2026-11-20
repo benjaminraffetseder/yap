@@ -3,8 +3,9 @@ import { toastManager } from "@/components/ui/toast";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { nativeText } from "@/i18n/native-text";
 import { backend, message } from "@/lib/backend";
+import { hasOpenKeyboardOverlay } from "@/lib/keyboard-shortcuts";
 import { Check, Copy, Loader2 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 export function CopyButton({
@@ -14,6 +15,7 @@ export function CopyButton({
   compact = false,
   iconOnly = false,
   variant = "default",
+  shortcut = false,
 }: {
   text: string;
   label: string;
@@ -21,6 +23,7 @@ export function CopyButton({
   compact?: boolean;
   iconOnly?: boolean;
   variant?: "default" | "ghost";
+  shortcut?: boolean;
 }) {
   const { t } = useTranslation();
   const [pending, setPending] = useState(false);
@@ -28,6 +31,7 @@ export function CopyButton({
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const mounted = useRef(true);
   const textVersion = useRef(0);
+  const copying = useRef(false);
   useEffect(() => {
     mounted.current = true;
     return () => {
@@ -40,30 +44,61 @@ export function CopyButton({
     setCopied(false);
     clearTimeout(timer.current);
   }, [text]);
-  async function copy() {
-    if (pending || disabled) return;
-    const version = textVersion.current;
-    setPending(true);
-    try {
-      await backend.copy(text);
-      if (!mounted.current || version !== textVersion.current) return;
-      setCopied(true);
-      clearTimeout(timer.current);
-      timer.current = setTimeout(() => setCopied(false), 1800);
-    } catch (cause) {
-      toastManager.add({ type: "error", title: nativeText(message(cause)) });
-    } finally {
-      if (mounted.current) setPending(false);
+  const copy = useCallback(
+    async (notify = false) => {
+      if (copying.current || disabled) return;
+      copying.current = true;
+      const version = textVersion.current;
+      setPending(true);
+      try {
+        await backend.copy(text);
+        if (!mounted.current || version !== textVersion.current) return;
+        setCopied(true);
+        if (notify) toastManager.add({ type: "success", title: t("uiPolish.copied") });
+        clearTimeout(timer.current);
+        timer.current = setTimeout(() => setCopied(false), 1800);
+      } catch (cause) {
+        toastManager.add({ type: "error", title: nativeText(message(cause)) });
+      } finally {
+        copying.current = false;
+        if (mounted.current) setPending(false);
+      }
+    },
+    [disabled, text, t],
+  );
+  useEffect(() => {
+    if (!shortcut) return;
+    function keydown(event: KeyboardEvent) {
+      if (
+        event.defaultPrevented ||
+        event.repeat ||
+        event.isComposing ||
+        event.altKey ||
+        !event.shiftKey ||
+        !(event.ctrlKey || event.metaKey) ||
+        event.key.toLowerCase() !== "c" ||
+        disabled ||
+        hasOpenKeyboardOverlay() ||
+        (event.target instanceof Element &&
+          event.target.closest('input, textarea, [contenteditable="true"]'))
+      )
+        return;
+      event.preventDefault();
+      void copy(true);
     }
-  }
+    window.addEventListener("keydown", keydown);
+    return () => window.removeEventListener("keydown", keydown);
+  }, [shortcut, disabled, copy]);
   const button = (
     <Button
       variant={variant}
       size={iconOnly ? "icon-sm" : "sm"}
+      className={compact && !iconOnly ? "min-w-22" : undefined}
       pressFeedback={iconOnly}
       aria-label={label}
       title={compact && !iconOnly ? label : undefined}
       disabled={disabled || pending}
+      aria-keyshortcuts={shortcut ? "Control+Shift+C Meta+Shift+C" : undefined}
       onClick={() => void copy()}
     >
       {pending ? (

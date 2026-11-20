@@ -34,6 +34,7 @@ import {
   type HistorySortColumn,
   type TranscriptExportSelection,
 } from "@/lib/backend";
+import { hasOpenKeyboardOverlay } from "@/lib/keyboard-shortcuts";
 import { resourceKeys } from "@/lib/queries/resource-queries";
 import {
   useInfiniteQuery,
@@ -221,6 +222,16 @@ function HistoryList({ viewToggle, active }: { viewToggle: ReactNode; active: bo
   const [selected, setSelected] = useState<string[]>([]);
   const [allMatching, setAllMatching] = useState(false);
   const [excluded, setExcluded] = useState<string[]>([]);
+  const selectionAnchor = useRef<string | null>(null);
+  const clearSelection = useCallback(() => {
+    setSelected([]);
+    setAllMatching(false);
+    setExcluded([]);
+    selectionAnchor.current = null;
+  }, []);
+  useEffect(() => {
+    selectionAnchor.current = null;
+  }, [query, sortBy, descending, deleted]);
   const selectionBar = useRef<HTMLElement>(null);
   useLayoutEffect(() => {
     const node = selectionBar.current;
@@ -326,6 +337,29 @@ function HistoryList({ viewToggle, active }: { viewToggle: ReactNode; active: bo
     allMatching ? !excluded.includes(entry.id) : selected.includes(entry.id),
   ).length;
   const selectionCount = allMatching ? Math.max(0, total - excluded.length) : selected.length;
+  useEffect(() => {
+    if (!selectionCount) selectionAnchor.current = null;
+    if (!active || !selectionCount) return;
+    function keydown(event: KeyboardEvent) {
+      if (
+        event.key !== "Escape" ||
+        event.defaultPrevented ||
+        event.repeat ||
+        event.isComposing ||
+        event.ctrlKey ||
+        event.metaKey ||
+        event.altKey ||
+        event.shiftKey ||
+        deletingNow ||
+        hasOpenKeyboardOverlay()
+      )
+        return;
+      event.preventDefault();
+      clearSelection();
+    }
+    window.addEventListener("keydown", keydown);
+    return () => window.removeEventListener("keydown", keydown);
+  }, [active, selectionCount, deletingNow, clearSelection]);
   useEffect(() => {
     if (loading || !renamed.current) return;
     const id = renamed.current;
@@ -456,6 +490,7 @@ function HistoryList({ viewToggle, active }: { viewToggle: ReactNode; active: bo
     );
   }
   function selectLoaded(checked: boolean) {
+    selectionAnchor.current = checked ? (entries.at(-1)?.id ?? null) : null;
     if (allMatching) {
       const pageIds = new Set(entries.map((entry) => entry.id));
       changeExportExclusions(
@@ -473,7 +508,7 @@ function HistoryList({ viewToggle, active }: { viewToggle: ReactNode; active: bo
       <div
         ref={toolbar}
         data-slot="history-toolbar"
-        className="sticky top-0 z-20 space-y-3 border-b bg-background py-3 lg:space-y-4 lg:py-4"
+        className="@container/history-toolbar sticky top-0 z-20 space-y-3 border-b bg-background py-3 lg:space-y-4 lg:py-4"
       >
         <PageHeading
           title={deleted ? t("historyPage.recentlyDeleted") : t("common.history")}
@@ -482,7 +517,7 @@ function HistoryList({ viewToggle, active }: { viewToggle: ReactNode; active: bo
               ? t("historyPage.restoreDictationsWithin30DaysOrDelete")
               : t("historyPage.yourDictationsReadyToRevisit")
           }
-          className="items-start gap-3 border-b-0 pb-0 lg:items-center lg:gap-4"
+          className="grid grid-cols-1 items-start gap-3 border-b-0 pb-0 @min-[58rem]/history-toolbar:grid-cols-[minmax(0,1fr)_auto] @min-[58rem]/history-toolbar:items-center @min-[58rem]/history-toolbar:gap-4"
         >
           <div className="flex w-full min-w-0 flex-wrap items-center gap-2.5 lg:ml-auto lg:w-auto lg:gap-3">
             <HistorySearch
@@ -583,6 +618,7 @@ function HistoryList({ viewToggle, active }: { viewToggle: ReactNode; active: bo
           onSort={changeSort}
           disabled={unavailable}
           loading={loading || searchPending}
+          selectionActive={selectionCount > 0}
           selectAll={
             <Checkbox
               ref={selectPage}
@@ -596,17 +632,27 @@ function HistoryList({ viewToggle, active }: { viewToggle: ReactNode; active: bo
           isSelected={(entry) =>
             allMatching ? !excluded.includes(entry.id) : selected.includes(entry.id)
           }
-          onSelect={(entry, checked) => {
+          onSelect={(entry, checked, range = false) => {
+            const anchor = entries.findIndex((item) => item.id === selectionAnchor.current);
+            const target = entries.findIndex((item) => item.id === entry.id);
+            const ids = new Set(
+              range && anchor >= 0 && target >= 0
+                ? entries
+                    .slice(Math.min(anchor, target), Math.max(anchor, target) + 1)
+                    .map((item) => item.id)
+                : [entry.id],
+            );
+            selectionAnchor.current = entry.id;
             if (allMatching) {
               changeExportExclusions(
                 checked
-                  ? excluded.filter((id) => id !== entry.id)
-                  : [...new Set([...excluded, entry.id])],
+                  ? excluded.filter((id) => !ids.has(id))
+                  : [...new Set([...excluded, ...ids])],
               );
               return;
             }
             setSelected((old) =>
-              checked ? [...old, entry.id] : old.filter((id) => id !== entry.id),
+              checked ? [...new Set([...old, ...ids])] : old.filter((id) => !ids.has(id)),
             );
           }}
           renderActions={(entry) =>
@@ -788,9 +834,7 @@ function HistoryList({ viewToggle, active }: { viewToggle: ReactNode; active: bo
                     className="col-start-2 row-start-1 text-muted-foreground"
                     disabled={deletingNow || !!exportSelection || !!processingSelection}
                     onClick={() => {
-                      setSelected([]);
-                      setAllMatching(false);
-                      setExcluded([]);
+                      clearSelection();
                       selectPage.current?.focus({ preventScroll: true });
                     }}
                   />

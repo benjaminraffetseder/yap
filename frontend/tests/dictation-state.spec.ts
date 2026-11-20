@@ -6023,8 +6023,14 @@ test("saved outputs retain their recipes, regenerate as new versions and leave e
   expect(await createOutput.innerText()).toBe("");
   const copyOutput = page.getByRole("button", { name: "Copy output", exact: true });
   const copyBounds = (await copyOutput.boundingBox())!;
-  expect(copyBounds.width).toBe(copyBounds.height);
-  await expect(copyOutput.locator('[aria-live="polite"]')).toHaveClass("sr-only");
+  expect(copyBounds.width).toBeGreaterThan(copyBounds.height);
+  await expect(copyOutput.locator('[aria-live="polite"]')).toHaveText("Copy");
+  await expect(toolbar.getByRole("button", { name: "Copy output", exact: true })).toHaveCount(0);
+  await expect(
+    page
+      .locator('[data-slot="detail-primary-actions"]')
+      .getByRole("button", { name: "Copy output", exact: true }),
+  ).toHaveCount(1);
   await createOutput.click();
   const composer = page.getByRole("dialog", { name: "Create an output", exact: true });
   await expect(composer).toBeVisible();
@@ -6861,15 +6867,16 @@ test("generated dictation title remains an editable draft until explicitly saved
     window.dictationTest.snapshot.textProcessing.model = "local-model";
   });
   await sessionTitleScenario(page);
-  await page.getByRole("button", { name: "Rename dictation", exact: true }).click();
-  const dialog = page.getByRole("dialog", { name: "Rename dictation", exact: true });
-  const input = dialog.getByRole("textbox", { name: "Title", exact: true });
+  await page.getByRole("heading", { level: 1 }).dblclick();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  const editor = page.locator('[data-slot="session-title-form"]');
+  const input = editor.getByRole("textbox", { name: "Title", exact: true });
   await input.fill("My draft");
   expect(await page.evaluate(() => window.sessionTitleTest.generationCalls)).toEqual([]);
   await page.evaluate(() => {
     window.sessionTitleTest.generationDefer = true;
   });
-  const generate = dialog.getByRole("button", { name: "Generate title", exact: true });
+  const generate = editor.getByRole("button", { name: "Generate title", exact: true });
   const field = (await input.boundingBox())!;
   const action = (await generate.boundingBox())!;
   expect(action.x).toBeGreaterThanOrEqual(field.x + field.width - 1);
@@ -6878,7 +6885,7 @@ test("generated dictation title remains an editable draft until explicitly saved
   );
   await generate.click();
   await expect(input).toBeDisabled();
-  const stop = dialog.getByRole("button", { name: "Cancel generation", exact: true });
+  const stop = editor.getByRole("button", { name: "Cancel generation", exact: true });
   await expect(stop).toBeEnabled();
   expect(
     await stop.evaluate((node) => {
@@ -6889,7 +6896,7 @@ test("generated dictation title remains an editable draft until explicitly saved
       return opacity;
     }),
   ).toBe(1);
-  await expect(dialog.getByRole("button", { name: "Save title", exact: true })).toBeDisabled();
+  await expect(editor.getByRole("button", { name: "Save title", exact: true })).toBeDisabled();
   expect(await page.evaluate(() => window.sessionTitleTest.calls)).toEqual([]);
   expect(
     await page.evaluate(() =>
@@ -6900,14 +6907,14 @@ test("generated dictation title remains an editable draft until explicitly saved
   await expect(input).toHaveValue("Generated meeting notes");
   await expect(input).toBeFocused();
   await testInfo.attach("title-suggestion-desktop", {
-    body: await dialog.screenshot(),
+    body: await editor.screenshot({ path: testInfo.outputPath("inline-title-desktop.png") }),
     contentType: "image/png",
   });
   expect(await page.evaluate(() => window.sessionTitleTest.calls)).toEqual([]);
   expect(await page.evaluate(() => window.dictationTest.snapshot.history[0].title)).toBeUndefined();
   await input.fill("Reviewed meeting notes");
-  await dialog.getByRole("button", { name: "Save title", exact: true }).click();
-  await expect(dialog).toHaveCount(0);
+  await editor.getByRole("button", { name: "Save title", exact: true }).click();
+  await expect(editor).toHaveCount(0);
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("Reviewed meeting notes");
   expect(await page.evaluate(() => window.dictationTest.snapshot.history[0])).toMatchObject({
     title: "Reviewed meeting notes",
@@ -6927,35 +6934,35 @@ test("title generation preserves typed names on failure or cancellation and igno
   await sessionTitleScenario(page);
   const rename = page.getByRole("button", { name: "Rename dictation", exact: true });
   await rename.click();
-  const dialog = page.getByRole("dialog", { name: "Rename dictation", exact: true });
-  const input = dialog.getByRole("textbox", { name: "Title", exact: true });
-  const generate = dialog.getByRole("button", { name: "Generate title", exact: true });
+  const editor = page.locator('[data-slot="session-title-form"]');
+  const input = editor.getByRole("textbox", { name: "Title", exact: true });
+  const generate = editor.getByRole("button", { name: "Generate title", exact: true });
   await input.fill("Keep this draft");
   await page.evaluate(() => {
     window.sessionTitleTest.generationFail = true;
   });
   await generate.click();
-  await expect(dialog.getByRole("alert")).toContainText("Title model unavailable");
+  await expect(editor.getByRole("alert")).toContainText("Title model unavailable");
   await expect(input).toHaveValue("Keep this draft");
   await expect(input).not.toHaveAttribute("aria-invalid", "true");
   await expect(input).toHaveAccessibleDescription("Title model unavailable");
-  await expect(dialog.getByRole("button", { name: "Save title", exact: true })).toBeEnabled();
+  await expect(editor.getByRole("button", { name: "Save title", exact: true })).toBeEnabled();
   await page.evaluate(() => {
     window.sessionTitleTest.generationFail = false;
     window.sessionTitleTest.generationDefer = true;
   });
   await generate.click();
-  await dialog.getByRole("button", { name: "Cancel generation", exact: true }).click();
+  await editor.getByRole("button", { name: "Cancel generation", exact: true }).click();
   await page.evaluate(() => window.sessionTitleTest.finishGeneration!("Cancelled suggestion"));
   await expect(input).toBeEnabled();
   await expect(input).toHaveValue("Keep this draft");
-  await expect(dialog.getByRole("alert")).toContainText("Processing cancelled");
+  await expect(editor.getByRole("alert")).toContainText("Processing cancelled");
   await generate.click();
   await expect(
-    dialog.getByRole("button", { name: "Cancel generation", exact: true }),
+    editor.getByRole("button", { name: "Cancel generation", exact: true }),
   ).toBeVisible();
   await page.keyboard.press("Escape");
-  await expect(dialog).toHaveCount(0);
+  await expect(editor).toHaveCount(0);
   await expect
     .poll(() => page.evaluate(() => window.sessionTitleTest.cancelledGeneration.length))
     .toBe(2);
@@ -6967,7 +6974,7 @@ test("title generation preserves typed names on failure or cancellation and igno
   expect(await page.evaluate(() => window.sessionTitleTest.generationCalls)).toHaveLength(3);
 });
 
-test("title generation follows text model setup and fits enlarged German rename dialog", async ({
+test("title generation follows text model setup and fits enlarged German inline editor", async ({
   page,
 }, testInfo) => {
   await sessionTitleScenario(page);
@@ -6994,23 +7001,25 @@ test("title generation follows text model setup and fits enlarged German rename 
     document.documentElement.style.fontSize = "200%";
   });
   await page.getByRole("button", { name: "Diktat umbenennen", exact: true }).click();
-  const dialog = page.getByRole("dialog", { name: "Diktat umbenennen", exact: true });
-  const generate = dialog.getByRole("button", { name: "Titel generieren", exact: true });
+  const editor = page.locator('[data-slot="session-title-form"]');
+  const generate = editor.getByRole("button", { name: "Titel generieren", exact: true });
   await expect(generate).toBeVisible();
   await generate.click();
-  await expect(dialog.getByRole("textbox", { name: "Titel", exact: true })).toHaveValue(
+  await expect(editor.getByRole("textbox", { name: "Titel", exact: true })).toHaveValue(
     "Generated meeting notes",
   );
-  const bounds = (await dialog.boundingBox())!;
+  const bounds = (await editor.boundingBox())!;
   expect(bounds.x).toBeGreaterThanOrEqual(0);
   expect(bounds.x + bounds.width).toBeLessThanOrEqual(480);
-  expect(await dialog.evaluate((node) => node.scrollWidth <= node.clientWidth + 1)).toBe(true);
-  await dialog.getByRole("button", { name: "Titel speichern", exact: true }).focus();
+  expect(await editor.evaluate((node) => node.scrollWidth <= node.clientWidth + 1)).toBe(true);
+  await editor.getByRole("button", { name: "Titel speichern", exact: true }).focus();
   await expect(
-    dialog.getByRole("button", { name: "Titel speichern", exact: true }),
+    editor.getByRole("button", { name: "Titel speichern", exact: true }),
   ).toBeInViewport();
   await testInfo.attach("title-suggestion-german-enlarged", {
-    body: await dialog.screenshot(),
+    body: await editor.screenshot({
+      path: testInfo.outputPath("inline-title-german-enlarged.png"),
+    }),
     contentType: "image/png",
   });
 });
@@ -7021,18 +7030,18 @@ test("session titles save, search and clear without changing literal transcripts
   await sessionTitleScenario(page);
   const rename = page.getByRole("button", { name: "Rename dictation", exact: true });
   await rename.click();
-  const dialog = page.getByRole("dialog", { name: "Rename dictation", exact: true });
-  const input = dialog.getByRole("textbox", { name: "Title", exact: true });
+  const editor = page.locator('[data-slot="session-title-form"]');
+  const input = editor.getByRole("textbox", { name: "Title", exact: true });
   await expect(input).toBeFocused();
   await input.fill("Discard this name");
   await page.keyboard.press("Escape");
-  await expect(dialog).toHaveCount(0);
-  await expect(rename).toBeFocused();
+  await expect(editor).toHaveCount(0);
+  await expect(page.getByRole("heading", { level: 1 })).toBeFocused();
   expect(await page.evaluate(() => window.sessionTitleTest.calls)).toEqual([]);
   await rename.click();
   await input.fill("会議 notes 🎙️");
   await input.press("Enter");
-  await expect(dialog).toHaveCount(0);
+  await expect(editor).toHaveCount(0);
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("会議 notes 🎙️");
   expect(await page.evaluate(() => window.dictationTest.snapshot.history[0])).toMatchObject({
     rawTranscript: "um, original recording",
@@ -7048,14 +7057,262 @@ test("session titles save, search and clear without changing literal transcripts
   await rename.click();
   await expect(input).toHaveValue("会議 notes 🎙️");
   await input.fill("");
-  await dialog.getByRole("button", { name: "Save title", exact: true }).click();
-  await expect(dialog).toHaveCount(0);
+  await editor.getByRole("button", { name: "Save title", exact: true }).click();
+  await expect(editor).toHaveCount(0);
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("Original saved transcript.");
   expect(await page.evaluate(() => window.sessionTitleTest.calls)).toEqual([
     { id: "title-one", title: "会議 notes 🎙️" },
     { id: "title-one", title: "" },
   ]);
 });
+
+test("transcription copy shortcut follows the visible text and selected output with toast feedback", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    window.dictationTest.outputs = ["Older summary", "Newest summary"].map((text, index) => ({
+      id: `shortcut-output-${index}`,
+      sessionId: "title-one",
+      createdAt: `2026-11-0${index + 1}T12:00:00Z`,
+      model: "local-model",
+      endpoint: "http://127.0.0.1:11434/v1",
+      prompt: { id: `summary-${index}`, name: text, instruction: "Summarize." },
+      input: "Original saved transcript.",
+      text,
+    }));
+  });
+  await sessionTitleScenario(page);
+  await page.keyboard.press("Control+Shift+c");
+  await expect
+    .poll(() => page.evaluate(() => window.dictationTest.clipboard))
+    .toBe("Original saved transcript.");
+  await expect(page.locator('[data-slot="toast"]').filter({ hasText: "Copied" })).toBeVisible();
+  await page.getByRole("tab", { name: "Original", exact: true }).click();
+  await page.keyboard.press("Meta+Shift+c");
+  await expect
+    .poll(() => page.evaluate(() => window.dictationTest.clipboard))
+    .toBe("um, original recording");
+  await page.getByRole("tab", { name: "Outputs", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Copy output", exact: true })).toBeEnabled();
+  await page.keyboard.press("Control+Shift+c");
+  await expect
+    .poll(() => page.evaluate(() => window.dictationTest.clipboard))
+    .toBe("Newest summary");
+  await page.locator("#saved-output").click();
+  await page.getByRole("option", { name: /^Older summary/ }).click();
+  await page.keyboard.press("Meta+Shift+c");
+  await expect
+    .poll(() => page.evaluate(() => window.dictationTest.clipboard))
+    .toBe("Older summary");
+  await page.getByRole("tab", { name: "Transcription", exact: true }).click();
+  await page.keyboard.press("Control+Shift+c");
+  await expect
+    .poll(() => page.evaluate(() => window.dictationTest.clipboard))
+    .toBe("Original saved transcript.");
+  await page.evaluate(() => {
+    window.dictationTest.failClipboard = true;
+  });
+  await page.keyboard.press("Control+Shift+c");
+  await expect(
+    page.locator('[data-slot="toast"]').filter({ hasText: "Clipboard unavailable" }),
+  ).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page).toHaveURL(/#\/history$/);
+});
+
+test("Escape closes the transcription and preserves the list query while dialogs and inline edits consume it", async ({
+  page,
+}) => {
+  await sessionTitleScenario(page);
+  await page.goto("/#/history/title-one?q=Original&sort=durationMs&direction=asc");
+  await page.getByRole("heading", { level: 1 }).dblclick();
+  const input = page.getByRole("textbox", { name: "Title", exact: true });
+  await input.fill("Unsaved title");
+  await page.evaluate(() => {
+    window.dictationTest.clipboard = "Keep clipboard";
+  });
+  await page.keyboard.press("Control+Shift+c");
+  expect(await page.evaluate(() => window.dictationTest.clipboard)).toBe("Keep clipboard");
+  await page.keyboard.press("Escape");
+  await expect(input).toHaveCount(0);
+  await expect(page).toHaveURL(/history\/title-one\?/);
+  expect(await page.evaluate(() => window.sessionTitleTest.calls)).toEqual([]);
+  await page.keyboard.press("Control+k");
+  const palette = page.getByRole("dialog", { name: "Command palette", exact: true });
+  await expect(palette).toBeVisible();
+  await page.keyboard.press("Control+Shift+c");
+  expect(await page.evaluate(() => window.dictationTest.clipboard)).toBe("Keep clipboard");
+  await page.keyboard.press("Escape");
+  await expect(palette).toHaveCount(0);
+  await expect(page).toHaveURL(/history\/title-one\?/);
+  await page.keyboard.press("Escape");
+  await expect(page).toHaveURL(/#\/history\?q=Original&sort=durationMs&direction=asc$/);
+});
+
+test("bulk selection toggles entire history rows while keeping row actions independent", async ({
+  page,
+}) => {
+  await sessionTitleScenario(page);
+  await page.getByRole("link", { name: "Back to History", exact: true }).click();
+  const rows = page.locator("tbody tr");
+  await rows.first().getByRole("checkbox").check();
+  await rows.last().getByRole("link").click();
+  await expect(rows.last().getByRole("checkbox")).toBeChecked();
+  await expect(page).toHaveURL(/#\/history$/);
+  await rows.last().getByRole("button", { name: "Copy dictation", exact: true }).click();
+  await expect(rows.last().getByRole("checkbox")).toBeChecked();
+  await rows
+    .last()
+    .getByRole("button", { name: /^Rename dictation:/ })
+    .click();
+  const rename = page.getByRole("dialog", { name: "Rename dictation", exact: true });
+  await expect(rename).toBeVisible();
+  await rename.getByRole("textbox", { name: "Title", exact: true }).fill("Keep selection");
+  await page.keyboard.press("Escape");
+  await expect(rename).toHaveCount(0);
+  await expect(rows.last().getByRole("checkbox")).toBeChecked();
+  await rows.last().locator("td").nth(2).click();
+  await expect(rows.last().getByRole("checkbox")).not.toBeChecked();
+  await rows.first().getByRole("link").click();
+  await expect(rows.first().getByRole("checkbox")).not.toBeChecked();
+  await rows.last().getByRole("link").click();
+  await expect(page).toHaveURL(/#\/history\/title-two$/);
+});
+
+test("Recently Deleted countdowns fit the title column and older entries fade without fading controls", async ({
+  page,
+}, testInfo) => {
+  await page.addInitScript(() => {
+    window.dictationTest.recentlyDeleted = [2, 29].map((age) => ({
+      id: `deleted-age-${age}`,
+      title: `Deleted ${age} days ago`,
+      createdAt: "2026-11-01T12:00:00Z",
+      deletedAt: new Date(Date.now() - age * 86400000).toISOString(),
+      durationMs: 30000,
+      rawTranscript: "Saved recording.",
+      finalTranscript: "Saved recording.",
+      speechModel: "base",
+      language: "en",
+      audioPath: "",
+    }));
+  });
+  await page.goto("/#/history?view=deleted");
+  const rows = page.locator("tbody tr");
+  await expect(rows).toHaveCount(2);
+  await page.mouse.move(0, 0);
+  const recent = rows.filter({ hasText: "Deleted 2 days ago" });
+  const expiring = rows.filter({ hasText: "Deleted 29 days ago" });
+  const opacity = (row: Locator) =>
+    row
+      .locator("td")
+      .nth(1)
+      .evaluate((node) => Number(getComputedStyle(node).opacity));
+  expect(await opacity(expiring)).toBeLessThan(await opacity(recent));
+  await expect(expiring.getByRole("button", { name: "Restore", exact: true })).toHaveCSS(
+    "opacity",
+    "1",
+  );
+  await expect(expiring.locator("td").nth(1)).toContainText("1 days left to restore");
+  await expect(expiring.locator("td").nth(3)).not.toContainText("left to restore");
+  for (const width of [1086, 1280, 760]) {
+    await page.setViewportSize({ width, height: 850 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+      true,
+    );
+    const container = page.locator('[data-slot="table-container"]');
+    const tableSize = await container.evaluate((node) => ({
+      client: node.clientWidth,
+      scroll: node.scrollWidth,
+    }));
+    if (width >= 760)
+      expect(tableSize.scroll, JSON.stringify({ width, ...tableSize })).toBeLessThanOrEqual(
+        tableSize.client + 1,
+      );
+    const deletedHeading = await page.getByRole("heading", { level: 1 }).boundingBox();
+    const deletedSearch = await page
+      .getByRole("textbox", { name: "Search transcripts", exact: true })
+      .boundingBox();
+    await page.getByRole("button", { name: "Show all dictations", exact: true }).click();
+    const historyHeading = await page.getByRole("heading", { level: 1 }).boundingBox();
+    const historySearch = await page
+      .getByRole("textbox", { name: "Search transcripts", exact: true })
+      .boundingBox();
+    expect(deletedHeading!.y).toBeCloseTo(historyHeading!.y, 0);
+    expect(deletedSearch!.y).toBeCloseTo(historySearch!.y, 0);
+    await page.getByRole("button", { name: "Show Recently Deleted", exact: true }).click();
+  }
+  await page.mouse.move(0, 0);
+  await testInfo.attach("recently-deleted-layout", {
+    body: await page
+      .locator("#main-content")
+      .screenshot({ path: testInfo.outputPath("recently-deleted-countdowns.png") }),
+    contentType: "image/png",
+  });
+  await expiring.getByRole("checkbox").check();
+  await page.mouse.move(0, 0);
+  await expect(expiring.locator("td").nth(1)).toHaveCSS("opacity", "1");
+  await recent.locator("td").nth(1).click();
+  await expect(recent.getByRole("checkbox")).toBeChecked();
+});
+
+for (const deleted of [false, true]) {
+  test(`${deleted ? "Recently Deleted" : "History"} supports Shift-click ranges and Escape clears selection`, async ({
+    page,
+  }) => {
+    await page.addInitScript((deleted) => {
+      const entries = Array.from({ length: 7 }, (_, index) => ({
+        id: `range-${index}`,
+        title: `Range entry ${index}`,
+        createdAt: "2026-11-01T12:00:00Z",
+        deletedAt: deleted ? new Date().toISOString() : undefined,
+        durationMs: 30000,
+        rawTranscript: "Saved recording.",
+        finalTranscript: "Saved recording.",
+        speechModel: "base",
+        language: "en",
+        audioPath: "",
+      }));
+      if (deleted) window.dictationTest.recentlyDeleted = entries;
+      else window.dictationTest.snapshot.history = entries;
+    }, deleted);
+    await page.goto(deleted ? "/#/history?view=deleted" : "/#/history");
+    const rows = page.locator("tbody tr");
+    const check = (index: number) => rows.nth(index).getByRole("checkbox");
+    await check(1).check();
+    await rows
+      .nth(4)
+      .locator("td")
+      .nth(1)
+      .click({ modifiers: ["Shift"] });
+    for (let index = 0; index < 7; index++) {
+      if (index >= 1 && index <= 4) await expect(check(index)).toBeChecked();
+      else await expect(check(index)).not.toBeChecked();
+    }
+    await rows
+      .nth(6)
+      .getByRole("checkbox")
+      .click({ modifiers: ["Shift"] });
+    await expect(page.getByText("6 selected", { exact: true })).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(page.locator('[data-slot="history-selection-bar"]')).toHaveCount(0);
+    for (const checkbox of await rows.getByRole("checkbox").all())
+      await expect(checkbox).not.toBeChecked();
+    await check(5).check();
+    await check(2).click({ modifiers: ["Shift"] });
+    for (let index = 0; index < 7; index++) {
+      if (index >= 2 && index <= 5) await expect(check(index)).toBeChecked();
+      else await expect(check(index)).not.toBeChecked();
+    }
+    await page.keyboard.press("Control+k");
+    const palette = page.getByRole("dialog", { name: "Command palette", exact: true });
+    await expect(palette).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(palette).toHaveCount(0);
+    await expect(page.getByText("4 selected", { exact: true })).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(page.locator('[data-slot="history-selection-bar"]')).toHaveCount(0);
+  });
+}
 
 test("History renames in place, preserves text and returns focus when a title search stops matching", async ({
   page,
@@ -7118,8 +7375,8 @@ test("session title editing keeps IME and failed drafts and guards pending dismi
 }) => {
   await sessionTitleScenario(page);
   await page.getByRole("button", { name: "Rename dictation", exact: true }).click();
-  const dialog = page.getByRole("dialog", { name: "Rename dictation", exact: true });
-  const input = dialog.getByRole("textbox", { name: "Title", exact: true });
+  const editor = page.locator('[data-slot="session-title-form"]');
+  const input = editor.getByRole("textbox", { name: "Title", exact: true });
   await input.fill("Recovery notes");
   await input.dispatchEvent("compositionstart");
   await input.dispatchEvent("keydown", { key: "Enter", isComposing: true });
@@ -7128,8 +7385,8 @@ test("session title editing keeps IME and failed drafts and guards pending dismi
   await page.evaluate(() => {
     window.sessionTitleTest.fail = true;
   });
-  await dialog.getByRole("button", { name: "Save title", exact: true }).click();
-  await expect(dialog.getByRole("alert")).toHaveText("Title save failed");
+  await editor.getByRole("button", { name: "Save title", exact: true }).click();
+  await expect(editor.getByRole("alert")).toHaveText("Title save failed");
   await expect(input).toHaveValue("Recovery notes");
   await expect(input).not.toHaveAttribute("aria-invalid", "true");
   await expect(input).toHaveAccessibleDescription("Title save failed");
@@ -7140,13 +7397,13 @@ test("session title editing keeps IME and failed drafts and guards pending dismi
     window.sessionTitleTest.fail = false;
     window.sessionTitleTest.defer = true;
   });
-  await dialog.getByRole("button", { name: "Save title", exact: true }).click();
-  await expect(dialog.getByRole("button", { name: "Saving…", exact: true })).toBeDisabled();
-  await expect(dialog.getByRole("button", { name: "Cancel", exact: true })).toBeDisabled();
+  await editor.getByRole("button", { name: "Save title", exact: true }).click();
+  await expect(editor.getByRole("button", { name: "Saving…", exact: true })).toBeDisabled();
+  await expect(editor.getByRole("button", { name: "Cancel", exact: true })).toBeDisabled();
   await page.keyboard.press("Escape");
-  await expect(dialog).toBeVisible();
+  await expect(editor).toBeVisible();
   await page.evaluate(() => window.sessionTitleTest.finish?.());
-  await expect(dialog).toHaveCount(0);
+  await expect(editor).toHaveCount(0);
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("Recovery notes");
   expect(await page.evaluate(() => window.sessionTitleTest.calls)).toHaveLength(2);
 });
@@ -7157,10 +7414,10 @@ test("a late title save cannot replace the next dictation after navigation", asy
     window.sessionTitleTest.defer = true;
   });
   await page.getByRole("button", { name: "Rename dictation", exact: true }).click();
-  const dialog = page.getByRole("dialog", { name: "Rename dictation", exact: true });
-  await dialog.getByRole("textbox", { name: "Title", exact: true }).fill("First dictation name");
-  await dialog.getByRole("button", { name: "Save title", exact: true }).click();
-  await expect(dialog.getByRole("button", { name: "Saving…", exact: true })).toBeDisabled();
+  const editor = page.locator('[data-slot="session-title-form"]');
+  await editor.getByRole("textbox", { name: "Title", exact: true }).fill("First dictation name");
+  await editor.getByRole("button", { name: "Save title", exact: true }).click();
+  await expect(editor.getByRole("button", { name: "Saving…", exact: true })).toBeDisabled();
   await page.evaluate(() => {
     location.hash = "#/history/title-two";
   });
@@ -7170,7 +7427,7 @@ test("a late title save cannot replace the next dictation after navigation", asy
     .poll(() => page.evaluate(() => window.dictationTest.snapshot.history[0].title))
     .toBe("First dictation name");
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("Second saved transcript.");
-  await expect(dialog).toHaveCount(0);
+  await expect(editor).toHaveCount(0);
 });
 
 test("saved transcript edits drive display, search, copy and export while keeping originals", async ({
