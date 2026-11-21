@@ -33,11 +33,14 @@ import { ProcessingSelectItems } from "@/features/processing/components/processi
 import { HomeProfileActions } from "@/features/profiles/components/home-profile-actions";
 import { ProfileApps } from "@/features/profiles/components/profile-apps";
 import { ModifiedMarker } from "@/features/profiles/components/profile-setting-indicator";
+import { ProfileTextModelEditor } from "@/features/profiles/components/profile-text-model";
+import { textProcessingSchema } from "@/features/prompts/lib/prompt-schemas";
 import { useAutoSave } from "@/hooks/use-auto-save";
 import { useSavedDraft } from "@/hooks/use-saved-draft";
 import { nativeText } from "@/i18n/native-text";
 import {
   backend,
+  captureProfileTextModel,
   isBusy,
   isDesktop,
   message,
@@ -272,6 +275,7 @@ export function ProfilesPanel({
                     language: snapshot.settings.language,
                     cleanText: snapshot.settings.cleanText,
                     autoPromptId: snapshot.textProcessing.autoPromptId,
+                    textModel: captureProfileTextModel(snapshot.textProcessing),
                   });
                 }}
               >
@@ -406,6 +410,15 @@ export function ProfilesPanel({
                     </dd>
                   </div>
                 </dl>
+                <p className="text-xs text-muted-foreground">
+                  {t("promptsPage.textModel")}:{" "}
+                  {profile.textModel
+                    ? profile.textModel.enabled
+                      ? (snapshot.textModels?.find((model) => model.id === profile.textModel?.model)
+                          ?.name ?? profile.textModel.model)
+                      : t("profileTextModel.off")
+                    : t("profileTextModel.inherits")}
+                </p>
                 <div className="border-t pt-3">
                   <ProfileApps
                     profile={profile}
@@ -536,6 +549,12 @@ function ProfileEditor({
       label: t("dictationProfiles.promptOrChainUnavailableChooseAnother"),
     });
   const selectedPrompt = prompts.find((prompt) => prompt.value === draft.autoPromptId);
+  const connection = {
+    ...snapshot.textProcessing,
+    ...(draft.textModel ?? {}),
+    autoPromptId: draft.autoPromptId,
+  };
+  const validConnection = textProcessingSchema.safeParse(connection);
   const reason = !draft.name.trim()
     ? t("dictationProfiles.giveThisProfileAName")
     : Array.from(draft.name.trim()).length > 60 ||
@@ -545,9 +564,11 @@ function ProfileEditor({
         ? t("dictationProfiles.chooseASpeechModel")
         : unavailablePrompt
           ? t("dictationProfiles.chooseAnAvailablePromptOrChain")
-          : draft.autoPromptId && !snapshot.textProcessing.enabled
+          : draft.autoPromptId && !connection.enabled
             ? t("dictationProfiles.enableTheSharedTextModelFirst")
-            : "";
+            : !validConnection.success
+              ? (validConnection.error.issues[0]?.message ?? "")
+              : "";
   async function save() {
     setError("");
     try {
@@ -689,6 +710,18 @@ function ProfileEditor({
               onCheckedChange={(cleanText) => setDraft({ ...draft, cleanText })}
             />
           </label>
+          <ProfileTextModelEditor
+            value={draft.textModel}
+            current={snapshot.textProcessing}
+            models={snapshot.textModels ?? []}
+            onChange={(textModel) =>
+              setDraft({
+                ...draft,
+                textModel,
+                autoPromptId: textModel.enabled ? draft.autoPromptId : "",
+              })
+            }
+          />
           <div className="space-y-2 border-t pt-4">
             <Label htmlFor="profile-prompt">{t("dictationProfiles.afterDictation")}</Label>
             <Select

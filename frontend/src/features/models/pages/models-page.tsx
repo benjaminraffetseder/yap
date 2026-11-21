@@ -33,7 +33,7 @@ import { languageName } from "@/lib/languages";
 import { useSavedActions } from "@/lib/queries/saved-queries";
 import { cn } from "@/lib/utils";
 import { Tabs as TabsPrimitive } from "@base-ui/react/tabs";
-import { Check, ChevronDown, ChevronUp, FolderOpen, Search, ShieldCheck } from "lucide-react";
+import { Check, ChevronDown, ChevronUp, Search, ShieldCheck } from "lucide-react";
 import { useEffect, useId, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Link, useLocation, useSearchParams } from "react-router";
@@ -187,13 +187,6 @@ export function ModelsPage({ embedded = false }: { embedded?: boolean }) {
         <ShieldCheck aria-hidden="true" className="size-3.5" />
         {t("modelsPage.dictationRunsOnYourDevice")}
       </span>
-      <Link
-        to="/settings?section=advanced&focus=modelPath-row"
-        className="inline-flex items-center gap-1.5 rounded outline-none hover:text-primary focus-visible:ring-2 focus-visible:ring-ring"
-      >
-        <FolderOpen aria-hidden="true" className="size-3.5" />
-        {t("modelsPage.bringYourOwnModel")}
-      </Link>
     </div>
   );
   const guidanceToggle = (

@@ -17,6 +17,7 @@ import (
 type RecipeHooks struct {
 	Progress   func(string) error
 	CommitStep func(commit func() error) error
+	Transient  bool
 }
 
 func RunRecipe(ctx context.Context, engine textmodel.Engine, config textmodel.Config, recipe textmodel.Chain, session storage.Session, save func(storage.GeneratedOutput) error, hooks RecipeHooks) (string, error) {
@@ -63,6 +64,9 @@ func RunRecipe(ctx context.Context, engine textmodel.Engine, config textmodel.Co
 				}
 			}
 			if err != nil {
+				if hooks.Transient {
+					return fmt.Errorf("step %d (%s): %w", i+1, prompt.Name, err)
+				}
 				return fmt.Errorf("step %d (%s): %w; completed results are kept", i+1, prompt.Name, err)
 			}
 			return nil

@@ -13,14 +13,24 @@ import (
 	"yap/internal/platform"
 )
 
+type ProfileTextModel struct {
+	Provider      string `json:"provider"`
+	ContextLength int    `json:"contextLength"`
+	Enabled       bool   `json:"enabled"`
+	Endpoint      string `json:"endpoint"`
+	Model         string `json:"model"`
+}
+
 // Profiles reference this computer's speech models and shared saved prompts.
+// A nil TextModel retains the legacy behavior of inheriting the global connection.
 type DictationProfile struct {
-	ID           string `json:"id"`
-	Name         string `json:"name"`
-	ModelPath    string `json:"modelPath"`
-	Language     string `json:"language"`
-	CleanText    bool   `json:"cleanText"`
-	AutoPromptID string `json:"autoPromptId"`
+	ID           string            `json:"id"`
+	Name         string            `json:"name"`
+	ModelPath    string            `json:"modelPath"`
+	Language     string            `json:"language"`
+	CleanText    bool              `json:"cleanText"`
+	AutoPromptID string            `json:"autoPromptId"`
+	TextModel    *ProfileTextModel `json:"textModel,omitempty"`
 }
 
 type ProfileLibrary struct {
@@ -57,6 +67,13 @@ func NormalizeProfiles(library ProfileLibrary) (ProfileLibrary, error) {
 		}
 		if len(p.AutoPromptID) > 80 || !utf8.ValidString(p.AutoPromptID) || strings.ContainsAny(p.AutoPromptID, "\r\n\x00") {
 			return ProfileLibrary{}, errors.New("choose a saved prompt")
+		}
+		if p.TextModel != nil {
+			connection, err := normalizeProfileTextModel(p.TextModel)
+			if err != nil {
+				return ProfileLibrary{}, err
+			}
+			p.TextModel = connection
 		}
 		ids[p.ID], names[strings.ToLower(p.Name)] = true, true
 		library.Profiles[i] = p
@@ -143,11 +160,44 @@ func WithDefaultProfile(library ProfileLibrary, settings Settings, config text.C
 }
 
 func profileFromSettings(id, name string, settings Settings, config text.Config) DictationProfile {
-	return DictationProfile{ID: id, Name: name, ModelPath: settings.ModelPath, Language: settings.Language, CleanText: settings.CleanText, AutoPromptID: config.AutoPromptID}
+	return DictationProfile{
+		ID: id, Name: name, ModelPath: settings.ModelPath, Language: settings.Language,
+		CleanText: settings.CleanText, AutoPromptID: config.AutoPromptID,
+		TextModel: CaptureProfileTextModel(config),
+	}
+}
+
+func CaptureProfileTextModel(config text.Config) *ProfileTextModel {
+	return &ProfileTextModel{
+		Provider: config.Provider, ContextLength: config.ContextLength,
+		Enabled: config.Enabled, Endpoint: config.Endpoint, Model: config.Model,
+	}
+}
+
+func normalizeProfileTextModel(connection *ProfileTextModel) (*ProfileTextModel, error) {
+	config := text.Config{
+		Provider: connection.Provider, ContextLength: connection.ContextLength,
+		Enabled: connection.Enabled, Endpoint: connection.Endpoint, Model: connection.Model,
+	}
+	// A disabled, otherwise unconfigured connection has the same harmless default
+	// endpoint as global text settings. Enabled and partially configured connections
+	// still go through the complete connection validation below.
+	if !config.Enabled && config.Endpoint == "" && config.Model == "" {
+		config.Endpoint = text.Defaults().Endpoint
+	}
+	normalized, err := text.Normalize(config)
+	if err != nil {
+		return nil, err
+	}
+	return CaptureProfileTextModel(normalized), nil
 }
 
 func (p DictationProfile) Matches(settings Settings, config text.Config) bool {
-	return p.ModelPath == settings.ModelPath && p.Language == settings.Language && p.CleanText == settings.CleanText && p.AutoPromptID == config.AutoPromptID
+	matches := p.ModelPath == settings.ModelPath && p.Language == settings.Language && p.CleanText == settings.CleanText && p.AutoPromptID == config.AutoPromptID
+	if !matches || p.TextModel == nil {
+		return matches
+	}
+	return *p.TextModel == *CaptureProfileTextModel(config)
 }
 
 func (s *Store) DictationProfiles() (ProfileLibrary, error) {
@@ -199,7 +249,6 @@ func (s *Store) ApplyDictationProfile(library ProfileLibrary, settings Settings,
 		value any
 	}{
 		{"INSERT INTO settings(id,value) VALUES(1,?) ON CONFLICT(id) DO UPDATE SET value=excluded.value", settings},
-		{"INSERT INTO text_processing(id,value) VALUES(1,?) ON CONFLICT(id) DO UPDATE SET value=excluded.value", config},
 		{"INSERT INTO dictation_profiles(id,value) VALUES(1,?) ON CONFLICT(id) DO UPDATE SET value=excluded.value", library},
 	} {
 		data, err := json.Marshal(item.value)
@@ -209,6 +258,9 @@ func (s *Store) ApplyDictationProfile(library ProfileLibrary, settings Settings,
 		if _, err := tx.Exec(item.query, string(data)); err != nil {
 			return err
 		}
+	}
+	if err := saveTextProcessingTx(tx, config); err != nil {
+		return err
 	}
 	return tx.Commit()
 }

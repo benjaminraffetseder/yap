@@ -12,11 +12,12 @@ import (
 )
 
 type DiagnosticResult struct {
-	Phase      string `json:"phase"`
-	Message    string `json:"message"`
-	Details    string `json:"details"`
-	Transcript string `json:"transcript"`
-	DurationMS int64  `json:"durationMs"`
+	Phase         string `json:"phase"`
+	Message       string `json:"message"`
+	Details       string `json:"details"`
+	Transcript    string `json:"transcript"`
+	RawTranscript string `json:"rawTranscript"`
+	DurationMS    int64  `json:"durationMs"`
 }
 
 type DiagnosticCheck struct {
@@ -24,6 +25,12 @@ type DiagnosticCheck struct {
 	Name    string `json:"name"`
 	Ready   bool   `json:"ready"`
 	Message string `json:"message"`
+}
+
+func DiagnosticMatches(result DiagnosticResult, current, tested storage.Settings) bool {
+	return result.Phase == "done" && current.MicrophoneID == tested.MicrophoneID &&
+		current.WhisperPath == tested.WhisperPath && current.ModelPath == tested.ModelPath &&
+		current.Language == tested.Language && current.CleanText == tested.CleanText
 }
 
 func Checks(settings storage.Settings, microphones func() ([]audio.Device, error)) []DiagnosticCheck {
@@ -56,7 +63,7 @@ func Checks(settings storage.Settings, microphones func() ([]audio.Device, error
 }
 
 func CompleteDiagnostic(ctxErr error, text string, err, removeErr error, settings storage.Settings, entries []vocabulary.Entry, duration int64) DiagnosticResult {
-	result := DiagnosticResult{Phase: "done", Message: "Runtime and model verified", Transcript: recording.ProcessTranscript(text, settings, entries), DurationMS: duration}
+	result := DiagnosticResult{Phase: "done", Message: "Runtime and model verified", RawTranscript: text, Transcript: recording.ProcessTranscript(text, settings, entries), DurationMS: duration}
 	switch {
 	case errors.Is(ctxErr, context.Canceled):
 		result = DiagnosticResult{Phase: "cancelled", Message: "Test cancelled"}
@@ -73,6 +80,7 @@ func CompleteDiagnostic(ctxErr error, text string, err, removeErr error, setting
 		result.Phase, result.Message = "error", "Could not delete test audio. Check access to the app's recordings folder."
 		result.Details = removeErr.Error()
 		result.Transcript = ""
+		result.RawTranscript = ""
 	}
 	return result
 }

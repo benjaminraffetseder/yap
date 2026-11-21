@@ -73,6 +73,67 @@ func TestProfileApplicationRollsBackAllConfiguration(t *testing.T) {
 	}
 }
 
+func TestProfileTextModelNormalizesAndDetachesConnections(t *testing.T) {
+	connection := &ProfileTextModel{Provider: "external", ContextLength: 4096, Enabled: true, Endpoint: "http://localhost:11434/v1", Model: " local-model "}
+	library := ProfileLibrary{ActiveID: "one", Profiles: []DictationProfile{{ID: "one", Name: "Notes", ModelPath: "/model", Language: "en", TextModel: connection}}}
+	normalized, err := NormalizeProfiles(library)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := normalized.Profiles[0].TextModel
+	if got == connection || got.Endpoint != "http://127.0.0.1:11434/v1" || got.Model != "local-model" || got.ContextLength != 4096 || !got.Enabled {
+		t.Fatalf("connection was not normalized into owned storage: %+v", got)
+	}
+	got.Model = "changed-through-normalized-copy"
+	if connection.Model != " local-model " {
+		t.Fatal("normalization shared the caller's connection pointer")
+	}
+	again, err := NormalizeProfiles(normalized)
+	if err != nil {
+		t.Fatal(err)
+	}
+	again.Profiles[0].TextModel.Model = "changed-again"
+	if got.Model != "changed-through-normalized-copy" {
+		t.Fatal("repeated normalization retained a connection alias")
+	}
+
+	unconfigured := library
+	unconfigured.Profiles = []DictationProfile{{ID: "one", Name: "Notes", ModelPath: "/model", Language: "en", TextModel: &ProfileTextModel{}}}
+	unconfigured, err = NormalizeProfiles(unconfigured)
+	if err != nil || unconfigured.Profiles[0].TextModel.Endpoint != text.Defaults().Endpoint || unconfigured.Profiles[0].TextModel.Enabled {
+		t.Fatalf("disabled unconfigured default was not accepted: %+v, %v", unconfigured, err)
+	}
+	invalid := library
+	invalid.Profiles = []DictationProfile{{ID: "one", Name: "Notes", ModelPath: "/model", Language: "en", TextModel: &ProfileTextModel{Endpoint: "https://example.com/v1"}}}
+	if _, err := NormalizeProfiles(invalid); err == nil {
+		t.Fatal("accepted a remote profile text endpoint")
+	}
+}
+
+func TestCapturedDefaultTracksConnectionWhileLegacyProfileInherits(t *testing.T) {
+	settings, config := Defaults(), text.Defaults()
+	settings.SetupComplete, settings.ModelPath = true, "/current-model"
+	config.Enabled, config.Model = true, "first-model"
+	library, changed, err := WithDefaultProfile(ProfileLibrary{}, settings, config)
+	if err != nil || !changed || len(library.Profiles) != 1 {
+		t.Fatal(library, changed, err)
+	}
+	captured := library.Profiles[0]
+	if captured.TextModel == nil || !captured.Matches(settings, config) {
+		t.Fatalf("Default did not capture its text connection: %+v", captured)
+	}
+	changedConfig := config
+	changedConfig.Model = "second-model"
+	if captured.Matches(settings, changedConfig) {
+		t.Fatal("captured profile ignored a modified text connection")
+	}
+	legacy := captured
+	legacy.TextModel = nil
+	if !legacy.Matches(settings, changedConfig) {
+		t.Fatal("legacy profile stopped inheriting the global text connection")
+	}
+}
+
 func TestDefaultUpgradePreservesLegacyProfilesAtCapacity(t *testing.T) {
 	settings, config := Defaults(), text.Defaults()
 	settings.SetupComplete, settings.ModelPath = true, "/current-model"

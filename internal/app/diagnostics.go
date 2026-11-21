@@ -86,6 +86,9 @@ func (a *App) transcribeDiagnostic(duration int64) {
 		}
 		result := setup.CompleteDiagnostic(ctx.Err(), text, err, removeErr, settings, entries, duration)
 		a.diagnostic = result
+		if result.Phase == "done" {
+			a.diagnosticSettings = settings
+		}
 		a.status.Phase, a.status.Message = "idle", result.Message
 		a.emitStatusLocked()
 		a.event("setup:changed")

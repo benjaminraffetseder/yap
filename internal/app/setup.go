@@ -162,6 +162,7 @@ func (a *App) RestartSetup() error {
 	}
 	a.settings = settings
 	a.microphoneTested, a.shortcutTested = false, false
+	a.diagnostic = DiagnosticResult{}
 	a.event("setup:changed")
 	return nil
 }

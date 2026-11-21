@@ -202,7 +202,7 @@ test("home surface shares a document frame and keeps other pages inset", async (
     window.dictationTest.history();
     window.dictationTest.callbacks["setup:changed"]();
   });
-  await expect(page.getByRole("heading", { name: "Choose your speech model" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "What will you dictate?" })).toBeVisible();
   await expect(recorder).toHaveCount(0);
 });
 
@@ -1225,6 +1225,7 @@ test("motion setup buttons remain visible through held pointer presses and advan
   });
   await page.goto("/");
   const next = page.getByRole("button", { name: "Next", exact: true });
+  await next.click();
   for (let i = 0; i < 5; i++) {
     await next.hover();
     await page.mouse.down();
@@ -1285,6 +1286,7 @@ for (const reduced of [false, true]) {
     await page.goto("/");
     const next = page.getByRole("button", { name: "Next", exact: true });
     await expect(next).toBeEnabled();
+    await next.click();
     const transforms = await next.evaluate(async (button) => {
       button.dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 1 }));
       await new Promise<void>((resolve) =>
@@ -1851,6 +1853,7 @@ test("setup retries shortcut permission and still requires a real shortcut test"
   await page.goto("/");
   await page.getByRole("button", { name: "Next", exact: true }).click();
   await page.getByRole("button", { name: "Next", exact: true }).click();
+  await page.getByRole("button", { name: "Next", exact: true }).click();
   const retry = page.getByRole("button", {
     name: "Retry shortcut",
     exact: true,
@@ -1878,8 +1881,14 @@ test("setup retries shortcut permission and still requires a real shortcut test"
   });
   await expect(page.getByRole("button", { name: "Next", exact: true })).toBeEnabled();
   await page.getByRole("button", { name: "Next", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Try a real dictation" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Next", exact: true })).toBeDisabled();
+  await completeDiagnosticPractice(page);
+  await page.getByRole("button", { name: "Next", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Add a text model (optional)" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Skip for now", exact: true })).toBeEnabled();
+  await expect(
+    page.getByRole("button", { name: en["onboarding.finishBasic"], exact: true }),
+  ).toBeEnabled();
 });
 
 test("settings dialog keeps vertical categories beside content and preserves edits", async ({
@@ -2911,6 +2920,7 @@ test("setup ignores an older microphone enumeration reply", async ({ page }) => 
   });
   await page.goto("/");
   await page.getByRole("button", { name: "Next", exact: true }).click();
+  await page.getByRole("button", { name: "Next", exact: true }).click();
   await expect.poll(() => page.evaluate(() => Reflect.get(window, "micReplies").length)).toBe(1);
   await page.getByRole("button", { name: "Refresh microphones", exact: true }).click();
   await expect.poll(() => page.evaluate(() => Reflect.get(window, "micReplies").length)).toBe(2);
@@ -3024,7 +3034,9 @@ test("Models compares models, updates the current selection, and fits narrow scr
   await expect(page.locator("html")).not.toHaveClass(/dark/);
   await page.screenshot({ path: testInfo.outputPath("models-redesign-light.png"), fullPage: true });
   await page.setViewportSize({ width: 480, height: 900 });
-  await expect(page.getByRole("link", { name: "Bring your own model" })).toBeVisible();
+  await expect(
+    page.getByText(en["modelsPage.dictationRunsOnYourDevice"], { exact: true }),
+  ).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
     true,
   );
@@ -3399,6 +3411,8 @@ declare global {
       outputs: GeneratedOutput[];
       failOutputs: boolean;
       failProcessing: boolean;
+      deferWorkflowPreview: boolean;
+      failPreviewCancel: boolean;
       textModels: string[];
       modelListError: string;
       deferModelList: boolean;
@@ -3409,6 +3423,14 @@ declare global {
         resolve: (models: string[]) => void;
       }[];
       cancelledProcessing: string[];
+      workflowPreviews: {
+        id: string;
+        config: TextProcessing;
+        original: string;
+        transcript: string;
+        recipeID: string;
+      }[];
+      completionRequests: { profile: DictationProfile; config: TextProcessing }[];
       refinements: {
         id: string;
         endpoint: string;
@@ -3564,7 +3586,11 @@ async function installDictationFixture(page: Page) {
       failOutputs: false,
       processing: null,
       failProcessing: false,
+      deferWorkflowPreview: false,
+      failPreviewCancel: false,
       cancelledProcessing: [],
+      workflowPreviews: [],
+      completionRequests: [],
       refinements: [],
       textModels: [],
       modelListError: "",
@@ -3586,6 +3612,15 @@ async function installDictationFixture(page: Page) {
         state.callbacks["dictation:history"]();
       },
     };
+    const speechSettingsKey = () =>
+      [
+        state.snapshot.settings.whisperPath,
+        state.snapshot.settings.modelPath,
+        state.snapshot.settings.microphoneId,
+        state.snapshot.settings.language,
+        state.snapshot.settings.cleanText,
+      ].join("\u0000");
+    let diagnosticSettings = "";
     function beginOutput(id: string, sessionID: string, prompt: TextPrompt, input: string) {
       if (state.failProcessing) return Promise.reject(new Error("Model unavailable"));
       const config = structuredClone(state.snapshot.textProcessing);
@@ -4085,11 +4120,13 @@ async function installDictationFixture(page: Page) {
             GetMicrophones: async () => [{ id: "usb", name: "USB microphone" }],
             GetDiagnosticChecks: async () => structuredClone(state.checks),
             StartDiagnosticTest: async () => {
+              diagnosticSettings = speechSettingsKey();
               state.snapshot.diagnostic = {
                 phase: "recording",
                 message: "Say a short sentence",
                 details: "",
                 transcript: "",
+                rawTranscript: "",
                 durationMs: 0,
               };
               state.status("diagnostic-recording");
@@ -4126,7 +4163,19 @@ async function installDictationFixture(page: Page) {
                 state.snapshot.microphoneTested = false;
               if (settings.shortcut !== state.snapshot.settings.shortcut)
                 state.snapshot.shortcutTested = false;
+              const previousSpeechKey = speechSettingsKey();
               state.snapshot.settings = structuredClone(settings);
+              if (previousSpeechKey !== speechSettingsKey()) {
+                diagnosticSettings = "";
+                state.snapshot.diagnostic = {
+                  phase: "",
+                  message: "",
+                  details: "",
+                  transcript: "",
+                  rawTranscript: "",
+                  durationMs: 0,
+                };
+              }
               state.callbacks["setup:changed"]?.(["configuration"]);
               if (settings.historyRetentionDays > 0) {
                 const cutoff = Date.now() - settings.historyRetentionDays * 86400000;
@@ -4284,6 +4333,7 @@ async function installDictationFixture(page: Page) {
             },
             CancelTextProcessing: async (id: string) => {
               state.cancelledProcessing.push(id);
+              if (state.failPreviewCancel) throw new Error("Could not cancel trial");
               // Deliberately leave the reply pending to exercise late results.
             },
             TestTextModel: async () => {
@@ -4325,6 +4375,7 @@ async function installDictationFixture(page: Page) {
             },
             Cancel: async () => {
               const diagnostic = state.snapshot.status.phase.startsWith("diagnostic-");
+              if (diagnostic) diagnosticSettings = "";
               if (diagnostic)
                 state.snapshot.diagnostic = {
                   phase: "cancelled",
@@ -4336,6 +4387,72 @@ async function installDictationFixture(page: Page) {
               state.snapshot.microphoneTested = false;
               state.status("idle");
               if (diagnostic) state.callbacks["setup:changed"]?.();
+            },
+            PreviewWorkflow: async (
+              id: string,
+              config: TextProcessing,
+              original: string,
+              transcript: string,
+              recipeID: string,
+            ) => {
+              state.workflowPreviews.push({
+                id,
+                config: structuredClone(config),
+                original,
+                transcript,
+                recipeID,
+              });
+              if (state.failProcessing) throw new Error("Model unavailable");
+              if (state.deferWorkflowPreview) {
+                state.status("text-processing");
+                return new Promise<string>((resolve, reject) => {
+                  state.processing = {
+                    id,
+                    input: transcript,
+                    prompt: recipeID,
+                    resolve: (result) => {
+                      state.processing = null;
+                      resolve(result);
+                    },
+                    reject: (cause) => {
+                      state.processing = null;
+                      reject(cause);
+                    },
+                  };
+                });
+              }
+              return `Processed: ${transcript}`;
+            },
+            CompleteOnboarding: async (profile: DictationProfile, config: TextProcessing) => {
+              state.completionRequests.push({
+                profile: structuredClone(profile),
+                config: structuredClone(config),
+              });
+              if (state.failSave) throw new Error("Could not complete onboarding");
+              if (
+                state.snapshot.diagnostic.phase !== "done" ||
+                !state.snapshot.diagnostic.transcript.trim() ||
+                diagnosticSettings !== speechSettingsKey()
+              )
+                throw new Error("Complete a current dictation practice first");
+              const name = profile.name.trim().toLowerCase();
+              if (!name || name === "default") throw new Error("Profile name is reserved");
+              const profiles = state.snapshot.dictationProfiles ?? [];
+              if (
+                profiles.some(
+                  (item) => item.id !== profile.id && item.name.trim().toLowerCase() === name,
+                )
+              )
+                throw new Error("Profile name already exists");
+              state.snapshot.textProcessing = structuredClone(config);
+              state.snapshot.dictationProfiles = [
+                ...profiles.filter((item) => item.id !== profile.id),
+                structuredClone(profile),
+              ];
+              state.snapshot.settings.setupComplete = true;
+              state.snapshot.activeProfileId = profile.id;
+              if (!state.snapshot.defaultProfileId) state.snapshot.defaultProfileId = profile.id;
+              state.callbacks["setup:changed"]?.(["configuration"]);
             },
             CompleteSetup: async () => {
               state.snapshot.settings.setupComplete = true;
@@ -4406,13 +4523,24 @@ async function installDictationFixture(page: Page) {
               if (state.failSave) throw new Error("Profile model unavailable");
               const profile = state.snapshot.dictationProfiles?.find((p) => p.id === id);
               if (!profile) throw new Error("Profile no longer exists");
-              if (profile.autoPromptId && !state.snapshot.textProcessing.enabled)
+              const textEnabled =
+                profile.textModel?.enabled ?? state.snapshot.textProcessing.enabled;
+              if (profile.autoPromptId && !textEnabled)
                 throw new Error("Enable your local text model in Prompts");
               Object.assign(state.snapshot.settings, {
                 modelPath: profile.modelPath,
                 language: profile.language,
                 cleanText: profile.cleanText,
               });
+              if (profile.textModel) {
+                Object.assign(state.snapshot.textProcessing, {
+                  provider: profile.textModel.provider ?? "external",
+                  contextLength: profile.textModel.contextLength ?? 0,
+                  enabled: profile.textModel.enabled,
+                  endpoint: profile.textModel.endpoint,
+                  model: profile.textModel.model,
+                });
+              }
               state.snapshot.textProcessing.autoPromptId = profile.autoPromptId;
               state.snapshot.activeProfileId = profile.id;
               state.callbacks["setup:changed"]?.(["configuration"]);
@@ -4886,6 +5014,42 @@ test("light cleanup defaults off and saves automatically", async ({ page }) => {
     .toBe(true);
 });
 
+async function reachWorkflow(page: Page, useCase?: "email" | "notes") {
+  if (useCase)
+    await page
+      .getByRole("radio", {
+        name: useCase === "email" ? /Polished emails & messages/ : /Structured notes & summaries/,
+      })
+      .check();
+  await page.getByRole("button", { name: "Next", exact: true }).click();
+  await page.getByRole("button", { name: "Next", exact: true }).click();
+  await page.getByRole("button", { name: "Next", exact: true }).click();
+  await page.getByRole("button", { name: "Next", exact: true }).click();
+  await completeDiagnosticPractice(page);
+  await page.getByRole("button", { name: "Next", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Add a text model (optional)" })).toBeVisible();
+}
+
+async function completeDiagnosticPractice(page: Page) {
+  await page.getByRole("button", { name: "Practice dictation", exact: true }).click();
+  await page.getByRole("button", { name: "Stop dictation test", exact: true }).click();
+  await page.evaluate(() => {
+    const state = window.dictationTest;
+    state.snapshot.diagnostic = {
+      phase: "done",
+      message: "Practice complete",
+      details: "",
+      rawTranscript: "um, this is my practice sentence",
+      transcript: "This is my practice sentence.",
+      durationMs: 1800,
+    };
+    state.status("idle");
+    state.callbacks["setup:changed"]();
+  });
+  await expect(page.getByText("This is my practice sentence.", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Next", exact: true })).toBeEnabled();
+}
+
 for (const theme of ["dark", "light"] as const) {
   test(`onboarding ${theme} guides each step and fits narrow screens`, async ({
     page,
@@ -4934,6 +5098,13 @@ for (const theme of ["dark", "light"] as const) {
     await page.goto("/");
     const next = page.getByRole("button", { name: "Next", exact: true });
     const steps = page.getByRole("list", { name: "Setup steps" });
+    await expect(steps.locator('[aria-current="step"]')).toContainText("Your workflow");
+    await expect(next).toBeEnabled();
+    await page.getByRole("radio", { name: /Structured notes & summaries/ }).check();
+    await page.getByLabel("Spoken language", { exact: true }).click();
+    await page.getByRole("option", { name: "German", exact: true }).click();
+    await page.getByRole("radio", { name: /Quality first/ }).check();
+    await next.click();
     await expect(steps.locator('[aria-current="step"]')).toContainText("Speech model");
     await expect(next).toBeDisabled();
     await page.screenshot({
@@ -5010,11 +5181,22 @@ for (const theme of ["dark", "light"] as const) {
     });
     await expect(page.getByText("Shortcut test passed", { exact: true })).toBeVisible();
     await finish.click();
+    await expect(page.getByRole("heading", { name: "Try a real dictation" })).toBeFocused();
+    await expect(next).toBeDisabled();
+    await completeDiagnosticPractice(page);
+    await next.click();
     await expect(page.getByRole("heading", { name: "Add a text model (optional)" })).toBeVisible();
-    await page.getByRole("button", { name: "Skip for now", exact: true }).click();
+    await expect(page.getByText("Suggested text model", { exact: true })).toBeVisible();
+    await page.getByRole("button", { name: en["onboarding.finishBasic"], exact: true }).click();
+    await expect(page.getByRole("heading", { name: "Name your active profile" })).toBeVisible();
+    await page.getByLabel("Name", { exact: true }).fill("Notes profile");
+    await page.getByRole("button", { name: en["onboarding.finishBasic"], exact: true }).click();
     await expect(
       page.getByRole("region", { name: "Dictation recorder", exact: true }),
     ).toBeVisible();
+    expect(
+      await page.evaluate(() => window.dictationTest.completionRequests.at(-1)?.profile),
+    ).toMatchObject({ name: "Notes profile", language: "de", autoPromptId: "" });
   });
 }
 
@@ -5038,6 +5220,7 @@ test("setup footer stays at the viewport bottom while scrolling and resizing", a
       .toBeLessThan(2);
   }
   await expectFooterAtBottom();
+  await page.getByRole("button", { name: "Next", exact: true }).click();
   await expect(page.locator('[data-slot="toast"]')).toBeVisible();
   await expect
     .poll(async () => {
@@ -5093,6 +5276,7 @@ test("speech model readiness uses one success toast across refreshes and setup s
     ];
   });
   await page.goto("/");
+  await page.getByRole("button", { name: "Next", exact: true }).click();
   const toast = page.locator('[data-slot="toast"]').filter({ hasText: "Speech model ready" });
   await expect(toast).toBeVisible();
   await expect(
@@ -5150,6 +5334,7 @@ test("microphone errors use a dismissible toast without adding a page banner", a
   });
   await page.goto("/");
   await page.getByRole("button", { name: "Next", exact: true }).click();
+  await page.getByRole("button", { name: "Next", exact: true }).click();
   const error = "no microphone signal detected; check microphone access and choose another input";
   const toast = page.locator('[data-slot="toast"]').filter({ hasText: error });
   async function failTest() {
@@ -5199,6 +5384,8 @@ test("first run guides installation, mic testing and shortcut verification", asy
   });
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "Set up Yap" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Next", exact: true })).toBeEnabled();
+  await page.getByRole("button", { name: "Next", exact: true }).click();
   await expect(page.getByRole("button", { name: "Next", exact: true })).toBeDisabled();
   await page.getByRole("button", { name: "Download & use" }).click();
   await expect(page.getByRole("button", { name: "Next", exact: true })).toBeDisabled();
@@ -5218,7 +5405,7 @@ test("first run guides installation, mic testing and shortcut verification", asy
     "value",
     "0.6",
   );
-  await expect(page.getByRole("button", { name: "Skip setup" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Back", exact: true })).toBeDisabled();
   await page.getByRole("button", { name: "Stop test", exact: true }).click();
   await expect(page.getByText("Last microphone test passed", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Next", exact: true }).click();
@@ -5229,8 +5416,12 @@ test("first run guides installation, mic testing and shortcut verification", asy
   });
   await expect(page.getByText("Shortcut test passed", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Next", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Try a real dictation" })).toBeVisible();
+  await completeDiagnosticPractice(page);
+  await page.getByRole("button", { name: "Next", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Add a text model (optional)" })).toBeVisible();
-  await page.getByRole("button", { name: "Skip for now", exact: true }).click();
+  await page.getByRole("button", { name: en["onboarding.finishBasic"], exact: true }).click();
+  await page.getByRole("button", { name: en["onboarding.finishBasic"], exact: true }).click();
   await expect(page.getByRole("region", { name: "Dictation recorder", exact: true })).toBeVisible();
   await expect
     .poll(() => page.evaluate(() => window.dictationTest.snapshot.history.length))
@@ -5240,8 +5431,568 @@ test("first run guides installation, mic testing and shortcut verification", asy
   await showCustomModelFiles(page);
   await page.getByRole("button", { name: "Run setup" }).click();
   await expect(page.getByRole("heading", { name: "Set up Yap" })).toBeVisible();
-  await page.getByRole("button", { name: "Skip setup" }).click();
-  await expect(page.getByRole("region", { name: "Dictation recorder", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "What will you dictate?" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Skip setup" })).toHaveCount(0);
+  expect(await page.evaluate(() => window.dictationTest.snapshot.dictationProfiles)).toHaveLength(
+    1,
+  );
+});
+
+async function openPolishedOnboarding(page: Page) {
+  await page.addInitScript(() => {
+    const state = window.dictationTest;
+    state.snapshot.settings.setupComplete = false;
+    state.snapshot.microphoneTested = true;
+    state.snapshot.shortcutTested = true;
+    state.snapshot.textRuntimeAvailable = true;
+    state.snapshot.textModels = [
+      {
+        id: "gemma-4-e2b",
+        name: "Gemma 4 E2B",
+        size: 3_349_516_256,
+        maxContext: 131072,
+        installed: true,
+      },
+    ];
+    state.snapshot.textProcessing = {
+      ...state.snapshot.textProcessing,
+      enabled: true,
+      provider: "builtin",
+      model: "gemma-4-e2b",
+      contextLength: 4096,
+      chains: [],
+    };
+  });
+  await page.goto("/");
+  await reachWorkflow(page, "email");
+}
+
+test("onboarding trial error replaces the empty result and model disclosure preserves the draft", async ({
+  page,
+}) => {
+  await openPolishedOnboarding(page);
+  await page.getByLabel("Prompt name", { exact: true }).fill("My edited workflow");
+  await page.getByLabel("Typed sample", { exact: true }).fill("Please send the proposal Friday");
+  await page.evaluate(() => {
+    window.dictationTest.failProcessing = true;
+  });
+  await page.getByRole("button", { name: "Run trial", exact: true }).click();
+  const result = page.getByRole("region", { name: "Result", exact: true });
+  await expect(result.getByRole("alert")).toContainText("Model unavailable");
+  await expect(result).not.toContainText(en["onboarding.noTrialResult"]);
+  await page.evaluate(() => {
+    window.dictationTest.failProcessing = false;
+  });
+  await page.getByRole("button", { name: "Run trial", exact: true }).click();
+  await expect(result).toContainText("Processed: Please send the proposal Friday");
+  await expect(result.getByRole("alert")).toHaveCount(0);
+  const options = page.getByRole("button", { name: /Change model/ });
+  await options.click();
+  await expect(
+    page.getByRole("heading", { name: "Built-in text models", exact: true }),
+  ).toBeVisible();
+  await options.click();
+  await expect(page.getByLabel("Prompt name", { exact: true })).toHaveValue("My edited workflow");
+  await expect(page.getByLabel("Typed sample", { exact: true })).toHaveValue(
+    "Please send the proposal Friday",
+  );
+  await expect(result).toContainText("Processed: Please send the proposal Friday");
+  expect(await page.evaluate(() => window.dictationTest.snapshot.history)).toHaveLength(0);
+  expect(await page.evaluate(() => window.dictationTest.clipboard)).toBe("");
+});
+
+test("onboarding cancel and continue waits for the owned preview and global job to settle", async ({
+  page,
+}) => {
+  await openPolishedOnboarding(page);
+  await page.getByLabel("Prompt name", { exact: true }).fill("Kept after cancellation");
+  await page.getByLabel("Typed sample", { exact: true }).fill("A temporary sample");
+  await page.evaluate(() => {
+    window.dictationTest.deferWorkflowPreview = true;
+  });
+  await page.getByRole("button", { name: "Run trial", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Next", exact: true })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Back", exact: true })).toBeDisabled();
+  await page.getByRole("button", { name: /Cancel trial.*continue/i }).click();
+  await expect
+    .poll(() => page.evaluate(() => window.dictationTest.cancelledProcessing.length))
+    .toBe(1);
+  const profileHeading = page.getByRole("heading", {
+    name: "Name your active profile",
+    exact: true,
+  });
+  await expect(profileHeading).toHaveCount(0);
+  // The cancellation API only acknowledges a request. A late result must not
+  // navigate or become visible while the application still owns the busy job.
+  await page.evaluate(() =>
+    window.dictationTest.processing!.resolve("Late result must stay hidden"),
+  );
+  await expect(page.getByRole("region", { name: "Result", exact: true })).not.toContainText(
+    "Late result must stay hidden",
+  );
+  await expect(profileHeading).toHaveCount(0);
+  expect(await page.evaluate(() => window.dictationTest.completionRequests)).toHaveLength(0);
+  await page.evaluate(() => window.dictationTest.status("idle"));
+  await expect(profileHeading).toBeVisible();
+  await expect(page.getByRole("definition").filter({ hasText: /^Gemma 4 E2B$/ })).toBeVisible();
+  await page.getByRole("button", { name: "Back", exact: true }).click();
+  await expect(page.getByLabel("Prompt name", { exact: true })).toHaveValue(
+    "Kept after cancellation",
+  );
+});
+
+test("onboarding failed preview cancellation stays local and can be retried", async ({ page }) => {
+  await openPolishedOnboarding(page);
+  await page.getByLabel("Typed sample", { exact: true }).fill("A temporary sample");
+  await page.evaluate(() => {
+    window.dictationTest.deferWorkflowPreview = true;
+    window.dictationTest.failPreviewCancel = true;
+  });
+  await page.getByRole("button", { name: "Run trial", exact: true }).click();
+  const cancelContinue = page.getByRole("button", { name: /Cancel trial.*continue/i });
+  await cancelContinue.click();
+  await expect(
+    page.getByRole("alert").filter({ hasText: en["onboarding.trialCancelFailed"] }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Name your active profile", exact: true }),
+  ).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Next", exact: true })).toBeDisabled();
+  await page.evaluate(() => {
+    window.dictationTest.failPreviewCancel = false;
+  });
+  await cancelContinue.click();
+  await expect
+    .poll(() => page.evaluate(() => window.dictationTest.cancelledProcessing.length))
+    .toBe(2);
+  await page.evaluate(() => {
+    window.dictationTest.processing!.reject(new Error("Processing cancelled"));
+    window.dictationTest.status("idle");
+  });
+  await expect(
+    page.getByRole("heading", { name: "Name your active profile", exact: true }),
+  ).toBeVisible();
+});
+
+test("onboarding never offers owned-preview cancellation for unrelated work", async ({ page }) => {
+  await openPolishedOnboarding(page);
+  await page.evaluate(() => window.dictationTest.status("text-processing"));
+  await expect(page.getByRole("button", { name: "Next", exact: true })).toBeDisabled();
+  await expect(
+    page.locator("footer").getByText(en["onboarding.trialBusyGuidance"], { exact: true }),
+  ).toBeVisible();
+  await expect(page.locator("footer")).not.toContainText(/live trial|cancel it in the step/i);
+  await expect(page.getByRole("button", { name: /Cancel trial.*continue/i })).toHaveCount(0);
+  expect(await page.evaluate(() => window.dictationTest.cancelledProcessing)).toHaveLength(0);
+  await page.evaluate(() => window.dictationTest.status("idle"));
+  await expect(page.getByRole("button", { name: "Next", exact: true })).toBeEnabled();
+});
+
+test("onboarding prompt trial stays isolated and completion retry keeps its identity", async ({
+  page,
+}, testInfo) => {
+  await page.addInitScript(() => {
+    const state = window.dictationTest;
+    state.snapshot.settings.setupComplete = false;
+    state.snapshot.microphoneTested = true;
+    state.snapshot.shortcutTested = true;
+    state.snapshot.textRuntimeAvailable = true;
+    state.snapshot.textModels = [
+      {
+        id: "gemma-4-e2b",
+        name: "Gemma 4 E2B",
+        size: 2_500_000_000,
+        maxContext: 8192,
+        installed: true,
+      },
+    ];
+    state.snapshot.textProcessing = {
+      ...state.snapshot.textProcessing,
+      enabled: true,
+      provider: "builtin",
+      model: "gemma-4-e2b",
+      contextLength: 4096,
+      chains: [],
+    };
+  });
+  await page.goto("/");
+  await page.screenshot({
+    path: testInfo.outputPath("onboarding-goal.png"),
+    animations: "disabled",
+    fullPage: true,
+  });
+  await reachWorkflow(page, "email");
+  await expect(page.getByRole("button", { name: /Change model/ })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Built-in text models", exact: true }),
+  ).not.toBeVisible();
+  await page.getByLabel("Prompt name", { exact: true }).fill("Warm follow-up");
+  await page
+    .getByLabel("Starter instructions", { exact: true })
+    .fill("Write a warm follow-up. Preserve every fact.");
+  await page.getByLabel("Typed sample", { exact: true }).fill("um, thanks for yesterday");
+  await page.getByRole("button", { name: "Run trial", exact: true }).click();
+  await expect(page.getByRole("region", { name: "Result", exact: true })).toContainText(
+    "Processed: um, thanks for yesterday",
+  );
+  await page.screenshot({
+    path: testInfo.outputPath("onboarding-workflow.png"),
+    animations: "disabled",
+    fullPage: true,
+  });
+  const preview = await page.evaluate(() => window.dictationTest.workflowPreviews[0]);
+  expect(preview.original).toBe("um, thanks for yesterday");
+  expect(preview.transcript).toBe("um, thanks for yesterday");
+  expect(preview.config.prompts.map((prompt) => prompt.name)).toEqual([
+    "Cleanup",
+    "Summary",
+    "Warm follow-up",
+  ]);
+  expect(preview.config.autoPromptId).toBe(preview.recipeID);
+  expect(
+    await page.evaluate(() => window.dictationTest.snapshot.textProcessing.prompts),
+  ).toHaveLength(2);
+  await page.getByRole("button", { name: "Next", exact: true }).click();
+  const name = page.getByLabel("Name", { exact: true });
+  await name.fill("a".repeat(61));
+  await expect(page.getByRole("alert").filter({ hasText: "at most 60 Unicode" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Save & activate profile" })).toBeDisabled();
+  await name.fill("Default");
+  await expect(page.getByRole("button", { name: "Save & activate profile" })).toBeDisabled();
+  await name.fill("Warm emails");
+  await page.evaluate(() => {
+    window.dictationTest.failSave = true;
+  });
+  await page.getByRole("button", { name: "Save & activate profile" }).click();
+  await expect(page.getByRole("heading", { name: "Name your active profile" })).toBeVisible();
+  await page.evaluate(() => {
+    window.dictationTest.failSave = false;
+  });
+  await page.getByRole("button", { name: "Save & activate profile" }).click();
+  await expect(page.getByRole("region", { name: "Dictation recorder" })).toBeVisible();
+  const requests = await page.evaluate(() => window.dictationTest.completionRequests);
+  expect(requests).toHaveLength(2);
+  expect(requests[0].profile.id).toBe(requests[1].profile.id);
+  expect(requests[1].profile).toMatchObject({
+    name: "Warm emails",
+    textModel: {
+      enabled: true,
+      provider: "builtin",
+      model: "gemma-4-e2b",
+      contextLength: 4096,
+    },
+  });
+  expect(requests[1].config.prompts[0]).toEqual({
+    id: "cleanup",
+    name: "Cleanup",
+    instruction: "Clean up text.",
+  });
+  expect(requests[1].config.prompts.at(-1)?.name).toBe("Warm follow-up");
+  expect(await page.evaluate(() => window.dictationTest.snapshot.history)).toHaveLength(0);
+  expect(await page.evaluate(() => window.dictationTest.clipboard)).toBe("");
+});
+
+test("onboarding chain trial keeps raw and cleaned dictation sources distinct", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const state = window.dictationTest;
+    state.snapshot.settings.setupComplete = false;
+    state.snapshot.microphoneTested = true;
+    state.snapshot.shortcutTested = true;
+    state.snapshot.textProcessing = {
+      ...state.snapshot.textProcessing,
+      enabled: true,
+      provider: "external",
+      model: "local-model",
+      endpoint: "http://127.0.0.1:11434/v1",
+      chains: [],
+    };
+  });
+  await page.goto("/");
+  await reachWorkflow(page, "notes");
+  await page.getByRole("button", { name: "Move step 1 down", exact: true }).click();
+  await page.getByRole("button", { name: "Dictate text", exact: true }).click();
+  await expect(page.getByRole("region", { name: "Input", exact: true })).toContainText(
+    "This is my practice sentence.",
+  );
+  await page.getByRole("button", { name: "Run trial", exact: true }).click();
+  await expect(page.getByRole("region", { name: "Result", exact: true })).toContainText(
+    "Processed: This is my practice sentence.",
+  );
+  const preview = await page.evaluate(() => window.dictationTest.workflowPreviews[0]);
+  expect(preview.original).toBe("um, this is my practice sentence");
+  expect(preview.transcript).toBe("This is my practice sentence.");
+  expect(preview.config.chains).toHaveLength(1);
+  expect(preview.config.chains![0].steps[1].input).toBe("original");
+  expect(preview.config.chains![0].steps[0].promptId).not.toBe(
+    preview.config.chains![0].steps[1].promptId,
+  );
+  expect(
+    await page.evaluate(() => window.dictationTest.snapshot.textProcessing.chains ?? []),
+  ).toHaveLength(0);
+  await page.getByRole("button", { name: "Next", exact: true }).click();
+  await page.getByLabel("Name", { exact: true }).fill("Meeting notes");
+  await page.getByRole("button", { name: "Save & activate profile" }).click();
+  await expect(page.getByRole("region", { name: "Dictation recorder" })).toBeVisible();
+  const completed = await page.evaluate(() => window.dictationTest.completionRequests[0]);
+  expect(completed.profile.autoPromptId).toBe(completed.config.chains![0].id);
+  expect(completed.config.chains![0].steps).toHaveLength(2);
+  expect(completed.config.prompts).toHaveLength(4);
+  expect(await page.evaluate(() => window.dictationTest.snapshot.history)).toHaveLength(0);
+  expect(await page.evaluate(() => window.dictationTest.clipboard)).toBe("");
+});
+
+test("onboarding blocks failed speech practice and diagnostics invalidated by speech settings", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const state = window.dictationTest;
+    state.snapshot.settings.setupComplete = false;
+    state.snapshot.microphoneTested = true;
+    state.snapshot.shortcutTested = true;
+  });
+  await page.goto("/");
+  await reachWorkflow(page);
+  await page.getByRole("button", { name: en["onboarding.finishBasic"], exact: true }).click();
+  const finish = page.getByRole("button", { name: en["onboarding.finishBasic"], exact: true });
+  await expect(finish).toBeEnabled();
+  await page.evaluate(() => {
+    const state = window.dictationTest;
+    state.snapshot.diagnostic = {
+      ...state.snapshot.diagnostic,
+      phase: "error",
+      message: "Speech recognition failed",
+      transcript: "",
+    };
+    state.callbacks["setup:changed"]();
+  });
+  await expect(finish).toBeDisabled();
+  await page.evaluate(async () => {
+    const state = window.dictationTest;
+    state.snapshot.diagnostic = {
+      ...state.snapshot.diagnostic,
+      phase: "done",
+      transcript: "Stale transcript",
+    };
+    const app = Reflect.get(window, "mockBackend").app.App;
+    await app.SaveSettings({ ...state.snapshot.settings, language: "de" });
+  });
+  await expect(finish).toBeDisabled();
+  expect(await page.evaluate(() => window.dictationTest.completionRequests)).toHaveLength(0);
+});
+
+test("onboarding keeps a ready text model for manual use without an automatic recipe", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const state = window.dictationTest;
+    state.snapshot.settings.setupComplete = false;
+    state.snapshot.microphoneTested = true;
+    state.snapshot.shortcutTested = true;
+    state.snapshot.textRuntimeAvailable = true;
+    state.snapshot.textModels = [
+      {
+        id: "gemma-4-e2b",
+        name: "Gemma 4 E2B",
+        size: 100,
+        maxContext: 8192,
+        installed: true,
+      },
+    ];
+    state.snapshot.textProcessing = {
+      ...state.snapshot.textProcessing,
+      enabled: true,
+      provider: "builtin",
+      model: "gemma-4-e2b",
+      autoPromptId: "",
+    };
+  });
+  await page.goto("/");
+  await reachWorkflow(page);
+  await expect(page.getByRole("radio", { name: "Basic dictation", exact: true })).toBeChecked();
+  await page.getByRole("button", { name: "Next", exact: true }).click();
+  await page.getByRole("button", { name: "Save & activate profile", exact: true }).click();
+  await expect(page.getByRole("region", { name: "Dictation recorder" })).toBeVisible();
+  const completed = await page.evaluate(() => window.dictationTest.completionRequests[0]);
+  expect(completed.config.enabled).toBe(true);
+  expect(completed.config.autoPromptId).toBe("");
+  expect(completed.config.prompts).toHaveLength(2);
+  expect(completed.profile.textModel).toMatchObject({ enabled: true, model: "gemma-4-e2b" });
+});
+
+test("onboarding German basic path remains usable at narrow width with reduced motion", async ({
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.setViewportSize({ width: 360, height: 760 });
+  await page.addInitScript(() => {
+    localStorage.setItem("desktop-language", "de");
+    const state = window.dictationTest;
+    state.snapshot.settings.setupComplete = false;
+    state.snapshot.microphoneTested = true;
+    state.snapshot.shortcutTested = true;
+    state.snapshot.textRuntimeAvailable = false;
+  });
+  await page.goto("/");
+  await expect(
+    page.getByRole("heading", { name: de["onboarding.goalTitle"], exact: true }),
+  ).toBeVisible();
+  await page.getByRole("radio", { name: /E-Mails & Nachrichten/ }).check();
+  await page.getByRole("button", { name: de["common.next"], exact: true }).click();
+  await page.getByRole("button", { name: de["common.next"], exact: true }).click();
+  await page.getByRole("button", { name: de["common.next"], exact: true }).click();
+  await page.getByRole("button", { name: de["common.next"], exact: true }).click();
+  await page.getByRole("button", { name: de["onboarding.practiceDictation"], exact: true }).click();
+  await page
+    .getByRole("button", { name: de["diagnosticsPanel.stopDictationTest"], exact: true })
+    .click();
+  await page.evaluate(() => {
+    const state = window.dictationTest;
+    state.snapshot.diagnostic = {
+      phase: "done",
+      message: "Übung abgeschlossen",
+      details: "",
+      rawTranscript: "ein test",
+      transcript: "Ein Test.",
+      durationMs: 1000,
+    };
+    state.status("idle");
+    state.callbacks["setup:changed"]();
+  });
+  await page.getByRole("button", { name: de["common.next"], exact: true }).click();
+  await expect(page.getByText(de["onboarding.runtimeUnavailable"], { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: de["onboarding.finishBasic"], exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: de["onboarding.profileHeading"], exact: true }),
+  ).toBeFocused();
+  await page.getByRole("button", { name: de["onboarding.finishBasic"], exact: true }).click();
+  await expect(
+    page.getByRole("region", { name: de["homePage.dictationRecorder"], exact: true }),
+  ).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(360);
+  expect(await page.evaluate(() => window.dictationTest.completionRequests[0].config.enabled)).toBe(
+    false,
+  );
+});
+
+test("profile text models capture, switch, inherit legacy settings and preserve recipes", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const state = window.dictationTest;
+    state.snapshot.models = [
+      {
+        id: "base",
+        name: "Whisper Base",
+        description: "Speech",
+        size: 100,
+        installed: true,
+        path: "/model",
+        diskBytes: 100,
+        removable: true,
+      },
+    ];
+    state.snapshot.textModels = [
+      { id: "gemma-4-e2b", name: "Model A", size: 100, maxContext: 8192, installed: true },
+      { id: "gemma-4-e4b", name: "Model B", size: 200, maxContext: 8192, installed: true },
+    ];
+    state.snapshot.textProcessing = {
+      ...state.snapshot.textProcessing,
+      enabled: true,
+      provider: "builtin",
+      model: "gemma-4-e2b",
+      contextLength: 4096,
+      autoPromptId: "",
+      chains: [
+        {
+          id: "shared-chain",
+          name: "Shared chain",
+          steps: [{ id: "shared-step", promptId: "cleanup", input: "original" }],
+        },
+      ],
+    };
+    state.snapshot.dictationProfiles = [
+      {
+        id: "default",
+        name: "Default",
+        modelPath: "/model",
+        language: "auto",
+        cleanText: false,
+        autoPromptId: "",
+        textModel: {
+          enabled: true,
+          provider: "builtin",
+          model: "gemma-4-e2b",
+          endpoint: "",
+          contextLength: 4096,
+        },
+      },
+      {
+        id: "work",
+        name: "Work",
+        modelPath: "/model",
+        language: "en",
+        cleanText: false,
+        autoPromptId: "",
+        textModel: {
+          enabled: true,
+          provider: "builtin",
+          model: "gemma-4-e4b",
+          endpoint: "",
+          contextLength: 2048,
+        },
+      },
+      {
+        id: "legacy",
+        name: "Legacy",
+        modelPath: "/model",
+        language: "auto",
+        cleanText: false,
+        autoPromptId: "",
+        textModel: null,
+      },
+    ];
+    state.snapshot.defaultProfileId = "default";
+    state.snapshot.activeProfileId = "default";
+  });
+  await page.goto("/#/settings?section=profiles");
+  await page.getByRole("button", { name: "New profile", exact: true }).click();
+  const editor = profileEditor(page);
+  await editor.getByLabel("Profile name", { exact: true }).fill("Captured profile");
+  const selector = editor.getByRole("combobox", { name: "Text model", exact: true });
+  await expect(selector).toContainText("Model A");
+  await selector.click();
+  await page.getByRole("option", { name: "Model B", exact: true }).click();
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () => window.dictationTest.snapshot.dictationProfiles?.at(-1)?.textModel?.model,
+      ),
+    )
+    .toBe("gemma-4-e4b");
+  expect(
+    await page.evaluate(() => window.dictationTest.snapshot.textProcessing.prompts),
+  ).toHaveLength(2);
+  expect(
+    await page.evaluate(() => window.dictationTest.snapshot.textProcessing.chains),
+  ).toHaveLength(1);
+  await editor.getByRole("button", { name: "Done", exact: true }).click();
+  await page.getByRole("button", { name: "Make Work active", exact: true }).click();
+  await expect
+    .poll(() => page.evaluate(() => window.dictationTest.snapshot.textProcessing.model))
+    .toBe("gemma-4-e4b");
+  await expect
+    .poll(() => page.evaluate(() => window.dictationTest.snapshot.textProcessing.contextLength))
+    .toBe(2048);
+  await page.getByRole("button", { name: "Make Legacy active", exact: true }).click();
+  await expect
+    .poll(() => page.evaluate(() => window.dictationTest.snapshot.textProcessing.model))
+    .toBe("gemma-4-e4b");
+  await page.getByRole("button", { name: "Make Default active", exact: true }).click();
+  await expect
+    .poll(() => page.evaluate(() => window.dictationTest.snapshot.textProcessing.model))
+    .toBe("gemma-4-e2b");
 });
 
 test("history uses processed text for copy and exposes searchable originals", async ({ page }) => {
@@ -6452,6 +7203,7 @@ test("microphone test remains stoppable after navigating away from setup", async
     window.dictationTest.snapshot.settings.setupComplete = false;
   });
   await page.goto("/");
+  await page.getByRole("button", { name: "Next", exact: true }).click();
   await page.getByRole("button", { name: "Next", exact: true }).click();
   await page.getByRole("button", { name: "Test microphone", exact: true }).click();
   await expect(page.getByRole("button", { name: "Stop test", exact: true })).toBeVisible();
@@ -9318,6 +10070,7 @@ test("shortcut recorder is disabled during active work and works in first-run se
     state.callbacks["setup:changed"]();
   });
   await navigateMain(page, "Dictate");
+  await page.getByRole("button", { name: "Next", exact: true }).click();
   await page.getByRole("button", { name: "Next", exact: true }).click();
   await page.getByRole("button", { name: "Next", exact: true }).click();
   const dialog = await recordShortcut(page);
@@ -13890,7 +14643,7 @@ for (const language of ["en", "de"] as const) {
   });
 }
 
-test("UI polish setup support links clear the sticky footer at normal and enlarged text", async ({
+test("UI polish setup model guidance clears the sticky footer at normal and enlarged text", async ({
   page,
 }, info) => {
   await page.addInitScript(() => {
@@ -13932,7 +14685,8 @@ test("UI polish setup support links clear the sticky footer at normal and enlarg
     ];
   });
   await page.goto("/");
-  const support = page.getByRole("link", { name: "Bring your own model", exact: true });
+  await page.getByRole("button", { name: "Next", exact: true }).click();
+  const support = page.getByText(en["onboarding.downloadOnlyOnClick"], { exact: true });
   const next = page.getByRole("button", { name: "Next", exact: true });
   for (const [width, height, font] of [
     [1086, 722, 100],

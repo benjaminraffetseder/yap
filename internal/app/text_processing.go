@@ -42,6 +42,17 @@ func (a *App) ProcessText(requestID, input, promptID string) (string, error) {
 	return a.processTextRequest(requestID, textprocessing.Request{Input: input, PromptID: promptID})
 }
 
+// PreviewWorkflow runs an unsaved recipe against temporary sample text. The
+// regular request owner handles cancellation and shutdown, while trial steps
+// never enter history, the prompt library, or desktop delivery.
+func (a *App) PreviewWorkflow(requestID string, config textmodel.Config, original, transcript, recipeID string) (string, error) {
+	config.AutoPromptID = ""
+	return a.processTextRequest(requestID, textprocessing.Request{
+		Config: &config, PromptID: recipeID,
+		Preview: &textprocessing.PreviewInput{Original: original, Transcript: transcript},
+	})
+}
+
 func (a *App) TestTextModel(requestID string) (string, error) {
 	return a.processTextRequest(requestID, textprocessing.Request{Input: "Connection test.", Test: true})
 }

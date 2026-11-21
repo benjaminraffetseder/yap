@@ -11,6 +11,7 @@ import (
 
 type OutputTarget struct{ SessionID, OutputID string }
 type PromptRefinement struct{ Endpoint, Model string }
+type PreviewInput struct{ Original, Transcript string }
 
 // Request contains text-specific choices after the host has checked request
 // identity, availability, early cancellation, and exclusive job ownership.
@@ -21,6 +22,7 @@ type Request struct {
 	Test            bool
 	Target          *OutputTarget
 	Refinement      *PromptRefinement
+	Preview         *PreviewInput
 }
 
 type Source interface {
@@ -37,6 +39,7 @@ type Prepared struct {
 	Recipe  *textmodel.Chain
 	Session storage.Session
 	refine  bool
+	preview bool
 }
 
 func Prepare(saved textmodel.Config, request Request, source Source) (Prepared, error) {
@@ -61,6 +64,21 @@ func Prepare(saved textmodel.Config, request Request, source Source) (Prepared, 
 		return Prepared{}, errors.New("enable a local text model in Prompts first")
 	}
 	prepared := Prepared{Config: config, Input: input, Prompt: textmodel.Prompt{Instruction: "Reply with only OK."}, refine: request.Refinement != nil}
+	if sample := request.Preview; sample != nil {
+		if err := textmodel.ValidateText(sample.Original); err != nil {
+			return Prepared{}, err
+		}
+		if err := textmodel.ValidateText(sample.Transcript); err != nil {
+			return Prepared{}, err
+		}
+		recipe, err := config.Recipe(request.PromptID)
+		if err != nil {
+			return Prepared{}, err
+		}
+		prepared.Session = storage.Session{RawTranscript: sample.Original, FinalTranscript: sample.Transcript}
+		prepared.Recipe, prepared.preview = &recipe, true
+		return prepared, nil
+	}
 	if request.TitleSessionID != "" {
 		entry, err := source.Session(request.TitleSessionID)
 		if err != nil {
@@ -119,6 +137,18 @@ func (p Prepared) Run(ctx context.Context, engine textmodel.Engine, save func(st
 		return output, nil, err
 	}
 	if p.Recipe != nil {
+		if p.preview {
+			// Trial steps exist only in RunRecipe's local result map. Never call
+			// the persistence callback or publish history events through its hook.
+			save = func(storage.GeneratedOutput) error { return nil }
+			hooks.Transient = true
+			hooks.CommitStep = func(commit func() error) error {
+				if err := ctx.Err(); err != nil {
+					return err
+				}
+				return commit()
+			}
+		}
 		output, err := RunRecipe(ctx, engine, p.Config, *p.Recipe, p.Session, save, hooks)
 		return output, nil, err
 	}

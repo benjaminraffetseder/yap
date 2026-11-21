@@ -4,6 +4,7 @@ import (
 	"errors"
 
 	"yap/internal/app/profiles"
+	"yap/internal/app/textprocessing"
 	"yap/internal/storage"
 )
 
@@ -67,7 +68,11 @@ func (a *App) ApplyDictationProfile(id string) error {
 }
 
 func (a *App) publishProfileLocked(selection profiles.Selection) {
+	connectionChanged := textprocessing.ConnectionChanged(a.textConfig, selection.Config)
 	a.settings, a.textConfig = selection.Settings, selection.Config
+	if connectionChanged {
+		a.releaseTextModel()
+	}
 	a.diagnostic = DiagnosticResult{}
 	a.event("setup:changed", []string{"configuration"})
 }

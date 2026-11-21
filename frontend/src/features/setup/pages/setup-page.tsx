@@ -1,18 +1,8 @@
 import { MotionReveal } from "@/components/shared/motion-reveal";
 import { Button } from "@/components/ui/button";
-import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { Progress } from "@/components/ui/progress";
 import { toastManager } from "@/components/ui/toast";
-import { ShortcutInput } from "@/features/dictation/components/shortcut-input";
-import { ShortcutStatus } from "@/features/dictation/components/shortcut-status";
 import {
-  useAudioLevel,
   useDictationActions,
   useDictationMetadata,
   useDictationStatus,
@@ -20,36 +10,56 @@ import {
   useSavedConfiguration,
   useSavedModelCatalog,
 } from "@/features/dictation/hooks/use-dictation-state";
-import { TextModelLibrary } from "@/features/models/components/text-model-library";
-import { TextModelSettings } from "@/features/models/components/text-model-settings";
-import { ModelsPage } from "@/features/models/pages/models-page";
-import { useTextRequest } from "@/features/processing/hooks/use-text-request";
-import { useMotionPreference } from "@/hooks/use-motion-preference";
 import i18n from "@/i18n";
-import { nativeText } from "@/i18n/native-text";
 import { backend, isBusy, type Microphone } from "@/lib/backend";
-import { fade } from "@/lib/motion";
+import { useLanguages } from "@/lib/languages";
 import { useSavedActions } from "@/lib/queries/saved-queries";
 import { cn } from "@/lib/utils";
+import { validateTextProcessing } from "@/lib/validation/draft-validation";
 import {
   ArrowLeft,
   ArrowRight,
+  AudioLines,
   Check,
   HardDriveDownload,
   Keyboard,
   Mic,
-  RefreshCw,
-  Square,
+  SlidersHorizontal,
+  Sparkles,
+  UserRound,
 } from "lucide-react";
-import { AnimatePresence, motion } from "motion/react";
+import { AnimatePresence } from "motion/react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Link } from "react-router";
+import { DictationPractice } from "../components/dictation-practice";
+import { GoalStep } from "../components/goal-step";
+import { MicrophoneStep, ShortcutStep } from "../components/hardware-steps";
+import { ProfileStep } from "../components/profile-step";
+import { SpeechModelStep } from "../components/speech-model-step";
+import { WorkflowStep } from "../components/workflow-step";
+import {
+  buildWorkflowConfig,
+  createWorkflowDraft,
+  defaultRecipeKind,
+  profileTextConnection,
+  uniqueProfileName,
+  type OnboardingUseCase,
+  type RecipeKind,
+  type SpeedPreference,
+} from "../lib/onboarding-draft";
 
 export function SetupPage() {
   const { t } = useTranslation();
   const savedActions = useSavedActions();
+  const languages = useLanguages();
   const steps = [
+    {
+      label: t("onboarding.step.goal"),
+      shortLabel: t("onboarding.stepShort.goal"),
+      icon: SlidersHorizontal,
+      title: t("onboarding.goalTitle"),
+      description: t("onboarding.goalDescription"),
+    },
     {
       label: t("common.speechModel"),
       shortLabel: t("modelsPage.speechShort"),
@@ -72,11 +82,25 @@ export function SetupPage() {
       description: t("setupPage.setAGlobalShortcutSoYapIs"),
     },
     {
-      label: t("promptsPage.textModel"),
-      shortLabel: t("modelsPage.textShort"),
-      icon: HardDriveDownload,
+      label: t("onboarding.step.practice"),
+      shortLabel: t("onboarding.stepShort.practice"),
+      icon: AudioLines,
+      title: t("onboarding.practiceHeading"),
+      description: t("onboarding.practiceDescription"),
+    },
+    {
+      label: t("onboarding.step.workflow"),
+      shortLabel: t("onboarding.stepShort.workflow"),
+      icon: Sparkles,
       title: t("setupPage.addTextModel"),
-      description: t("setupPage.textModelDescription"),
+      description: t("onboarding.workflowDescription"),
+    },
+    {
+      label: t("onboarding.step.profile"),
+      shortLabel: t("onboarding.stepShort.profile"),
+      icon: UserRound,
+      title: t("onboarding.profileHeading"),
+      description: t("onboarding.profileDescription"),
     },
   ];
 
@@ -90,26 +114,36 @@ export function SetupPage() {
   };
   const [navigation, setNavigation] = useState({ step: 0, direction: 1, animate: false });
   const { step } = navigation;
+  const [useCase, setUseCase] = useState<OnboardingUseCase>("everyday");
+  const [language, setLanguage] = useState(snapshot.settings.language);
+  const [preference, setPreference] = useState<SpeedPreference>("balanced");
+  const [cleanText, setCleanText] = useState(snapshot.settings.cleanText);
+  const [recipeKind, setRecipeKind] = useState<RecipeKind>("none");
+  const [basicRequested, setBasicRequested] = useState(false);
+  const [recipeEdited, setRecipeEdited] = useState(false);
+  const [workflowDraft, setWorkflowDraft] = useState(() => createWorkflowDraft("everyday"));
+  const [baseTextConfig, setBaseTextConfig] = useState(snapshot.textProcessing);
+  const [profileID] = useState(() => crypto.randomUUID());
+  const [profileName, setProfileName] = useState(() =>
+    uniqueProfileName(t("onboarding.defaultProfileName.everyday"), snapshot.dictationProfiles),
+  );
+  const [profileNameEdited, setProfileNameEdited] = useState(false);
   const [celebratedMic, setCelebratedMic] = useState(snapshot.microphoneTested);
   const [microphones, setMicrophones] = useState<Microphone[]>([]);
   const [mic, setMic] = useState(snapshot.settings.microphoneId);
   const [shortcut, setShortcut] = useState(snapshot.settings.shortcut);
   const [pending, setPending] = useState(false);
-  const textTest = useTextRequest();
-  const [testedConnection, setTestedConnection] = useState("");
-  const textConfig = snapshot.textProcessing;
-  const textConnection = `${textConfig.provider}:${textConfig.model}:${textConfig.contextLength ?? 0}`;
-  const textReady =
-    textConfig.enabled &&
-    !!textConfig.model &&
-    (textConfig.provider !== "builtin" ||
-      (snapshot.textRuntimeAvailable &&
-        !!snapshot.textModels?.some((model) => model.id === textConfig.model && model.installed)));
   const [micAttempted, setMicAttempted] = useState(false);
+  const [practiceAttempted, setPracticeAttempted] = useState(false);
+  const [practiceCompletedKey, setPracticeCompletedKey] = useState("");
+  const [continueAfterPreview, setContinueAfterPreview] = useState<{ animate: boolean } | null>(
+    null,
+  );
   const stepHeading = useRef<HTMLHeadingElement>(null);
   const footer = useRef<HTMLElement>(null);
   const microphoneRequest = useRef(0);
   const notifiedModelPath = useRef<string | null>(null);
+
   const refreshMicrophones = useCallback(async () => {
     const request = ++microphoneRequest.current;
     try {
@@ -119,27 +153,85 @@ export function SetupPage() {
       if (request === microphoneRequest.current) throw cause;
     }
   }, []);
-  const testing = snapshot.status.phase === "mic-test";
-  const busy = isBusy(snapshot.status.phase) || textTest.pending;
+
+  const busy = isBusy(snapshot.status.phase);
+  const textReady = !!(
+    baseTextConfig.enabled &&
+    baseTextConfig.model &&
+    (baseTextConfig.provider !== "builtin" ||
+      (snapshot.textRuntimeAvailable &&
+        snapshot.textModels?.some((model) => model.id === baseTextConfig.model && model.installed)))
+  );
+  const micPassed = snapshot.microphoneTested && mic === snapshot.settings.microphoneId;
+  const shortcutPassed =
+    snapshot.shortcutTested &&
+    shortcut === snapshot.settings.shortcut &&
+    !snapshot.status.shortcutError;
+  const speechSettingsKey = [
+    snapshot.settings.whisperPath,
+    snapshot.settings.modelPath,
+    snapshot.settings.microphoneId,
+    snapshot.settings.language,
+    snapshot.settings.cleanText,
+  ].join("\u0000");
+  const practiceCompleted =
+    practiceCompletedKey === speechSettingsKey &&
+    snapshot.diagnostic.phase === "done" &&
+    !!snapshot.diagnostic.transcript.trim();
+  const dictationReady = snapshot.ready && micPassed && shortcutPassed && practiceCompleted;
+  const trimmedName = profileName.trim();
+  const nameError = !trimmedName
+    ? t("onboarding.profileNameRequired")
+    : [...profileName].length > 60 || /[\r\n\0]/.test(profileName)
+      ? t("onboarding.profileNameInvalid")
+      : trimmedName.toLowerCase() === "default" ||
+          snapshot.dictationProfiles?.some(
+            (profile) => profile.name.trim().toLowerCase() === trimmedName.toLowerCase(),
+          )
+        ? t("onboarding.profileNameExists")
+        : "";
+  const effectiveKind: RecipeKind = textReady && !basicRequested ? recipeKind : "none";
+  const workflowValidation =
+    textReady && recipeKind !== "none"
+      ? validateTextProcessing(buildWorkflowConfig(baseTextConfig, workflowDraft, recipeKind, true))
+      : "";
+  const currentSpeechModel = snapshot.models.find(
+    (model) => model.path && model.path === snapshot.settings.modelPath,
+  );
+  const currentTextModelName =
+    baseTextConfig.provider === "builtin"
+      ? (snapshot.textModels?.find((model) => model.id === baseTextConfig.model)?.name ??
+        baseTextConfig.model)
+      : baseTextConfig.model;
+  const trialProcessing = step === 5 && snapshot.status.phase === "text-processing";
+
+  useEffect(() => {
+    setBaseTextConfig(snapshot.textProcessing);
+  }, [snapshot.textProcessing]);
   useEffect(() => {
     const element = footer.current;
     if (!element) return;
-    const updateHeight = () => {
-      document.documentElement.style.setProperty(
-        "--setup-footer-height",
-        `${element.getBoundingClientRect().height}px`,
-      );
+    let frame = 0;
+    const measure = () => {
+      const height = `${element.getBoundingClientRect().height}px`;
+      if (document.documentElement.style.getPropertyValue("--setup-footer-height") !== height)
+        document.documentElement.style.setProperty("--setup-footer-height", height);
     };
-    updateHeight();
-    const observer = new ResizeObserver(updateHeight);
+    const schedule = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(measure);
+    };
+    measure();
+    const observer = new ResizeObserver(schedule);
     observer.observe(element);
     return () => {
+      cancelAnimationFrame(frame);
       observer.disconnect();
       document.documentElement.style.removeProperty("--setup-footer-height");
     };
   }, []);
   useEffect(() => {
-    setMicrophoneTestVisible(step === 1);
+    setMicrophoneTestVisible(step === 2);
     return () => setMicrophoneTestVisible(false);
   }, [step, setMicrophoneTestVisible]);
   useEffect(() => {
@@ -148,14 +240,13 @@ export function SetupPage() {
       return;
     }
     if (
-      step !== 0 ||
+      step !== 1 ||
       busy ||
       snapshot.status.phase === "error" ||
       notifiedModelPath.current === snapshot.settings.modelPath
     )
       return;
     notifiedModelPath.current = snapshot.settings.modelPath;
-    // Reuse the download notification so setup never shows two success toasts.
     toastManager.add({
       id: "speech-model-download",
       type: "success",
@@ -164,21 +255,32 @@ export function SetupPage() {
     });
   }, [snapshot.ready, snapshot.settings.modelPath, snapshot.status.phase, step, busy]);
   useEffect(() => {
-    if (step === 1) void run(refreshMicrophones, false);
+    const requests = microphoneRequest;
+    if (step === 2) void run(refreshMicrophones, false);
     return () => {
-      microphoneRequest.current++;
+      requests.current++;
     };
-  }, [step, refreshMicrophones]); // Fetch only when this step opens.
+  }, [step, refreshMicrophones, run]); // Fetch only when this step opens.
   useEffect(() => {
     if (step > 0) stepHeading.current?.focus();
   }, [step]);
-  const options = [
-    { value: "", label: t("settingsPage.systemDefault") },
-    ...microphones.map((device) => ({ value: device.id, label: device.name })),
-    ...(mic && !microphones.some((device) => device.id === mic)
-      ? [{ value: mic, label: t("settingsPage.selectedMicrophoneDisconnected") }]
-      : []),
-  ];
+  useEffect(() => {
+    if (
+      practiceAttempted &&
+      snapshot.diagnostic.phase === "done" &&
+      snapshot.diagnostic.transcript.trim() &&
+      !isBusy(snapshot.status.phase)
+    ) {
+      setPracticeCompletedKey(speechSettingsKey);
+      setPracticeAttempted(false);
+    }
+  }, [practiceAttempted, snapshot.diagnostic, snapshot.status.phase, speechSettingsKey]);
+  useEffect(() => {
+    if (!continueAfterPreview || step !== 5 || busy || pending) return;
+    setContinueAfterPreview(null);
+    setNavigation({ step: 6, direction: 1, animate: continueAfterPreview.animate });
+  }, [continueAfterPreview, step, busy, pending]);
+
   async function action(work: () => Promise<unknown>) {
     setPending(true);
     try {
@@ -187,42 +289,131 @@ export function SetupPage() {
       setPending(false);
     }
   }
-  const micPassed = snapshot.microphoneTested && mic === snapshot.settings.microphoneId;
-  const shortcutPassed =
-    snapshot.shortcutTested &&
-    shortcut === snapshot.settings.shortcut &&
-    !snapshot.status.shortcutError;
-  const dictationReady = snapshot.ready && micPassed && shortcutPassed;
-  const completed = [snapshot.ready, micPassed, shortcutPassed, textReady];
+  function navigate(next: number, direction: number, animate: boolean) {
+    setNavigation({ step: next, direction, animate });
+  }
+  function changeUseCase(value: OnboardingUseCase) {
+    setUseCase(value);
+    setBasicRequested(false);
+    setRecipeKind(defaultRecipeKind(value));
+    if (!recipeEdited) setWorkflowDraft(createWorkflowDraft(value));
+    if (!profileNameEdited)
+      setProfileName(
+        uniqueProfileName(t(`onboarding.defaultProfileName.${value}`), snapshot.dictationProfiles),
+      );
+  }
+  function startPractice() {
+    setPracticeAttempted(true);
+    setPracticeCompletedKey("");
+  }
+  function finish(basic = false) {
+    if (!dictationReady || nameError || pending || busy) return;
+    const kind = basic ? "none" : effectiveKind;
+    const config = buildWorkflowConfig(
+      baseTextConfig,
+      workflowDraft,
+      kind,
+      !basic && !basicRequested && textReady,
+    );
+    void action(() =>
+      savedActions.completeOnboarding(
+        {
+          id: profileID,
+          name: trimmedName,
+          modelPath: snapshot.settings.modelPath,
+          language: snapshot.settings.language,
+          cleanText: snapshot.settings.cleanText,
+          autoPromptId: config.autoPromptId,
+          textModel: profileTextConnection(config),
+        },
+        config,
+      ),
+    );
+  }
+  function next(animate: boolean) {
+    if (step === 1) {
+      void action(async () => {
+        if (language !== snapshot.settings.language || cleanText !== snapshot.settings.cleanText)
+          await savedActions.settings({ ...snapshot.settings, language, cleanText });
+        navigate(2, 1, animate);
+      });
+      return;
+    }
+    navigate(step + 1, 1, animate);
+  }
+
+  const completed = [
+    true,
+    snapshot.ready,
+    micPassed,
+    shortcutPassed,
+    practiceCompleted,
+    !workflowValidation,
+    !nameError,
+  ];
   const canContinue = completed[step];
-  const guidance = canContinue
-    ? step === steps.length - 1
-      ? t("setupPage.everythingIsReadyLetSStartDictating")
-      : t("setupPage.upNext", { step: steps[step + 1].label.toLowerCase() })
+  const guidance = trialProcessing
+    ? t("onboarding.trialBusyGuidance")
     : step === 0
-      ? t("setupPage.downloadOrSelectAModelToContinue")
+      ? t("onboarding.goalSelection", {
+          language: languages.find((item) => item.value === language)?.label ?? language,
+          preference: t(`onboarding.preference.${preference}`),
+        })
       : step === 1
-        ? t("setupPage.testYourMicrophoneToContinue")
-        : step === 3
-          ? t("setupPage.textModelOptionalHelp")
-          : shortcut !== snapshot.settings.shortcut
-            ? t("setupPage.applyYourShortcutThenPressItOnce")
-            : t("setupPage.pressYourShortcutOnceToFinishSetup");
+        ? snapshot.ready
+          ? t("onboarding.speechReadyGuidance")
+          : t("setupPage.downloadOrSelectAModelToContinue")
+        : step === 2
+          ? micPassed
+            ? t("onboarding.microphoneReadyGuidance")
+            : t("setupPage.testYourMicrophoneToContinue")
+          : step === 3
+            ? shortcutPassed
+              ? t("onboarding.shortcutReadyGuidance")
+              : shortcut !== snapshot.settings.shortcut
+                ? t("setupPage.applyYourShortcutThenPressItOnce")
+                : t("setupPage.pressYourShortcutOnceToFinishSetup")
+            : step === 4
+              ? practiceCompleted
+                ? t("onboarding.practiceReadyGuidance")
+                : t("onboarding.practiceGuidance")
+              : step === 5
+                ? t("onboarding.continueGuidance")
+                : step === 6
+                  ? t("onboarding.finishGuidance")
+                  : t("onboarding.continueGuidance");
+
+  function continueFromWorkflow(animate: boolean) {
+    if (!canContinue || pending) return;
+    if (busy) {
+      setContinueAfterPreview({ animate });
+      return;
+    }
+    navigate(6, 1, animate);
+  }
+
   return (
-    <div className="@container/setup flex min-h-[calc(100dvh-2rem)] flex-col gap-8">
-      <header className="flex flex-wrap items-center justify-between gap-4">
-        <div>
+    <div className="@container/setup flex min-h-[calc(100dvh-2rem)] flex-col gap-7">
+      <header className="flex flex-col gap-4">
+        <div className="flex flex-wrap items-center justify-between gap-4">
           <h1 className="text-3xl font-semibold tracking-tight">{t("setupPage.setUpYap")}</h1>
+          <p className="text-xs text-muted-foreground">
+            {t("onboarding.progress", { current: step + 1, total: steps.length })}
+          </p>
         </div>
+        <Progress
+          aria-label={t("setupPage.setupSteps")}
+          value={((step + 1) / steps.length) * 100}
+        />
         <ol
           aria-label={t("setupPage.setupSteps")}
-          className="grid min-w-0 grid-cols-4 gap-2 @min-[40rem]/setup:grid-cols-[repeat(4,auto)] @min-[40rem]/setup:gap-3"
+          className="grid min-w-0 grid-cols-7 gap-1 @min-[48rem]/setup:gap-2"
         >
           {steps.map(({ label, shortLabel, icon: Icon }, index) => (
             <li
               key={label}
               aria-current={index === step ? "step" : undefined}
-              className="flex min-w-0 flex-col gap-3 p-1 @min-[40rem]/setup:flex-row @min-[40rem]/setup:items-center @min-[40rem]/setup:p-3"
+              className="flex min-w-0 flex-col items-center gap-2 p-1 text-center"
             >
               <span
                 className={cn(
@@ -233,27 +424,23 @@ export function SetupPage() {
                 )}
               >
                 {index < step && completed[index] ? (
-                  <Check className="size-4" aria-hidden="true" />
+                  <Check aria-hidden="true" />
                 ) : (
-                  <Icon className="size-4" aria-hidden="true" />
+                  <Icon aria-hidden="true" />
                 )}
               </span>
-              <div className="min-w-0">
-                <p
-                  className={cn(
-                    "text-xs font-medium @min-[40rem]/setup:text-sm",
-                    index !== step && "text-muted-foreground",
-                  )}
-                >
-                  <span className="hidden @min-[40rem]/setup:inline">
-                    <span className="mr-1 tabular-nums">{index + 1}.</span> {label}
-                  </span>
-                  <span className="@min-[40rem]/setup:hidden">{shortLabel}</span>
-                  {index < step && completed[index] && (
-                    <span className="sr-only">{t("setupPage.complete")}</span>
-                  )}
-                </p>
-              </div>
+              <p
+                className={cn(
+                  "max-w-full text-xs font-medium [overflow-wrap:anywhere]",
+                  index !== step && "text-muted-foreground",
+                )}
+              >
+                <span className="hidden @min-[48rem]/setup:inline">{label}</span>
+                <span className="sr-only @min-[48rem]/setup:hidden">{shortLabel}</span>
+                {index < step && completed[index] && (
+                  <span className="sr-only">{t("setupPage.complete")}</span>
+                )}
+              </p>
             </li>
           ))}
         </ol>
@@ -276,317 +463,161 @@ export function SetupPage() {
           instant={!navigation.animate}
           className="min-w-0 pb-[calc(var(--setup-footer-height,5rem)+1rem)]"
         >
-          {step === 0 && <ModelsPage embedded />}
-          {step === 3 && (
-            <section aria-label={t("setupPage.textModelSetup")} className="space-y-6">
-              <TextModelLibrary embedded disabled={pending} />
-              {textReady && (
-                <section className="rounded-xl border bg-card px-5">
-                  {textConfig.provider === "builtin" ? (
-                    <TextModelSettings
-                      value={textConfig}
-                      disabled={busy || pending}
-                      showModelPicker={false}
-                      onChange={(value) =>
-                        void action(() => savedActions.textProcessing({ ...textConfig, ...value }))
-                      }
-                    />
-                  ) : (
-                    <p className="py-4 text-sm text-muted-foreground">
-                      {t("setupPage.externalTextModelReady", { model: textConfig.model })}
-                    </p>
-                  )}
-                  <div className="space-y-2 border-t py-4">
-                    {textTest.pending ? (
-                      <Button variant="outline" size="sm" onClick={() => void textTest.cancel()}>
-                        {t("promptsPage.cancelTest")}
-                      </Button>
-                    ) : (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        disabled={busy || pending}
-                        onClick={() => {
-                          setTestedConnection(textConnection);
-                          void textTest.request(backend.testTextModel);
-                        }}
-                      >
-                        {t("promptsPage.testModel")}
-                      </Button>
-                    )}
-                    <p
-                      role={
-                        textTest.error && testedConnection === textConnection ? "alert" : "status"
-                      }
-                      className="text-xs leading-5 text-muted-foreground"
-                    >
-                      {textTest.pending
-                        ? t("promptsPage.testingModel")
-                        : testedConnection === textConnection && textTest.error
-                          ? nativeText(textTest.error)
-                          : testedConnection === textConnection && textTest.result
-                            ? t("promptsPage.modelRespondedSuccessfully")
-                            : t("textModels.firstLoad")}
-                    </p>
-                  </div>
-                </section>
-              )}
-            </section>
+          {step === 0 && (
+            <GoalStep
+              useCase={useCase}
+              language={language}
+              preference={preference}
+              cleanText={cleanText}
+              disabled={busy || pending}
+              onUseCase={changeUseCase}
+              onLanguage={setLanguage}
+              onPreference={setPreference}
+              onCleanText={setCleanText}
+            />
           )}
           {step === 1 && (
-            <section
-              aria-label={t("setupPage.microphoneSetup")}
-              className="grid overflow-hidden rounded-2xl border bg-card lg:grid-cols-2"
-            >
-              <div className="space-y-5 p-5 sm:p-7">
-                <div className="flex items-center gap-3">
-                  <span className="flex size-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
-                    <Mic className="size-5" aria-hidden="true" />
-                  </span>
-                  <h3 className="font-semibold">{t("setupPage.testYourMicrophone")}</h3>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="setup-microphone">{t("settingsPage.microphone")}</Label>
-                  <div className="flex gap-2">
-                    <Select
-                      items={options}
-                      value={mic}
-                      disabled={busy || pending}
-                      onValueChange={(value) => {
-                        if (value !== null) {
-                          setMic(value);
-                          setMicAttempted(false);
-                        }
-                      }}
-                    >
-                      <SelectTrigger
-                        id="setup-microphone"
-                        className="data-[size=default]:h-11 w-full"
-                      >
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent alignItemWithTrigger={false}>
-                        {options.map((option) => (
-                          <SelectItem key={option.value} value={option.value}>
-                            {option.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <Button
-                      variant="outline"
-                      size="icon"
-                      aria-label={t("settingsPage.refreshMicrophones")}
-                      disabled={busy || pending}
-                      onClick={() => void action(refreshMicrophones)}
-                    >
-                      <RefreshCw className="size-4" />
-                    </Button>
-                  </div>
-                </div>
-                <p className="text-sm text-muted-foreground">
-                  {t("setupPage.speakForAFewSecondsTestAudio")}
-                </p>
-                <Button
-                  pressFeedback
-                  className="rounded-lg"
-                  variant={testing ? "outline" : "default"}
-                  disabled={pending || (busy && !testing)}
-                  onClick={() =>
-                    void action(async () => {
-                      if (testing) return backend.stopMicTest();
-                      if (mic !== snapshot.settings.microphoneId)
-                        await savedActions.settings({
-                          ...snapshot.settings,
-                          microphoneId: mic,
-                        });
-                      setMicAttempted(true);
-                      await backend.testMic();
-                    })
-                  }
-                >
-                  {testing ? (
-                    <Square className="size-3.5" aria-hidden="true" />
-                  ) : (
-                    <Mic className="size-4" aria-hidden="true" />
-                  )}
-                  {testing
-                    ? t("setupPage.stopTest")
-                    : micPassed
-                      ? t("uiPolish.testAgain")
-                      : t("setupPage.testMicrophone")}
-                </Button>
-                <p className="text-xs leading-5 text-muted-foreground">
-                  {t("setupPage.youCanAlsoTestTranscriptionIn")}{" "}
-                  <Link className="text-primary underline underline-offset-4" to="/settings">
-                    {t("setupPage.dictationDiagnosticsInSettings")}
-                  </Link>
-                  .
-                </p>
-              </div>
-              <div className="flex flex-col items-center justify-center gap-5 border-t bg-muted/20 px-5 py-8 sm:px-7 lg:border-t-0 lg:border-l">
-                <span
-                  className={cn(
-                    "relative flex size-16 items-center justify-center rounded-2xl border",
-                    testing || micPassed
-                      ? "border-primary/20 bg-primary/10 text-primary"
-                      : "bg-background text-muted-foreground",
-                  )}
-                >
-                  {micPassed && !testing ? (
-                    <MicrophoneSuccess celebrated={celebratedMic} onCelebrate={setCelebratedMic} />
-                  ) : (
-                    <Mic className="size-7" aria-hidden="true" />
-                  )}
-                </span>
-                {testing && <MicrophoneLevelMeter />}
-                <div className="text-center">
-                  <p
-                    role="status"
-                    className={cn("text-sm font-medium", micPassed && !testing && "text-primary")}
-                  >
-                    {testing
-                      ? t("setupPage.listening")
-                      : micPassed
-                        ? t("uiPolish.lastMicrophoneTestPassed")
-                        : t("setupPage.readyToTest")}
-                  </p>
-                  <p className="mt-2 text-xs leading-5 text-muted-foreground">
-                    {testing
-                      ? nativeText(snapshot.status.message)
-                      : micPassed
-                        ? t("setupPage.yourMicrophoneIsReadyYouCanContinue")
-                        : micAttempted
-                          ? t("setupPage.checkYourMicrophoneAccessOrTryAnother")
-                          : t("setupPage.startTheTestThenSayAFew")}
-                  </p>
-                </div>
-              </div>
-            </section>
+            <SpeechModelStep
+              models={snapshot.models}
+              settings={snapshot.settings}
+              language={language}
+              preference={preference}
+              cleanText={cleanText}
+              ready={snapshot.ready}
+              disabled={busy || pending}
+            />
           )}
           {step === 2 && (
-            <section
-              aria-label={t("setupPage.shortcutSetup")}
-              className="overflow-hidden rounded-2xl border bg-card"
-            >
-              <div className="space-y-3 bg-muted/20 px-5 py-5 text-center sm:px-7">
-                <span className="mx-auto flex size-12 items-center justify-center rounded-xl bg-primary/10 text-primary">
-                  <Keyboard className="size-6" aria-hidden="true" />
-                </span>
-                <h3 className="font-semibold">{t("setupPage.testYourShortcut")}</h3>
-                <div
-                  aria-label={t("setupPage.savedShortcut", {
-                    shortcut: snapshot.settings.shortcut,
-                  })}
-                  className="flex flex-wrap items-center justify-center gap-2"
-                >
-                  {snapshot.settings.shortcut.split("+").map((key, index) => (
-                    <span key={`${key}-${index}`} className="inline-flex items-center gap-2">
-                      {index > 0 && (
-                        <span aria-hidden="true" className="text-muted-foreground">
-                          +
-                        </span>
-                      )}
-                      <kbd className="min-w-12 rounded-lg border border-b-[3px] bg-background px-3 py-2.5 text-sm font-medium shadow-xs sm:px-4 sm:text-base">
-                        {key}
-                      </kbd>
-                    </span>
-                  ))}
-                </div>
-                <p
-                  role="status"
-                  className={cn(
-                    "flex items-center justify-center gap-2 text-sm font-medium",
-                    shortcutPassed && "text-primary",
-                  )}
-                >
-                  {shortcutPassed && <Check className="size-4" aria-hidden="true" />}
-                  {shortcutPassed
-                    ? t("setupPage.shortcutTestPassed")
-                    : t("setupPage.pressYourShortcutOnceToTestIt")}
-                </p>
-                <p className="text-xs leading-5 text-muted-foreground">
-                  {t("setupPage.thisChecksYourShortcutWithoutStartingA")}
-                </p>
-              </div>
-              <div className="space-y-4 border-t p-5 sm:p-7">
-                <div className="space-y-2">
-                  <Label htmlFor="setup-shortcut">{t("settingsPage.globalShortcut")}</Label>
-                  <div className="flex flex-wrap items-start gap-2">
-                    <div className="min-w-0 flex-1 basis-64">
-                      <ShortcutInput
-                        id="setup-shortcut"
-                        value={shortcut}
-                        disabled={busy || pending}
-                        onChange={setShortcut}
-                      />
-                    </div>
-                    {shortcut !== snapshot.settings.shortcut ? (
-                      <Button
-                        variant="outline"
-                        disabled={busy || pending || shortcut === snapshot.settings.shortcut}
-                        onClick={() =>
-                          void action(() =>
-                            savedActions.settings({ ...snapshot.settings, shortcut }),
-                          )
-                        }
-                      >
-                        {t("setupPage.applyShortcut")}
-                      </Button>
-                    ) : (
-                      <span className="inline-flex min-h-9 items-center gap-1.5 px-2 text-xs text-muted-foreground">
-                        <Check aria-hidden="true" className="size-3.5" />
-                        {t("uiPolish.saved")}
-                      </span>
-                    )}
-                  </div>
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  {t("setupPage.ctrlAltShiftSpaceAZOr")}{" "}
-                  <Link className="underline" to="/settings">
-                    {t("common.settings")}
-                  </Link>
-                  .
-                </p>
-                <ShortcutStatus disabled={busy || pending} />
-              </div>
-            </section>
+            <MicrophoneStep
+              settings={snapshot.settings}
+              status={snapshot.status}
+              microphones={microphones}
+              microphoneTested={snapshot.microphoneTested}
+              mic={mic}
+              micAttempted={micAttempted}
+              celebrated={celebratedMic}
+              pending={pending}
+              busy={busy}
+              onMic={(value) => {
+                setMic(value);
+                setMicAttempted(false);
+              }}
+              onAttempt={() => setMicAttempted(true)}
+              onCelebrate={setCelebratedMic}
+              onRefresh={refreshMicrophones}
+              onSettings={savedActions.settings}
+              action={action}
+            />
+          )}
+          {step === 3 && (
+            <ShortcutStep
+              settings={snapshot.settings}
+              status={snapshot.status}
+              shortcutTested={snapshot.shortcutTested}
+              shortcut={shortcut}
+              pending={pending}
+              busy={busy}
+              onShortcut={setShortcut}
+              onSettings={savedActions.settings}
+              action={action}
+            />
+          )}
+          {step === 4 && (
+            <DictationPractice
+              disabled={busy || pending || !snapshot.ready}
+              onStart={startPractice}
+            />
+          )}
+          {step === 5 && (
+            <WorkflowStep
+              base={baseTextConfig}
+              draft={workflowDraft}
+              kind={recipeKind}
+              preference={preference}
+              textReady={textReady}
+              runtimeAvailable={!!snapshot.textRuntimeAvailable}
+              practiceCompleted={practiceCompleted}
+              disabled={busy || pending}
+              onBaseChange={(value) =>
+                void action(() => savedActions.textProcessing({ ...baseTextConfig, ...value }))
+              }
+              onDraft={(value) => {
+                setWorkflowDraft(value);
+                setRecipeEdited(true);
+              }}
+              onKind={(value) => {
+                setBasicRequested(false);
+                setRecipeKind(value);
+              }}
+              onPracticeStart={startPractice}
+              onContinue={continueFromWorkflow}
+            />
+          )}
+          {step === 6 && (
+            <ProfileStep
+              name={profileName}
+              speechModel={
+                currentSpeechModel?.name ?? snapshot.settings.modelPath.split(/[\\/]/).pop() ?? ""
+              }
+              language={
+                languages.find((item) => item.value === snapshot.settings.language)?.label ??
+                snapshot.settings.language
+              }
+              cleanText={snapshot.settings.cleanText}
+              textModel={!basicRequested && textReady ? currentTextModelName : ""}
+              recipeKind={effectiveKind}
+              recipeName={
+                effectiveKind === "prompt" ? workflowDraft.prompt.name : workflowDraft.chain.name
+              }
+              nameError={nameError}
+              disabled={busy || pending}
+              onName={(value) => {
+                setProfileName(value);
+                setProfileNameEdited(true);
+              }}
+            />
           )}
         </MotionReveal>
       </AnimatePresence>
       <footer
         ref={footer}
-        className="sticky bottom-0 z-20 -mb-8 mt-auto flex flex-wrap items-center justify-between gap-3 border-t bg-background py-5"
+        className="sticky bottom-0 z-20 -mb-8 mt-auto flex flex-wrap items-center justify-between gap-2 border-t bg-background py-3 @min-[40rem]/setup:gap-3 @min-[40rem]/setup:py-5"
       >
-        <div className="flex items-center gap-2">
-          {step < steps.length - 1 && (
-            <Button
-              variant="ghost"
-              className="text-muted-foreground"
-              disabled={busy || pending}
-              onClick={() => void action(() => savedActions.completeSetup(true))}
-            >
-              {t("setupPage.skipSetup")}
-            </Button>
-          )}
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
           {step > 0 && (
             <Button
               variant="outline"
+              size="sm"
+              className="@min-[40rem]/setup:h-11 @min-[40rem]/setup:px-4 @min-[40rem]/setup:has-[>svg]:px-3"
               disabled={busy || pending}
-              onClick={(event) =>
-                setNavigation({ step: step - 1, direction: -1, animate: event.detail > 0 })
-              }
+              onClick={(event) => navigate(step - 1, -1, event.detail > 0)}
             >
-              <ArrowLeft className="size-3.5" aria-hidden="true" />
+              <ArrowLeft data-icon="inline-start" aria-hidden="true" />
               {t("common.back")}
             </Button>
           )}
+          {step === 5 && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-auto min-h-8 max-w-full whitespace-normal @min-[40rem]/setup:h-11 @min-[40rem]/setup:px-4"
+              disabled={busy || pending || !practiceCompleted}
+              title={t("onboarding.finishBasicHelp")}
+              onClick={(event) => {
+                setBasicRequested(true);
+                setRecipeKind("none");
+                navigate(6, 1, event.detail > 0);
+              }}
+            >
+              {t("onboarding.finishBasic")}
+            </Button>
+          )}
         </div>
-        <div className="flex flex-wrap items-center gap-3">
+        <div className="flex min-w-0 flex-wrap items-center justify-end gap-2 @min-[40rem]/setup:gap-3">
           <p
             className={cn(
               "text-xs text-muted-foreground",
-              step === 3 && "@max-[40rem]/setup:sr-only",
+              !trialProcessing && step !== 0 && "hidden @min-[40rem]/setup:block",
             )}
           >
             {guidance}
@@ -594,122 +625,45 @@ export function SetupPage() {
           {step < steps.length - 1 ? (
             <Button
               pressFeedback
-              className="disabled:bg-muted disabled:text-muted-foreground"
+              size="sm"
+              className="disabled:bg-muted disabled:text-muted-foreground @min-[40rem]/setup:h-11 @min-[40rem]/setup:px-4 @min-[40rem]/setup:has-[>svg]:px-3"
               disabled={busy || pending || !canContinue}
-              onClick={(event) =>
-                setNavigation({ step: step + 1, direction: 1, animate: event.detail > 0 })
-              }
+              onClick={(event) => next(event.detail > 0)}
             >
               {t("common.next")}
-              <ArrowRight className="size-4" aria-hidden="true" />
+              <ArrowRight data-icon="inline-end" aria-hidden="true" />
             </Button>
           ) : (
             <>
-              {!textReady && (
+              {effectiveKind !== "none" && (
                 <Button
                   variant="outline"
-                  disabled={busy || pending || !dictationReady}
-                  onClick={() =>
-                    void action(async () => {
-                      if (textConfig.enabled)
-                        await savedActions.textProcessing({
-                          ...textConfig,
-                          enabled: false,
-                          autoPromptId: "",
-                        });
-                      await savedActions.completeSetup(false);
-                    })
-                  }
+                  size="sm"
+                  className="h-auto min-h-8 max-w-full whitespace-normal @min-[40rem]/setup:h-11 @min-[40rem]/setup:px-4"
+                  disabled={busy || pending || !dictationReady || !!nameError}
+                  title={t("onboarding.finishBasicHelp")}
+                  onClick={() => finish(true)}
                 >
-                  {t("setupPage.skipTextModel")}
+                  {t("onboarding.finishBasic")}
                 </Button>
               )}
               <Button
                 pressFeedback
-                className={cn(
-                  "disabled:bg-muted disabled:text-muted-foreground",
-                  !textReady && "@max-[40rem]/setup:hidden",
-                )}
-                disabled={busy || pending || !dictationReady || !textReady}
-                onClick={() => void action(() => savedActions.completeSetup(false))}
+                size="sm"
+                className="disabled:bg-muted disabled:text-muted-foreground @min-[40rem]/setup:h-11 @min-[40rem]/setup:px-4 @min-[40rem]/setup:has-[>svg]:px-3"
+                disabled={busy || pending || !dictationReady || !!nameError}
+                title={basicRequested || !textReady ? t("onboarding.finishBasicHelp") : undefined}
+                onClick={() => finish(false)}
               >
-                {t("setupPage.finishSetup")}
-                <ArrowRight className="size-4" aria-hidden="true" />
+                {basicRequested || !textReady
+                  ? t("onboarding.finishBasic")
+                  : t("onboarding.saveActivateProfile")}
+                <ArrowRight data-icon="inline-end" aria-hidden="true" />
               </Button>
             </>
           )}
         </div>
       </footer>
-    </div>
-  );
-}
-
-function MicrophoneSuccess({
-  celebrated,
-  onCelebrate,
-}: {
-  celebrated: boolean;
-  onCelebrate: (value: boolean) => void;
-}) {
-  const reduced = useMotionPreference();
-  const [play] = useState(!celebrated);
-  useEffect(() => {
-    if (play) onCelebrate(true);
-  }, [play, onCelebrate]);
-
-  return (
-    <>
-      {play && !reduced && (
-        <motion.span
-          aria-hidden="true"
-          data-slot="setup-success-halo"
-          className="pointer-events-none absolute inset-0 rounded-2xl border border-primary/30"
-          initial={{ opacity: 0.25, transform: "scale(1)" }}
-          animate={{ opacity: 0, transform: "scale(1.35)" }}
-          transition={fade(false, 0.28)}
-        />
-      )}
-      <MotionReveal
-        preset="success"
-        from="scale(0.8)"
-        rest="scale(1)"
-        enter={play}
-        data-slot="setup-mic-success"
-      >
-        <Check className="size-7" aria-hidden="true" />
-      </MotionReveal>
-    </>
-  );
-}
-
-function MicrophoneLevelMeter() {
-  const { t } = useTranslation();
-  const level = useAudioLevel();
-  const inputLevel = Math.min(1, Math.max(0, level));
-  return (
-    <div className="w-full max-w-xs">
-      <div aria-hidden="true" className="flex h-12 items-end gap-1.5">
-        {Array.from({ length: 24 }, (_, index) => (
-          <span
-            key={index}
-            className={cn(
-              "h-full min-w-0 flex-1 rounded-sm transition-colors motion-reduce:transition-none",
-              inputLevel * 24 > index ? "bg-primary" : "bg-muted",
-            )}
-          />
-        ))}
-      </div>
-      <div className="mt-3 flex items-center justify-between text-xs text-muted-foreground">
-        <span>{t("setupPage.inputLevel")}</span>
-        <span className="tabular-nums">{`${Math.round(inputLevel * 100)}%`}</span>
-      </div>
-      <meter
-        aria-label={t("setupPage.microphoneLevel")}
-        className="sr-only"
-        min={0}
-        max={1}
-        value={level}
-      />
     </div>
   );
 }

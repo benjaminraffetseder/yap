@@ -1,5 +1,20 @@
 # Using Yap
 
+## First-time setup
+
+Choose a primary use case, spoken language, and speed/quality preference. Yap
+suggests models and settings and explains their role; review download sizes and
+adjust the choices before installing. Recommendations are starting points rather
+than measured performance guarantees for your computer.
+
+Test your microphone and shortcut, then try dictation. Optional workflow setup
+lets you edit a prompt or chain and compare a typed or dictated sample with its
+processed result. These trials do not save history, retain audio, copy, or paste.
+You can finish with basic dictation and add text processing later.
+
+Finish by naming your profile. Yap saves and activates its configuration together;
+switch profiles in **Recording options** and edit them in **Settings → Profiles**.
+
 ## Recording
 
 The default shortcut is **Ctrl+Alt+Space**. Hold it while speaking and release
@@ -69,15 +84,15 @@ are qualitative guides, and changing models remains an explicit choice.
 
 Under **Settings → Profiles**, choose **New profile** to
 start from your saved settings. Name it, then choose its speech model, spoken
-language, light cleanup, and optional **After dictation** prompt. Changes save
+language, light cleanup, text model, and optional **After dictation** prompt. Changes save
 automatically once a name and model are present. The editor opens inside the
 Profiles pane; choose **Back to profiles**, **Done**, or press Escape to return to
 the list. Closing Settings also saves valid profile edits; a failed save keeps
 the editor open so you can retry or discard the changes.
 Choose **Make active** or select it under **Recording options → Profile** on Dictate
 to activate it. You can save up to 20 additional profiles and edit or delete them
-from Settings. Yap creates and selects **Default** from your setup choices or
-existing saved settings.
+from Settings. Yap keeps a **Default** baseline from your setup choices or
+existing saved settings; the guided setup activates your new named profile.
 Default stays available and can be edited, but cannot be renamed or deleted.
 
 Saving a profile does not activate it. Switching applies all its choices together
@@ -87,12 +102,17 @@ an operation is running. A missing speech model, incompatible Moonshine language
 disabled text model, or deleted prompt must be resolved before using that profile;
 failed switches leave the previous settings in place.
 
-Automatic prompts use the shared local text model configured in Prompts. A profile
-with **No automatic processing** clears the automatic prompt while keeping that
-model available for manual use. Changing a profile's speech model, language,
-cleanup, or automatic prompt keeps its name selected. On Home, open **Recording
+New profiles remember their text model, provider, enabled state, and context
+length. The profile editor lets you choose a downloaded built-in model or an
+external local server, or capture the current text model settings. Existing
+profiles without saved text settings continue to use the current app connection
+until you choose to save one. Prompt and chain definitions remain shared.
+A profile with **No automatic processing** clears the automatic prompt while
+keeping its enabled text model available for manual use. Changing a profile's
+speech model, text connection, language, cleanup, or automatic prompt keeps its name selected.
+On Home, open **Recording
 options**, then **Modified** to show the available actions. **Restore saved choices**
-reapplies the saved profile; **Update profile…** reviews replacing its four saved
+reapplies the saved profile; **Update profile…** reviews replacing its saved
 choices; **Save as new…** saves the current choices under a unique name after explicit
 submission. Saving a new profile does not
 activate it or copy app assignments. Cancel or Escape before submission writes

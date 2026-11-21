@@ -137,9 +137,16 @@ export function TextModelLibrary({
         </div>
       )}
       <div className="@container/models overflow-hidden rounded-xl border bg-card/30">
-        <div className="hidden grid-cols-[minmax(10rem,1fr)_minmax(14rem,1.35fr)_7rem_15rem] gap-x-6 border-b bg-muted/30 px-5 py-2 text-xs font-medium text-muted-foreground @min-[54rem]/models:grid">
+        <div
+          className={cn(
+            "hidden gap-x-6 border-b bg-muted/30 px-5 py-2 text-xs font-medium text-muted-foreground @min-[54rem]/models:grid",
+            embedded
+              ? "grid-cols-[minmax(10rem,1fr)_7rem_15rem]"
+              : "grid-cols-[minmax(10rem,1fr)_minmax(14rem,1.35fr)_7rem_15rem]",
+          )}
+        >
           <span>{t("promptsPage.textModel")}</span>
-          <span>{t("textModels.formatColumn")}</span>
+          {!embedded && <span>{t("textModels.formatColumn")}</span>}
           <span>{t("modelCard.downloadSize")}</span>
           <span className="text-right">{t("uiPolish.modelActionsColumn")}</span>
         </div>
@@ -159,7 +166,14 @@ export function TextModelLibrary({
                 active && model.installed && "bg-primary/5",
               )}
             >
-              <div className="flex flex-wrap items-center gap-x-6 gap-y-2 @min-[54rem]/models:grid @min-[54rem]/models:grid-cols-[minmax(10rem,1fr)_minmax(14rem,1.35fr)_7rem_15rem]">
+              <div
+                className={cn(
+                  "flex flex-wrap items-center gap-x-6 gap-y-2 @min-[54rem]/models:grid",
+                  embedded
+                    ? "@min-[54rem]/models:grid-cols-[minmax(10rem,1fr)_7rem_15rem]"
+                    : "@min-[54rem]/models:grid-cols-[minmax(10rem,1fr)_minmax(14rem,1.35fr)_7rem_15rem]",
+                )}
+              >
                 <div className="min-w-0 flex-[1_1_15rem]">
                   <div className="flex flex-wrap items-center gap-2">
                     <h3 className="text-sm font-semibold">{model.name}</h3>
@@ -180,9 +194,11 @@ export function TextModelLibrary({
                     )}
                   </p>
                 </div>
-                <p className="min-w-0 text-xs leading-5 text-muted-foreground">
-                  {t("textModels.format")}
-                </p>
+                {!embedded && (
+                  <p className="min-w-0 text-xs leading-5 text-muted-foreground">
+                    {t("textModels.format")}
+                  </p>
+                )}
                 <p className="shrink-0 text-xs text-muted-foreground tabular-nums">
                   {t("textModels.size", {
                     size: (model.size / 1e9).toLocaleString(i18n.resolvedLanguage, {
