@@ -1,5 +1,5 @@
 import { MarkdownContent } from "@/components/shared/markdown-content";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import {
   Select,
   SelectContent,
@@ -21,7 +21,7 @@ import { nativeText } from "@/i18n/native-text";
 import { backend, isBusy, isDesktop, type HomeResult } from "@/lib/backend";
 import { homeResultQuery, resourceKeys } from "@/lib/queries/resource-queries";
 import { isCancelledError, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, Copy, Loader2, Pencil, X } from "lucide-react";
+import { ArrowUpRight, Check, Copy, Loader2, Pencil, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router";
@@ -43,6 +43,12 @@ function recoveryWarning(result: HomeResult) {
   return "";
 }
 
+function copyText(result: HomeResult, action: string) {
+  return action === "copy"
+    ? result.text
+    : result.outputs.find((output) => `copy:${output.id}` === action)?.text;
+}
+
 export function HomeResultPanel({
   fallbackFocus,
   onPresenceChange,
@@ -61,6 +67,9 @@ export function HomeResultPanel({
   const [pending, setPending] = useState(false);
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
+  const [copiedReceipt, setCopiedReceipt] = useState<{ action: string; context: string } | null>(
+    null,
+  );
   const busy = loading || isBusy(snapshot.status.phase);
   const queryClient = useQueryClient();
   const home = useQuery({ ...homeResultQuery, enabled: isDesktop && !busy && !pending });
@@ -77,6 +86,27 @@ export function HomeResultPanel({
   const reading = useRef<HTMLDivElement>(null);
   const current = useRef(result);
   const latestBusy = useRef(busy);
+  const copyRequest = useRef(0);
+  // Copy itself advances the native revision. Keep confirmation only while its
+  // text and visible context stay identical; validate the revision on reply.
+  const copyContext = useMemo(
+    () =>
+      JSON.stringify([
+        result?.session.id,
+        result?.text,
+        result?.outputs.map((output) => [output.id, output.text]),
+        visibleView,
+        !!editing,
+        busy,
+      ]),
+    [result, visibleView, editing, busy],
+  );
+  const copiedAction = copiedReceipt?.context === copyContext ? copiedReceipt.action : "";
+  const latestCopyContext = useRef(copyContext);
+  const mounted = useRef(true);
+  const actionNotice = copiedAction
+    ? t("homeResultPanel.copiedToClipboardPasteManuallyWhenReady")
+    : notice;
   const present = !!(result || fetchError || editing);
   useEffect(() => onPresenceChange?.(present), [present, onPresenceChange]);
   useEffect(() => setView("result"), [result?.session.id]);
@@ -89,6 +119,18 @@ export function HomeResultPanel({
     current.current = result;
     latestBusy.current = busy;
   }, [result, busy]);
+  useEffect(() => {
+    latestCopyContext.current = copyContext;
+    copyRequest.current += 1;
+    setCopiedReceipt(null);
+  }, [copyContext]);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      copyRequest.current += 1;
+    };
+  }, []);
 
   useEffect(() => {
     const accepted =
@@ -124,6 +166,10 @@ export function HomeResultPanel({
       return false;
     }
     actionPending.current = true;
+    const request = ++copyRequest.current;
+    const requestedContext = latestCopyContext.current;
+    const requestedText = copyText(target, action);
+    setCopiedReceipt(null);
     setPending(true);
     setError("");
     setNotice("");
@@ -165,9 +211,18 @@ export function HomeResultPanel({
         ? { ...value, saved: true, outcomes: { ...value.outcomes, history: "saved" } }
         : value,
     );
+    const confirmedCopy =
+      action.startsWith("copy") &&
+      mounted.current &&
+      request === copyRequest.current &&
+      requestedContext === latestCopyContext.current &&
+      current.current?.session.id === target.session.id &&
+      current.current?.revision === target.revision &&
+      copyText(current.current, action) === requestedText;
+    if (confirmedCopy) setCopiedReceipt({ action, context: requestedContext });
     setNotice(
       action.startsWith("copy")
-        ? t("homeResultPanel.copiedToClipboardPasteManuallyWhenReady")
+        ? ""
         : action === "edit"
           ? target.saved
             ? t("homeResultPanel.changesSavedToHistory")
@@ -198,9 +253,9 @@ export function HomeResultPanel({
   }
 
   if (!result && !fetchError && !editing)
-    return notice ? (
+    return actionNotice ? (
       <p role="status" className="text-sm text-muted-foreground">
-        {notice}
+        {actionNotice}
       </p>
     ) : null;
   const unavailable = busy || pending || fetchError;
@@ -260,6 +315,23 @@ export function HomeResultPanel({
                 ) : (
                   <span>{t("homeResultPanel.temporaryKeptInMemoryUntilTheNext")}</span>
                 )}
+                {(result.outcomes.clipboard === "complete" ||
+                  result.outcomes.paste === "requested") && (
+                  <span
+                    data-slot="home-result-receipt"
+                    className="inline-flex max-w-full flex-wrap items-center gap-x-3 gap-y-1"
+                  >
+                    {result.outcomes.clipboard === "complete" && (
+                      <span className="inline-flex items-center gap-1">
+                        <Check aria-hidden="true" className="size-3.5 shrink-0" />
+                        {t("ux.home.clipboardComplete")}
+                      </span>
+                    )}
+                    {result.outcomes.paste === "requested" && (
+                      <span>{t("ux.home.pasteRequested")}</span>
+                    )}
+                  </span>
+                )}
                 {visibleView === "result" && (
                   <span className="sr-only @min-[28rem]/home-result:not-sr-only">
                     {t("uiPolish.homeWordCount", {
@@ -281,13 +353,19 @@ export function HomeResultPanel({
                   <Button
                     size="sm"
                     variant="outline"
-                    title={t("common.copy")}
+                    title={t(copiedAction === "copy" ? "ux.home.copied" : "common.copy")}
                     className="@max-[20rem]/home-result:w-[44px] @max-[20rem]/home-result:min-w-[44px] @max-[20rem]/home-result:px-0"
                     disabled={unavailable}
                     onClick={() => void act(result, "copy")}
                   >
-                    <Copy aria-hidden="true" />
-                    <span className="@max-[20rem]/home-result:sr-only">{t("common.copy")}</span>
+                    {copiedAction === "copy" ? (
+                      <Check aria-hidden="true" data-icon="inline-start" />
+                    ) : (
+                      <Copy aria-hidden="true" data-icon="inline-start" />
+                    )}
+                    <span className="@max-[20rem]/home-result:sr-only">
+                      {t(copiedAction === "copy" ? "ux.home.copied" : "common.copy")}
+                    </span>
                   </Button>
                   <Button
                     ref={editTrigger}
@@ -313,6 +391,24 @@ export function HomeResultPanel({
                 <Button size="sm" disabled={unavailable} onClick={() => void act(result, "save")}>
                   {t("homeResultPanel.saveToHistory")}
                 </Button>
+              )}
+              {result.saved && (
+                <Link
+                  data-slot="button"
+                  to={`/history/${encodeURIComponent(result.session.id)}`}
+                  title={t("ux.home.openTranscript")}
+                  className={buttonVariants({
+                    size: "sm",
+                    variant: "ghost",
+                    className:
+                      "@max-[20rem]/home-result:w-[44px] @max-[20rem]/home-result:min-w-[44px] @max-[20rem]/home-result:px-0",
+                  })}
+                >
+                  <ArrowUpRight aria-hidden="true" data-icon="inline-start" />
+                  <span className="@max-[20rem]/home-result:sr-only">
+                    {t("ux.home.openTranscript")}
+                  </span>
+                </Link>
               )}
               <Button
                 size="icon"
@@ -457,7 +553,7 @@ export function HomeResultPanel({
           </TabsList>
           <TabsContent
             value="result"
-            className="box-content min-h-[3.5rem] flex-1 scroll-mt-24 overflow-y-auto px-5 py-4 [contain:size] @max-[20rem]/home-result:px-4 @max-[20rem]/home-result:py-[12px] @max-[12rem]/home-result:px-[16px] sm:px-7"
+            className="box-content min-h-[7rem] flex-1 scroll-mt-24 overflow-y-auto px-5 py-4 [contain:size] @max-[20rem]/home-result:px-4 @max-[20rem]/home-result:py-[12px] @max-[12rem]/home-result:px-[16px] sm:px-7"
           >
             <TranscriptContextMenu
               key={`${result.session.id}:${result.revision}`}
@@ -483,7 +579,7 @@ export function HomeResultPanel({
           </TabsContent>
           <TabsContent
             value="outputs"
-            className="box-content min-h-[3.5rem] flex-1 scroll-mt-24 space-y-7 overflow-y-auto px-5 py-4 [contain:size] @max-[20rem]/home-result:px-4 @max-[20rem]/home-result:py-[12px] @max-[12rem]/home-result:px-[16px] sm:px-7"
+            className="box-content min-h-[7rem] flex-1 scroll-mt-24 space-y-7 overflow-y-auto px-5 py-4 [contain:size] @max-[20rem]/home-result:px-4 @max-[20rem]/home-result:py-[12px] @max-[12rem]/home-result:px-[16px] sm:px-7"
           >
             {result.outputs.map((output) => (
               <article
@@ -501,15 +597,31 @@ export function HomeResultPanel({
                   <Button
                     size="sm"
                     variant="outline"
-                    aria-label={t("generatedOutputs.copyOutput")}
-                    title={t("generatedOutputs.copyOutput")}
+                    aria-label={t(
+                      copiedAction === `copy:${output.id}`
+                        ? "ux.home.copied"
+                        : "generatedOutputs.copyOutput",
+                    )}
+                    title={t(
+                      copiedAction === `copy:${output.id}`
+                        ? "ux.home.copied"
+                        : "generatedOutputs.copyOutput",
+                    )}
                     className="@max-[20rem]/home-result:w-[44px] @max-[20rem]/home-result:min-w-[44px] @max-[20rem]/home-result:px-0"
                     disabled={unavailable}
                     onClick={() => void act(result, `copy:${output.id}`)}
                   >
-                    <Copy aria-hidden="true" />
+                    {copiedAction === `copy:${output.id}` ? (
+                      <Check aria-hidden="true" data-icon="inline-start" />
+                    ) : (
+                      <Copy aria-hidden="true" data-icon="inline-start" />
+                    )}
                     <span className="@max-[20rem]/home-result:sr-only">
-                      {t("generatedOutputs.copyOutput")}
+                      {t(
+                        copiedAction === `copy:${output.id}`
+                          ? "ux.home.copied"
+                          : "generatedOutputs.copyOutput",
+                      )}
                     </span>
                   </Button>
                 </header>
@@ -524,11 +636,11 @@ export function HomeResultPanel({
           </TabsContent>
         </Tabs>
       )}
-      {!editing && (notice || error || fetchError) && (
+      {!editing && (actionNotice || error || fetchError) && (
         <div className="shrink-0 space-y-2 border-t px-5 py-3 @max-[20rem]/home-result:py-[8px] sm:px-7">
-          {notice && (
+          {actionNotice && (
             <p role="status" className="text-xs leading-5 text-muted-foreground">
-              {notice}
+              {actionNotice}
             </p>
           )}
           {error && !editing && (

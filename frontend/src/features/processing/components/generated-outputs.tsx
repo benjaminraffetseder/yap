@@ -61,18 +61,22 @@ export function GeneratedOutputs({
   onDiscuss,
   onReveal,
   onCopyTargetChange,
+  trialPromptID,
+  onTrialComplete,
 }: {
   sessionID: string;
   unavailable: boolean;
   onDiscuss?: (output: GeneratedOutput) => void;
   onReveal?: (output: GeneratedOutput, references: ChatReference[]) => void;
   onCopyTargetChange: (output: GeneratedOutput | null) => void;
+  trialPromptID?: string;
+  onTrialComplete?: () => void;
 }) {
   const { t } = useTranslation();
   const snapshot = { ...useSavedConfiguration(), status: useDictationStatus() };
   const { enabled } = snapshot.textProcessing;
   const options = processingOptions(snapshot.textProcessing);
-  const [selected, setSelected] = useState(options[0]?.value ?? "");
+  const [selected, setSelected] = useState(trialPromptID ?? options[0]?.value ?? "");
   const outputsResource = useQuery(outputsQuery(sessionID));
   const outputs = outputsResource.data ?? [];
   const loading = outputsResource.isPending || outputsResource.isFetching;
@@ -82,7 +86,20 @@ export function GeneratedOutputs({
   });
   const seenOutputs = useRef<{ sessionID: string; ids: Set<string> } | null>(null);
   const [activeOutput, setActiveOutput] = useState("");
-  const [composerOpen, setComposerOpen] = useState(false);
+  const [composerOpen, setComposerOpen] = useState(!!trialPromptID);
+  const previousTrial = useRef(trialPromptID);
+  useEffect(() => {
+    if (previousTrial.current === trialPromptID) return;
+    previousTrial.current = trialPromptID;
+    if (trialPromptID) {
+      setSelected(trialPromptID);
+      setComposerOpen(true);
+    }
+  }, [trialPromptID]);
+  function closeComposer() {
+    setComposerOpen(false);
+    if (trialPromptID) onTrialComplete?.();
+  }
   const composerTrigger = useRef<HTMLButtonElement>(null);
   const promptTrigger = useRef<HTMLButtonElement>(null);
   const [deleting, setDeleting] = useState<GeneratedOutput | null>(null);
@@ -93,9 +110,12 @@ export function GeneratedOutputs({
   // The backend saves outputs and reports activity even after navigation.
   const generation = useTextRequest({ cancelOnUnmount: false });
   useEffect(() => {
-    if (!processingOptions(snapshot.textProcessing).some((option) => option.value === selected))
+    if (
+      !trialPromptID &&
+      !processingOptions(snapshot.textProcessing).some((option) => option.value === selected)
+    )
       setSelected(processingOptions(snapshot.textProcessing)[0]?.value ?? "");
-  }, [snapshot.textProcessing, selected]);
+  }, [snapshot.textProcessing, selected, trialPromptID]);
   useEffect(() => {
     const value = outputsResource.data;
     if (!value) return;
@@ -117,6 +137,12 @@ export function GeneratedOutputs({
   const disabled = unavailable || loading || !!error || deletingNow || generation.pending;
   const modelBusy = isBusy(snapshot.status.phase);
   const canGenerate = !disabled && !modelBusy && enabled;
+  const trialUnavailable =
+    !!trialPromptID &&
+    !snapshot.textProcessing.prompts.some((prompt) => prompt.id === trialPromptID);
+  const selectedPrompt = snapshot.textProcessing.prompts.find((prompt) => prompt.id === selected);
+  const canGenerateSelected =
+    canGenerate && !trialUnavailable && options.some((option) => option.value === selected);
   async function generate(action: (id: string) => Promise<string>) {
     await generation.request(action);
   }
@@ -170,7 +196,10 @@ export function GeneratedOutputs({
       aria-label={t("generatedOutputs.generatedOutputs")}
       className="@container/outputs min-w-0 space-y-5 text-base"
     >
-      <Dialog open={composerOpen} onOpenChange={setComposerOpen}>
+      <Dialog
+        open={composerOpen}
+        onOpenChange={(open) => (open ? setComposerOpen(true) : closeComposer())}
+      >
         <DialogContent
           id="output-composer"
           initialFocus={promptTrigger}
@@ -185,8 +214,8 @@ export function GeneratedOutputs({
             className="min-w-0 space-y-4"
             onSubmit={(event) => {
               event.preventDefault();
-              if (!canGenerate || !selected) return;
-              setComposerOpen(false);
+              if (!canGenerateSelected) return;
+              closeComposer();
               void generate((id) => backend.generateOutput(id, sessionID, selected));
             }}
           >
@@ -204,10 +233,32 @@ export function GeneratedOutputs({
                 className="h-9"
               />
             </div>
+            {trialPromptID && (
+              <p
+                role={trialUnavailable ? "alert" : undefined}
+                className="text-xs leading-5 text-muted-foreground"
+              >
+                {t(
+                  trialUnavailable
+                    ? "ux.history.tryPromptUnavailable"
+                    : "ux.history.tryPromptSource",
+                )}
+              </p>
+            )}
+            {trialPromptID && selectedPrompt && !trialUnavailable && (
+              <details className="text-sm">
+                <summary className="cursor-pointer text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                  {t("promptsPage.instructions")}
+                </summary>
+                <p className="mt-2 max-h-48 overflow-y-auto whitespace-pre-wrap break-words rounded-md bg-muted/30 p-3 text-xs leading-5">
+                  {selectedPrompt.instruction}
+                </p>
+              </details>
+            )}
             {!enabled && (
               <Link
                 to="/prompts?section=models"
-                onClick={() => setComposerOpen(false)}
+                onClick={closeComposer}
                 className="block text-sm text-primary underline underline-offset-4"
               >
                 {t("generatedOutputs.setUpTextModel")}
@@ -219,13 +270,13 @@ export function GeneratedOutputs({
               </p>
             )}
             <DialogFooter>
-              <Button type="button" variant="ghost" onClick={() => setComposerOpen(false)}>
+              <Button type="button" variant="ghost" onClick={closeComposer}>
                 {t("common.cancel")}
               </Button>
               <Button
                 type="submit"
                 pressFeedback
-                disabled={!canGenerate || !selected}
+                disabled={!canGenerateSelected}
                 aria-label={
                   selectedChain
                     ? t("generatedOutputs.runChain")

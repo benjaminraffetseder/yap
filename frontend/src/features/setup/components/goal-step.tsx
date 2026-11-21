@@ -49,6 +49,12 @@ export function GoalStep({
   const languages = useLanguages();
   return (
     <FieldGroup className="gap-5">
+      <div className="rounded-lg border bg-muted/30 px-4 py-3">
+        <p className="text-sm font-medium">{t("ux.setup.basicRouteTitle")}</p>
+        <p className="mt-1 text-sm leading-6 text-muted-foreground">
+          {t("ux.setup.basicRouteHelp")}
+        </p>
+      </div>
       <FieldSet disabled={disabled}>
         <FieldLegend>{t("onboarding.primaryUseCase")}</FieldLegend>
         <FieldDescription>{t("onboarding.primaryUseCaseHelp")}</FieldDescription>
@@ -102,7 +108,7 @@ export function GoalStep({
               </SelectGroup>
             </SelectContent>
           </Select>
-          <FieldDescription>{t("onboarding.languageHelp")}</FieldDescription>
+          <FieldDescription>{t("ux.setup.languageHelp")}</FieldDescription>
         </Field>
         <FieldSet disabled={disabled}>
           <FieldLegend variant="label">{t("onboarding.speedOrQuality")}</FieldLegend>

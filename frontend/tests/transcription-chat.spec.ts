@@ -299,6 +299,31 @@ async function selectFirstPassage(page: Page) {
   await page.getByRole("menuitem", { name: "Ask about selection", exact: true }).click();
 }
 
+test("chat starters create editable drafts without sending or replacing existing text", async ({
+  page,
+}) => {
+  await scenario(page);
+  await openChat(page);
+  const chat = page.getByRole("region", { name: "Chat", exact: true });
+  const composer = chat.getByRole("textbox", { name: "Message", exact: true });
+  const starters = chat.getByRole("group", { name: "Suggested requests", exact: true });
+  await expect(starters.getByRole("button")).toHaveCount(3);
+  await starters.getByRole("button", { name: "Extract action items", exact: true }).click();
+  await expect(composer).toBeFocused();
+  await expect(composer).toHaveValue(/Extract the action items/);
+  expect(await page.evaluate(() => Reflect.get(window, "chatTest").calls)).toHaveLength(0);
+  await expect(starters).toHaveCount(0);
+  await composer.fill("Only list tasks for Alex.");
+  await chat.getByRole("button", { name: "Close chat", exact: true }).click();
+  await openChat(page);
+  await expect(composer).toHaveValue("Only list tasks for Alex.");
+  await expect(starters).toHaveCount(0);
+  await chat.getByRole("button", { name: "Send", exact: true }).click();
+  expect(await page.evaluate(() => Reflect.get(window, "chatTest").calls[0].message)).toBe(
+    "Only list tasks for Alex.",
+  );
+});
+
 test("saved chat queries and sends run while internet is offline", async ({ page, context }) => {
   await scenario(page);
   await context.setOffline(true);

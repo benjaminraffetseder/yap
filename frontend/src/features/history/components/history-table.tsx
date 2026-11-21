@@ -9,7 +9,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { DictationPreview } from "@/features/history/components/dictation-preview";
-import i18n from "@/i18n";
+import { HistoryDate } from "@/features/history/components/history-date";
 import { duration, type HistorySortColumn, type Session } from "@/lib/backend";
 import { cn } from "@/lib/utils";
 import { ArrowDown, ArrowUp, ArrowUpDown } from "lucide-react";
@@ -104,7 +104,10 @@ export function HistoryTable({
           className="relative z-10 bg-card shadow-[inset_0_-1px_0_var(--border)]"
         >
           <TableRow>
-            <TableHead scope="col" className="w-10 px-3 lg:w-12 lg:px-4">
+            <TableHead
+              scope="col"
+              className="w-9 pl-3 lg:w-10 lg:pl-4 [&:has([role=checkbox])]:pr-2"
+            >
               {selectAll}
             </TableHead>
             {columns.map(({ key, label }) => {
@@ -209,7 +212,7 @@ export function HistoryTable({
                   if (selectionActive && event.shiftKey) event.preventDefault();
                 }}
               >
-                <TableCell className="px-3 lg:px-4">
+                <TableCell className="pt-[1.125rem] pl-3 align-top lg:pl-4 [&:has([role=checkbox])]:pr-2">
                   <Checkbox
                     aria-label={t("historyPage.selectDictation", { index: index + 1 })}
                     checked={isSelected(entry)}
@@ -219,7 +222,7 @@ export function HistoryTable({
                 </TableCell>
                 <TableCell className={cn("max-w-0 whitespace-normal", fading)}>
                   {deleted ? (
-                    <div className="flex flex-col gap-1 py-1.5">
+                    <div className="flex flex-col gap-0.5 py-1.5">
                       <DictationPreview entry={entry} query={query} />
                       {daysLeft !== null && (
                         <p className="text-xs leading-5 text-muted-foreground [overflow-wrap:anywhere]">
@@ -234,7 +237,7 @@ export function HistoryTable({
                       onClick={(event) => {
                         if (disabled) event.preventDefault();
                       }}
-                      className="flex flex-col gap-1 rounded-sm py-1.5 outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      className="flex flex-col gap-0.5 rounded-sm py-1.5 outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     >
                       <DictationPreview entry={entry} query={query} />
                     </Link>
@@ -260,23 +263,5 @@ export function HistoryTable({
         </TableBody>
       </Table>
     </div>
-  );
-}
-
-function HistoryDate({ value }: { value?: string }) {
-  const { t } = useTranslation();
-  if (!value || Number.isNaN(Date.parse(value))) return t("historyPage.unknownDate");
-  const date = new Date(value);
-  const language = i18n.resolvedLanguage;
-  return (
-    <time
-      dateTime={value}
-      title={date.toLocaleString(language, {
-        dateStyle: "medium",
-        timeStyle: "short",
-      })}
-    >
-      {date.toLocaleDateString(language, { dateStyle: "medium" })}
-    </time>
   );
 }

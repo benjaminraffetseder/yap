@@ -91,6 +91,14 @@ export function ModelsPage({ embedded = false }: { embedded?: boolean }) {
     });
   const diskBytes = models.reduce((sum, model) => sum + (model.diskBytes ?? 0), 0);
   const installedCount = models.filter((model) => model.installed).length;
+  const installedTextCount = (snapshot.textModels ?? []).filter((model) => model.installed).length;
+  const libraryBytes =
+    diskBytes + (snapshot.textModels ?? []).reduce((sum, model) => sum + (model.diskBytes ?? 0), 0);
+  const librarySize = new Intl.NumberFormat(locale, {
+    style: "unit",
+    unit: libraryBytes >= 1_000_000_000 ? "gigabyte" : "megabyte",
+    maximumFractionDigits: 1,
+  }).format(libraryBytes / (libraryBytes >= 1_000_000_000 ? 1_000_000_000 : 1_000_000));
   const onlyDownloaded =
     catalogScope === "downloaded" ||
     (catalogScope === null && !embedded && installedCount > 0 && !downloadingModelId);
@@ -223,12 +231,10 @@ export function ModelsPage({ embedded = false }: { embedded?: boolean }) {
             aria-label={t("modelsPage.modelStorage")}
             className="text-xs text-muted-foreground tabular-nums"
           >
-            {installedCount + (snapshot.textModels ?? []).filter((model) => model.installed).length}{" "}
-            {t("modelsPage.downloaded")} ·{" "}
-            {megabytes(
-              diskBytes +
-                (snapshot.textModels ?? []).reduce((sum, model) => sum + (model.diskBytes ?? 0), 0),
-            )}
+            {t("ux.models.libraryStorage", {
+              count: installedCount + installedTextCount,
+              size: librarySize,
+            })}
           </p>
         </PageHeading>
       )}
@@ -254,6 +260,9 @@ export function ModelsPage({ embedded = false }: { embedded?: boolean }) {
               {t("modelsPage.speechModels")}
             </span>
             <span className="@min-[30rem]/model-page:hidden">{t("modelsPage.speechShort")}</span>
+            <span aria-hidden="true" className="text-xs tabular-nums opacity-75">
+              {installedCount}
+            </span>
           </TabsPrimitive.Tab>
           <TabsPrimitive.Tab
             value="text"
@@ -271,6 +280,9 @@ export function ModelsPage({ embedded = false }: { embedded?: boolean }) {
               {t("modelsPage.textModels")}
             </span>
             <span className="@min-[30rem]/model-page:hidden">{t("modelsPage.textShort")}</span>
+            <span aria-hidden="true" className="text-xs tabular-nums opacity-75">
+              {installedTextCount}
+            </span>
           </TabsPrimitive.Tab>
         </TabsPrimitive.List>
       )}

@@ -843,45 +843,11 @@ export function SettingsPage({
                         </SelectContent>
                       </Select>
                     </SettingRow>
-                    <SettingRow
-                      title={t("settingsPage.cycleProfilesShortcut")}
-                      htmlFor="profile-cycle-shortcut"
-                      description={t("uiPolish.profileShortcutHelp")}
-                    >
-                      <ShortcutInput
-                        id="profile-cycle-shortcut"
-                        recordLabel={t("settingsPage.recordProfileShortcut")}
-                        value={profileShortcut}
-                        disabled={controlsDisabled}
-                        onChange={setProfileShortcut}
-                      />
-                      <ShortcutStatus profile disabled={controlsDisabled} />
-                      <details className="mt-2 text-xs leading-5 text-muted-foreground">
-                        <summary className="cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-ring">
-                          {t("uiPolish.profileCyclingDetails")}
-                        </summary>
-                        <p className="mt-2">
-                          {t("settingsPage.optionalSwitchesToTheNextAvailableProfile")}
-                        </p>
-                      </details>
-                    </SettingRow>
                   </SettingsSection>
                   <SettingsSection
                     title={t("settingsPage.textDelivery")}
                     icon={<Type aria-hidden="true" className="size-4 text-muted-foreground" />}
                   >
-                    <ToggleSetting
-                      title={t("settingsPage.lightCleanup")}
-                      indicator={
-                        <ProfileSettingIndicator field="cleanText" value={settings.cleanText} />
-                      }
-                      description={t(
-                        "settingsPage.fixSpacingCapitalizationAndPunctuationRemoveCommon",
-                      )}
-                      checked={settings.cleanText}
-                      disabled={controlsDisabled}
-                      onCheckedChange={(cleanText) => setSettings((old) => ({ ...old, cleanText }))}
-                    />
                     <ToggleSetting
                       title={t("settingsPage.copyAutomaticallyToClipboard")}
                       description={t("settingsPage.copyCompletedDictationToTheClipboardWhen")}
@@ -896,6 +862,18 @@ export function SettingsPage({
                       disabled={controlsDisabled || !settings.autoCopy}
                       onCheckedChange={(autoPaste) => setSettings((old) => ({ ...old, autoPaste }))}
                     />
+                    <ToggleSetting
+                      title={t("settingsPage.lightCleanup")}
+                      indicator={
+                        <ProfileSettingIndicator field="cleanText" value={settings.cleanText} />
+                      }
+                      description={t(
+                        "settingsPage.fixSpacingCapitalizationAndPunctuationRemoveCommon",
+                      )}
+                      checked={settings.cleanText}
+                      disabled={controlsDisabled}
+                      onCheckedChange={(cleanText) => setSettings((old) => ({ ...old, cleanText }))}
+                    />
                     <div className="flex flex-wrap items-center justify-between gap-3 py-4">
                       <span className="text-sm text-muted-foreground">
                         {t("settingsPage.lLMInstructionsAndGeneratedOutputs")}
@@ -908,6 +886,37 @@ export function SettingsPage({
                       </Link>
                     </div>
                   </SettingsSection>
+                  <details
+                    data-slot="profile-shortcut-options"
+                    open={!!snapshot.status.profileShortcutError || undefined}
+                    className="rounded-xl border bg-card"
+                  >
+                    <summary className="cursor-pointer px-5 py-4 text-sm font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                      {t("ux.settings.profileShortcuts")}
+                      {profileShortcut && (
+                        <kbd className="ml-3 text-xs text-muted-foreground">{profileShortcut}</kbd>
+                      )}
+                    </summary>
+                    <div className="border-t px-5">
+                      <SettingRow
+                        title={t("settingsPage.cycleProfilesShortcut")}
+                        htmlFor="profile-cycle-shortcut"
+                        description={t("uiPolish.profileShortcutHelp")}
+                      >
+                        <ShortcutInput
+                          id="profile-cycle-shortcut"
+                          recordLabel={t("settingsPage.recordProfileShortcut")}
+                          value={profileShortcut}
+                          disabled={controlsDisabled}
+                          onChange={setProfileShortcut}
+                        />
+                        <ShortcutStatus profile disabled={controlsDisabled} />
+                        <p className="mt-2 text-xs leading-5 text-muted-foreground">
+                          {t("settingsPage.optionalSwitchesToTheNextAvailableProfile")}
+                        </p>
+                      </SettingRow>
+                    </div>
+                  </details>
                 </fieldset>
                 <div className="flex flex-wrap items-center justify-between gap-3 pt-1 text-xs leading-5 text-muted-foreground">
                   <span>{t("settingsPage.saveDifferentChoicesForDifferentTasksOr")}</span>

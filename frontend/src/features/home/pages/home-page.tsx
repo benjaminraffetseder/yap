@@ -430,6 +430,22 @@ export function HomePage() {
                 }
               />
             </div>
+            {ready && settings.shortcut && (
+              <p
+                data-slot="home-shortcut-guidance"
+                className="flex min-w-0 basis-full items-start gap-2 text-xs leading-5 text-muted-foreground [overflow-wrap:anywhere]"
+              >
+                <Keyboard aria-hidden="true" className="mt-0.5 size-3.5 shrink-0" />
+                <span>
+                  {t(
+                    settings.interaction === "hold"
+                      ? "ux.home.holdShortcut"
+                      : "ux.home.toggleShortcut",
+                    { shortcut: settings.shortcut },
+                  )}
+                </span>
+              </p>
+            )}
             {(working || loading) && latestVisible && (
               <p role="status" className="basis-full text-sm text-muted-foreground">
                 {loading ? t("homePage.connecting") : nativeText(status.message)}
@@ -543,15 +559,6 @@ export function HomePage() {
                         ? t("uiPolish.homeWorkspaceEmpty")
                         : t("homePage.chooseAModelToTurnYourVoice")}
               </p>
-              {ready && !working && !recording && (
-                <p className="mt-6 flex max-w-full flex-wrap items-center justify-center gap-2 text-xs text-muted-foreground">
-                  <Keyboard aria-hidden="true" className="size-4" />
-                  <kbd className="rounded border bg-background px-2 py-1 font-mono text-foreground">
-                    {settings.shortcut}
-                  </kbd>
-                  <span>{t("homePage.useYourShortcutToDictateIntoAnother")}</span>
-                </p>
-              )}
             </section>
           )}
         </div>

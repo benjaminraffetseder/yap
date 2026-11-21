@@ -49,11 +49,12 @@ On Windows 10/11 x64, [build from source](#build-from-source) and open
    supports 25 European languages with automatic detection (CC BY 4.0).
    [Moonshine](https://huggingface.co/moonshine-ai/models) V2 Tiny, Small, Medium,
    and Base are English-only options (MIT).
-   Test your microphone and shortcut, then try dictation. You can optionally add
+   Test your microphone and shortcut, then try dictation. Choose **Start dictating**
+   after practice to finish basic setup with a default profile. You can optionally add
    a Gemma text model, edit a starter prompt or chain, and compare a typed or
    dictated sample with the processed result. Trial content stays out of history
-   and the clipboard. Finish by naming your profile, or skip text processing to
-   start with basic dictation. Your profile remembers its speech and text model
+   and the clipboard. The optional workflow path finishes by naming your profile.
+   Your profile remembers its speech and text model
    settings and can be changed later in **Settings → Profiles**.
 2. Put the cursor in a text field in another app.
 3. Hold **Ctrl+Alt+Space**, speak, then release **Space**.

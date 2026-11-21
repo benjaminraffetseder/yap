@@ -347,6 +347,35 @@ test("text downloads can be cancelled and resumed from the library", async ({ pa
   ]);
 });
 
+test("model storage labels the whole library and shows downloaded category counts", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const state = Reflect.get(window, "textModelTest").state;
+    state.models = [
+      {
+        id: "tiny",
+        name: "Whisper Tiny",
+        size: 77691713,
+        path: "/tiny",
+        installed: true,
+        diskBytes: 77691713,
+        removable: true,
+        description: "",
+      },
+    ];
+    state.textModels.forEach((model: { installed: boolean; size: number; diskBytes?: number }) => {
+      model.diskBytes = model.installed ? model.size : 0;
+    });
+  });
+  await page.goto("/#/models");
+  await expect(page.getByText("All models: 3 downloaded · 10.4 GB", { exact: true })).toBeVisible();
+  await expect(page.getByRole("tab", { name: "Speech models", exact: true })).toContainText("1");
+  await expect(page.getByRole("tab", { name: "Text models", exact: true })).toContainText("2");
+  await page.getByRole("tab", { name: "Text models", exact: true }).click();
+  await expect(page.getByText("All models: 3 downloaded · 10.4 GB", { exact: true })).toBeVisible();
+});
+
 test("model segments switch catalogs, support keyboard navigation, and persist in the URL", async ({
   page,
 }) => {
@@ -396,12 +425,20 @@ async function openOnboardingWorkflow(page: Page) {
   await page.goto("/");
   await expect(page.getByRole("heading", { name: en["onboarding.goalTitle"] })).toBeVisible();
   for (let index = 0; index < 4; index++)
-    await page.getByRole("button", { name: "Next", exact: true }).click();
-  await expect(page.getByRole("button", { name: "Next", exact: true })).toBeDisabled();
+    await page
+      .getByRole("button", { name: /^(Next|Continue to text workflow)$/, exact: true })
+      .click();
+  await expect(
+    page.getByRole("button", { name: /^(Next|Continue to text workflow)$/, exact: true }),
+  ).toBeDisabled();
   await page.getByRole("button", { name: en["onboarding.practiceDictation"], exact: true }).click();
   await page.getByRole("button", { name: "Stop dictation test", exact: true }).click();
-  await expect(page.getByRole("button", { name: "Next", exact: true })).toBeEnabled();
-  await page.getByRole("button", { name: "Next", exact: true }).click();
+  await expect(
+    page.getByRole("button", { name: /^(Next|Continue to text workflow)$/, exact: true }),
+  ).toBeEnabled();
+  await page
+    .getByRole("button", { name: /^(Next|Continue to text workflow)$/, exact: true })
+    .click();
   await expect(page.getByRole("heading", { name: "Add a text model (optional)" })).toBeVisible();
 }
 
@@ -436,7 +473,9 @@ test("setup enables a downloaded text model, saves context, and tests it before 
     .toBe(16384);
   await setup.getByRole("button", { name: "Test model", exact: true }).click();
   await expect(setup.getByText("Model responded successfully.", { exact: true })).toBeVisible();
-  await page.getByRole("button", { name: "Next", exact: true }).click();
+  await page
+    .getByRole("button", { name: /^(Next|Continue to text workflow)$/, exact: true })
+    .click();
   await page
     .getByRole("button", { name: en["onboarding.saveActivateProfile"], exact: true })
     .click();
@@ -498,7 +537,9 @@ test("setup keeps an existing external text-model configuration", async ({ page 
       { exact: true },
     ),
   ).toBeVisible();
-  await page.getByRole("button", { name: "Next", exact: true }).click();
+  await page
+    .getByRole("button", { name: /^(Next|Continue to text workflow)$/, exact: true })
+    .click();
   await page
     .getByRole("button", { name: en["onboarding.saveActivateProfile"], exact: true })
     .click();

@@ -2,19 +2,14 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { DictationPreview } from "@/features/history/components/dictation-preview";
+import { HistoryDate } from "@/features/history/components/history-date";
+import { speechModelLabel } from "@/features/models/lib/speech-model-label";
 import i18n from "@/i18n";
 import { duration, type Session } from "@/lib/backend";
 import { ChevronRight, RotateCcw, Trash2 } from "lucide-react";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router";
-
-function speechModelLabel(model: string) {
-  const match = /^(?:ggml-)?(tiny|base|small)(\.en)?(?:\.bin)?$/i.exec(model);
-  return match
-    ? `Whisper ${match[1][0].toUpperCase()}${match[1].slice(1).toLowerCase()}${match[2] ? i18n.t("dictationRow.english") : ""}`
-    : model;
-}
 
 type DictationRowProps = {
   entry: Session;
@@ -68,17 +63,16 @@ export function DictationRow({
           })
         ) : (
           <>
-            <time dateTime={entry.createdAt} className="tabular-nums">
-              {showDate
-                ? new Date(entry.createdAt).toLocaleString(i18n.resolvedLanguage, {
-                    dateStyle: "medium",
-                    timeStyle: "short",
-                  })
-                : new Date(entry.createdAt).toLocaleTimeString(i18n.resolvedLanguage, {
-                    hour: "numeric",
-                    minute: "2-digit",
-                  })}
-            </time>
+            {showDate ? (
+              <HistoryDate value={entry.createdAt} />
+            ) : (
+              <time dateTime={entry.createdAt} className="tabular-nums">
+                {new Date(entry.createdAt).toLocaleTimeString(i18n.resolvedLanguage, {
+                  hour: "numeric",
+                  minute: "2-digit",
+                })}
+              </time>
+            )}
             <span className="tabular-nums">{duration(entry.durationMs)}</span>
             <span className="sr-only">{speechModelLabel(entry.speechModel)}</span>
           </>
