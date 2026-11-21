@@ -120,7 +120,7 @@ export function HistoryTable({
                   aria-sort={active ? (descending ? "descending" : "ascending") : undefined}
                   className={
                     key === "dictation"
-                      ? cn("w-full", deleted ? "min-w-44" : "min-w-60")
+                      ? cn("w-full", deleted ? "min-w-40" : "min-w-60")
                       : undefined
                   }
                 >
