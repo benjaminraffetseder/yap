@@ -1,4 +1,3 @@
-import { CopyButton } from "@/components/shared/copy-button";
 import { PageHeading } from "@/components/shared/page-heading";
 import { ActionMenu, ActionMenuItem } from "@/components/ui/action-menu";
 import { Button } from "@/components/ui/button";
@@ -18,12 +17,13 @@ import {
   useDictationActions,
   useDictationActivity,
   useDictationConnection,
+  useSavedConfiguration,
 } from "@/features/dictation/hooks/use-dictation-state";
+import { HistoryRowActions } from "@/features/history/components/history-row-actions";
 import { HistorySearch } from "@/features/history/components/history-search";
 import { HistoryTable } from "@/features/history/components/history-table";
 import { deleteTranscriptions } from "@/features/history/lib/delete-transcriptions";
 import { BulkTextDialog } from "@/features/processing/components/bulk-text-dialog";
-import { SessionTitleAction } from "@/features/transcripts/components/session-title-action";
 import { TranscriptExportDialog } from "@/features/transcripts/components/transcript-export-dialog";
 import { nativeText } from "@/i18n/native-text";
 import {
@@ -94,7 +94,13 @@ export function HistoryPage({ active = true }: { active?: boolean }) {
           className="text-muted-foreground"
           onClick={() => {
             focusToggle.current = true;
-            setParams(deleted ? {} : { view: "deleted" });
+            setParams((old) => {
+              const next = new URLSearchParams();
+              const tryPrompt = old.get("tryPrompt");
+              if (tryPrompt) next.set("tryPrompt", tryPrompt);
+              if (!deleted) next.set("view", "deleted");
+              return next;
+            });
           }}
         >
           {deleted ? <History aria-hidden="true" /> : <Trash2 aria-hidden="true" />}
@@ -112,6 +118,9 @@ function HistoryList({ viewToggle, active }: { viewToggle: ReactNode; active: bo
   const snapshot = { status: useDictationActivity() };
   const [params, setParams] = useSearchParams();
   const deleted = params.get("view") === "deleted";
+  const tryPromptID = params.get("tryPrompt");
+  const { textProcessing } = useSavedConfiguration();
+  const tryPrompt = textProcessing.prompts.find((prompt) => prompt.id === tryPromptID);
   const query = (params.get("q") ?? "").slice(0, 250);
   const requestedSort = params.get("sort");
   const sortBy: HistorySortColumn =
@@ -538,6 +547,41 @@ function HistoryList({ viewToggle, active }: { viewToggle: ReactNode; active: bo
                 })}
           </p>
         </PageHeading>
+        {tryPromptID && !deleted && (
+          <section className="flex flex-wrap items-start justify-between gap-3 rounded-lg bg-muted/35 px-3 py-2.5">
+            <div className="min-w-0 space-y-1">
+              <p className="text-sm font-medium [overflow-wrap:anywhere]">
+                {tryPrompt
+                  ? t("ux.history.tryPromptChoose", {
+                      prompt: tryPrompt.name || t("promptsPage.untitledPrompt"),
+                    })
+                  : t("ux.history.tryPromptUnavailable")}
+              </p>
+              {tryPrompt && (
+                <p className="text-xs leading-5 text-muted-foreground">
+                  {t("ux.history.tryPromptHelp")}
+                </p>
+              )}
+            </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() =>
+                setParams(
+                  (old) => {
+                    const next = new URLSearchParams(old);
+                    next.delete("tryPrompt");
+                    return next;
+                  },
+                  { replace: true },
+                )
+              }
+            >
+              <X aria-hidden="true" />
+              {t("ux.history.cancelTryPrompt")}
+            </Button>
+          </section>
+        )}
         {snapshot.status.historyError && (
           <p role="alert" className="text-sm text-destructive">
             {nativeText(snapshot.status.historyError)}
@@ -693,27 +737,15 @@ function HistoryList({ viewToggle, active }: { viewToggle: ReactNode; active: bo
                 </Tooltip>
               </>
             ) : (
-              <div className="flex items-center gap-1">
-                <CopyButton
-                  text={entry.finalTranscript ?? entry.rawTranscript}
-                  label={t("historyPage.copyDictation")}
-                  iconOnly
-                  variant="ghost"
-                  disabled={unavailable}
-                />
-                <SessionTitleAction
-                  contextual
-                  entry={entry}
-                  context={
-                    entry.title || (entry.finalTranscript ?? entry.rawTranscript).slice(0, 80)
-                  }
-                  disabled={unavailable}
-                  onSaved={() => {
-                    renamed.current = entry.id;
-                    void run(refresh, false);
-                  }}
-                />
-              </div>
+              <HistoryRowActions
+                entry={entry}
+                disabled={unavailable}
+                onRenamed={() => {
+                  renamed.current = entry.id;
+                  void run(refresh, false);
+                }}
+                onRemove={() => void remove([entry.id])}
+              />
             )
           }
         />

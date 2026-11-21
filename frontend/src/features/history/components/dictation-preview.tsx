@@ -6,8 +6,9 @@ import { useTranslation } from "react-i18next";
 export function DictationPreview({ entry, query = "" }: { entry: Session; query?: string }) {
   const { t } = useTranslation();
   const title = entry.title?.trim();
-  // Search results still need the matching transcript context beside the title.
-  const preview = !title || query ? historySearchPreview(entry, query) : null;
+  // Keep the same query-specific excerpt for search and a short transcript
+  // preview beneath named dictations during ordinary browsing.
+  const preview = historySearchPreview(entry, query);
   return (
     <>
       {title && (
@@ -19,6 +20,7 @@ export function DictationPreview({ entry, query = "" }: { entry: Session; query?
         <p
           className={cn(
             "text-[0.9375rem] leading-6",
+            title && "text-muted-foreground",
             query ? "line-clamp-2 break-words" : "truncate",
           )}
         >

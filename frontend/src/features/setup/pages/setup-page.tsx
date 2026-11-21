@@ -94,6 +94,7 @@ export function SetupPage() {
       icon: Sparkles,
       title: t("setupPage.addTextModel"),
       description: t("onboarding.workflowDescription"),
+      optional: true,
     },
     {
       label: t("onboarding.step.profile"),
@@ -101,6 +102,7 @@ export function SetupPage() {
       icon: UserRound,
       title: t("onboarding.profileHeading"),
       description: t("onboarding.profileDescription"),
+      optional: true,
     },
   ];
 
@@ -290,6 +292,7 @@ export function SetupPage() {
     }
   }
   function navigate(next: number, direction: number, animate: boolean) {
+    if (next === 5) setBasicRequested(false);
     setNavigation({ step: next, direction, animate });
   }
   function changeUseCase(value: OnboardingUseCase) {
@@ -306,8 +309,18 @@ export function SetupPage() {
     setPracticeAttempted(true);
     setPracticeCompletedKey("");
   }
-  function finish(basic = false) {
-    if (!dictationReady || nameError || pending || busy) return;
+  function finish(mode: "profile" | "basic" | "quick" = "profile") {
+    if (!dictationReady || (mode !== "quick" && nameError) || pending || busy) return;
+    const basic = mode !== "profile";
+    // Basic setup never depends on an optional name or workflow draft. Ignore our
+    // own profile when deriving the name so a committed completion can be retried.
+    const name =
+      mode === "quick"
+        ? uniqueProfileName(
+            t("onboarding.defaultProfileName.everyday"),
+            snapshot.dictationProfiles?.filter((profile) => profile.id !== profileID),
+          )
+        : trimmedName;
     const kind = basic ? "none" : effectiveKind;
     const config = buildWorkflowConfig(
       baseTextConfig,
@@ -319,7 +332,7 @@ export function SetupPage() {
       savedActions.completeOnboarding(
         {
           id: profileID,
-          name: trimmedName,
+          name,
           modelPath: snapshot.settings.modelPath,
           language: snapshot.settings.language,
           cleanText: snapshot.settings.cleanText,
@@ -409,7 +422,7 @@ export function SetupPage() {
           aria-label={t("setupPage.setupSteps")}
           className="grid min-w-0 grid-cols-7 gap-1 @min-[48rem]/setup:gap-2"
         >
-          {steps.map(({ label, shortLabel, icon: Icon }, index) => (
+          {steps.map(({ label, shortLabel, icon: Icon, optional }, index) => (
             <li
               key={label}
               aria-current={index === step ? "step" : undefined}
@@ -436,7 +449,12 @@ export function SetupPage() {
                 )}
               >
                 <span className="hidden @min-[48rem]/setup:inline">{label}</span>
-                <span className="sr-only @min-[48rem]/setup:hidden">{shortLabel}</span>
+                <span className="@min-[48rem]/setup:hidden">{shortLabel}</span>
+                {optional && (
+                  <span className="mt-1 block text-[10px] font-normal text-muted-foreground">
+                    {t("ux.setup.optional")}
+                  </span>
+                )}
                 {index < step && completed[index] && (
                   <span className="sr-only">{t("setupPage.complete")}</span>
                 )}
@@ -523,10 +541,17 @@ export function SetupPage() {
             />
           )}
           {step === 4 && (
-            <DictationPractice
-              disabled={busy || pending || !snapshot.ready}
-              onStart={startPractice}
-            />
+            <div className="flex flex-col gap-4">
+              <DictationPractice
+                disabled={busy || pending || !snapshot.ready}
+                onStart={startPractice}
+              />
+              {practiceCompleted && (
+                <p role="status" className="text-sm leading-6 text-muted-foreground">
+                  {t("ux.setup.practiceReadyHelp")}
+                </p>
+              )}
+            </div>
           )}
           {step === 5 && (
             <WorkflowStep
@@ -605,7 +630,6 @@ export function SetupPage() {
               title={t("onboarding.finishBasicHelp")}
               onClick={(event) => {
                 setBasicRequested(true);
-                setRecipeKind("none");
                 navigate(6, 1, event.detail > 0);
               }}
             >
@@ -622,7 +646,30 @@ export function SetupPage() {
           >
             {guidance}
           </p>
-          {step < steps.length - 1 ? (
+          {step === 4 ? (
+            <>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-auto min-h-8 max-w-full whitespace-normal @min-[40rem]/setup:min-h-11 @min-[40rem]/setup:px-4"
+                disabled={busy || pending || !canContinue}
+                onClick={(event) => next(event.detail > 0)}
+              >
+                {t("ux.setup.continueToWorkflow")}
+              </Button>
+              <Button
+                pressFeedback
+                size="sm"
+                className="h-auto min-h-8 max-w-full whitespace-normal disabled:bg-muted disabled:text-muted-foreground @min-[40rem]/setup:min-h-11 @min-[40rem]/setup:px-4"
+                disabled={busy || pending || !dictationReady}
+                title={t("onboarding.finishBasicHelp")}
+                onClick={() => finish("quick")}
+              >
+                {t("ux.setup.startDictating")}
+                <ArrowRight data-icon="inline-end" aria-hidden="true" />
+              </Button>
+            </>
+          ) : step < steps.length - 1 ? (
             <Button
               pressFeedback
               size="sm"
@@ -642,7 +689,7 @@ export function SetupPage() {
                   className="h-auto min-h-8 max-w-full whitespace-normal @min-[40rem]/setup:h-11 @min-[40rem]/setup:px-4"
                   disabled={busy || pending || !dictationReady || !!nameError}
                   title={t("onboarding.finishBasicHelp")}
-                  onClick={() => finish(true)}
+                  onClick={() => finish("basic")}
                 >
                   {t("onboarding.finishBasic")}
                 </Button>
@@ -653,7 +700,7 @@ export function SetupPage() {
                 className="disabled:bg-muted disabled:text-muted-foreground @min-[40rem]/setup:h-11 @min-[40rem]/setup:px-4 @min-[40rem]/setup:has-[>svg]:px-3"
                 disabled={busy || pending || !dictationReady || !!nameError}
                 title={basicRequested || !textReady ? t("onboarding.finishBasicHelp") : undefined}
-                onClick={() => finish(false)}
+                onClick={() => finish()}
               >
                 {basicRequested || !textReady
                   ? t("onboarding.finishBasic")

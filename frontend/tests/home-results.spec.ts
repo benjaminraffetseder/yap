@@ -2,6 +2,144 @@ import { expect, test, type Locator, type Page } from "@playwright/test";
 import type { HomeResult, Snapshot } from "../src/lib/backend";
 import { openSelectionMenu } from "./transcript-menu";
 
+test("Home keeps completed clipboard and paste-request receipts beside saved metadata", async ({
+  page,
+}) => {
+  await scenario(page);
+  const receipt = page.locator('[data-slot="home-result-receipt"]');
+  await expect(receipt).toContainText("Copied to clipboard");
+  await expect(receipt).toContainText("Paste requested");
+  const saved = page.getByRole("link", { name: "Saved in History", exact: true });
+  const open = page.getByRole("link", { name: "Open transcript", exact: true });
+  await expect(saved).toHaveAttribute("href", "#/history/synthetic-result");
+  await expect(open).toHaveAttribute("href", "#/history/synthetic-result");
+  for (const [clipboard, paste] of [
+    ["complete", "skipped"],
+    ["unknown", "requested"],
+    ["unknown", "skipped"],
+  ]) {
+    await page.evaluate(
+      ({ clipboard, paste }) => {
+        const state = window.homeResultsTest;
+        state.result!.outcomes.clipboard = clipboard;
+        state.result!.outcomes.paste = paste;
+        state.emit();
+      },
+      { clipboard, paste },
+    );
+    await expect(receipt.getByText("Copied to clipboard", { exact: true })).toHaveCount(
+      clipboard === "complete" ? 1 : 0,
+    );
+    await expect(receipt.getByText("Paste requested", { exact: true })).toHaveCount(
+      paste === "requested" ? 1 : 0,
+    );
+  }
+  await open.click();
+  await expect(page).toHaveURL(/#\/history\/synthetic-result$/);
+});
+
+for (const interaction of ["hold", "toggle"] as const) {
+  test(`Home retains ${interaction} shortcut guidance before and after a result`, async ({
+    page,
+  }) => {
+    await scenario(page, true, interaction);
+    const guidance = page.locator('[data-slot="home-shortcut-guidance"]');
+    await expect(guidance).toHaveText(
+      interaction === "hold" ? "Hold Ctrl+F12 to record" : "Press Ctrl+F12 to start/stop",
+    );
+    await expect(guidance).toBeVisible();
+    await page.getByRole("button", { name: "Dismiss", exact: true }).click();
+    await expect(page.getByRole("heading", { name: "Ready to record", exact: true })).toBeVisible();
+    await expect(guidance).toBeVisible();
+  });
+}
+
+test("Home copy confirms in its button and resets when its text or view changes", async ({
+  page,
+}) => {
+  await scenario(page);
+  await page.getByRole("button", { name: "Copy", exact: true }).click();
+  const copied = page.getByRole("button", { name: "Copied", exact: true });
+  await expect(copied).toBeVisible();
+  await expect(copied.locator("svg.lucide-check")).toHaveCount(1);
+  await expect(copied).toBeEnabled();
+  await page.evaluate(() => {
+    const state = window.homeResultsTest;
+    state.result!.text = "The revised text needs a new copy.";
+    state.result!.revision = "revised-text";
+    state.result!.outputs = [
+      {
+        id: "copy-view-output",
+        sessionId: state.result!.session.id,
+        createdAt: "2026-11-04T12:00:00Z",
+        model: "synthetic-model",
+        endpoint: "http://127.0.0.1:11434/v1",
+        prompt: { id: "summary", name: "Summary", instruction: "Summarize." },
+        input: state.result!.text,
+        text: "A separate generated output.",
+      },
+    ];
+    state.emit();
+  });
+  await expect(copied).toHaveCount(0);
+  await expect(page.getByRole("status").filter({ hasText: "Paste manually" })).toHaveCount(0);
+  await page.getByRole("button", { name: "Copy", exact: true }).click();
+  await expect(copied).toBeVisible();
+  await page.getByRole("tab", { name: /^Outputs/ }).click();
+  await expect(copied).toHaveCount(0);
+  await page.getByRole("tab", { name: "Transcript", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Copy", exact: true })).toBeVisible();
+});
+
+test("Home copy feedback arrives before refresh and a delayed reply cannot confirm a new result", async ({
+  page,
+}) => {
+  await scenario(page);
+  await page.evaluate(() => {
+    const app = Reflect.get(window, "mockBackend").app.App;
+    const read = app.GetHomeResult;
+    app.GetHomeResult = () =>
+      new Promise((resolve) =>
+        Reflect.set(window, "releaseCopyRefresh", async () => resolve(await read())),
+      );
+  });
+  await page.getByRole("button", { name: "Copy", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Copied", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Copied", exact: true })).toBeDisabled();
+  await page.evaluate(() => Reflect.get(window, "releaseCopyRefresh")());
+  await expect(page.getByRole("button", { name: "Copied", exact: true })).toBeEnabled();
+  await page.evaluate(() => {
+    const app = Reflect.get(window, "mockBackend").app.App;
+    app.GetHomeResult = async () => structuredClone(window.homeResultsTest.result);
+    const copy = app.HomeResultAction;
+    app.HomeResultAction = async (...args: [string, string, string, string]) => {
+      await copy(...args);
+      if (args[2] === "copy")
+        await new Promise<void>((resolve) => Reflect.set(window, "releaseHomeCopy", resolve));
+    };
+  });
+  await page.getByRole("button", { name: "Copied", exact: true }).click();
+  await expect
+    .poll(() => page.evaluate(() => typeof Reflect.get(window, "releaseHomeCopy")))
+    .toBe("function");
+  await page.getByRole("link", { name: "History", exact: true }).click();
+  await page.evaluate(() => {
+    const state = window.homeResultsTest;
+    state.result!.session.id = "replacement-copy-result";
+    state.result!.revision = "replacement-copy-revision";
+    state.result!.text = "A new result must not inherit the previous copy receipt.";
+    state.emit();
+  });
+  await page.getByRole("link", { name: "Dictate", exact: true }).click();
+  await expect(page.getByLabel("Result text", { exact: true })).toHaveText(
+    "A new result must not inherit the previous copy receipt.",
+  );
+  await page.evaluate(() => Reflect.get(window, "releaseHomeCopy")());
+  await expect(page.getByRole("button", { name: "Copy", exact: true })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "Copied", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("status").filter({ hasText: "Paste manually" })).toHaveCount(0);
+});
+
 test("Home recorder stays anchored when a result arrives", async ({ page }) => {
   await scenario(page);
   for (const viewport of [
@@ -163,6 +301,9 @@ for (const language of ["en", "de"] as const) {
     const text = page.locator("#home-result-text");
     await expect(text).toHaveCSS("font-size", "32px");
     await expect(text).toHaveCSS("line-height", "56px");
+    await expect(page.locator('[data-slot="home-shortcut-guidance"]')).toHaveText(
+      language === "de" ? "Drücke Ctrl+F12 zum Starten/Stoppen" : "Press Ctrl+F12 to start/stop",
+    );
     expect(await pane.evaluate((node) => node.clientHeight)).toBeGreaterThanOrEqual(240);
     const named = "Meeting notes with a custom title that remains available in full";
     await page.evaluate((named) => {
@@ -284,9 +425,9 @@ declare global {
   }
 }
 
-async function scenario(page: Page, saved = true) {
+async function scenario(page: Page, saved = true, interaction: "hold" | "toggle" = "toggle") {
   await page.addInitScript(
-    ({ saved }) => {
+    ({ saved, interaction }) => {
       localStorage.setItem("desktop-theme", "light");
       localStorage.setItem("yap-sidebar-collapsed", "true");
       const session = {
@@ -324,7 +465,7 @@ async function scenario(page: Page, saved = true) {
             modelPath: "/synthetic-model",
             language: "auto",
             shortcut: "Ctrl+F12",
-            interaction: "toggle",
+            interaction,
             autoCopy: true,
             autoPaste: true,
             saveHistory: saved,
@@ -546,7 +687,7 @@ async function scenario(page: Page, saved = true) {
         },
       });
     },
-    { saved },
+    { saved, interaction },
   );
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "Latest result", exact: true })).toBeVisible();
@@ -911,11 +1052,19 @@ test("History rows reveal search matches and copy the complete edited transcript
   await page.goto("/#/history");
   const row = page.getByRole("table", { name: "History", exact: true }).locator("tbody tr").first();
   const link = row.getByRole("link");
-  await expect(link).toHaveText("Meeting notes");
-  await expect(link.locator("p")).toHaveCount(1);
-  const title = (await link.locator("p").boundingBox())!;
+  await expect(link.locator("p").first()).toHaveText("Meeting notes");
+  await expect(link.locator("p")).toHaveCount(2);
+  const browseSnippet = link.locator("p").nth(1);
+  await expect(browseSnippet).toContainText("Unrelated opening.");
+  await expect(browseSnippet).toHaveClass(/text-muted-foreground/);
+  await expect(browseSnippet).toHaveCSS("white-space", "nowrap");
+  const title = (await link.locator("p").first().boundingBox())!;
+  const preview = (await browseSnippet.boundingBox())!;
+  expect(preview.y).toBeGreaterThanOrEqual(title.y + title.height);
   const checkbox = (await row.getByRole("checkbox").boundingBox())!;
   expect(Math.abs(title.y + title.height / 2 - checkbox.y - checkbox.height / 2)).toBeLessThan(1);
+  expect(title.x - checkbox.x - checkbox.width).toBeGreaterThanOrEqual(16);
+  expect(preview.y - title.y - title.height).toBeLessThanOrEqual(2);
   await page.goto("/#/history?q=John");
   await expect(row.locator("mark")).toHaveText("John");
   const snippet = row.locator("p").nth(1);
@@ -1074,7 +1223,7 @@ for (const saved of [true, false]) {
     await expect
       .poll(() => page.evaluate(() => window.homeResultsTest.clipboard))
       .toBe("Synthetic current result after navigation.");
-    await expect(page.getByRole("button", { name: "Copy", exact: true })).toBeEnabled();
+    await expect(page.getByRole("button", { name: "Copied", exact: true })).toBeEnabled();
     await expect(page.getByLabel("Result action in progress")).toHaveCount(0);
     await page.screenshot({
       path: testInfo.outputPath(`home-return-${saved ? "saved" : "temporary"}.png`),
@@ -1236,17 +1385,20 @@ test("copy revalidates the backend revision, failed copy retries explicitly, dis
   });
   await page.getByRole("button", { name: "Copy", exact: true }).click();
   await expect(page.getByRole("alert")).toContainText("Couldn’t complete");
+  await expect(page.getByRole("button", { name: "Copied", exact: true })).toHaveCount(0);
   expect(await page.evaluate(() => window.homeResultsTest.clipboard)).toBe("");
   await page.evaluate(() => {
     window.homeResultsTest.fail = "copy";
   });
   await page.getByRole("button", { name: "Copy", exact: true }).click();
   expect(await page.evaluate(() => window.homeResultsTest.clipboard)).toBe("");
+  await expect(page.getByRole("button", { name: "Copied", exact: true })).toHaveCount(0);
   await page.evaluate(() => {
     window.homeResultsTest.fail = "";
   });
   await page.getByRole("button", { name: "Copy", exact: true }).click();
   await expect(page.getByRole("status").filter({ hasText: "Paste manually" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Copied", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Dismiss", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Latest result", exact: true })).toHaveCount(0);
   expect(await page.evaluate(() => window.homeResultsTest.snapshot.history)).toEqual([]);
@@ -1294,6 +1446,7 @@ test("Dismiss stays available after saving a temporary result", async ({ page })
   await expect(dismiss).toBeVisible({ timeout: 3000 });
   await expect(dismiss).toBeEnabled();
   await expect(page.getByRole("button", { name: "Save to History", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "Open transcript", exact: true })).toBeVisible();
   await dismiss.click();
   await expect(page.getByRole("heading", { name: "Latest result", exact: true })).toHaveCount(0);
   await expect(page.getByText("Temporary result dismissed.", { exact: true })).toHaveCount(0);

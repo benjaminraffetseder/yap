@@ -14,8 +14,10 @@ import {
   useDictationConnection,
   useDictationPhase,
   useProcessingPanelState,
+  useSavedModelCatalog,
 } from "@/features/dictation/hooks/use-dictation-state";
 import { deleteTranscriptions } from "@/features/history/lib/delete-transcriptions";
+import { speechModelLabel } from "@/features/models/lib/speech-model-label";
 import { GeneratedOutputs } from "@/features/processing/components/generated-outputs";
 import { InferenceStats } from "@/features/transcripts/components/inference-stats";
 import { SessionTitleAction } from "@/features/transcripts/components/session-title-action";
@@ -69,7 +71,9 @@ function EntryDetail({ id }: { id: string }) {
   const snapshot = { status: { phase: useDictationPhase() } };
   const navigate = useNavigate();
   const location = useLocation();
+  const trialPromptID = new URLSearchParams(location.search).get("tryPrompt") || undefined;
   const back = `/history${location.search}`;
+  const { models } = useSavedModelCatalog();
   const queryClient = useQueryClient();
   const detail = useQuery({ ...sessionQuery(id), enabled: isDesktop && !connecting });
   const entry = detail.data ?? null;
@@ -79,7 +83,16 @@ function EntryDetail({ id }: { id: string }) {
     mutationFn: (value: string) => backend.saveTranscript(id, value),
   });
   const [editing, setEditing] = useState<Session | null>(null);
-  const [activeTab, setActiveTab] = useState("transcription");
+  const [activeTab, setActiveTab] = useState(trialPromptID ? "outputs" : "transcription");
+  useEffect(() => {
+    if (trialPromptID) setActiveTab("outputs");
+  }, [trialPromptID]);
+  function completePromptTrial() {
+    if (!trialPromptID) return;
+    const next = new URLSearchParams(location.search);
+    next.delete("tryPrompt");
+    navigate({ pathname: location.pathname, search: next.toString() }, { replace: true });
+  }
   const [chatOpen, setChatOpen] = useState(false);
   const [referenceNotice, setReferenceNotice] = useState("");
   useEffect(() => {
@@ -325,7 +338,9 @@ function EntryDetail({ id }: { id: string }) {
                   >
                     <Pencil className="size-3.5" />
                     {activeTab === "original" ? (
-                      t("uiPolish.editSavedTranscript")
+                      <span className="min-w-0 [overflow-wrap:anywhere]">
+                        {t("uiPolish.editSavedTranscript")}
+                      </span>
                     ) : (
                       <>
                         <span className="sm:hidden">{t("common.edit")}</span>
@@ -376,7 +391,7 @@ function EntryDetail({ id }: { id: string }) {
                   ·
                 </span>
                 <span className="max-w-48 truncate" title={entry.speechModel}>
-                  {entry.speechModel}
+                  {speechModelLabel(entry.speechModel, models)}
                 </span>
 
                 {!editing && (
@@ -573,6 +588,8 @@ function EntryDetail({ id }: { id: string }) {
               <TabsContent value="outputs" keepMounted>
                 <GeneratedOutputs
                   sessionID={id}
+                  trialPromptID={trialPromptID}
+                  onTrialComplete={completePromptTrial}
                   onCopyTargetChange={setCopyOutput}
                   unavailable={unavailable}
                   onDiscuss={(output) => {

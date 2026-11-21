@@ -7,13 +7,16 @@ suggests models and settings and explains their role; review download sizes and
 adjust the choices before installing. Recommendations are starting points rather
 than measured performance guarantees for your computer.
 
-Test your microphone and shortcut, then try dictation. Optional workflow setup
+Test your microphone and shortcut, then try dictation. After successful practice,
+choose **Start dictating** to finish basic setup with a unique default profile and
+text processing off. **Continue to text workflow** opens optional setup that
 lets you edit a prompt or chain and compare a typed or dictated sample with its
 processed result. These trials do not save history, retain audio, copy, or paste.
-You can finish with basic dictation and add text processing later.
+You can add text processing later.
 
-Finish by naming your profile. Yap saves and activates its configuration together;
-switch profiles in **Recording options** and edit them in **Settings → Profiles**.
+The optional workflow path finishes by naming your profile. Yap saves and activates
+its configuration together; switch profiles in **Recording options** and edit them
+in **Settings → Profiles**.
 
 ## Recording
 
@@ -43,6 +46,9 @@ Copying there checks that the result is still current and never pastes into anot
 app. Cancelled automatic processing leaves the speech transcript available.
 
 Home shows the latest saved or temporary result with **Copy** and **Edit result**.
+Known copy and paste-request outcomes stay beside the result; **Paste requested**
+does not confirm that the target app accepted the text. **Open transcript** opens
+the full saved workspace. The recorder keeps its hold/toggle shortcut guidance visible.
 The inline editor applies changes only when you choose **Apply changes**;
 **Cancel** discards the draft and keeps the existing result. Unapplied drafts survive
 navigation within the app session: return to Home and reopen **Edit result** to resume
@@ -174,7 +180,7 @@ problem before recording; repair the profile or remove its rule. Deleting a
 profile also removes its app rules. Dictionary remains shared across profiles.
 
 Set an optional **Cycle profiles shortcut**, such as `Ctrl+Alt+P`, under
-**Settings → Dictation → Shortcuts**. It must differ from the recording shortcut; leave it empty to disable
+**Settings → Dictation → Profile cycling (optional)**. It must differ from the recording shortcut; leave it empty to disable
 it. Each press selects the next available profile in library order, skipping
 profiles with unavailable models or prompts, and shows its name in the floating
 indicator. In an assigned app, cycling starts from that app's profile. Your choice
@@ -216,7 +222,9 @@ location and turn **Launch at login** off and on again.
 
 History lets you search titles, original and edited text, open a dictation, and copy or
 export it. Each History row has a **Copy dictation** button for copying the saved
-result without opening it. Search previews show the matching passage and highlight
+result without opening it, an excerpt beneath named entries, and a visible time for
+today's and yesterday's dictations. The row's **Dictation actions** menu offers
+**Rename** and **Move to Recently Deleted**. Search previews show the matching passage and highlight
 the search text; matches found only in the original recognition are labeled.
 Select entries to export or delete several at once. Deletion moves
 dictations to **History → Recently Deleted** immediately, with an **Undo** toast.
@@ -227,7 +235,7 @@ retained audio, and generated outputs stay together during that window. After
 30 days, Yap permanently removes them during cleanup, including on its next
 launch if it was closed. Recently Deleted is excluded from portable backups.
 
-Use the pencil button on a History row or beside an open dictation's heading to
+Use **Dictation actions → Rename** on a History row or the pencil beside an open dictation's heading to
 **Rename dictation**. Enter a title of up to 80 characters and choose **Save title**;
 leave it blank to use the transcript preview instead. Titles do not change transcripts
 or audio, and are included in exports and backups.
@@ -375,9 +383,14 @@ external server itself.
 Cleanup and Summary prompts are included. Select one from the saved prompt library
 (or the **Saved prompt** picker in a narrow window). Edit it or add your own; there can
 be up to 30 prompts, each with up to 8,000 characters of instructions. The text
-is supplied separately, so you don't need placeholders. **Refine prompt** uses
+is supplied separately, so you don't need placeholders. **Refine instructions** uses
 the selected model to suggest clearer instructions. Review and apply the suggestion
 if you want to keep it; applied instructions save automatically.
+
+Choose **Try on a saved dictation** to pick an entry from History and open its
+output composer with the saved prompt selected. Review the instructions, then
+choose **Generate** to save a separate output. This leaves the transcript and
+automatic processing choice unchanged. Instructions must finish saving first.
 
 There are three ways to process text:
 
@@ -401,15 +414,16 @@ There are three ways to process text:
 
 ### Chat with a transcription
 
-Open a saved transcription and choose **Chat**. It opens a floating pane, like
-Activity, without resizing the transcription. Minimize it to reach content behind
-it; opening Activity minimizes chat. The source picker in the compact header
+Open a saved transcription and choose **Chat**. It appears beside the transcription
+in wide windows and below it in narrow windows. Closing the pane reclaims that
+space; opening Activity closes chat. The **Context** picker in the compact header
 chooses the saved or original transcription. Chat uses the local model configured
 in **Prompts**. Ask questions, find passages,
 or refine a draft with follow-up messages. Enter sends a message; Shift+Enter adds
 a new line. **Stop** keeps the interrupted reply, and **Retry reply** tries that
 question again. Leaving the transcription stops an unfinished reply; closing just
-the chat panel leaves it running.
+the chat panel leaves it running. **Summarize**, **Extract action items**, and
+**Draft a follow-up** fill an editable message; they do not send it automatically.
 
 Use the microphone icon to record a message with your configured local speech
 model. Choose **Transcribe voice message** to place it in the composer, where you

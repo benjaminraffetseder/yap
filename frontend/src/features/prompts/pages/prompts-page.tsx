@@ -56,7 +56,7 @@ import { Menu } from "@base-ui/react/menu";
 import { Ellipsis, History, Info, Plus, RefreshCw, Sparkles, Trash2 } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { useSearchParams } from "react-router";
+import { useNavigate, useSearchParams } from "react-router";
 
 const localServers = [
   { value: "ollama", label: "Ollama", endpoint: "http://127.0.0.1:11434/v1" },
@@ -98,6 +98,7 @@ function AutomationHelp({ active }: { active: boolean }) {
 export function PromptsPage() {
   const { t } = useTranslation();
   const savedActions = useSavedActions();
+  const navigate = useNavigate();
   const configuration = useConfiguration();
   const serverOptions = [...localServers, { value: "custom", label: t("promptsPage.custom") }];
   const sections = [
@@ -896,19 +897,40 @@ export function PromptsPage() {
                         className="max-h-96 min-h-36 w-full resize-y rounded-lg border border-input bg-card px-4 py-3 text-[15px] leading-7 text-foreground outline-none [field-sizing:content] focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30"
                       />
                       <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
-                        <Button
-                          ref={refineButton}
-                          variant="ghost"
-                          size="sm"
-                          className="text-muted-foreground hover:text-foreground"
-                          disabled={
-                            controlsDisabled || !draft.model.trim() || !prompt.instruction.trim()
-                          }
-                          onClick={refine}
-                        >
-                          <Sparkles aria-hidden="true" className="size-3.5" />
-                          {t("promptsPage.refinePrompt")}
-                        </Button>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={
+                              controlsDisabled ||
+                              dirty ||
+                              autoSave.saving ||
+                              !!reason ||
+                              !saved.prompts.some((item) => item.id === prompt.id)
+                            }
+                            aria-describedby="try-saved-dictation-help"
+                            onClick={() => {
+                              if (controlsDisabled || dirty || autoSave.saving || reason) return;
+                              navigate(`/history?${new URLSearchParams({ tryPrompt: prompt.id })}`);
+                            }}
+                          >
+                            <History aria-hidden="true" className="size-3.5" />
+                            {t("ux.prompts.trySavedDictation")}
+                          </Button>
+                          <Button
+                            ref={refineButton}
+                            variant="ghost"
+                            size="sm"
+                            className="text-muted-foreground hover:text-foreground"
+                            disabled={
+                              controlsDisabled || !draft.model.trim() || !prompt.instruction.trim()
+                            }
+                            onClick={refine}
+                          >
+                            <Sparkles aria-hidden="true" className="size-3.5" />
+                            {t("ux.prompts.refineInstructions")}
+                          </Button>
+                        </div>
                         <span className="text-xs tabular-nums text-muted-foreground">
                           {Array.from(prompt.instruction).length.toLocaleString(
                             i18n.resolvedLanguage,
@@ -917,7 +939,16 @@ export function PromptsPage() {
                         </span>
                       </div>
                     </div>
-                    <p className="text-xs text-muted-foreground">{t("uiPolish.refineHelp")}</p>
+                    <div className="space-y-1 text-xs leading-5 text-muted-foreground">
+                      <p id="try-saved-dictation-help">
+                        {t(
+                          dirty || autoSave.saving
+                            ? "ux.prompts.tryAfterSaving"
+                            : "ux.prompts.trySavedDictationHelp",
+                        )}
+                      </p>
+                      <p>{t("ux.prompts.refineHelp")}</p>
+                    </div>
                     {refinementNotice && (
                       <p role="status" className="text-xs text-primary">
                         {refinementNotice}
@@ -1030,7 +1061,7 @@ export function PromptsPage() {
           {refining && (
             <>
               <DialogHeader>
-                <DialogTitle>{t("promptsPage.refinePrompt")}</DialogTitle>
+                <DialogTitle>{t("ux.prompts.refineInstructions")}</DialogTitle>
                 <DialogDescription>
                   {t("promptsPage.reviewTheRefinedInstructionsBeforeApplyingThem")}
                 </DialogDescription>

@@ -419,6 +419,9 @@ export function TranscriptionChat({
       }}
     >
       <header className="flex min-h-10 shrink-0 items-center gap-1 border-b px-2 py-1">
+        <Label htmlFor="chat-source" className="shrink-0 text-xs text-muted-foreground">
+          {t("ux.chat.context")}
+        </Label>
         <Select
           open={sourceMenuOpen}
           onOpenChange={(next, details) => {
@@ -496,7 +499,29 @@ export function TranscriptionChat({
           </div>
         )}
         {!loading && !loadError && !chat.messages.length && !pending && (
-          <p className="py-2 text-xs leading-5 text-muted-foreground">{t("chat.empty")}</p>
+          <div className="space-y-3 py-2">
+            <p className="text-xs leading-5 text-muted-foreground">{t("chat.empty")}</p>
+            {!draft.trim() && (
+              <div role="group" className="flex flex-wrap gap-2" aria-label={t("ux.chat.starters")}>
+                {(["summary", "actions", "followUp"] as const).map((starter) => (
+                  <Button
+                    key={starter}
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-auto min-h-9 max-w-full whitespace-normal text-left text-xs"
+                    disabled={!enabled || waiting || voice.busy}
+                    onClick={() => {
+                      setDraft(t(`ux.chat.${starter}Message`));
+                      input.current?.focus({ preventScroll: true });
+                    }}
+                  >
+                    {t(`ux.chat.${starter}`)}
+                  </Button>
+                ))}
+              </div>
+            )}
+          </div>
         )}
         {chat.messages.map((msg, index) => {
           const previous = index > 1 ? chat.messages[index - 2] : null;

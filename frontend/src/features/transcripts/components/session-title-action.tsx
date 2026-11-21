@@ -36,6 +36,10 @@ export function SessionTitleAction({
   contextual = false,
   inlineTitle,
   headingRef,
+  open: controlledOpen,
+  onOpenChange,
+  hideTrigger = false,
+  returnFocus,
 }: {
   entry: Session;
   disabled: boolean;
@@ -44,9 +48,18 @@ export function SessionTitleAction({
   contextual?: boolean;
   inlineTitle?: string;
   headingRef?: RefObject<HTMLHeadingElement | null>;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  hideTrigger?: boolean;
+  returnFocus?: RefObject<HTMLButtonElement | null>;
 }) {
   const { t } = useTranslation();
-  const [open, setOpen] = useState(false);
+  const [localOpen, setLocalOpen] = useState(false);
+  const open = controlledOpen ?? localOpen;
+  function setOpen(value: boolean) {
+    if (controlledOpen === undefined) setLocalOpen(value);
+    onOpenChange?.(value);
+  }
   const [pending, setPending] = useState(false);
   const pendingRef = useRef(false);
   function finishInline() {
@@ -134,7 +147,7 @@ export function SessionTitleAction({
         setOpen(value);
       }}
     >
-      {contextual ? (
+      {hideTrigger ? null : contextual ? (
         <Tooltip>
           {renameTrigger}
           <TooltipContent role="tooltip">{t("uiPolish.renameDictation")}</TooltipContent>
@@ -142,7 +155,11 @@ export function SessionTitleAction({
       ) : (
         renameTrigger
       )}
-      <DialogContent showCloseButton={!pending} backdropClassName="bg-black/80 backdrop-blur-[2px]">
+      <DialogContent
+        showCloseButton={!pending}
+        finalFocus={returnFocus}
+        backdropClassName="bg-black/80 backdrop-blur-[2px]"
+      >
         <DialogHeader>
           <DialogTitle>{t("uiPolish.renameDictation")}</DialogTitle>
           <DialogDescription>{t("uiPolish.titleHelp")}</DialogDescription>

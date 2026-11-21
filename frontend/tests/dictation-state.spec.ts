@@ -63,7 +63,11 @@ async function modelAction(page: Page, action: string, name?: string) {
   await menu.getByRole("menuitem", { name: action, exact: true }).click();
 }
 async function detailAction(page: Page, action: string) {
-  await page.getByRole("button", { name: "Dictation actions", exact: true }).click();
+  await page
+    .getByRole("link", { name: "Back to History", exact: true })
+    .locator("..")
+    .getByRole("button", { name: "Dictation actions", exact: true })
+    .click();
   await page.getByRole("menuitem", { name: action, exact: true }).click();
 }
 async function openRecordingOptions(page: Page) {
@@ -864,8 +868,7 @@ for (const theme of ["light", "dark"]) {
                     page.getByRole("combobox", { name: "Spoken language", exact: true }),
                     page.getByLabel("Global shortcut", { exact: true }),
                     page.getByRole("button", { name: "Record shortcut", exact: true }),
-                    page.getByLabel("Cycle profiles shortcut", { exact: true }),
-                    page.getByRole("button", { name: "Record profile shortcut", exact: true }),
+                    page.locator('[data-slot="profile-shortcut-options"] > summary'),
                   ]
                 : name === "Profiles"
                   ? [
@@ -1224,7 +1227,10 @@ test("motion setup buttons remain visible through held pointer presses and advan
     window.dictationTest.snapshot.microphoneTested = false;
   });
   await page.goto("/");
-  const next = page.getByRole("button", { name: "Next", exact: true });
+  const next = page.getByRole("button", {
+    name: /^(Next|Continue to text workflow)$/,
+    exact: true,
+  });
   await next.click();
   for (let i = 0; i < 5; i++) {
     await next.hover();
@@ -1284,7 +1290,10 @@ for (const reduced of [false, true]) {
       window.dictationTest.snapshot.microphoneTested = false;
     });
     await page.goto("/");
-    const next = page.getByRole("button", { name: "Next", exact: true });
+    const next = page.getByRole("button", {
+      name: /^(Next|Continue to text workflow)$/,
+      exact: true,
+    });
     await expect(next).toBeEnabled();
     await next.click();
     const transforms = await next.evaluate(async (button) => {
@@ -1851,9 +1860,15 @@ test("setup retries shortcut permission and still requires a real shortcut test"
 }) => {
   await shortcutPermissionScenario(page, true);
   await page.goto("/");
-  await page.getByRole("button", { name: "Next", exact: true }).click();
-  await page.getByRole("button", { name: "Next", exact: true }).click();
-  await page.getByRole("button", { name: "Next", exact: true }).click();
+  await page
+    .getByRole("button", { name: /^(Next|Continue to text workflow)$/, exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: /^(Next|Continue to text workflow)$/, exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: /^(Next|Continue to text workflow)$/, exact: true })
+    .click();
   const retry = page.getByRole("button", {
     name: "Retry shortcut",
     exact: true,
@@ -1874,17 +1889,27 @@ test("setup retries shortcut permission and still requires a real shortcut test"
   });
   await retry.click();
   await expect(retry).toBeHidden();
-  await expect(page.getByRole("button", { name: "Next", exact: true })).toBeDisabled();
+  await expect(
+    page.getByRole("button", { name: /^(Next|Continue to text workflow)$/, exact: true }),
+  ).toBeDisabled();
   await page.evaluate(() => {
     window.dictationTest.snapshot.shortcutTested = true;
     window.dictationTest.callbacks["setup:changed"]();
   });
-  await expect(page.getByRole("button", { name: "Next", exact: true })).toBeEnabled();
-  await page.getByRole("button", { name: "Next", exact: true }).click();
+  await expect(
+    page.getByRole("button", { name: /^(Next|Continue to text workflow)$/, exact: true }),
+  ).toBeEnabled();
+  await page
+    .getByRole("button", { name: /^(Next|Continue to text workflow)$/, exact: true })
+    .click();
   await expect(page.getByRole("heading", { name: "Try a real dictation" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Next", exact: true })).toBeDisabled();
+  await expect(
+    page.getByRole("button", { name: /^(Next|Continue to text workflow)$/, exact: true }),
+  ).toBeDisabled();
   await completeDiagnosticPractice(page);
-  await page.getByRole("button", { name: "Next", exact: true }).click();
+  await page
+    .getByRole("button", { name: /^(Next|Continue to text workflow)$/, exact: true })
+    .click();
   await expect(page.getByRole("heading", { name: "Add a text model (optional)" })).toBeVisible();
   await expect(
     page.getByRole("button", { name: en["onboarding.finishBasic"], exact: true }),
@@ -2157,7 +2182,9 @@ for (const theme of ["light", "dark"] as const) {
     await expect
       .poll(() => page.evaluate(() => window.dictationTest.snapshot.textProcessing.autoPromptId))
       .toBe("cleanup");
-    await expect(page.getByRole("button", { name: "Refine prompt", exact: true })).toBeInViewport();
+    await expect(
+      page.getByRole("button", { name: "Refine instructions", exact: true }),
+    ).toBeInViewport();
     await expect(page.getByRole("region", { name: "Prompt details", exact: true })).toBeInViewport({
       ratio: 1,
     });
@@ -2744,16 +2771,18 @@ test("prompt refinement previews an unsaved draft and saves only after applying"
 }, testInfo) => {
   await page.goto("/#/prompts?section=models");
   await page.getByRole("tab", { name: "Prompts", exact: true }).click();
-  await expect(page.getByRole("button", { name: "Refine prompt", exact: true })).toBeDisabled();
+  await expect(
+    page.getByRole("button", { name: "Refine instructions", exact: true }),
+  ).toBeDisabled();
   await page.getByRole("tab", { name: "Text model", exact: true }).click();
   await page.getByLabel("Model identifier", { exact: true }).fill("draft-model");
   await showServerAddress(page);
   await page.getByLabel("Local server URL", { exact: true }).fill("http://127.0.0.1:1234/v1");
   await page.getByRole("tab", { name: "Prompts", exact: true }).click();
   await page.getByLabel("Instructions", { exact: true }).fill("summarize in bullets, keep names");
-  await page.getByRole("button", { name: "Refine prompt", exact: true }).click();
+  await page.getByRole("button", { name: "Refine instructions", exact: true }).click();
   const dialog = page.getByRole("dialog", {
-    name: "Refine prompt",
+    name: "Refine instructions",
     exact: true,
   });
   await expect(dialog.getByLabel("Your instructions", { exact: true })).toHaveValue(
@@ -2825,7 +2854,7 @@ test("discarding prompt refinement preserves draft and cancels late results", as
   await page.getByLabel("Model identifier", { exact: true }).fill("local");
   await page.getByRole("tab", { name: "Prompts", exact: true }).click();
   await page.getByLabel("Instructions", { exact: true }).fill("My rough draft");
-  await page.getByRole("button", { name: "Refine prompt", exact: true }).click();
+  await page.getByRole("button", { name: "Refine instructions", exact: true }).click();
   await expect.poll(() => page.evaluate(() => !!window.dictationTest.processing)).toBe(true);
   await page.getByRole("button", { name: "Discard preview", exact: true }).click();
   await expect
@@ -2833,7 +2862,7 @@ test("discarding prompt refinement preserves draft and cancels late results", as
     .toBe(1);
   await page.evaluate(() => window.dictationTest.processing!.resolve("Late result"));
   await expect(page.getByLabel("Instructions", { exact: true })).toHaveValue("My rough draft");
-  await page.getByRole("button", { name: "Refine prompt", exact: true }).click();
+  await page.getByRole("button", { name: "Refine instructions", exact: true }).click();
   await page.evaluate(() => window.dictationTest.processing!.resolve("Fresh result"));
   await expect(page.getByLabel("Refined instructions", { exact: true })).toHaveValue(
     "Fresh result",
@@ -2849,7 +2878,7 @@ test("prompt refinement can cancel and retry after a model failure", async ({ pa
   await page.evaluate(() => {
     window.dictationTest.failProcessing = true;
   });
-  await page.getByRole("button", { name: "Refine prompt", exact: true }).click();
+  await page.getByRole("button", { name: "Refine instructions", exact: true }).click();
   await expect(page.getByRole("alert")).toHaveText("Model unavailable");
   await page.evaluate(() => {
     window.dictationTest.failProcessing = false;
@@ -2872,7 +2901,7 @@ test("leaving prompts cancels refinement and old backends show recovery guidance
   await page.goto("/#/prompts?section=models");
   await page.getByLabel("Model identifier", { exact: true }).fill("local");
   await page.getByRole("tab", { name: "Prompts", exact: true }).click();
-  await page.getByRole("button", { name: "Refine prompt", exact: true }).click();
+  await page.getByRole("button", { name: "Refine instructions", exact: true }).click();
   await expect.poll(() => page.evaluate(() => !!window.dictationTest.processing)).toBe(true);
   await page.evaluate(() => {
     location.hash = "#/history";
@@ -2887,7 +2916,7 @@ test("leaving prompts cancels refinement and old backends show recovery guidance
     Reflect.deleteProperty(Reflect.get(window, "mockBackend").app.App, "RefinePrompt");
   });
   await page.getByRole("tab", { name: "Prompts", exact: true }).click();
-  await page.getByRole("button", { name: "Refine prompt", exact: true }).click();
+  await page.getByRole("button", { name: "Refine instructions", exact: true }).click();
   await expect(page.getByRole("alert")).toContainText(
     "Yap's interface and backend are different versions",
   );
@@ -2919,8 +2948,12 @@ test("setup ignores an older microphone enumeration reply", async ({ page }) => 
     app.GetMicrophones = () => new Promise((resolve) => pending.push(resolve));
   });
   await page.goto("/");
-  await page.getByRole("button", { name: "Next", exact: true }).click();
-  await page.getByRole("button", { name: "Next", exact: true }).click();
+  await page
+    .getByRole("button", { name: /^(Next|Continue to text workflow)$/, exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: /^(Next|Continue to text workflow)$/, exact: true })
+    .click();
   await expect.poll(() => page.evaluate(() => Reflect.get(window, "micReplies").length)).toBe(1);
   await page.getByRole("button", { name: "Refresh microphones", exact: true }).click();
   await expect.poll(() => page.evaluate(() => Reflect.get(window, "micReplies").length)).toBe(2);
@@ -4932,7 +4965,9 @@ test("vocabulary table paginates when there are more than ten terms", async ({ p
   await expect(page.getByLabel("Preferred spelling", { exact: true }).first()).toHaveValue(
     "Term 1",
   );
-  await pages.getByRole("button", { name: "Next", exact: true }).click();
+  await pages
+    .getByRole("button", { name: /^(Next|Continue to text workflow)$/, exact: true })
+    .click();
   await expect(pages.getByText("Page 2 of 2", { exact: true })).toBeVisible();
   await expect(page.getByLabel("Preferred spelling", { exact: true })).toHaveCount(1);
   await expect(page.getByLabel("Preferred spelling", { exact: true })).toHaveValue("Term 11");
@@ -5021,12 +5056,22 @@ async function reachWorkflow(page: Page, useCase?: "email" | "notes") {
         name: useCase === "email" ? /Polished emails & messages/ : /Structured notes & summaries/,
       })
       .check();
-  await page.getByRole("button", { name: "Next", exact: true }).click();
-  await page.getByRole("button", { name: "Next", exact: true }).click();
-  await page.getByRole("button", { name: "Next", exact: true }).click();
-  await page.getByRole("button", { name: "Next", exact: true }).click();
+  await page
+    .getByRole("button", { name: /^(Next|Continue to text workflow)$/, exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: /^(Next|Continue to text workflow)$/, exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: /^(Next|Continue to text workflow)$/, exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: /^(Next|Continue to text workflow)$/, exact: true })
+    .click();
   await completeDiagnosticPractice(page);
-  await page.getByRole("button", { name: "Next", exact: true }).click();
+  await page
+    .getByRole("button", { name: /^(Next|Continue to text workflow)$/, exact: true })
+    .click();
   await expect(page.getByRole("heading", { name: "Add a text model (optional)" })).toBeVisible();
 }
 
@@ -5047,7 +5092,9 @@ async function completeDiagnosticPractice(page: Page) {
     state.callbacks["setup:changed"]();
   });
   await expect(page.getByText("This is my practice sentence.", { exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Next", exact: true })).toBeEnabled();
+  await expect(
+    page.getByRole("button", { name: /^(Next|Continue to text workflow)$/, exact: true }),
+  ).toBeEnabled();
 }
 
 for (const theme of ["dark", "light"] as const) {
@@ -5096,7 +5143,10 @@ for (const theme of ["dark", "light"] as const) {
     }, theme);
     await page.setViewportSize({ width: 1347, height: 900 });
     await page.goto("/");
-    const next = page.getByRole("button", { name: "Next", exact: true });
+    const next = page.getByRole("button", {
+      name: /^(Next|Continue to text workflow)$/,
+      exact: true,
+    });
     const steps = page.getByRole("list", { name: "Setup steps" });
     await expect(steps.locator('[aria-current="step"]')).toContainText("Your workflow");
     await expect(next).toBeEnabled();
@@ -5153,7 +5203,10 @@ for (const theme of ["dark", "light"] as const) {
     await expect(page.getByText("Last microphone test passed", { exact: true })).toBeVisible();
     await next.click();
     await expect(steps.locator('[aria-current="step"]')).toContainText("Shortcut");
-    const finish = page.getByRole("button", { name: "Next", exact: true });
+    const finish = page.getByRole("button", {
+      name: /^(Next|Continue to text workflow)$/,
+      exact: true,
+    });
     await expect(finish).toBeDisabled();
     await page.getByLabel("Global shortcut", { exact: true }).fill("Ctrl+Shift+J");
     await expect(page.getByLabel("Saved shortcut: Ctrl+Alt+Space", { exact: true })).toBeVisible();
@@ -5220,7 +5273,9 @@ test("setup footer stays at the viewport bottom while scrolling and resizing", a
       .toBeLessThan(2);
   }
   await expectFooterAtBottom();
-  await page.getByRole("button", { name: "Next", exact: true }).click();
+  await page
+    .getByRole("button", { name: /^(Next|Continue to text workflow)$/, exact: true })
+    .click();
   await expect(page.locator('[data-slot="toast"]')).toBeVisible();
   await expect
     .poll(async () => {
@@ -5231,13 +5286,17 @@ test("setup footer stays at the viewport bottom while scrolling and resizing", a
         : Infinity;
     })
     .toBeLessThanOrEqual(0);
-  await page.getByRole("button", { name: "Next", exact: true }).click();
+  await page
+    .getByRole("button", { name: /^(Next|Continue to text workflow)$/, exact: true })
+    .click();
   await expectFooterAtBottom();
   for (const width of [1347, 480, 360]) {
     await page.setViewportSize({ width, height: 600 });
     await page.evaluate(() => window.scrollTo(0, 0));
     await expectFooterAtBottom();
-    await expect(footer.getByRole("button", { name: "Next", exact: true })).toBeInViewport();
+    await expect(
+      footer.getByRole("button", { name: /^(Next|Continue to text workflow)$/, exact: true }),
+    ).toBeInViewport();
     await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
     await expectFooterAtBottom();
     const testButton = page.getByRole("button", { name: "Test microphone", exact: true });
@@ -5276,7 +5335,9 @@ test("speech model readiness uses one success toast across refreshes and setup s
     ];
   });
   await page.goto("/");
-  await page.getByRole("button", { name: "Next", exact: true }).click();
+  await page
+    .getByRole("button", { name: /^(Next|Continue to text workflow)$/, exact: true })
+    .click();
   const toast = page.locator('[data-slot="toast"]').filter({ hasText: "Speech model ready" });
   await expect(toast).toBeVisible();
   await expect(
@@ -5287,7 +5348,9 @@ test("speech model readiness uses one success toast across refreshes and setup s
   await toast.getByRole("button", { name: "Dismiss notification" }).click();
   await expect(toast).toHaveCount(0);
   await page.evaluate(() => window.dictationTest.history());
-  await page.getByRole("button", { name: "Next", exact: true }).click();
+  await page
+    .getByRole("button", { name: /^(Next|Continue to text workflow)$/, exact: true })
+    .click();
   await page.getByRole("button", { name: "Back", exact: true }).click();
   await expect(toast).toHaveCount(0);
   await simulateModelDownload(page);
@@ -5298,7 +5361,9 @@ test("speech model readiness uses one success toast across refreshes and setup s
     state.history();
     state.callbacks["setup:changed"](["configuration", "catalogs"]);
   });
-  await expect(page.getByRole("button", { name: "Next", exact: true })).toBeDisabled();
+  await expect(
+    page.getByRole("button", { name: /^(Next|Continue to text workflow)$/, exact: true }),
+  ).toBeDisabled();
   await page.evaluate(() => {
     const state = window.dictationTest;
     state.snapshot.ready = true;
@@ -5310,7 +5375,9 @@ test("speech model readiness uses one success toast across refreshes and setup s
   });
   await expect(toast).toBeVisible();
   await expect(page.locator('[data-slot="toast"]')).toHaveCount(1);
-  await expect(page.getByRole("button", { name: "Next", exact: true })).toBeEnabled();
+  await expect(
+    page.getByRole("button", { name: /^(Next|Continue to text workflow)$/, exact: true }),
+  ).toBeEnabled();
 });
 
 test("microphone errors use a dismissible toast without adding a page banner", async ({
@@ -5333,8 +5400,12 @@ test("microphone errors use a dismissible toast without adding a page banner", a
     };
   });
   await page.goto("/");
-  await page.getByRole("button", { name: "Next", exact: true }).click();
-  await page.getByRole("button", { name: "Next", exact: true }).click();
+  await page
+    .getByRole("button", { name: /^(Next|Continue to text workflow)$/, exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: /^(Next|Continue to text workflow)$/, exact: true })
+    .click();
   const error = "no microphone signal detected; check microphone access and choose another input";
   const toast = page.locator('[data-slot="toast"]').filter({ hasText: error });
   async function failTest() {
@@ -5345,7 +5416,9 @@ test("microphone errors use a dismissible toast without adding a page banner", a
   await expect(toast).toBeVisible();
   await expect(toast).toHaveCount(1);
   await expect(page.locator("#main-content").getByText(error, { exact: true })).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Next", exact: true })).toBeDisabled();
+  await expect(
+    page.getByRole("button", { name: /^(Next|Continue to text workflow)$/, exact: true }),
+  ).toBeDisabled();
   await page.evaluate(() => window.dictationTest.history());
   await expect(toast).toHaveCount(1);
   await page.screenshot({
@@ -5384,11 +5457,19 @@ test("first run guides installation, mic testing and shortcut verification", asy
   });
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "Set up Yap" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Next", exact: true })).toBeEnabled();
-  await page.getByRole("button", { name: "Next", exact: true }).click();
-  await expect(page.getByRole("button", { name: "Next", exact: true })).toBeDisabled();
+  await expect(
+    page.getByRole("button", { name: /^(Next|Continue to text workflow)$/, exact: true }),
+  ).toBeEnabled();
+  await page
+    .getByRole("button", { name: /^(Next|Continue to text workflow)$/, exact: true })
+    .click();
+  await expect(
+    page.getByRole("button", { name: /^(Next|Continue to text workflow)$/, exact: true }),
+  ).toBeDisabled();
   await page.getByRole("button", { name: "Download & use" }).click();
-  await expect(page.getByRole("button", { name: "Next", exact: true })).toBeDisabled();
+  await expect(
+    page.getByRole("button", { name: /^(Next|Continue to text workflow)$/, exact: true }),
+  ).toBeDisabled();
   await page.evaluate(() => {
     window.dictationTest.snapshot.ready = true;
     window.dictationTest.snapshot.models[0].installed = true;
@@ -5396,8 +5477,12 @@ test("first run guides installation, mic testing and shortcut verification", asy
     window.dictationTest.history();
     window.dictationTest.callbacks["setup:changed"]();
   });
-  await page.getByRole("button", { name: "Next", exact: true }).click();
-  await expect(page.getByRole("button", { name: "Next", exact: true })).toBeDisabled();
+  await page
+    .getByRole("button", { name: /^(Next|Continue to text workflow)$/, exact: true })
+    .click();
+  await expect(
+    page.getByRole("button", { name: /^(Next|Continue to text workflow)$/, exact: true }),
+  ).toBeDisabled();
   await page.getByRole("combobox", { name: "Microphone", exact: true }).click();
   await page.getByRole("option", { name: "USB microphone", exact: true }).click();
   await page.getByRole("button", { name: "Test microphone", exact: true }).click();
@@ -5408,17 +5493,25 @@ test("first run guides installation, mic testing and shortcut verification", asy
   await expect(page.getByRole("button", { name: "Back", exact: true })).toBeDisabled();
   await page.getByRole("button", { name: "Stop test", exact: true }).click();
   await expect(page.getByText("Last microphone test passed", { exact: true })).toBeVisible();
-  await page.getByRole("button", { name: "Next", exact: true }).click();
-  await expect(page.getByRole("button", { name: "Next", exact: true })).toBeDisabled();
+  await page
+    .getByRole("button", { name: /^(Next|Continue to text workflow)$/, exact: true })
+    .click();
+  await expect(
+    page.getByRole("button", { name: /^(Next|Continue to text workflow)$/, exact: true }),
+  ).toBeDisabled();
   await page.evaluate(() => {
     window.dictationTest.snapshot.shortcutTested = true;
     window.dictationTest.callbacks["setup:changed"]();
   });
   await expect(page.getByText("Shortcut test passed", { exact: true })).toBeVisible();
-  await page.getByRole("button", { name: "Next", exact: true }).click();
+  await page
+    .getByRole("button", { name: /^(Next|Continue to text workflow)$/, exact: true })
+    .click();
   await expect(page.getByRole("heading", { name: "Try a real dictation" })).toBeVisible();
   await completeDiagnosticPractice(page);
-  await page.getByRole("button", { name: "Next", exact: true }).click();
+  await page
+    .getByRole("button", { name: /^(Next|Continue to text workflow)$/, exact: true })
+    .click();
   await expect(page.getByRole("heading", { name: "Add a text model (optional)" })).toBeVisible();
   await page.getByRole("button", { name: en["onboarding.finishBasic"], exact: true }).click();
   await page.getByRole("button", { name: en["onboarding.finishBasic"], exact: true }).click();
@@ -5511,7 +5604,9 @@ test("onboarding cancel and continue waits for the owned preview and global job 
     window.dictationTest.deferWorkflowPreview = true;
   });
   await page.getByRole("button", { name: "Run trial", exact: true }).click();
-  await expect(page.getByRole("button", { name: "Next", exact: true })).toBeDisabled();
+  await expect(
+    page.getByRole("button", { name: /^(Next|Continue to text workflow)$/, exact: true }),
+  ).toBeDisabled();
   await expect(page.getByRole("button", { name: "Back", exact: true })).toBeDisabled();
   await page.getByRole("button", { name: /Cancel trial.*continue/i }).click();
   await expect
@@ -5557,7 +5652,9 @@ test("onboarding failed preview cancellation stays local and can be retried", as
   await expect(
     page.getByRole("heading", { name: "Name your active profile", exact: true }),
   ).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Next", exact: true })).toBeDisabled();
+  await expect(
+    page.getByRole("button", { name: /^(Next|Continue to text workflow)$/, exact: true }),
+  ).toBeDisabled();
   await page.evaluate(() => {
     window.dictationTest.failPreviewCancel = false;
   });
@@ -5577,7 +5674,9 @@ test("onboarding failed preview cancellation stays local and can be retried", as
 test("onboarding never offers owned-preview cancellation for unrelated work", async ({ page }) => {
   await openPolishedOnboarding(page);
   await page.evaluate(() => window.dictationTest.status("text-processing"));
-  await expect(page.getByRole("button", { name: "Next", exact: true })).toBeDisabled();
+  await expect(
+    page.getByRole("button", { name: /^(Next|Continue to text workflow)$/, exact: true }),
+  ).toBeDisabled();
   await expect(
     page.locator("footer").getByText(en["onboarding.trialBusyGuidance"], { exact: true }),
   ).toBeVisible();
@@ -5585,7 +5684,9 @@ test("onboarding never offers owned-preview cancellation for unrelated work", as
   await expect(page.getByRole("button", { name: /Cancel trial.*continue/i })).toHaveCount(0);
   expect(await page.evaluate(() => window.dictationTest.cancelledProcessing)).toHaveLength(0);
   await page.evaluate(() => window.dictationTest.status("idle"));
-  await expect(page.getByRole("button", { name: "Next", exact: true })).toBeEnabled();
+  await expect(
+    page.getByRole("button", { name: /^(Next|Continue to text workflow)$/, exact: true }),
+  ).toBeEnabled();
 });
 
 test("onboarding prompt trial stays isolated and completion retry keeps its identity", async ({
@@ -5652,7 +5753,9 @@ test("onboarding prompt trial stays isolated and completion retry keeps its iden
   expect(
     await page.evaluate(() => window.dictationTest.snapshot.textProcessing.prompts),
   ).toHaveLength(2);
-  await page.getByRole("button", { name: "Next", exact: true }).click();
+  await page
+    .getByRole("button", { name: /^(Next|Continue to text workflow)$/, exact: true })
+    .click();
   const name = page.getByLabel("Name", { exact: true });
   await name.fill("a".repeat(61));
   await expect(page.getByRole("alert").filter({ hasText: "at most 60 Unicode" })).toBeVisible();
@@ -5731,7 +5834,9 @@ test("onboarding chain trial keeps raw and cleaned dictation sources distinct", 
   expect(
     await page.evaluate(() => window.dictationTest.snapshot.textProcessing.chains ?? []),
   ).toHaveLength(0);
-  await page.getByRole("button", { name: "Next", exact: true }).click();
+  await page
+    .getByRole("button", { name: /^(Next|Continue to text workflow)$/, exact: true })
+    .click();
   await page.getByLabel("Name", { exact: true }).fill("Meeting notes");
   await page.getByRole("button", { name: "Save & activate profile" }).click();
   await expect(page.getByRole("region", { name: "Dictation recorder" })).toBeVisible();
@@ -5811,7 +5916,9 @@ test("onboarding keeps a ready text model for manual use without an automatic re
   await page.goto("/");
   await reachWorkflow(page);
   await expect(page.getByRole("radio", { name: "Basic dictation", exact: true })).toBeChecked();
-  await page.getByRole("button", { name: "Next", exact: true }).click();
+  await page
+    .getByRole("button", { name: /^(Next|Continue to text workflow)$/, exact: true })
+    .click();
   await page.getByRole("button", { name: "Save & activate profile", exact: true }).click();
   await expect(page.getByRole("region", { name: "Dictation recorder" })).toBeVisible();
   const completed = await page.evaluate(() => window.dictationTest.completionRequests[0]);
@@ -5860,7 +5967,7 @@ test("onboarding German basic path remains usable at narrow width with reduced m
     state.status("idle");
     state.callbacks["setup:changed"]();
   });
-  await page.getByRole("button", { name: de["common.next"], exact: true }).click();
+  await page.getByRole("button", { name: de["ux.setup.continueToWorkflow"], exact: true }).click();
   await expect(page.getByText(de["onboarding.runtimeUnavailable"], { exact: true })).toBeVisible();
   await page.getByRole("button", { name: de["onboarding.finishBasic"], exact: true }).click();
   await expect(
@@ -7203,8 +7310,12 @@ test("microphone test remains stoppable after navigating away from setup", async
     window.dictationTest.snapshot.settings.setupComplete = false;
   });
   await page.goto("/");
-  await page.getByRole("button", { name: "Next", exact: true }).click();
-  await page.getByRole("button", { name: "Next", exact: true }).click();
+  await page
+    .getByRole("button", { name: /^(Next|Continue to text workflow)$/, exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: /^(Next|Continue to text workflow)$/, exact: true })
+    .click();
   await page.getByRole("button", { name: "Test microphone", exact: true }).click();
   await expect(page.getByRole("button", { name: "Stop test", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Stop microphone test", exact: true })).toHaveCount(
@@ -7913,10 +8024,8 @@ test("bulk selection toggles entire history rows while keeping row actions indep
   await expect(page).toHaveURL(/#\/history$/);
   await rows.last().getByRole("button", { name: "Copy dictation", exact: true }).click();
   await expect(rows.last().getByRole("checkbox")).toBeChecked();
-  await rows
-    .last()
-    .getByRole("button", { name: /^Rename dictation:/ })
-    .click();
+  await rows.last().getByRole("button", { name: "Dictation actions", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Rename", exact: true }).click();
   const rename = page.getByRole("dialog", { name: "Rename dictation", exact: true });
   await expect(rename).toBeVisible();
   await rename.getByRole("textbox", { name: "Title", exact: true }).fill("Keep selection");
@@ -8073,22 +8182,19 @@ test("History renames in place, preserves text and returns focus when a title se
   await page.getByRole("link", { name: "Back to History", exact: true }).click();
   await expect(page.locator("tbody tr")).toHaveCount(2);
   const row = page.getByRole("row").filter({ has: page.locator('a[href^="#/history/title-one"]') });
-  const rename = row.getByRole("button", { name: /^Rename dictation:/ });
+  const rename = row.getByRole("button", { name: "Dictation actions", exact: true });
   await page.mouse.move(0, 0);
   await expect(rename).toHaveCSS("opacity", "1");
   await expect(rename.locator("svg")).toBeVisible();
-  await rename.hover();
-  const renameHelp = page.getByRole("tooltip", { name: "Rename dictation", exact: true });
-  await expect(renameHelp).toBeVisible();
+  await expect(rename).toHaveAttribute("title", "Dictation actions");
   await page.mouse.move(0, 0);
   await rename.focus();
   await page.keyboard.press("Shift+Tab");
   await page.keyboard.press("Tab");
   await expect(rename).toBeFocused();
-  await expect(renameHelp).toBeVisible();
-  await expect(renameHelp).toHaveCSS("opacity", "1");
   await expect(rename).toHaveCSS("opacity", "1");
   await rename.press("Enter");
+  await page.getByRole("menuitem", { name: "Rename", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "Rename dictation", exact: true });
   const input = dialog.getByRole("textbox", { name: "Title", exact: true });
   await input.fill("Unsubmitted title");
@@ -8096,6 +8202,7 @@ test("History renames in place, preserves text and returns focus when a title se
   await expect(rename).toBeFocused();
   expect(await page.evaluate(() => window.sessionTitleTest.calls)).toEqual([]);
   await rename.click();
+  await page.getByRole("menuitem", { name: "Rename", exact: true }).click();
   await input.fill("Searchable meeting notes");
   await dialog.getByRole("button", { name: "Save title", exact: true }).click();
   await expect(dialog).toHaveCount(0);
@@ -8106,6 +8213,7 @@ test("History renames in place, preserves text and returns focus when a title se
   await search.fill("Searchable meeting");
   await expect(page.locator("tbody tr")).toHaveCount(1);
   await rename.click();
+  await page.getByRole("menuitem", { name: "Rename", exact: true }).click();
   await input.fill("");
   await dialog.getByRole("button", { name: "Save title", exact: true }).click();
   await expect(dialog).toHaveCount(0);
@@ -9249,7 +9357,7 @@ for (const control of ["checkbox", "link", "rename"] as const) {
         ? row.getByRole("checkbox")
         : control === "link"
           ? row.getByRole("link")
-          : row.getByRole("button", { name: /^Rename dictation:/ });
+          : row.getByRole("button", { name: "Dictation actions", exact: true });
     await target.evaluate((node) => {
       const toolbar = document
         .querySelector('[data-slot="history-toolbar"]')!
@@ -9280,10 +9388,12 @@ for (const control of ["checkbox", "link", "rename"] as const) {
     await page.mouse.up();
     if (control === "checkbox") await expect(target).toBeChecked();
     else if (control === "link") await expect(page).toHaveURL(/history\/pointer-12/);
-    else
+    else {
+      await page.getByRole("menuitem", { name: "Rename", exact: true }).click();
       await expect(
         page.getByRole("dialog", { name: "Rename dictation", exact: true }),
       ).toBeVisible();
+    }
   });
 }
 
@@ -10070,9 +10180,15 @@ test("shortcut recorder is disabled during active work and works in first-run se
     state.callbacks["setup:changed"]();
   });
   await navigateMain(page, "Dictate");
-  await page.getByRole("button", { name: "Next", exact: true }).click();
-  await page.getByRole("button", { name: "Next", exact: true }).click();
-  await page.getByRole("button", { name: "Next", exact: true }).click();
+  await page
+    .getByRole("button", { name: /^(Next|Continue to text workflow)$/, exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: /^(Next|Continue to text workflow)$/, exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: /^(Next|Continue to text workflow)$/, exact: true })
+    .click();
   const dialog = await recordShortcut(page);
   await dialog.getByRole("group", { name: "Shortcut capture" }).press("Shift+F8");
   await dialog.getByRole("button", { name: "Use shortcut", exact: true }).click();
@@ -11692,6 +11808,7 @@ test("delivery warnings persist and recover through the current Home result afte
   page,
 }) => {
   await homeModelScenario(page);
+  await page.keyboard.press("Escape");
   await page.evaluate(() => {
     const state = window.dictationTest;
     state.status("transcribing");
@@ -12821,7 +12938,203 @@ test("adding an app to another profile moves its badge and the picker names its 
   }
 });
 
-test("shortcuts are grouped in one section and the cycle shortcut saves automatically", async ({
+test("UX basic setup finishes after practice with a unique profile and no automatic text workflow", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const state = window.dictationTest;
+    state.snapshot.settings.setupComplete = false;
+    state.snapshot.microphoneTested = true;
+    state.snapshot.shortcutTested = true;
+    state.snapshot.textProcessing = {
+      ...state.snapshot.textProcessing,
+      enabled: true,
+      model: "local-model",
+      autoPromptId: "cleanup",
+    };
+    state.snapshot.dictationProfiles = [
+      {
+        id: "existing",
+        name: "EVERYDAY DICTATION",
+        modelPath: "/model",
+        language: "auto",
+        cleanText: false,
+        autoPromptId: "",
+      },
+    ];
+    state.snapshot.defaultProfileId = "existing";
+    state.snapshot.activeProfileId = "existing";
+  });
+  await page.goto("/");
+  for (let step = 0; step < 4; step++)
+    await page
+      .getByRole("button", { name: /^(Next|Continue to text workflow)$/, exact: true })
+      .click();
+  const start = page.getByRole("button", { name: "Start dictating", exact: true });
+  await expect(start).toBeDisabled();
+  await completeDiagnosticPractice(page);
+  await page.evaluate(() => (window.dictationTest.failSave = true));
+  await start.click();
+  await expect(
+    page.getByRole("heading", { name: "Could not complete onboarding", exact: true }),
+  ).toBeVisible();
+  await expect(start).toBeEnabled();
+  await page.evaluate(() => (window.dictationTest.failSave = false));
+  await start.click();
+  await expect(page.getByRole("region", { name: "Dictation recorder", exact: true })).toBeVisible();
+  const state = await page.evaluate(() => ({
+    completion: window.dictationTest.completionRequests.at(-1),
+    history: window.dictationTest.snapshot.history,
+  }));
+  expect(state.completion!.profile.name).toBe("Everyday dictation 2");
+  expect(state.completion!.config).toMatchObject({ enabled: false, autoPromptId: "", chains: [] });
+  expect(state.completion!.config.prompts.map((prompt) => prompt.id)).toEqual([
+    "cleanup",
+    "summary",
+  ]);
+  expect(state.history).toEqual([]);
+});
+
+test("UX History previews, visible times, row deletion and undo preserve saved dictations", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const state = window.dictationTest;
+    state.snapshot.history = [
+      {
+        id: "ux-one",
+        title: "Launch planning",
+        createdAt: new Date().toISOString(),
+        durationMs: 45000,
+        rawTranscript: "Original launch plan.",
+        finalTranscript: "Send the release checklist to Alex on Thursday.",
+        speechModel: "small",
+        language: "en",
+        audioPath: "",
+      },
+    ];
+  });
+  await page.goto("/#/history");
+  const row = page.getByRole("row").filter({ hasText: "Launch planning" });
+  await expect(row).toContainText("Send the release checklist to Alex on Thursday.");
+  await expect(row.locator("time")).toContainText("Today,");
+  await row.getByRole("button", { name: "Dictation actions", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Move to Recently Deleted", exact: true }).click();
+  await expect(row).toHaveCount(0);
+  await page.getByRole("button", { name: "Undo", exact: true }).click();
+  await expect(row).toBeVisible();
+  await row.getByRole("link").click();
+  await expect(page.locator('[data-slot="detail-metadata"]')).toContainText("Whisper Small");
+  expect(await page.evaluate(() => window.dictationTest.snapshot.history[0].finalTranscript)).toBe(
+    "Send the release checklist to Alex on Thursday.",
+  );
+});
+
+test("UX basic setup can leave invalid optional workflow and profile drafts behind", async ({
+  page,
+}) => {
+  await openPolishedOnboarding(page);
+  await page.getByRole("button", { name: "Next", exact: true }).click();
+  await page.getByLabel("Name", { exact: true }).fill("");
+  await page.getByRole("button", { name: "Back", exact: true }).click();
+  await page.getByLabel("Prompt name", { exact: true }).fill("");
+  await page.getByRole("button", { name: "Back", exact: true }).click();
+  await page.getByRole("button", { name: "Start dictating", exact: true }).click();
+  await expect(page.getByRole("region", { name: "Dictation recorder", exact: true })).toBeVisible();
+  const completed = await page.evaluate(() => window.dictationTest.completionRequests.at(-1)!);
+  expect(completed.profile.name).toBe("Everyday dictation");
+  expect(completed.config).toMatchObject({ enabled: false, autoPromptId: "", chains: [] });
+  expect(completed.config.prompts.map((prompt) => prompt.id)).toEqual(["cleanup", "summary"]);
+});
+
+test("UX deleted prompt trial stays safe and Cancel returns to ordinary Outputs", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const state = window.dictationTest;
+    state.snapshot.history = [
+      {
+        id: "deleted-prompt-trial",
+        title: "Trial",
+        createdAt: new Date().toISOString(),
+        durationMs: 1000,
+        rawTranscript: "Original",
+        finalTranscript: "Saved",
+        speechModel: "tiny",
+        language: "en",
+        audioPath: "",
+      },
+    ];
+    state.snapshot.textProcessing = {
+      ...state.snapshot.textProcessing,
+      enabled: true,
+      model: "local-model",
+    };
+  });
+  await page.goto("/#/history/deleted-prompt-trial?tryPrompt=removed");
+  const composer = page.getByRole("dialog", { name: en["uiPolish.createOutput"], exact: true });
+  await expect(composer.getByRole("alert")).toContainText("This prompt is no longer available");
+  await expect(
+    composer.getByRole("button", { name: "Generate output", exact: true }),
+  ).toBeDisabled();
+  expect(await page.evaluate(() => window.dictationTest.processing)).toBeNull();
+  await composer.getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(page).not.toHaveURL(/tryPrompt=/);
+  await expect(page.getByRole("tab", { name: "Outputs", exact: true })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+});
+
+test("UX prompt trial selects a saved transcript and waits for explicit generation", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const state = window.dictationTest;
+    state.snapshot.textProcessing = {
+      ...state.snapshot.textProcessing,
+      enabled: true,
+      model: "local-model",
+    };
+    state.snapshot.history = [
+      {
+        id: "ux-trial",
+        title: "Trial notes",
+        createdAt: new Date().toISOString(),
+        durationMs: 15000,
+        rawTranscript: "raw recognition",
+        finalTranscript: "Approved saved transcript",
+        speechModel: "small",
+        language: "en",
+        audioPath: "",
+      },
+    ];
+  });
+  await page.goto("/#/prompts");
+  await page.getByRole("button", { name: "Try on a saved dictation", exact: true }).click();
+  await expect(page).toHaveURL(/history\?tryPrompt=cleanup/);
+  await page.getByRole("link").filter({ hasText: "Trial notes" }).click();
+  const composer = page.getByRole("dialog", { name: en["uiPolish.createOutput"], exact: true });
+  await expect(composer).toBeVisible();
+  await page.reload();
+  await expect(composer).toBeVisible();
+  await expect(
+    composer.getByRole("combobox", { name: "Output prompt", exact: true }),
+  ).toContainText("Cleanup");
+  expect(await page.evaluate(() => window.dictationTest.processing)).toBeNull();
+  await composer.getByRole("button", { name: "Generate output", exact: true }).click();
+  await expect
+    .poll(() => page.evaluate(() => window.dictationTest.processing?.input))
+    .toBe("Approved saved transcript");
+  expect(await page.evaluate(() => window.dictationTest.snapshot.textProcessing.autoPromptId)).toBe(
+    "",
+  );
+  await page.evaluate(() => window.dictationTest.processing!.resolve("A concise trial output."));
+  await expect(page.getByText("A concise trial output.", { exact: true })).toBeVisible();
+  await expect(page).not.toHaveURL(/tryPrompt=/);
+});
+
+test("delivery stays ahead of optional profile shortcuts and cycling saves automatically", async ({
   page,
 }) => {
   await homeModelScenario(page);
@@ -12829,7 +13142,15 @@ test("shortcuts are grouped in one section and the cycle shortcut saves automati
   const shortcuts = page.getByRole("heading", { name: "Shortcuts", exact: true }).locator("..");
   await expect(shortcuts.getByLabel("Global shortcut", { exact: true })).toBeVisible();
   await expect(shortcuts.getByText("Recording mode", { exact: true })).toBeVisible();
-  const cycle = shortcuts.getByLabel("Cycle profiles shortcut", { exact: true });
+  const optional = page.locator('[data-slot="profile-shortcut-options"]');
+  await expect(optional).not.toHaveAttribute("open", "");
+  const copyRow = page.getByRole("switch", {
+    name: "Copy automatically to clipboard",
+    exact: true,
+  });
+  expect((await copyRow.boundingBox())!.y).toBeLessThan((await optional.boundingBox())!.y);
+  await optional.locator("summary").click();
+  const cycle = optional.getByLabel("Cycle profiles shortcut", { exact: true });
   await cycle.fill("Ctrl+Alt+P");
   await expect(page.getByText("Saves when you leave the field", { exact: true })).toBeVisible();
   await cycle.press("Enter");
@@ -12848,6 +13169,7 @@ test("cycle shortcut keeps its draft after failure and reports shortcut conflict
 }) => {
   await homeModelScenario(page);
   await page.getByRole("link", { name: "Settings", exact: true }).click();
+  await page.locator('[data-slot="profile-shortcut-options"] > summary').click();
   const cycle = page.getByLabel("Cycle profiles shortcut", { exact: true });
   await page.evaluate(() => {
     window.dictationTest.failSave = true;
@@ -14685,9 +15007,14 @@ test("UI polish setup model guidance clears the sticky footer at normal and enla
     ];
   });
   await page.goto("/");
-  await page.getByRole("button", { name: "Next", exact: true }).click();
+  await page
+    .getByRole("button", { name: /^(Next|Continue to text workflow)$/, exact: true })
+    .click();
   const support = page.getByText(en["onboarding.downloadOnlyOnClick"], { exact: true });
-  const next = page.getByRole("button", { name: "Next", exact: true });
+  const next = page.getByRole("button", {
+    name: /^(Next|Continue to text workflow)$/,
+    exact: true,
+  });
   for (const [width, height, font] of [
     [1086, 722, 100],
     [760, 560, 100],
