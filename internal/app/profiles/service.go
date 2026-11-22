@@ -85,17 +85,26 @@ func (s *Service) EnsureDefault(store *storage.Store, settings storage.Settings,
 
 // SaveSettings keeps first-run baseline creation atomic with its source settings.
 func (s *Service) SaveSettings(store *storage.Store, settings storage.Settings, config textmodel.Config) error {
+	return s.SaveSettingsWithShortcut(store, settings, config, nil)
+}
+
+func (s *Service) SaveSettingsWithShortcut(store *storage.Store, settings storage.Settings, config textmodel.Config, shortcut *string) error {
 	library, changed, err := storage.WithDefaultProfile(s.library, settings, config)
 	if err != nil {
 		return err
 	}
-	if !changed {
+	if shortcut != nil {
+		library.ProfileShortcut = *shortcut
+	} else if !changed {
 		return store.SaveSettings(settings)
 	}
 	if err := store.ApplyDictationProfile(library, settings, config); err != nil {
 		return err
 	}
 	s.library = library
+	if shortcut != nil {
+		s.ClearOverride()
+	}
 	return nil
 }
 

@@ -54,6 +54,7 @@ import {
   InstallUpdate,
   ListTextModels,
   PermanentlyDeleteSessions,
+  PermanentlyDeleteSessionsWithResult,
   PreviewBackup,
   PreviewWorkflow,
   ProcessText,
@@ -91,6 +92,7 @@ import {
   StopDiagnosticTest,
   StopMicrophoneTest,
   StopRecording,
+  SwapSettingsShortcuts,
   TestTextModel,
   UpdateAudioSupport,
   UpdateModelRuntime,
@@ -645,12 +647,16 @@ export const backend = {
   stop: StopRecording,
   cancel: Cancel,
   microphones: async (): Promise<Microphone[]> => (await GetMicrophones()) ?? [],
-  settings: (settings: Settings) =>
-    SaveSettings({
+  settings: (settings: Settings, swappedProfileShortcut?: string) => {
+    const native = {
       ...settings,
       autoGenerateTitles: settings.autoGenerateTitles ?? false,
       statsForNerds: settings.statsForNerds ?? false,
-    }),
+    };
+    return swappedProfileShortcut === undefined
+      ? SaveSettings(native)
+      : SwapSettingsShortcuts(native, swappedProfileShortcut);
+  },
   setSaveHistory: SetSaveHistory,
   saveLatestResult: SaveLatestResult,
   dismissLatestResult: DismissLatestResult,
@@ -730,6 +736,10 @@ export const backend = {
   },
   permanentlyDeleteSessions: async (ids: string[]): Promise<void> => {
     return updateHistorySessions(ids, PermanentlyDeleteSessions);
+  },
+  purgeSessions: async (ids: string[]) => {
+    const result = await PermanentlyDeleteSessionsWithResult(ids);
+    return { ...result, deletedIds: result.deletedIds ?? [] };
   },
   session: async (id: string): Promise<Session | null> => {
     return GetSession(id);

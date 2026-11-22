@@ -5,8 +5,52 @@ import type { SetStateAction } from "react";
 const same = (left: unknown, right: unknown) =>
   Object.is(left, right) || JSON.stringify(left) === JSON.stringify(right);
 
+type Row = { id: string };
+
+function keyedRows(rows: unknown): rows is Row[] {
+  return (
+    Array.isArray(rows) &&
+    rows.every((row) => row && typeof row.id === "string" && row.id.length > 0) &&
+    new Set(rows.map((row) => row.id)).size === rows.length
+  );
+}
+
+function rebaseRows(value: Row[], baseline: Row[], saved: Row[]) {
+  const old = new Map(baseline.map((row) => [row.id, row]));
+  const local = new Map(value.map((row) => [row.id, row]));
+  const remote = new Map(saved.map((row) => [row.id, row]));
+  const common = (row: Row) => old.has(row.id) && local.has(row.id) && remote.has(row.id);
+  // Keep native ordering unless the editor explicitly reordered surviving rows
+  // (for example by restoring a dictionary version).
+  const reordered = !same(
+    value.filter(common).map((row) => row.id),
+    baseline.filter(common).map((row) => row.id),
+  );
+  const primary = reordered ? local : remote;
+  const secondary = reordered ? remote : local;
+  const ids = [...primary.keys()];
+  // Insert rows unique to the other list before their next shared neighbor.
+  let insertAt = ids.length;
+  for (const id of [...secondary.keys()].reverse()) {
+    if (primary.has(id)) insertAt = ids.indexOf(id);
+    else ids.splice(insertAt, 0, id);
+  }
+  const rows: Row[] = [];
+  for (const id of ids) {
+    const previous = old.get(id);
+    const edited = local.get(id);
+    const latest = remote.get(id);
+    if (!previous) rows.push((edited ?? latest)!);
+    else if (edited && latest) rows.push(rebase(edited, previous, latest));
+    else if (edited && !same(edited, previous)) rows.push(edited);
+  }
+  return rows;
+}
+
 function rebase<T>(value: T, baseline: T, saved: T): T {
   if (same(value, baseline)) return saved;
+  if (keyedRows(value) && keyedRows(baseline) && keyedRows(saved))
+    return (same(saved, baseline) ? value : rebaseRows(value, baseline, saved)) as T;
   if (value && baseline && saved && typeof value === "object" && !Array.isArray(value)) {
     const old = baseline as Record<string, unknown>;
     return {
@@ -15,6 +59,15 @@ function rebase<T>(value: T, baseline: T, saved: T): T {
     };
   }
   return value;
+}
+
+// A dictionary receipt normalizes spellings and comma-separated aliases and
+// omits empty new rows. Apply later native changes to that raw editing surface
+// so an unrelated term cannot rewrite the text currently in an input.
+function nativeBaseline<T>(raw: T, previous: T, saved: T): T {
+  if (keyedRows(raw) && keyedRows(previous) && keyedRows(saved))
+    return rebase(saved, previous, raw);
+  return saved;
 }
 
 export class SaveOwner {
@@ -47,6 +100,7 @@ type Snapshot<T> = {
 type Submission<T> = {
   value: T;
   baseline: T;
+  saved: T;
   // Submitted fields overlaid on the latest native snapshot, before newer edits.
   anchor: T;
   received: boolean;
@@ -79,11 +133,12 @@ export class SavedDraft<T> {
     const pending = this.pending;
     if (pending) {
       if (!changed) return state;
-      const anchor = rebase(pending.value, pending.baseline, saved);
+      const baseline = nativeBaseline(pending.baseline, pending.saved, saved);
+      const anchor = rebase(pending.value, pending.baseline, baseline);
       return {
         ...state,
         saved,
-        baseline: saved,
+        baseline,
         value: rebase(state.value, pending.anchor, anchor),
       };
     }
@@ -98,7 +153,9 @@ export class SavedDraft<T> {
       ? ack.value
       : unordered
         ? rebase(ack.value, ack.baseline, saved)
-        : saved;
+        : ack
+          ? nativeBaseline(ack.value, ack.expected, saved)
+          : nativeBaseline(state.baseline, state.saved, saved);
     return {
       ...state,
       saved,
@@ -113,7 +170,8 @@ export class SavedDraft<T> {
     const next = this.project(saved, readVersion);
     if (this.pending && (next !== this.state || this.readVersion !== readVersion)) {
       this.pending.received = true;
-      this.pending.anchor = rebase(this.pending.value, this.pending.baseline, saved);
+      const baseline = nativeBaseline(this.pending.baseline, this.pending.saved, saved);
+      this.pending.anchor = rebase(this.pending.value, this.pending.baseline, baseline);
     }
     this.readVersion = readVersion;
     if (next !== this.state) this.update(next);
@@ -140,6 +198,7 @@ export class SavedDraft<T> {
   ) {
     const submission = {
       value,
+      saved,
       baseline: acknowledged?.replay ? saved : baseline,
       anchor: value,
       received: false,
@@ -163,7 +222,11 @@ export class SavedDraft<T> {
         // restore. Preserve submitted intent and newer edits until an ordered
         // read settles it. If reads fail, autosave replays the rebased draft.
         const mismatch = submission.received && !same(state.saved, expected);
-        const observed = mismatch ? (confirmed ? state.saved : submission.anchor) : value;
+        const observed = mismatch
+          ? confirmed
+            ? nativeBaseline(value, expected, state.saved)
+            : submission.anchor
+          : value;
         this.update({
           ...state,
           baseline: observed,

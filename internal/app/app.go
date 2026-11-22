@@ -88,7 +88,7 @@ type App struct {
 	homeResult           *HomeResult
 	homeResultHidden     bool
 	homeResultOperation  bool
-	homeHistory          []storage.Session // Nil until a full legacy snapshot succeeds; empty snapshots are non-nil.
+	homeHistory          []storage.Session // Nil unless a full legacy snapshot is current; empty snapshots are non-nil.
 	homeHistoryWait      chan struct{}     // Closed on Home release if a history reader is waiting.
 	legacyHistoryInUse   bool
 	backupHistory        []storage.Session

@@ -192,6 +192,117 @@ test("recording playback uses an app-local ranged URL without a base64 bridge re
   await expect(seek).toHaveAttribute("aria-valuetext", "0:01 of 0:12");
 });
 
+async function expiredPlayer(page: Page, mode: "normal" | "fail first" | "deferred" = "normal") {
+  await scenario(page);
+  const expiredURL = "http://127.0.0.1:54321/__yap/audio/expired-token";
+  const freshURL = "http://127.0.0.1:54321/__yap/audio/fresh-token";
+  const wav = Reflect.get(globalThis, "Buffer").from(silentWav().split(",")[1], "base64");
+  let expired = false;
+  await page.route("http://127.0.0.1:54321/__yap/audio/*", async (route) => {
+    if (expired && route.request().url() === expiredURL) {
+      await route.fulfill({
+        status: 404,
+        body: "expired",
+        headers: { "Cache-Control": "no-store" },
+      });
+      return;
+    }
+    const range = route
+      .request()
+      .headers()
+      .range?.match(/^bytes=(\d+)-(\d*)$/);
+    const start = Number(range?.[1] ?? 0);
+    const end = range?.[2] ? Math.min(Number(range[2]), wav.length - 1) : wav.length - 1;
+    await route.fulfill({
+      status: range ? 206 : 200,
+      contentType: "audio/wav",
+      headers: {
+        "Accept-Ranges": "bytes",
+        "Cache-Control": "no-store",
+        ...(range ? { "Content-Range": `bytes ${start}-${end}/${wav.length}` } : {}),
+      },
+      body: wav.subarray(start, end + 1),
+    });
+  });
+  await page.evaluate(
+    ({ expiredURL, freshURL, mode }) => {
+      const app = Reflect.get(window, "mockBackend").app.App;
+      let calls = 0;
+      Reflect.set(window, "audioRenewRequests", () => calls);
+      app.GetAudioURL = async () => {
+        calls++;
+        if (calls === 1) return expiredURL;
+        if (calls === 2 && mode === "fail first") throw new Error("Synthetic URL renewal failed");
+        if (mode === "deferred") {
+          await new Promise<void>((resolve) => Reflect.set(window, "finishAudioRenewal", resolve));
+        }
+        return freshURL;
+      };
+      app.GetAudio = async () => {
+        throw new Error("Legacy audio bridge is forbidden");
+      };
+      const original = HTMLMediaElement.prototype.play;
+      let plays = 0;
+      Reflect.set(window, "audioRenewPlayCalls", () => plays);
+      HTMLMediaElement.prototype.play = function () {
+        plays++;
+        return original.call(this);
+      };
+    },
+    { expiredURL, freshURL, mode },
+  );
+  await openPlayer(page);
+  expired = true;
+  await player(page)
+    .locator("audio")
+    .evaluate((media) => (media as HTMLAudioElement).load());
+  await expect(
+    player(page).getByRole("button", { name: "Retry playback", exact: true }),
+  ).toBeVisible();
+  return { freshURL };
+}
+
+test("retry playback renews an expired capability before restarting the recording", async ({
+  page,
+}) => {
+  const { freshURL } = await expiredPlayer(page);
+  await player(page).getByRole("button", { name: "Retry playback", exact: true }).click();
+  await expect(player(page).locator("audio")).toHaveAttribute("src", freshURL);
+  await expect(player(page).getByRole("slider", { name: "Recording position" })).toBeEnabled();
+  await expect(player(page).getByRole("alert")).toHaveCount(0);
+  expect(await page.evaluate(() => Reflect.get(window, "audioRenewRequests")())).toBe(2);
+});
+
+test("failed capability renewal leaves playback retry available", async ({ page }) => {
+  const { freshURL } = await expiredPlayer(page, "fail first");
+  await player(page).getByRole("button", { name: "Retry playback", exact: true }).click();
+  await expect.poll(() => page.evaluate(() => Reflect.get(window, "audioRenewRequests")())).toBe(2);
+  await expect(
+    player(page).getByRole("button", { name: "Retry playback", exact: true }),
+  ).toBeEnabled();
+  await player(page).getByRole("button", { name: "Retry playback", exact: true }).click();
+  await expect(player(page).locator("audio")).toHaveAttribute("src", freshURL);
+  await expect(player(page).getByRole("alert")).toHaveCount(0);
+});
+
+test("a late capability renewal cannot reopen playback after navigation", async ({ page }) => {
+  await expiredPlayer(page, "deferred");
+  await player(page).getByRole("button", { name: "Retry playback", exact: true }).click();
+  await expect
+    .poll(() => page.evaluate(() => typeof Reflect.get(window, "finishAudioRenewal")))
+    .toBe("function");
+  const plays = await page.evaluate(() => Reflect.get(window, "audioRenewPlayCalls")());
+  await page.getByRole("link", { name: "Back to History", exact: true }).click();
+  await expect(player(page)).toHaveCount(0);
+  await page.evaluate(async () => {
+    Reflect.get(window, "finishAudioRenewal")();
+    await new Promise(requestAnimationFrame);
+    await new Promise(requestAnimationFrame);
+  });
+  await expect(player(page)).toHaveCount(0);
+  expect(await page.evaluate(() => Reflect.get(window, "audioRenewPlayCalls")())).toBe(plays);
+});
+
 test("real WAV playback supports play, pause, keyboard/pointer seeking and replay", async ({
   page,
 }) => {

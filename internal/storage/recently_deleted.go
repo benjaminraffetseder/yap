@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -43,6 +44,56 @@ func (s *Store) PermanentlyDeleteSessions(ids []string) (int, error) {
 		}
 	}
 	return s.DeleteSessions(ids)
+}
+
+type PermanentDeletionResult struct {
+	DeletedIDs []string `json:"deletedIds"`
+	Error      string   `json:"error"`
+}
+
+// A cleanup error can follow a committed row deletion. Report actual missing
+// identities so callers can retire their drafts without discarding failed rows.
+// The original method retains its count/error contract for existing callers.
+func (s *Store) PermanentlyDeleteSessionsWithResult(ids []string) (PermanentDeletionResult, error) {
+	_, deleteErr := s.PermanentlyDeleteSessions(ids)
+	result := PermanentDeletionResult{DeletedIDs: []string{}}
+	if deleteErr == nil {
+		result.DeletedIDs = append(result.DeletedIDs, ids...)
+		return result, nil
+	}
+	result.Error = deleteErr.Error()
+	if len(ids) == 0 || len(ids) > HistoryPageSize {
+		return result, nil
+	}
+	args := make([]any, len(ids))
+	for i, id := range ids {
+		args[i] = id
+	}
+	// Check recordings itself: a tombstone is still a recoverable session.
+	rows, err := s.db.Query("SELECT id FROM recordings WHERE id IN ("+strings.TrimSuffix(strings.Repeat("?,", len(ids)), ",")+")", args...)
+	if err != nil {
+		return result, errors.Join(deleteErr, err)
+	}
+	defer rows.Close()
+	present := map[string]bool{}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return result, errors.Join(deleteErr, err)
+		}
+		present[id] = true
+	}
+	if err := rows.Err(); err != nil {
+		return result, errors.Join(deleteErr, err)
+	}
+	seen := map[string]bool{}
+	for _, id := range ids {
+		if id != "" && !present[id] && !seen[id] {
+			result.DeletedIDs = append(result.DeletedIDs, id)
+			seen[id] = true
+		}
+	}
+	return result, nil
 }
 
 func (s *Store) changeDeletedSessions(ids []string, now time.Time, restore bool) error {

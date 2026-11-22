@@ -74,7 +74,7 @@ import {
   Users,
   X,
 } from "lucide-react";
-import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
+import { useCallback, useEffect, useRef, useState, type MouseEvent, type RefObject } from "react";
 import { useTranslation } from "react-i18next";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router";
 import { version } from "../../../../package.json";
@@ -163,6 +163,7 @@ export function SettingsPage({
   const focusedTargetRequest = useRef<string | null>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const profileBeforeClose = useRef<(() => Promise<boolean>) | null>(null);
+  const leavingSettings = useRef(false);
   const targetFocusEpoch = useRef(0);
   const [query, setQuery] = useState("");
   const [searchIndex, setSearchIndex] = useState<
@@ -383,19 +384,32 @@ export function SettingsPage({
         (value) => savedActions.saveProfileAutomation(snapshot.appProfileRules ?? [], value),
         submittedShortcut,
       );
-    // Each save rejects a shortcut the other one still holds, so free the
-    // recording shortcut's new combination first when it was the profile one.
-    const steps = !shortcutDraft.entry.dirty()
-      ? [saveSettings]
-      : !settingsDraft.entry.dirty()
-        ? [saveProfileShortcut]
-        : sameShortcut(settings.shortcut, shortcutDraft.baseline)
-          ? [saveProfileShortcut, saveSettings]
-          : [saveSettings, saveProfileShortcut];
+    const settingsChanged = settingsDraft.entry.dirty();
+    const profileChanged = shortcutDraft.entry.dirty();
+    const releaseProfileFirst = sameShortcut(
+      submittedSettings.value.shortcut,
+      submittedShortcut.baseline,
+    );
     try {
-      if (profileShortcut.trim() && sameShortcut(profileShortcut, settings.shortcut))
+      if (sameShortcut(submittedShortcut.value, submittedSettings.value.shortcut))
         throw new Error(t("settingsPage.recordingAndProfileCyclingMustUseDifferentShortcuts"));
-      for (const step of steps) await step();
+      const swapping =
+        settingsChanged &&
+        profileChanged &&
+        releaseProfileFirst &&
+        sameShortcut(submittedShortcut.value, submittedSettings.baseline.shortcut);
+      if (swapping) {
+        const receipt = savedActions.settings(submittedSettings.value, submittedShortcut.value);
+        await Promise.all([
+          settingsDraft.entry.submit(() => receipt, submittedSettings),
+          shortcutDraft.entry.submit(() => receipt, submittedShortcut),
+        ]);
+      } else {
+        // Release the other binding first for a one-way reassignment.
+        if (profileChanged && releaseProfileFirst) await saveProfileShortcut();
+        if (settingsChanged) await saveSettings();
+        if (profileChanged && !releaseProfileFirst) await saveProfileShortcut();
+      }
       await run(refresh, false);
     } catch (cause) {
       await refresh().catch(() => {});
@@ -425,22 +439,55 @@ export function SettingsPage({
     waitForBlur: editingText,
   });
   const saving = autoSave.saving;
+  const checkingExit = useRef(false);
   useEffect(() => {
     beforeClose.current = async () => {
-      if (profileBeforeClose.current && !(await profileBeforeClose.current())) return false;
-      if (dirty && retentionNeedsConfirm) {
-        setConfirmRetention(true);
-        return false;
+      if (checkingExit.current) return false;
+      checkingExit.current = true;
+      try {
+        if (profileBeforeClose.current && !(await profileBeforeClose.current())) return false;
+        if (dirty && retentionNeedsConfirm) {
+          setConfirmRetention(true);
+          return false;
+        }
+        // Failed drafts remain in DraftProvider with retry available on return.
+        await autoSave.retry();
+        return beforeClose.current !== null;
+      } finally {
+        checkingExit.current = false;
       }
-      // Flush focused fields on Escape too. Failed drafts remain in DraftProvider
-      // when the user leaves, with the existing save-error toast and retry on return.
-      await autoSave.retry();
-      return true;
     };
     return () => {
       beforeClose.current = null;
     };
   }, [beforeClose, autoSave, dirty, retentionNeedsConfirm]);
+  async function leaveFor(path: string) {
+    if (leavingSettings.current) return;
+    leavingSettings.current = true;
+    try {
+      if (!beforeClose.current || (await beforeClose.current())) navigate(path);
+    } finally {
+      leavingSettings.current = false;
+    }
+  }
+  function guardedLink(path: string) {
+    return {
+      to: path,
+      onClick(event: MouseEvent<HTMLAnchorElement>) {
+        if (
+          event.defaultPrevented ||
+          event.button !== 0 ||
+          event.altKey ||
+          event.ctrlKey ||
+          event.metaKey ||
+          event.shiftKey
+        )
+          return;
+        event.preventDefault();
+        void leaveFor(path);
+      },
+    };
+  }
   function cancelRetention() {
     setConfirmRetention(false);
     setSettings((old) => ({
@@ -678,7 +725,7 @@ export function SettingsPage({
                     className="flex w-full items-center gap-3 rounded-lg border px-4 py-3 text-left outline-none hover:bg-accent/50 focus-visible:ring-2 focus-visible:ring-ring"
                     onClick={() => {
                       setQuery("");
-                      if (entry.path) navigate(entry.path);
+                      if (entry.path) void leaveFor(entry.path);
                       else selectSection(entry.section, entry.id);
                     }}
                   >
@@ -891,7 +938,7 @@ export function SettingsPage({
                         {t("settingsPage.lLMInstructionsAndGeneratedOutputs")}
                       </span>
                       <Link
-                        to="/prompts?section=prompts"
+                        {...guardedLink("/prompts?section=prompts")}
                         className="text-sm font-medium text-primary underline underline-offset-4"
                       >
                         {t("settingsPage.managePrompts")}
@@ -1158,7 +1205,7 @@ export function SettingsPage({
                         {t("settingsPage.downloadAndSwitchSpeechModelsParakeetAnd")}
                       </span>
                       <Link
-                        to="/models"
+                        {...guardedLink("/models")}
                         className="text-sm font-medium text-primary underline underline-offset-4"
                       >
                         {t("settingsPage.manageModels")}

@@ -183,17 +183,20 @@ function EntryDetail({ id }: { id: string }) {
     window.addEventListener("keydown", keydown);
     return () => window.removeEventListener("keydown", keydown);
   }, [back, navigate, editing, deletingNow]);
-  async function play() {
-    if (!audioSource || loadingAudio) return;
+  async function play(renew = false): Promise<string | false> {
+    if (!audioSource || loadingAudio) return false;
     const request = ++audioOwner.current.request;
     const source = audioSource;
+    const previous = renew ? (activeAudio?.src ?? "") : "";
+    let received: string | false = false;
     audioOwner.current.source = source;
-    setAudioState({ source, src: "", loading: true });
+    setAudioState({ source, src: previous, loading: true });
     await run(async () => {
       try {
         const src = await backend.audio(id);
         if (audioOwner.current.request !== request || audioOwner.current.source !== source) return;
         setAudioState({ source, src, loading: false });
+        received = src;
       } catch (cause) {
         if (audioOwner.current.request !== request || audioOwner.current.source !== source) return;
         throw cause;
@@ -201,9 +204,16 @@ function EntryDetail({ id }: { id: string }) {
     }, false);
     if (audioOwner.current.request === request && audioOwner.current.source === source) {
       setAudioState((current) =>
-        current && current.source === source && current.loading ? null : current,
+        current && current.source === source && current.loading
+          ? previous
+            ? { ...current, loading: false }
+            : null
+          : current,
       );
     }
+    return audioOwner.current.request === request && audioOwner.current.source === source
+      ? received
+      : false;
   }
   function closeAudio() {
     audioOwner.current.request++;
@@ -722,6 +732,7 @@ function EntryDetail({ id }: { id: string }) {
               durationMs={entry.durationMs}
               autoPlay
               onClose={closeAudio}
+              onRetry={() => play(true)}
               className="pointer-events-auto bg-card shadow-lg"
             />
           </div>

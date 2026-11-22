@@ -52,10 +52,11 @@ func (a *App) emitStatusLocked() {
 // event also serves audio callbacks that do not hold mu. The notification
 // adapter is installed before capture starts and remains valid through shutdown.
 func (a *App) event(topic string, data ...interface{}) {
-	// History publications are made under mu. Refresh only the native menu's
-	// existence bit; transient UI snapshots no longer own a full History read.
+	// History publications are made under mu. Retire stale saved identities and
+	// invalidate the legacy cache without making transient snapshots read it.
 	if topic == "dictation:history" {
-		a.historyPresenceKnown = false
+		a.invalidateHistoryLocked()
+		a.retireDeletedHomeResultLocked()
 		a.updateTrayLocked()
 	}
 	if a.notify != nil {

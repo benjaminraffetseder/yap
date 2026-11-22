@@ -9372,6 +9372,140 @@ test("Recently Deleted supports retry and restoration on narrow screens after th
   await expect(page.getByText("No recently deleted dictations", { exact: true })).toBeVisible();
 });
 
+test("session chat drafts survive trash and restore, and only a permanent deletion releases their unload protection", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const { snapshot } = window.dictationTest;
+    snapshot.textProcessing.enabled = true;
+    snapshot.history = ["First session", "Second session"].map((title, index) => ({
+      id: `session-${index}`,
+      title,
+      createdAt: "2026-10-07",
+      durationMs: 1000,
+      rawTranscript: "Original.",
+      finalTranscript: "Original.",
+      speechModel: "base",
+      language: "en",
+      audioPath: "",
+    }));
+  });
+  await page.goto("/#/history");
+  await page.evaluate(() => {
+    Reflect.get(window, "mockBackend").app.App.GetSessionChat = async (sessionId: string) => ({
+      sessionId,
+      sources: [],
+      messages: [],
+      summary: "",
+      compactedThrough: 0,
+    });
+  });
+  const composer = page.getByRole("textbox", { name: "Message", exact: true });
+  const open = async (title: string) => {
+    await page.getByRole("link", { name: new RegExp(title) }).click();
+    await page.getByRole("button", { name: "Chat", exact: true }).click();
+  };
+  const trashFirst = async () => {
+    const row = page.getByRole("row").filter({ hasText: "First session" });
+    await row.getByRole("button", { name: "Dictation actions", exact: true }).click();
+    await page.getByRole("menuitem", { name: "Move to Recently Deleted" }).click();
+    await expect(row).toHaveCount(0);
+    await page.getByRole("button", { name: "Show Recently Deleted" }).click();
+  };
+  await open("First session");
+  await composer.fill("Keep until purged");
+  await navigateMain(page, "History");
+  await trashFirst();
+  expect(await unloadProtected(page)).toBe(true);
+  await page.getByRole("button", { name: "Restore", exact: true }).click();
+  await expect(page.getByText("No recently deleted dictations", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Show all dictations" }).click();
+  await open("First session");
+  await expect(composer).toHaveValue("Keep until purged");
+  await navigateMain(page, "History");
+  await open("Second session");
+  await composer.fill("Keep this draft");
+  await navigateMain(page, "History");
+  await trashFirst();
+  await page.getByRole("button", { name: "Delete permanently", exact: true }).click();
+  await expect(page.getByText("No recently deleted dictations", { exact: true })).toBeVisible();
+  expect(await unloadProtected(page)).toBe(true);
+  await page.getByRole("button", { name: "Show all dictations" }).click();
+  await open("Second session");
+  await expect(composer).toHaveValue("Keep this draft");
+  await composer.fill("");
+  await expect.poll(() => unloadProtected(page)).toBe(false);
+});
+
+test("a partial permanent deletion releases only the drafts whose rows are gone", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const { snapshot } = window.dictationTest;
+    snapshot.textProcessing.enabled = true;
+    snapshot.history = ["First session", "Second session"].map((title, index) => ({
+      id: `session-${index}`,
+      title,
+      createdAt: "2026-10-07",
+      durationMs: 1000,
+      rawTranscript: "Original.",
+      finalTranscript: "Original.",
+      speechModel: "base",
+      language: "en",
+      audioPath: "",
+    }));
+  });
+  await page.goto("/#/history");
+  await page.evaluate(() => {
+    const methods = Reflect.get(window, "mockBackend").app.App;
+    methods.GetSessionChat = async (sessionId: string) => ({
+      sessionId,
+      sources: [],
+      messages: [],
+      summary: "",
+      compactedThrough: 0,
+    });
+    methods.PermanentlyDeleteSessionsWithResult = async (ids: string[]) => {
+      if (ids.length !== 2) throw new Error("Expected the two-row batch");
+      const deletedId = ids[0];
+      Reflect.set(window, "partialPurgedId", deletedId);
+      window.dictationTest.recentlyDeleted = window.dictationTest.recentlyDeleted.filter(
+        (entry) => entry.id !== deletedId,
+      );
+      window.dictationTest.history();
+      return { deletedIds: [deletedId], error: "Second recording is locked" };
+    };
+  });
+  const composer = page.getByRole("textbox", { name: "Message", exact: true });
+  for (const title of ["First session", "Second session"]) {
+    await page.getByRole("link", { name: new RegExp(title) }).click();
+    await page.getByRole("button", { name: "Chat", exact: true }).click();
+    await composer.fill(`Draft for ${title}`);
+    await navigateMain(page, "History");
+  }
+  await page.getByRole("checkbox", { name: "Select all loaded dictations", exact: true }).check();
+  await page.getByRole("button", { name: "Delete selected", exact: true }).click();
+  await expect(page.locator("tbody tr")).toHaveCount(0);
+  await page.getByRole("button", { name: "Show Recently Deleted" }).click();
+  await expect(page.locator("tbody tr")).toHaveCount(2);
+  await page.getByRole("checkbox", { name: "Select all loaded dictations", exact: true }).check();
+  await page.getByRole("button", { name: "Delete selected permanently", exact: true }).click();
+  await expect(page.getByRole("alert")).toHaveText("Second recording is locked");
+  await expect(page.locator("tbody tr")).toHaveCount(1);
+  expect(await unloadProtected(page)).toBe(true);
+  const retainedTitle = await page.evaluate(() =>
+    Reflect.get(window, "partialPurgedId") === "session-0" ? "Second session" : "First session",
+  );
+  await page.getByRole("button", { name: "Restore", exact: true }).click();
+  await expect(page.getByText("No recently deleted dictations", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Show all dictations" }).click();
+  await page.getByRole("link", { name: new RegExp(retainedTitle) }).click();
+  await page.getByRole("button", { name: "Chat", exact: true }).click();
+  await expect(composer).toHaveValue(`Draft for ${retainedTitle}`);
+  await composer.fill("");
+  await expect.poll(() => unloadProtected(page)).toBe(false);
+});
+
 test("Recently Deleted permanently deletes individual entries and selections without a modal", async ({
   page,
 }, testInfo) => {
@@ -13604,6 +13738,110 @@ test("chain editor adds prompts with the keyboard and preserves references when 
   await expect(addStep).toBeDisabled();
   await expect(page.getByRole("button", { name: "Step 1 actions", exact: true })).toBeDisabled();
   await expect(page.getByRole("combobox", { name: "Step 1 input", exact: true })).toBeDisabled();
+});
+
+test("correcting a dictionary draft preserves a transcript addition and intentional removals", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const { snapshot } = window.dictationTest;
+    snapshot.vocabulary = ["Alpha", "Remove", "Obsolete"].map((canonical) => ({
+      id: canonical.toLowerCase(),
+      canonical,
+      aliases: [],
+      enabled: true,
+    }));
+    snapshot.history = [
+      {
+        id: "correction",
+        createdAt: "2026-10-07",
+        durationMs: 1000,
+        rawTranscript: "Beta",
+        finalTranscript: "Beta",
+        speechModel: "base",
+        language: "en",
+        audioPath: "",
+      },
+    ];
+  });
+  await page.goto("/#/vocabulary");
+  await page.locator("#term-alpha").fill("");
+  await page.getByRole("button", { name: "Remove Remove", exact: true }).click();
+  await navigateMain(page, "History");
+  await page.getByRole("link", { name: /Beta/ }).click();
+  await page.getByRole("button", { name: "Edit transcript", exact: true }).click();
+  const text = page.getByRole("textbox", { name: "Editable text" });
+  await text.press("Control+a");
+  await openSelectionMenu(page);
+  await page.getByRole("menuitem", { name: "Add to dictionary" }).click();
+  // Another editor changes an untouched field and deletes an untouched term.
+  await page.evaluate(() => {
+    const { snapshot } = window.dictationTest;
+    snapshot.vocabulary = snapshot.vocabulary.filter((entry) => entry.id !== "obsolete");
+    snapshot.vocabulary[0].enabled = false;
+  });
+  await page.getByRole("button", { name: "Save term", exact: true }).click();
+  await expect(page.getByRole("dialog", { name: "Add to dictionary" })).toBeHidden();
+  await page.getByRole("button", { name: "Done", exact: true }).click();
+  await navigateMain(page, "Dictionary");
+  await expect(page.locator("#term-alpha")).toHaveValue("");
+  await expect(page.getByLabel("Preferred spelling", { exact: true }).last()).toHaveValue("Beta");
+  await page.locator("#term-alpha").fill("Corrected Alpha");
+  await expect
+    .poll(() => page.evaluate(() => window.dictationTest.snapshot.vocabulary))
+    .toEqual([
+      { id: "alpha", canonical: "Corrected Alpha", aliases: [], enabled: false },
+      { id: expect.any(String), canonical: "Beta", aliases: [], enabled: true },
+    ]);
+});
+
+test("dictionary undo and raw aliases survive a delayed receipt and a concurrent addition", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    window.dictationTest.snapshot.vocabulary = [
+      { id: "alpha", canonical: "Alpha", aliases: [], enabled: true },
+    ];
+  });
+  await page.goto("/#/vocabulary");
+  await page.evaluate(() => {
+    const app = Reflect.get(window, "mockBackend").app.App;
+    const save = app.SaveVocabulary;
+    let calls = 0;
+    app.SaveVocabulary = async (entries: VocabularyEntry[]) => {
+      const receipt = await save(entries);
+      if (++calls === 1)
+        await new Promise<void>((resolve) =>
+          Reflect.set(window, "releaseVocabularyReceipt", resolve),
+        );
+      return receipt;
+    };
+  });
+  const spelling = page.locator("#term-alpha");
+  await spelling.fill("Edited Alpha");
+  await page.locator("#aliases-alpha").fill("first,second");
+  try {
+    await expect
+      .poll(() => page.evaluate(() => typeof Reflect.get(window, "releaseVocabularyReceipt")))
+      .toBe("function");
+    await spelling.fill("Alpha");
+    await page.evaluate(() => {
+      const state = window.dictationTest;
+      state.snapshot.vocabulary.push({ id: "beta", canonical: "Beta", aliases: [], enabled: true });
+      state.callbacks["setup:changed"](["vocabulary"]);
+    });
+    await expect(page.locator("#term-beta")).toHaveValue("Beta");
+  } finally {
+    await page.evaluate(() => Reflect.get(window, "releaseVocabularyReceipt")?.());
+  }
+  await expect
+    .poll(() => page.evaluate(() => window.dictationTest.snapshot.vocabulary))
+    .toEqual([
+      { id: "alpha", canonical: "Alpha", aliases: ["first", "second"], enabled: true },
+      { id: "beta", canonical: "Beta", aliases: [], enabled: true },
+    ]);
+  await expect(page.locator("#aliases-alpha")).toHaveValue("first,second");
+  await expect.poll(() => unloadProtected(page)).toBe(false);
 });
 
 test("auto-save vocabulary keeps submitted aliases without a loop and skips empty new rows", async ({

@@ -63,6 +63,11 @@ if (methods) {
         ?.filter((entry) => !entry.deletedAt)
         .slice(0, 5) ?? [];
   if (!methods.GetAudioURL) methods.GetAudioURL = (...args: unknown[]) => methods.GetAudio(...args);
+  if (!methods.PermanentlyDeleteSessionsWithResult)
+    methods.PermanentlyDeleteSessionsWithResult = async (ids: unknown) => {
+      await methods.PermanentlyDeleteSessions(ids);
+      return { deletedIds: ids, error: "" };
+    };
   if (!methods.GetHistorySelectionIDs)
     methods.GetHistorySelectionIDs = async (query: unknown) => {
       // Existing fixtures own their complete paginated History collection.

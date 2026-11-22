@@ -169,7 +169,7 @@ func readPCM(path string) ([]float32, error) {
 		pos = int(end) + (int(n) & 1)
 	}
 	if !valid || len(pcm) < 2 || len(pcm)%2 != 0 {
-		return nil, fmt.Errorf("Moonshine needs 16 kHz mono PCM16 WAV audio")
+		return nil, fmt.Errorf("audio must be 16 kHz mono PCM16 WAV")
 	}
 	samples := make([]float32, len(pcm)/2)
 	for i := range samples {

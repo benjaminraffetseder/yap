@@ -183,7 +183,10 @@ function LazySettingsSurface({
   beforeClose: RefObject<(() => Promise<boolean>) | null>;
   saveNoticeRef: (node: HTMLDivElement | null) => void;
 }) {
+  const initialFocusHandled = useRef(false);
   useLayoutEffect(() => {
+    if (initialFocusHandled.current) return;
+    initialFocusHandled.current = true;
     if (focusTarget) return;
     const search = document.querySelector<HTMLInputElement>("[data-settings-search]");
     // The dialog may have focused its close button while this chunk loaded.

@@ -105,8 +105,8 @@ func TestMoonshinePCMAndNativeLayout(t *testing.T) {
 	data := b.Bytes()
 	binary.LittleEndian.PutUint32(data[24:], 48000)
 	os.WriteFile(path, data, 0600)
-	if _, err := readPCM(path); err == nil {
-		t.Fatal("accepted wrong sample rate")
+	if _, err := readPCM(path); err == nil || err.Error() != "audio must be 16 kHz mono PCM16 WAV" {
+		t.Fatal("expected an engine-neutral PCM error", err)
 	}
 }
 

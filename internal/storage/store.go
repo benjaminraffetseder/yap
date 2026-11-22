@@ -233,6 +233,14 @@ func (s *Store) Session(id string) (Session, error) {
 	return v, err
 }
 
+// HasActiveSession checks identity without loading transcript or output payloads.
+func (s *Store) HasActiveSession(id string) (bool, error) {
+	var exists bool
+	err := s.db.QueryRow(`SELECT EXISTS(SELECT 1 FROM recordings r WHERE r.id=?
+		AND NOT EXISTS(SELECT 1 FROM deleted_recordings d WHERE d.id=r.id))`, id).Scan(&exists)
+	return exists, err
+}
+
 func (s *Store) sessionIncludingDeleted(id string) (Session, error) {
 	var v Session
 	err := scanSession(s.db.QueryRow("SELECT r.id,r.created_at,r.duration_ms,r.transcript,r.model,r.language,r.audio_path,COALESCE(o.transcript,r.transcript),COALESCE(d.deleted_at,''),"+sessionTitleColumn+","+speechStatsColumn+" FROM recordings r LEFT JOIN recording_outputs o ON r.id=o.id LEFT JOIN deleted_recordings d ON d.id=r.id WHERE r.id=?", id), &v, true)

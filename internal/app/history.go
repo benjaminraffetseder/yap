@@ -118,6 +118,17 @@ func (a *App) PermanentlyDeleteSessions(ids []string) error {
 	return err
 }
 
+func (a *App) PermanentlyDeleteSessionsWithResult(ids []string) (storage.PermanentDeletionResult, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if err := a.historyAvailableLocked(); err != nil {
+		return storage.PermanentDeletionResult{}, err
+	}
+	result, err := a.store.PermanentlyDeleteSessionsWithResult(ids)
+	a.event("dictation:history")
+	return result, err
+}
+
 func (a *App) GetSession(id string) (*storage.Session, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -192,6 +203,24 @@ func (a *App) pruneHistoryLocked() {
 
 func (a *App) clearDeletedResultLocked() {
 	a.publishHistoryChangeLocked(history.Removed(a.store, history.Current{ID: a.id, Phase: a.status.Phase}))
+}
+
+func (a *App) invalidateHistoryLocked() {
+	// Only a full legacy read can make this cache valid again. Tray presence
+	// and focused recent reads cannot certify all cached rows after a mutation.
+	a.homeHistory = nil
+	a.historyPresenceKnown = false
+}
+
+func (a *App) retireDeletedHomeResultLocked() {
+	if a.store == nil || a.closing || a.homeResultOperation || a.status.Phase == "backup" || a.homeResult == nil || !a.homeResult.Saved {
+		return
+	}
+	if exists, err := a.store.HasActiveSession(a.homeResult.Session.ID); err == nil && !exists {
+		// Keep dismissal and temporary results separate from a saved row that
+		// left active History. A nil identity permits the normal recent fallback.
+		a.homeResult = nil
+	}
 }
 
 func (a *App) publishHistoryChangeLocked(change history.Change) {

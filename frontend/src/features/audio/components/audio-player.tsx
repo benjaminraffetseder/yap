@@ -30,6 +30,7 @@ type AudioPlayerProps = {
   durationMs?: number;
   autoPlay?: boolean;
   onClose?: () => void;
+  onRetry?: () => Promise<string | false>;
   className?: string;
 };
 
@@ -37,16 +38,24 @@ export function AudioPlayer(props: AudioPlayerProps) {
   return <Playback key={props.src} {...props} />;
 }
 
-function Playback({ src, durationMs = 0, autoPlay = false, onClose, className }: AudioPlayerProps) {
+function Playback({
+  src,
+  durationMs = 0,
+  autoPlay = false,
+  onClose,
+  onRetry,
+  className,
+}: AudioPlayerProps) {
   const { t } = useTranslation();
   const audio = useRef<HTMLAudioElement>(null);
-  const playback = useRef({ mounted: false, request: 0 });
+  const playback = useRef({ mounted: false, request: 0, retrying: false });
   const lastVolume = useRef(1);
   const [playing, setPlaying] = useState(false);
   const [waiting, setWaiting] = useState(false);
   const [ready, setReady] = useState(false);
   const [failed, setFailed] = useState(false);
   const [error, setError] = useState("");
+  const [retrying, setRetrying] = useState(false);
   const [position, setPosition] = useState(0);
   const [length, setLength] = useState(
     Number.isFinite(durationMs) ? Math.max(0, durationMs / 1000) : 0,
@@ -116,6 +125,34 @@ function Playback({ src, durationMs = 0, autoPlay = false, onClose, className }:
       media.volume = lastVolume.current;
       media.muted = false;
     } else media.muted = true;
+  }
+
+  async function retry() {
+    const lifecycle = playback.current;
+    if (lifecycle.retrying) return;
+    lifecycle.retrying = true;
+    const request = ++lifecycle.request;
+    setRetrying(true);
+    try {
+      // A retained recording URL may have expired. Its owner renews the URL
+      // and still decides whether this recording is the current request.
+      if (onRetry) {
+        const renewed = await onRetry();
+        // A new source remounts Playback and owns autoplay. Do not restart
+        // this expired source while React commits the replacement player.
+        if (!renewed || renewed !== src) return;
+      }
+      if (!lifecycle.mounted || request !== lifecycle.request) return;
+      setFailed(false);
+      setReady(false);
+      audio.current?.load();
+      await start();
+    } catch {
+      if (lifecycle.mounted) setError(i18n.t("audioPlayer.thisRecordingCouldnTBePlayed"));
+    } finally {
+      lifecycle.retrying = false;
+      if (lifecycle.mounted) setRetrying(false);
+    }
   }
 
   const silent = muted || volume === 0;
@@ -286,12 +323,9 @@ function Playback({ src, durationMs = 0, autoPlay = false, onClose, className }:
             <Button
               variant="link"
               size="sm"
-              onClick={() => {
-                setFailed(false);
-                setReady(false);
-                audio.current?.load();
-                void start();
-              }}
+              disabled={retrying}
+              aria-busy={retrying}
+              onClick={() => void retry()}
             >
               {t("audioPlayer.retryPlayback")}
             </Button>

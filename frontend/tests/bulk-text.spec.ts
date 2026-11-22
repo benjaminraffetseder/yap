@@ -22,6 +22,7 @@ test.beforeEach(async ({ page }) => {
       language: "en",
       audioPath: "",
     }));
+    const deletedHistory: typeof history = [];
     const snapshot: Snapshot = {
       textProcessing: {
         enabled: localStorage.getItem("bulk-model-disabled") !== "true",
@@ -81,6 +82,10 @@ test.beforeEach(async ({ page }) => {
     };
     const state = {
       requests: [] as BulkTextRequest[],
+      restoreCalls: [] as string[][],
+      failRestoreCalls: [] as number[],
+      activeHistory: history,
+      deletedHistory,
       reject: false,
       snapshot,
       setQueue(jobs: BulkTextJob[]) {
@@ -90,7 +95,7 @@ test.beforeEach(async ({ page }) => {
       removeHistory(ids: string[]) {
         for (const id of ids) {
           const index = history.findIndex((entry) => entry.id === id);
-          if (index >= 0) history.splice(index, 1);
+          if (index >= 0) deletedHistory.push(...history.splice(index, 1));
         }
         callbacks["dictation:history"]?.();
       },
@@ -109,9 +114,9 @@ test.beforeEach(async ({ page }) => {
         history.unshift(...added);
         callbacks["dictation:history"]?.();
       },
-      replaceOffPageHistory(removeId: string, addedId: string) {
+      replaceOffPageHistory(removeId: string, addedId: string, notify = true) {
         const index = history.findIndex((entry) => entry.id === removeId);
-        if (index >= 0) history.splice(index, 1);
+        if (index >= 0) deletedHistory.push(...history.splice(index, 1));
         history.push({
           id: addedId,
           title: "",
@@ -123,7 +128,7 @@ test.beforeEach(async ({ page }) => {
           language: "en",
           audioPath: "",
         });
-        callbacks["dictation:history"]?.();
+        if (notify) callbacks["dictation:history"]?.();
       },
     };
     Object.assign(window, {
@@ -173,7 +178,21 @@ test.beforeEach(async ({ page }) => {
               };
             },
             DeleteSessions: async (ids: string[]) => {
+              if (ids.length > 50) throw new Error("Select at most 50 dictations");
               state.removeHistory(ids);
+            },
+            RestoreSessions: async (ids: string[]) => {
+              if (ids.length > 50) throw new Error("Select at most 50 dictations");
+              state.restoreCalls.push([...ids]);
+              if (state.failRestoreCalls.includes(state.restoreCalls.length))
+                throw new Error("Synthetic restore batch failure");
+              if (ids.some((id) => !deletedHistory.some((entry) => entry.id === id)))
+                throw new Error("A selected dictation is no longer in Recently Deleted");
+              for (const id of ids) {
+                const index = deletedHistory.findIndex((entry) => entry.id === id);
+                if (index >= 0) history.push(...deletedHistory.splice(index, 1));
+              }
+              callbacks["dictation:history"]?.();
             },
             GetSessionOutputs: async () => [],
             GetHomeResult: async () => null,
@@ -287,13 +306,19 @@ test("queues a prompt or chain for all search matches with exclusions", async ({
   await expect(page.getByRole("option")).toHaveCount(1);
   await page.getByRole("option", { name: "Meeting workflow", exact: true }).click();
   await dialog.getByRole("button", { name: "Add to queue", exact: true }).click();
+  const expectedIds = await page.evaluate(async () => {
+    const app = Reflect.get(window, "mockBackend").app.App;
+    return (await app.GetHistorySelectionIDs("Bulk transcript")).filter(
+      (id: string) => id !== "transcript-1",
+    );
+  });
   const request = await page.evaluate(() => Reflect.get(window, "bulkTest").requests[0]);
   expect(request).toEqual({
     selection: {
-      sessionIds: [],
-      allMatching: true,
-      query: "Bulk transcript",
-      excludedSessionIds: ["transcript-1"],
+      sessionIds: expectedIds,
+      allMatching: false,
+      query: "",
+      excludedSessionIds: [],
     },
     action: "output",
     promptId: "chain",
@@ -308,6 +333,84 @@ test("queues a prompt or chain for all search matches with exclusions", async ({
   await expect(queue).toContainText("54/54");
   await queue.getByRole("button", { name: "Clear finished", exact: true }).click();
   await expect(queue).toHaveCount(0);
+});
+
+test("freezes reviewed all-matching IDs across an equal-count replacement and retries preparation", async ({
+  page,
+}) => {
+  await page
+    .getByRole("textbox", { name: "Search transcripts", exact: true })
+    .fill("Bulk transcript");
+  await expect(
+    page.getByRole("checkbox", { name: "Select dictation 1", exact: true }),
+  ).toBeEnabled();
+  await page.getByRole("checkbox", { name: "Select all loaded dictations", exact: true }).check();
+  await page.getByRole("button", { name: /Select all 55 matching/ }).click();
+  await page.getByRole("checkbox", { name: "Select dictation 2", exact: true }).uncheck();
+  await page.evaluate(() => {
+    const app = Reflect.get(window, "mockBackend").app.App;
+    const read = app.GetHistorySelectionIDs;
+    let failNext = true;
+    app.GetHistorySelectionIDs = async (query: string) => {
+      if (failNext) {
+        failNext = false;
+        throw new Error("Synthetic bulk preparation failure");
+      }
+      return read(query);
+    };
+  });
+
+  const dialog = await openAction(page, "Run prompt or chain");
+  const queueButton = dialog.getByRole("button", { name: "Add to queue", exact: true });
+  await expect(queueButton).toBeDisabled();
+  await expect(dialog.getByRole("alert")).toContainText("Synthetic bulk preparation failure");
+  await dialog.getByRole("button", { name: "Retry", exact: true }).click();
+  await expect(dialog).toContainText("54 transcripts selected");
+  await expect(queueButton).toBeEnabled();
+  const reviewedIds = await page.evaluate(async () => {
+    const app = Reflect.get(window, "mockBackend").app.App;
+    return (await app.GetHistorySelectionIDs("Bulk transcript")).filter(
+      (id: string) => id !== "transcript-1",
+    );
+  });
+
+  // Keep the total and loaded page unchanged, and delay the History event past
+  // confirmation. The late replacement must not enter the reviewed membership.
+  await page.evaluate(() => {
+    Reflect.get(window, "bulkTest").replaceOffPageHistory(
+      "transcript-54",
+      "transcript-late",
+      false,
+    );
+  });
+  await expect(dialog).toContainText("54 transcripts selected");
+  await queueButton.click();
+  await expect(dialog).toHaveCount(0);
+  const request = await page.evaluate(() => Reflect.get(window, "bulkTest").requests[0]);
+  expect(request.selection).toEqual({
+    sessionIds: reviewedIds,
+    allMatching: false,
+    query: "",
+    excludedSessionIds: [],
+  });
+  expect(request.selection.sessionIds).toContain("transcript-54");
+  expect(request.selection.sessionIds).not.toContain("transcript-late");
+  const queuedIds = await page.evaluate(() =>
+    Reflect.get(window, "bulkTest").snapshot.bulkTextQueue.map(
+      (job: { sessionId: string }) => job.sessionId,
+    ),
+  );
+  expect(queuedIds).not.toContain("transcript-late");
+
+  // Every opening prepares fresh membership; an empty result cannot be queued.
+  await page.evaluate(() => {
+    Reflect.get(window, "mockBackend").app.App.GetHistorySelectionIDs = async () => [];
+  });
+  const emptyDialog = await openAction(page, "Run prompt or chain");
+  await expect(emptyDialog).toContainText("0 transcripts selected");
+  await expect(
+    emptyDialog.getByRole("button", { name: "Add to queue", exact: true }),
+  ).toBeDisabled();
 });
 
 test("reconciles all-matching counts and retires open confirmations while retaining off-page exclusions", async ({
@@ -416,13 +519,19 @@ test("reconciles all-matching counts and retires open confirmations while retain
   await expect(dialog).toContainText("55 transcripts selected");
   await dialog.getByRole("button", { name: "Add to queue", exact: true }).click();
 
+  const expectedIds = await page.evaluate(async () => {
+    const app = Reflect.get(window, "mockBackend").app.App;
+    return (await app.GetHistorySelectionIDs("Bulk transcript")).filter(
+      (id: string) => id !== "transcript-49",
+    );
+  });
   const request = await page.evaluate(() => Reflect.get(window, "bulkTest").requests.at(-1));
   expect(request).toEqual({
     selection: {
-      sessionIds: [],
-      allMatching: true,
-      query: "Bulk transcript",
-      excludedSessionIds: ["transcript-49"],
+      sessionIds: expectedIds,
+      allMatching: false,
+      query: "",
+      excludedSessionIds: [],
     },
     action: "output",
     promptId: "summary",
@@ -442,6 +551,52 @@ test("reconciles all-matching counts and retires open confirmations while retain
   expect(queuedIds).not.toContain("transcript-48");
   expect(queuedIds).not.toContain("transcript-1");
   expect(queuedIds).not.toContain("transcript-0");
+});
+
+test("Undo retries only outstanding restore batches after a partial failure", async ({ page }) => {
+  await page.evaluate(() => {
+    Reflect.get(window, "bulkTest").prependHistory(5);
+  });
+  await expect(page.getByText("60 dictations", { exact: true })).toBeVisible();
+  const rows = page.getByRole("checkbox", { name: /^Select dictation / });
+  await page.getByRole("checkbox", { name: "Select all loaded dictations", exact: true }).check();
+  await rows.last().scrollIntoViewIfNeeded();
+  await expect(rows).toHaveCount(60);
+  await page.getByRole("checkbox", { name: "Select all loaded dictations", exact: true }).check();
+  await expect(page.locator('[data-slot="history-selection-bar"]')).toContainText("60 selected");
+  await page.getByRole("button", { name: "Delete selected", exact: true }).click();
+  const toast = page.locator('[data-slot="toast"]').last();
+  await expect(toast).toContainText("60 dictations deleted");
+  expect(await page.evaluate(() => Reflect.get(window, "bulkTest").deletedHistory)).toHaveLength(
+    60,
+  );
+
+  await page.evaluate(() => {
+    Reflect.get(window, "bulkTest").failRestoreCalls = [2];
+  });
+  await toast.getByRole("button", { name: "Undo", exact: true }).click();
+  await expect(toast).toContainText("Couldn’t restore dictations");
+  await expect(toast).toContainText("Synthetic restore batch failure");
+  await expect(toast).not.toContainText("60 dictations restored");
+  const failedCalls: string[][] = await page.evaluate(
+    () => Reflect.get(window, "bulkTest").restoreCalls,
+  );
+  expect(failedCalls.map((ids) => ids.length)).toEqual([50, 10]);
+  expect(await page.evaluate(() => Reflect.get(window, "bulkTest").activeHistory)).toHaveLength(50);
+  expect(await page.evaluate(() => Reflect.get(window, "bulkTest").deletedHistory)).toHaveLength(
+    10,
+  );
+
+  await toast.getByRole("button", { name: "Undo", exact: true }).click();
+  await expect(toast).toContainText("60 dictations restored");
+  const completedCalls: string[][] = await page.evaluate(
+    () => Reflect.get(window, "bulkTest").restoreCalls,
+  );
+  expect(completedCalls.map((ids) => ids.length)).toEqual([50, 10, 10]);
+  expect(completedCalls[2]).toEqual(failedCalls[1]);
+  expect(completedCalls[2]).not.toEqual(failedCalls[0]);
+  expect(await page.evaluate(() => Reflect.get(window, "bulkTest").activeHistory)).toHaveLength(60);
+  expect(await page.evaluate(() => Reflect.get(window, "bulkTest").deletedHistory)).toHaveLength(0);
 });
 
 test("preserves dialog choices on failure and reports failed jobs at narrow widths", async ({

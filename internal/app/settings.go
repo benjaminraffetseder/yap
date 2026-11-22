@@ -3,13 +3,26 @@ package app
 import (
 	"errors"
 	"fmt"
+	"strings"
 
 	"yap/internal/app/preferences"
 	"yap/internal/app/shortcuts"
+	"yap/internal/platform"
 	"yap/internal/storage"
 )
 
 func (a *App) SaveSettings(settings storage.Settings) error {
+	return a.saveSettings(settings, nil)
+}
+
+// SwapSettingsShortcuts saves a reciprocal exchange that neither individual
+// shortcut setter could register while the other still holds its old binding.
+func (a *App) SwapSettingsShortcuts(settings storage.Settings, profileShortcut string) error {
+	profileShortcut = strings.TrimSpace(profileShortcut)
+	return a.saveSettings(settings, &profileShortcut)
+}
+
+func (a *App) saveSettings(settings storage.Settings, swap *string) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if err := a.availableLocked(); err != nil {
@@ -18,7 +31,21 @@ func (a *App) SaveSettings(settings storage.Settings) error {
 	if a.busyLocked() {
 		return errors.New("finish the current operation before changing settings")
 	}
-	change, err := preferences.Prepare(a.settings, settings, a.profiles.Shortcut())
+	profileShortcut := a.profiles.Shortcut()
+	if swap != nil {
+		if err := a.profilesAvailableLocked(); err != nil {
+			return err
+		}
+		if settings.Shortcut == a.settings.Shortcut && *swap == profileShortcut {
+			// A retry may follow a committed swap whose receipt was lost.
+			swap = nil
+		} else if !platform.SameShortcut(settings.Shortcut, profileShortcut) || !platform.SameShortcut(*swap, a.settings.Shortcut) {
+			return errors.New("saved shortcuts changed before the swap; review the current settings")
+		} else {
+			profileShortcut = *swap
+		}
+	}
+	change, err := preferences.Prepare(a.settings, settings, profileShortcut)
 	if err != nil {
 		return err
 	}
@@ -44,28 +71,52 @@ func (a *App) SaveSettings(settings storage.Settings) error {
 		}
 	}
 	restoreSettings := func() {
+		if swap != nil {
+			a.closeProfileShortcut()
+		}
 		if change.ShortcutChanged() {
 			a.shortcuts.Close(shortcuts.Recording)
 		}
-		a.settings = old
-		if a.shortcuts.Registration(shortcuts.Recording) == nil {
+		if swap != nil {
+			a.registerMissingShortcutsLocked()
+		} else if a.shortcuts.Registration(shortcuts.Recording) == nil {
 			a.registerShortcut()
 		}
 	}
 	if change.ShortcutChanged() {
-		a.shortcuts.Close(shortcuts.Recording)
-		// Permission requests release App.mu. Keep candidate settings private
-		// until registration and persistence succeed.
+		if swap != nil {
+			a.closeProfileShortcut()
+		}
+		// Permission requests release App.mu. Keep both candidate values private
+		// until all candidate bindings and the storage transaction succeed.
 		registrationErr := a.registerShortcutFor(settings.Shortcut)
+		if registrationErr == nil && swap != nil {
+			registrationErr = a.registerProfileShortcutFor(*swap)
+		}
 		if err := a.availableLocked(); err != nil {
 			return err
 		}
-		if a.shortcuts.Registration(shortcuts.Recording) == nil {
+		if registrationErr == nil && swap != nil && a.shortcuts.Registration(shortcuts.Profile) == nil {
+			registrationErr = errors.New("profile shortcut unavailable")
+		}
+		if registrationErr != nil || a.shortcuts.Registration(shortcuts.Recording) == nil {
 			failure := a.status.ShortcutError
-			a.settings = old
-			if !shortcuts.Cancelled(registrationErr) {
-				a.registerShortcut()
+			if registrationErr != nil {
+				failure = registrationErr.Error()
 			}
+			if shortcuts.Cancelled(registrationErr) {
+				// Release any candidate already installed, without opening a
+				// new permission dialog after cancellation.
+				a.shortcuts.Close(shortcuts.Recording)
+				if swap != nil {
+					a.closeProfileShortcut()
+					a.status.ShortcutError = failure
+					a.status.ProfileShortcutError = failure
+				}
+			} else {
+				restoreSettings()
+			}
+			a.emitStatusLocked()
 			return fmt.Errorf("shortcut could not be registered: %s; choose another combination; your saved shortcut is unchanged", failure)
 		}
 	}
@@ -77,7 +128,7 @@ func (a *App) SaveSettings(settings storage.Settings) error {
 			return fmt.Errorf("update launch at login: %w", err)
 		}
 	}
-	if err := a.saveSettingsWithDefaultLocked(settings); err != nil {
+	if err := a.profiles.SaveSettingsWithShortcut(a.store, settings, a.textConfig, swap); err != nil {
 		restoreSettings()
 		if loginChanged {
 			if rollbackErr := a.loginStart.SetEnabled(previousLogin); rollbackErr != nil {

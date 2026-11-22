@@ -18,6 +18,20 @@ class DraftStore {
     if (!this.drafts.has(key)) this.drafts.set(key, new SavedDraft<unknown>(saved));
     return this.drafts.get(key) as SavedDraft<T>;
   }
+  discardSessionDrafts = async (ids: readonly string[]) => {
+    const keys = ids.flatMap((id) => [`chat:${id}`, `transcript:${id}`]);
+    await Promise.all(
+      keys.map(async (key) => {
+        const entry = this.drafts.get(key);
+        if (!entry) return;
+        // The session is gone. Let the current write settle and retire any
+        // unmount flush queued behind it.
+        entry.writer.editor = undefined;
+        while (entry.writer.running) await entry.writer.running;
+        if (this.drafts.get(key) === entry) this.drafts.delete(key);
+      }),
+    );
+  };
   get protected() {
     return Array.from(this.drafts.values()).some((draft) => draft.protected);
   }
@@ -44,6 +58,11 @@ function useStore() {
   const store = useContext(DraftContext);
   if (!store) throw new Error("DraftProvider is required");
   return store;
+}
+
+// eslint-disable-next-line react-refresh/only-export-components -- Shares the provider's private in-memory cache.
+export function useDiscardSessionDrafts(): (ids: readonly string[]) => Promise<void> {
+  return useStore().discardSessionDrafts;
 }
 
 // A pending creation keeps its ID across routes and failures. The receipt

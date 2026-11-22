@@ -25,6 +25,7 @@ import { HistoryTable } from "@/features/history/components/history-table";
 import { deleteTranscriptions } from "@/features/history/lib/delete-transcriptions";
 import { BulkTextDialog } from "@/features/processing/components/bulk-text-dialog";
 import { TranscriptExportDialog } from "@/features/transcripts/components/transcript-export-dialog";
+import { useDiscardSessionDrafts } from "@/hooks/use-saved-draft";
 import { nativeText } from "@/i18n/native-text";
 import {
   backend,
@@ -120,6 +121,7 @@ function HistoryList({ viewToggle, active }: { viewToggle: ReactNode; active: bo
   const deleted = params.get("view") === "deleted";
   const tryPromptID = params.get("tryPrompt");
   const { textProcessing } = useSavedConfiguration();
+  const discardSessionDrafts = useDiscardSessionDrafts();
   const tryPrompt = textProcessing.prompts.find((prompt) => prompt.id === tryPromptID);
   const query = (params.get("q") ?? "").slice(0, 250);
   const requestedSort = params.get("sort");
@@ -277,7 +279,6 @@ function HistoryList({ viewToggle, active }: { viewToggle: ReactNode; active: bo
   const [processingSelection, setProcessingSelection] = useState<{
     action: "title" | "output";
     selection: TranscriptExportSelection;
-    count: number;
     revision: number;
   } | null>(null);
   const changeSearch = useCallback(
@@ -532,7 +533,18 @@ function HistoryList({ viewToggle, active }: { viewToggle: ReactNode; active: bo
     mutationFn: (ids: string[]) => deleteTranscriptions(ids, () => run(refresh, false)),
   });
   const restoreMutation = useMutation({ mutationFn: backend.restoreSessions });
-  const permanentlyRemoveMutation = useMutation({ mutationFn: backend.permanentlyDeleteSessions });
+  const permanentlyRemoveMutation = useMutation({
+    mutationFn: async (ids: string[]) => {
+      for (let offset = 0; offset < ids.length; offset += 50) {
+        const batch = ids.slice(offset, offset + 50);
+        const result = await backend.purgeSessions(batch);
+        // Audio cleanup can fail after some rows are gone. Retire only the
+        // confirmed identities before surfacing the error for remaining rows.
+        await discardSessionDrafts(result.deletedIds);
+        if (result.error) throw new Error(result.error);
+      }
+    },
+  });
   function pruneRemovedSelection(ids: string[]) {
     const removed = new Set(ids);
     setSelected((old) => {
@@ -626,7 +638,6 @@ function HistoryList({ viewToggle, active }: { viewToggle: ReactNode; active: bo
     setProcessingSelection({
       action,
       selection: currentSelection(),
-      count: selectionCount,
       revision: currentRevision,
     });
   }
@@ -1075,7 +1086,6 @@ function HistoryList({ viewToggle, active }: { viewToggle: ReactNode; active: bo
           <BulkTextDialog
             action={processingSelection.action}
             selection={processingSelection.selection}
-            count={processingSelection.count}
             returnFocus={processTrigger}
             onClose={() => setProcessingSelection(null)}
           />
