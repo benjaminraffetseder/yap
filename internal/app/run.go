@@ -21,13 +21,15 @@ type Options struct {
 func Run(options Options) error {
 	service := newApp(options)
 	desktop := application.New(application.Options{
-		Name:           "Yap",
-		Icon:           options.Icon,
-		Mac:            application.MacOptions{ApplicationShouldTerminateAfterLastWindowClosed: true},
-		Windows:        indicator.WindowsOptions(),
-		Linux:          application.LinuxOptions{ApplicationID: "com.yap.desktop", ProgramName: "com.yap.desktop"},
-		Services:       []application.Service{application.NewService(service)},
-		Assets:         application.AssetOptions{Handler: application.AssetFileServerFS(options.Assets)},
+		Name:     "Yap",
+		Icon:     options.Icon,
+		Mac:      application.MacOptions{ApplicationShouldTerminateAfterLastWindowClosed: true},
+		Windows:  indicator.WindowsOptions(),
+		Linux:    application.LinuxOptions{ApplicationID: "com.yap.desktop", ProgramName: "com.yap.desktop"},
+		Services: []application.Service{application.NewService(service)},
+		Assets: application.AssetOptions{
+			Handler: application.AssetFileServerFS(options.Assets),
+		},
 		SingleInstance: singleInstanceLock(service),
 		ShouldQuit:     service.shouldQuit,
 		OnShutdown:     func() { service.shutdown(service.ctx) },

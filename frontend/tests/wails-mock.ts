@@ -34,7 +34,6 @@ if (methods) {
     GetModelCatalog: ["models", "textModels", "textRuntimeAvailable", "recommendedTextContext"],
     GetRuntimeSnapshot: [
       "status",
-      "history",
       "bulkTextQueue",
       "importQueue",
       "recordingSaveHistory",
@@ -58,6 +57,27 @@ if (methods) {
   if (!methods.GetVocabulary)
     methods.GetVocabulary = async () =>
       Reflect.get((await methods.GetSnapshot()) as object, "vocabulary");
+  if (!methods.GetRecentHistory)
+    methods.GetRecentHistory = async () =>
+      ((await methods.GetSnapshot()) as { history?: { deletedAt?: string }[] }).history
+        ?.filter((entry) => !entry.deletedAt)
+        .slice(0, 5) ?? [];
+  if (!methods.GetAudioURL) methods.GetAudioURL = (...args: unknown[]) => methods.GetAudio(...args);
+  if (!methods.GetHistorySelectionIDs)
+    methods.GetHistorySelectionIDs = async (query: unknown) => {
+      // Existing fixtures own their complete paginated History collection.
+      // Reuse it for this additive read instead of an unrelated export preview.
+      const ids: string[] = [];
+      for (let page = 0; ; page++) {
+        const result = (await methods.GetHistory(query, page)) as {
+          entries?: { id: string }[];
+          total?: number;
+          pageSize?: number;
+        };
+        ids.push(...(result.entries ?? []).map((entry) => entry.id));
+        if ((page + 1) * (result.pageSize ?? 50) >= (result.total ?? 0)) return ids;
+      }
+    };
 
   setTransport({
     async call(objectID, method, _windowName, args) {

@@ -49,6 +49,5 @@ func (a *App) CompleteOnboarding(profile storage.DictationProfile, config textmo
 	if err != nil {
 		return err
 	}
-	a.publishProfileLocked(selection)
-	return nil
+	return a.publishProfileLocked(selection)
 }

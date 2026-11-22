@@ -9,6 +9,7 @@ type State struct {
 	Message, Phase                        string
 	ShortcutRegistration, ShortcutCapture bool
 	HomeResult, Import                    bool
+	SpeechMaintenance                     bool
 }
 
 func (s State) Available() error {
@@ -22,7 +23,7 @@ func (s State) Available() error {
 }
 
 func (s State) Busy() bool {
-	if s.ShortcutRegistration || s.ShortcutCapture || s.HomeResult || s.Import {
+	if s.ShortcutRegistration || s.ShortcutCapture || s.HomeResult || s.Import || s.SpeechMaintenance {
 		return true
 	}
 	switch s.Phase {

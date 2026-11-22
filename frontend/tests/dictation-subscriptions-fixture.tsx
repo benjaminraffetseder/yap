@@ -14,8 +14,10 @@ import {
   useDictationStatus,
   useImportQueue,
 } from "../src/features/dictation/hooks/use-dictation-state";
+import { GeneratedOutputs } from "../src/features/processing/components/generated-outputs";
 import { ProcessingPanel } from "../src/features/processing/components/processing-panel";
 import { UpdatePanel } from "../src/features/updates/components/update-panel";
+import "../src/index.css";
 import { emptySnapshot } from "../src/lib/queries/resource-defaults";
 import { createQueryClient } from "../src/lib/queries/resource-queries";
 import { useConfiguration } from "../src/lib/queries/saved-queries";
@@ -39,6 +41,18 @@ Object.assign(Reflect.get(window, "mockBackend").app.App, {
   GetSnapshot: async () => structuredClone(snapshot),
   CheckForUpdates: async () => structuredClone(update),
   GetUpdateStatus: async () => structuredClone(update),
+  GetSessionOutputs: async () => [
+    {
+      id: "render-check-output",
+      sessionId: "render-check-session",
+      createdAt: "2026-11-22T12:00:00Z",
+      model: "local-model",
+      endpoint: "http://localhost/v1",
+      prompt: { id: "summary", name: "Summary", instruction: "Summarize the source." },
+      input: "A saved source transcript.",
+      text: "# Saved output\n\nA generated document stays unchanged during native progress updates.",
+    },
+  ],
 });
 const commits: Record<string, number> = {};
 Reflect.set(window, "subscriptionFixture", {
@@ -97,6 +111,13 @@ createRoot(document.getElementById("root")!).render(
       <MemoryRouter>
         <TooltipProvider>
           <ProcessingPanel />
+          <Measure id="outputs">
+            <GeneratedOutputs
+              sessionID="render-check-session"
+              unavailable={false}
+              onCopyTargetChange={() => undefined}
+            />
+          </Measure>
         </TooltipProvider>
       </MemoryRouter>
       <Measure id="actions">

@@ -856,3 +856,110 @@ test("grouped citations link to each source and action controls stay reachable w
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await page.screenshot({ path: testInfo.outputPath("chat-docked-narrow-dark.png") });
 });
+
+test("editing the composer and streaming live replies do not re-render or reparse completed messages", async ({
+  page,
+}) => {
+  await scenario(page);
+  await openChat(page);
+  const panel = page.getByRole("region", { name: "Chat", exact: true });
+  const composer = panel.getByRole("textbox", { name: "Message", exact: true });
+  const profiler = await page.context().newCDPSession(page);
+  await profiler.send("Profiler.enable");
+  await profiler.send("Profiler.startPreciseCoverage", { callCount: true, detailed: false });
+  async function takeRenderCalls() {
+    const { result } = await profiler.send("Profiler.takePreciseCoverage");
+    const count = (filePattern: RegExp, fnName: string) =>
+      result
+        .filter((script) => filePattern.test(script.url))
+        .flatMap((script) => script.functions)
+        .filter((fn) => fn.functionName === fnName)
+        .reduce((sum, fn) => sum + fn.ranges[0].count, 0);
+    return {
+      ChatMessageItem: count(/\/transcription-chat\.tsx(?:\?|$)/, "ChatMessageItem"),
+      ChatCitationContent: count(/\/chat-citation-content\.tsx(?:\?|$)/, "ChatCitationContent"),
+      citationMarkdown: count(/\/chat-references\.ts(?:\?|$)/, "citationMarkdown"),
+      MarkdownContent: count(/\/markdown-content\.tsx(?:\?|$)/, "MarkdownContent"),
+    };
+  }
+  try {
+    await composer.fill("What is the deadline?");
+    await panel.getByRole("button", { name: "Send", exact: true }).click();
+    await expect(panel.getByRole("button", { name: "Passage 1", exact: true })).toBeVisible();
+    await page.evaluate(
+      () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
+    );
+    const initial = await takeRenderCalls();
+    expect(initial.ChatMessageItem).toBeGreaterThan(0);
+    expect(initial.ChatCitationContent).toBeGreaterThan(0);
+    expect(initial.citationMarkdown).toBeGreaterThan(0);
+    expect(initial.MarkdownContent).toBeGreaterThan(0);
+
+    await composer.fill("Who owns the launch");
+    await composer.pressSequentially(" and what are the next steps?");
+    await expect(composer).toHaveValue("Who owns the launch and what are the next steps?");
+    await page.evaluate(
+      () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
+    );
+    expect(await takeRenderCalls()).toEqual({
+      ChatMessageItem: 0,
+      ChatCitationContent: 0,
+      citationMarkdown: 0,
+      MarkdownContent: 0,
+    });
+
+    await page.evaluate(() => {
+      const state = Reflect.get(window, "chatTest");
+      state.defer = true;
+      state.reply = "Alex owns the launch. [[1]]";
+    });
+    await panel.getByRole("button", { name: "Send", exact: true }).click();
+    await expect(panel.getByText("Streaming reply", { exact: true })).toBeVisible();
+    await page.evaluate(
+      () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
+    );
+    const turnStartCalls = await takeRenderCalls();
+    expect(turnStartCalls.ChatCitationContent).toBe(0);
+    expect(turnStartCalls.citationMarkdown).toBe(0);
+
+    for (const chunk of [
+      "Streaming chunk 1",
+      "Streaming chunk 1 and 2",
+      "Streaming chunk 1, 2, 3",
+    ]) {
+      await page.evaluate((content) => {
+        const state = Reflect.get(window, "chatTest");
+        const activeId = state.chat.messages.at(-1)?.id;
+        Reflect.get(window, "_wails").dispatchWailsEvent({
+          name: "chat:progress",
+          data: {
+            sessionId: "chat",
+            requestId: activeId,
+            content,
+            compacting: false,
+          },
+        });
+      }, chunk);
+      await expect(panel.getByText(chunk, { exact: true })).toBeVisible();
+    }
+    await page.evaluate(
+      () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
+    );
+    const streamCalls = await takeRenderCalls();
+    expect(streamCalls.ChatMessageItem).toBe(0);
+    expect(streamCalls.ChatCitationContent).toBe(0);
+    expect(streamCalls.citationMarkdown).toBe(0);
+    expect(streamCalls.MarkdownContent).toBeGreaterThanOrEqual(3);
+
+    await page.evaluate(() => Reflect.get(window, "chatTest").finish());
+    await expect(panel.getByText("Alex owns the launch.", { exact: false })).toBeVisible();
+    await expect(panel.getByRole("button", { name: "Passage 1", exact: true })).toHaveCount(2);
+    const completedCalls = await takeRenderCalls();
+    expect(completedCalls.ChatMessageItem).toBeGreaterThan(0);
+    expect(completedCalls.ChatCitationContent).toBeGreaterThan(0);
+    expect(completedCalls.citationMarkdown).toBeGreaterThan(0);
+  } finally {
+    await profiler.send("Profiler.stopPreciseCoverage");
+    await profiler.detach();
+  }
+});

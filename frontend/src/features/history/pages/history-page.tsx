@@ -161,6 +161,7 @@ function HistoryList({ viewToggle, active }: { viewToggle: ReactNode; active: bo
   // Retain only the identity of the previous successful query. Query remains
   // the sole data owner, including the rows shown during a failed new search.
   const previousList = useRef<QueryKey | null>(null);
+  const readRevision = useRef(0);
   const [changingList, setChangingList] = useState(false);
   useLayoutEffect(() => setChangingList(false), [query, deleted, sortBy, descending]);
   const history = useInfiniteQuery({
@@ -170,9 +171,13 @@ function HistoryList({ viewToggle, active }: { viewToggle: ReactNode; active: bo
       // the replacement observer can take ownership.
       await Promise.resolve();
       signal.throwIfAborted();
-      return deleted
-        ? backend.recentlyDeleted(query, pageParam, sortBy, descending)
-        : backend.history(query, pageParam, sortBy, descending);
+      const batch = deleted
+        ? await backend.recentlyDeleted(query, pageParam, sortBy, descending)
+        : await backend.history(query, pageParam, sortBy, descending);
+      if (pageParam === 0 && !signal.aborted) {
+        readRevision.current++;
+      }
+      return batch;
     },
     initialPageParam: 0,
     getNextPageParam: (last) =>
@@ -236,6 +241,9 @@ function HistoryList({ viewToggle, active }: { viewToggle: ReactNode; active: bo
     setSelected([]);
     setAllMatching(false);
     setExcluded([]);
+    setReconcileError("");
+    setExportSelection(null);
+    setProcessingSelection(null);
     selectionAnchor.current = null;
   }, []);
   useEffect(() => {
@@ -260,6 +268,9 @@ function HistoryList({ viewToggle, active }: { viewToggle: ReactNode; active: bo
   }, [selected.length, allMatching, excluded.length]);
   const [deletingNow, setDeletingNow] = useState(false);
   const [deleteError, setDeleteError] = useState("");
+  const [reconcileError, setReconcileError] = useState("");
+  const [reconcileAttempt, setReconcileAttempt] = useState(0);
+  const [validatedRevision, setValidatedRevision] = useState(0);
   const [exportSelection, setExportSelection] = useState<TranscriptExportSelection | null>(null);
   const exportTrigger = useRef<HTMLButtonElement>(null);
   const processTrigger = useRef<HTMLButtonElement>(null);
@@ -267,6 +278,7 @@ function HistoryList({ viewToggle, active }: { viewToggle: ReactNode; active: bo
     action: "title" | "output";
     selection: TranscriptExportSelection;
     count: number;
+    revision: number;
   } | null>(null);
   const changeSearch = useCallback(
     (nextQuery: string) => {
@@ -274,6 +286,7 @@ function HistoryList({ viewToggle, active }: { viewToggle: ReactNode; active: bo
       setSelected([]);
       setAllMatching(false);
       setExcluded([]);
+      setReconcileError("");
       setParams(
         (old) => {
           const value = new URLSearchParams(old);
@@ -288,16 +301,140 @@ function HistoryList({ viewToggle, active }: { viewToggle: ReactNode; active: bo
     [setParams],
   );
 
+  const currentRevision = readRevision.current;
+  const loadedIds = useMemo(
+    () => new Set(pages?.flatMap((batch) => batch.entries.map((entry) => entry.id)) ?? []),
+    [pages],
+  );
+  const firstLoadedPage = pages?.[0] ?? null;
+  const lastLoadedPage = pages?.at(-1);
+  const allPagesLoaded =
+    !!lastLoadedPage &&
+    !history.hasNextPage &&
+    (lastLoadedPage.page + 1) * lastLoadedPage.pageSize >= lastLoadedPage.total;
+  const offPageExcluded = useMemo(
+    () => (allMatching ? excluded.filter((id) => !loadedIds.has(id)) : []),
+    [allMatching, excluded, loadedIds],
+  );
+  const reconcilingExclusions =
+    isDesktop &&
+    allMatching &&
+    !deleted &&
+    !!history.data &&
+    !!firstLoadedPage &&
+    !history.isFetching &&
+    !missingPage &&
+    offPageExcluded.length > 0 &&
+    !allPagesLoaded &&
+    validatedRevision !== currentRevision;
+
   // Infinite-query refetches replace every loaded page together. Keep UI
   // selection separate and reconcile only after the refreshed range settles.
   useEffect(() => {
-    if (!history.data || !pages || history.isFetching || missingPage) return;
+    // A confirmation belongs to the count the user reviewed. A native refresh
+    // retires it before another membership read can change that count.
+    setProcessingSelection((current) =>
+      history.isFetching || history.isError || current?.revision !== currentRevision
+        ? null
+        : current,
+    );
+    if (!history.data || !pages || !firstLoadedPage || history.isFetching || missingPage) return;
     const ids = new Set(
       pages.slice(0, page + 1).flatMap((batch) => batch.entries.map((entry) => entry.id)),
     );
-    setSelected((old) => old.filter((id) => ids.has(id)));
-    if (!pages[0].total) setAllMatching(false);
-  }, [pages, history.data, history.isFetching, missingPage, page]);
+    setSelected((old) => {
+      const next = old.every((id) => ids.has(id)) ? old : old.filter((id) => ids.has(id));
+      if (!allMatching && !next.length) {
+        setExportSelection(null);
+        setProcessingSelection(null);
+      }
+      return next;
+    });
+    const currentTotal = firstLoadedPage.total;
+    if (!currentTotal) {
+      setAllMatching(false);
+      setExcluded((old) => (old.length ? [] : old));
+      setReconcileError("");
+      setExportSelection(null);
+      setProcessingSelection(null);
+      return;
+    }
+    if (!allMatching || deleted) {
+      setReconcileError("");
+      return;
+    }
+    if (!offPageExcluded.length) {
+      setReconcileError("");
+      setValidatedRevision(currentRevision);
+      if (excluded.length >= currentTotal) {
+        setAllMatching(false);
+        setExcluded([]);
+        setExportSelection(null);
+        setProcessingSelection(null);
+      }
+      return;
+    }
+    if (allPagesLoaded) {
+      setReconcileError("");
+      setValidatedRevision(currentRevision);
+      const next = excluded.filter((id) => loadedIds.has(id));
+      if (next.length >= currentTotal) {
+        setAllMatching(false);
+        setExcluded([]);
+        setExportSelection(null);
+        setProcessingSelection(null);
+      } else if (next.length !== excluded.length) {
+        setExcluded(next);
+      }
+      return;
+    }
+    if (validatedRevision === currentRevision) return;
+    let active = true;
+    void backend
+      .historySelectionIDs(query)
+      .then((ids) => {
+        if (!active) return;
+        const matching = new Set(ids);
+        const invalid = new Set(offPageExcluded.filter((id) => !matching.has(id)));
+        setReconcileError("");
+        setValidatedRevision(currentRevision);
+        setExcluded((old) => {
+          const next = invalid.size ? old.filter((id) => !invalid.has(id)) : old;
+          if (next.length >= currentTotal) {
+            setAllMatching(false);
+            setExportSelection(null);
+            setProcessingSelection(null);
+            return [];
+          }
+          return next;
+        });
+      })
+      .catch((cause) => {
+        if (!active) return;
+        setReconcileError(message(cause));
+      });
+    return () => {
+      active = false;
+    };
+  }, [
+    allMatching,
+    allPagesLoaded,
+    currentRevision,
+    deleted,
+    excluded,
+    firstLoadedPage,
+    history.data,
+    history.isError,
+    history.isFetching,
+    loadedIds,
+    missingPage,
+    offPageExcluded,
+    page,
+    pages,
+    query,
+    reconcileAttempt,
+    validatedRevision,
+  ]);
 
   const { entries, total } = result;
   const hasMore = (result.page + 1) * result.pageSize < total;
@@ -384,6 +521,8 @@ function HistoryList({ viewToggle, active }: { viewToggle: ReactNode; active: bo
   const unavailable =
     !isDesktop ||
     loading ||
+    reconcilingExclusions ||
+    !!reconcileError ||
     searchPending ||
     !!error ||
     deletingNow ||
@@ -394,13 +533,35 @@ function HistoryList({ viewToggle, active }: { viewToggle: ReactNode; active: bo
   });
   const restoreMutation = useMutation({ mutationFn: backend.restoreSessions });
   const permanentlyRemoveMutation = useMutation({ mutationFn: backend.permanentlyDeleteSessions });
+  function pruneRemovedSelection(ids: string[]) {
+    const removed = new Set(ids);
+    setSelected((old) => {
+      const next = old.every((id) => !removed.has(id)) ? old : old.filter((id) => !removed.has(id));
+      if (!allMatching && !next.length) {
+        setExportSelection(null);
+        setProcessingSelection(null);
+      }
+      return next;
+    });
+    if (!allMatching) return;
+    const nextExcluded = excluded.filter((id) => !removed.has(id));
+    const remainingTotal = Math.max(0, total - ids.length);
+    if (!remainingTotal || nextExcluded.length >= remainingTotal) {
+      setAllMatching(false);
+      setExcluded([]);
+      setExportSelection(null);
+      setProcessingSelection(null);
+    } else if (nextExcluded.length !== excluded.length) {
+      setExcluded(nextExcluded);
+    }
+  }
   async function remove(ids: string[]) {
     if (deletingNow) return;
     setDeletingNow(true);
     setDeleteError("");
     try {
       await removeMutation.mutateAsync(ids);
-      setSelected([]);
+      pruneRemovedSelection(ids);
       await run(refresh, false);
     } catch (cause) {
       setDeleteError(message(cause));
@@ -414,7 +575,7 @@ function HistoryList({ viewToggle, active }: { viewToggle: ReactNode; active: bo
     setDeleteError("");
     try {
       await restoreMutation.mutateAsync(ids);
-      setSelected([]);
+      pruneRemovedSelection(ids);
       toastManager.add({
         type: "success",
         title:
@@ -435,7 +596,7 @@ function HistoryList({ viewToggle, active }: { viewToggle: ReactNode; active: bo
     setDeleteError("");
     try {
       await permanentlyRemoveMutation.mutateAsync(ids);
-      setSelected([]);
+      pruneRemovedSelection(ids);
       toastManager.add({
         type: "success",
         title:
@@ -462,7 +623,12 @@ function HistoryList({ viewToggle, active }: { viewToggle: ReactNode; active: bo
     };
   }
   function processSelected(action: "title" | "output") {
-    setProcessingSelection({ action, selection: currentSelection(), count: selectionCount });
+    setProcessingSelection({
+      action,
+      selection: currentSelection(),
+      count: selectionCount,
+      revision: currentRevision,
+    });
   }
   function changeExportExclusions(next: string[]) {
     if (next.length >= total) {
@@ -478,6 +644,7 @@ function HistoryList({ viewToggle, active }: { viewToggle: ReactNode; active: bo
     setSelected([]);
     setAllMatching(false);
     setExcluded([]);
+    setReconcileError("");
     setParams(
       (old) => {
         const value = new URLSearchParams(old);
@@ -599,6 +766,21 @@ function HistoryList({ viewToggle, active }: { viewToggle: ReactNode; active: bo
           <p role="alert" className="text-sm text-destructive">
             {deleteError}
           </p>
+        )}
+        {reconcileError && !error && (
+          <div role="alert" className="flex items-center gap-3 text-sm text-destructive">
+            {nativeText(reconcileError)}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setReconcileError("");
+                setReconcileAttempt((old) => old + 1);
+              }}
+            >
+              {t("common.retry")}
+            </Button>
+          </div>
         )}
         {!deleted &&
           !allMatching &&
@@ -886,13 +1068,18 @@ function HistoryList({ viewToggle, active }: { viewToggle: ReactNode; active: bo
           onClose={() => setExportSelection(null)}
         />
       )}
-      {processingSelection && (
-        <BulkTextDialog
-          {...processingSelection}
-          returnFocus={processTrigger}
-          onClose={() => setProcessingSelection(null)}
-        />
-      )}
+      {processingSelection &&
+        !history.isFetching &&
+        !history.isError &&
+        processingSelection.revision === currentRevision && (
+          <BulkTextDialog
+            action={processingSelection.action}
+            selection={processingSelection.selection}
+            count={processingSelection.count}
+            returnFocus={processTrigger}
+            onClose={() => setProcessingSelection(null)}
+          />
+        )}
     </div>
   );
 }

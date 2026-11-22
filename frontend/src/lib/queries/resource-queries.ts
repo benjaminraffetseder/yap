@@ -23,6 +23,7 @@ export const resourceKeys = {
   vocabulary: ["saved", "vocabulary"] as const,
   catalogs: ["saved", "catalogs"] as const,
   history: ["resources", "history"] as const,
+  recentHistory: ["resources", "history", "recent"] as const,
   session: (id: string) => ["resources", "session", id] as const,
   outputs: (id: string) => ["resources", "outputs", id] as const,
   chat: (id: string) => ["resources", "chat", id] as const,
@@ -39,6 +40,17 @@ export const sessionQuery = (id: string) =>
       return backend.session(id);
     },
   });
+
+export const recentHistoryQuery = queryOptions({
+  queryKey: resourceKeys.recentHistory,
+  queryFn: async ({ signal }) => {
+    // A discarded StrictMode observer must not start an uncancellable bridge
+    // call before the replacement observer owns the query.
+    await Promise.resolve();
+    signal.throwIfAborted();
+    return backend.recentHistory();
+  },
+});
 
 export const outputsQuery = (id: string) =>
   queryOptions({

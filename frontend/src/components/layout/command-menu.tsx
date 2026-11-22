@@ -20,7 +20,9 @@ import {
 } from "@/features/dictation/hooks/use-dictation-state";
 import i18n from "@/i18n";
 import { backend, isBusy, isDesktop, type Session } from "@/lib/backend";
+import { recentHistoryQuery } from "@/lib/queries/resource-queries";
 import { useSavedActions } from "@/lib/queries/saved-queries";
+import { useQuery } from "@tanstack/react-query";
 import {
   Activity,
   BookOpen,
@@ -150,6 +152,10 @@ function CommandMenuContent({
   const [query, setQuery] = useState("");
   const input = useRef<HTMLInputElement>(null);
   const search = query.trim();
+  const recentHistory = useQuery({
+    ...recentHistoryQuery,
+    enabled: isDesktop && open && !loading && !search,
+  });
   const [result, setResult] = useState<{
     query: string;
     entries: Session[];
@@ -428,7 +434,7 @@ function CommandMenuContent({
   }
 
   const entries = !search
-    ? snapshot.history.filter((entry) => !entry.deletedAt).slice(0, 5)
+    ? (recentHistory.data ?? [])
     : result?.query === search
       ? result.entries
       : [];
@@ -469,6 +475,22 @@ function CommandMenuContent({
             heading={search ? t("commandMenu.historyMatches") : t("homePage.recentDictations")}
             forceMount
           >
+            {!search && recentHistory.isError && (
+              <>
+                <p role="status" className="px-2 py-1.5 text-xs text-muted-foreground">
+                  {t("commandMenu.historySearchFailed")}
+                </p>
+                <CommandItem
+                  value="retry-recent-history"
+                  forceMount
+                  disabled={recentHistory.isFetching}
+                  onSelect={() => void recentHistory.refetch()}
+                >
+                  <RefreshCw aria-hidden="true" />
+                  <span>{t("common.retry")}</span>
+                </CommandItem>
+              </>
+            )}
             {searchingHistory && (
               <p role="status" className="px-2 py-1.5 text-xs text-muted-foreground">
                 {result?.query !== search

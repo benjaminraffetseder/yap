@@ -78,9 +78,10 @@ export function TranscriptEditor({
   async function save() {
     setError("");
     try {
-      await backend.saveTranscript(session.id, text);
-      draftState.markSubmitted(text);
-      setSaved(text);
+      await draftState.entry.submit(async (value) => {
+        await backend.saveTranscript(session.id, value);
+        setSaved(value);
+      });
       onSaved();
     } catch (cause) {
       setError(message(cause));
@@ -88,8 +89,7 @@ export function TranscriptEditor({
     }
   }
   const autoSave = useAutoSave({
-    draftKey: text,
-    dirty: draftState.dirty,
+    ...draftState.autosave,
     canSave: isDesktop && !reason,
     save,
     delay: 1000,
@@ -138,7 +138,7 @@ export function TranscriptEditor({
             status={autoSave.status}
             reason={reason}
             retry={autoSave.retry}
-            discard={() => setText(saved)}
+            discard={() => setText(draftState.baseline)}
             disabled={closing}
           />
           <Button disabled={closing} onClick={() => void close()}>

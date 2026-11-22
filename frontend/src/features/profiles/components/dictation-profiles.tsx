@@ -36,7 +36,7 @@ import { ModifiedMarker } from "@/features/profiles/components/profile-setting-i
 import { ProfileTextModelEditor } from "@/features/profiles/components/profile-text-model";
 import { textProcessingSchema } from "@/features/prompts/lib/prompt-schemas";
 import { useAutoSave } from "@/hooks/use-auto-save";
-import { useSavedDraft } from "@/hooks/use-saved-draft";
+import { useCreationID, useSavedDraft } from "@/hooks/use-saved-draft";
 import { nativeText } from "@/i18n/native-text";
 import {
   backend,
@@ -51,7 +51,7 @@ import {
   type ProfileApplication,
 } from "@/lib/backend";
 import { useLanguages } from "@/lib/languages";
-import { useSavedActions } from "@/lib/queries/saved-queries";
+import { useSavedActions, useSavedReadVersion } from "@/lib/queries/saved-queries";
 import { ArrowLeft, Pencil, Plus, Settings2, Trash2, Workflow } from "lucide-react";
 import { useEffect, useRef, useState, type RefObject } from "react";
 import { useTranslation } from "react-i18next";
@@ -291,6 +291,7 @@ export function ProfilesPanel({
             {profiles.map((profile) => (
               <div
                 key={profile.id}
+                id={`settings-profile-${profile.id}`}
                 data-slot="profile-card"
                 className="min-w-0 space-y-3 rounded-xl border bg-card p-4 [overflow-wrap:anywhere] @max-[24rem]/settings:p-3"
               >
@@ -512,10 +513,11 @@ function ProfileEditor({
   const savedActions = useSavedActions();
   const { refresh, run } = useDictationActions();
   const snapshot = { ...useSavedConfiguration(), ...useSavedModelCatalog() };
-  const [savedID, setSavedID] = useState(profile.id);
-  const saved = snapshot.dictationProfiles?.find((item) => item.id === savedID) ?? profile;
-  const [draft, setDraft, draftState] = useSavedDraft(`profile:${profile.id || "new"}`, saved);
-  const profileID = useRef(profile.id);
+  const readVersion = useSavedReadVersion("configuration");
+  const creation = useCreationID("profile", profile.id);
+  const [initial] = useState(() => ({ ...profile, id: creation.id }));
+  const saved = snapshot.dictationProfiles?.find((item) => item.id === creation.id) ?? initial;
+  const [draft, setDraft, draftState] = useSavedDraft(`profile:${creation.id}`, saved, readVersion);
   const [error, setError] = useState("");
   const [closing, setClosing] = useState(false);
   const editorRef = useRef<HTMLElement>(null);
@@ -572,12 +574,8 @@ function ProfileEditor({
   async function save() {
     setError("");
     try {
-      const submitted = { ...draft, id: profileID.current || draft.id };
-      const result = await savedActions.saveProfile(submitted);
-      profileID.current = result.id;
-      setDraft((old) => ({ ...old, id: result.id }));
-      draftState.markSubmitted({ ...submitted, id: result.id });
-      setSavedID(result.id);
+      await draftState.entry.submit(savedActions.saveProfile);
+      creation.finish();
       await run(refresh, false);
     } catch (cause) {
       setError(message(cause));
@@ -585,8 +583,7 @@ function ProfileEditor({
     }
   }
   const autoSave = useAutoSave({
-    draftKey: JSON.stringify(draft),
-    dirty: draftState.dirty,
+    ...draftState.autosave,
     canSave: !disabled && isDesktop && !reason,
     save,
     delay: 800,
@@ -773,7 +770,7 @@ function ProfileEditor({
           reason={reason}
           retry={autoSave.retry}
           discard={() => {
-            setDraft(saved);
+            setDraft(draftState.baseline);
             setError("");
           }}
           disabled={disabled || closing}

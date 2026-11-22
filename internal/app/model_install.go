@@ -35,6 +35,9 @@ func (a *App) installSpeechModel(id string, runtimeOnly bool) error {
 	if err != nil {
 		return err
 	}
+	if err := a.releaseSpeechModelLocked(); err != nil {
+		return err
+	}
 	a.status.Phase = "downloading"
 	a.status.Message = "Checking or downloading speech runtime…"
 	if runtimeOnly {

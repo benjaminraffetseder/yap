@@ -1,9 +1,10 @@
 import { MarkdownContent } from "@/components/shared/markdown-content";
 import { citationMarkdown } from "@/features/chat/lib/chat-references";
 import type { ChatReference } from "@/lib/backend";
+import { memo } from "react";
 import { useTranslation } from "react-i18next";
 
-export function ChatCitationContent({
+export const ChatCitationContent = memo(function ChatCitationContent({
   text,
   references,
   onReference,
@@ -44,4 +45,4 @@ export function ChatCitationContent({
       {citationMarkdown(text, references)}
     </MarkdownContent>
   );
-}
+});

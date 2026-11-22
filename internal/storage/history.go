@@ -2,6 +2,7 @@ package storage
 
 import (
 	"database/sql"
+	"database/sql/driver"
 	"errors"
 	"fmt"
 	"strings"
@@ -11,8 +12,15 @@ import (
 )
 
 func init() {
-	// Query-only collation preserves legacy/backup dates and the existing schema.
-	// SQLite's date helpers lose fractional precision; compare full timestamps.
+	// Both strings are used only during the callback, while SQLite owns them.
+	sqlite.MustRegisterFunction("yap_history_contains", &sqlite.FunctionImpl{
+		NArgs: 2, Deterministic: true, VolatileArgs: true,
+		Scalar: func(_ *sqlite.FunctionContext, args []driver.Value) (driver.Value, error) {
+			value, ok := args[0].(string)
+			return ok && strings.Contains(strings.ToLower(value), args[1].(string)), nil
+		},
+	})
+	// Compare legacy dates with their full fractional precision and offset.
 	sqlite.MustRegisterCollationUtf8("yap_datetime", compareHistoryDates)
 	sqlite.MustRegisterCollationUtf8("yap_text", func(left, right string) int {
 		return strings.Compare(strings.ToLower(left), strings.ToLower(right))
@@ -44,8 +52,6 @@ type HistoryPage struct {
 	PageSize int       `json:"pageSize"`
 }
 
-// Stream rather than loading all transcripts into memory. Go's Unicode case
-// folding preserves the old search behavior beyond SQLite's ASCII-only lower().
 func (s *Store) SearchHistory(query string, page int) (HistoryPage, error) {
 	return s.searchHistory(query, page, false)
 }
@@ -62,84 +68,168 @@ func (s *Store) searchHistory(query string, page int, deleted bool) (HistoryPage
 	return s.SearchSortedHistory(query, page, sortBy, true, deleted)
 }
 
-// Sort the complete matching history before slicing pages, without retaining
-// every transcript in memory. Column names and directions are allowlisted.
+// The ordinary UTC format written by NewSession has a fixed-width seconds prefix
+// and optional fractional digits. Index its padded nanoseconds with SQLite
+// builtins so older binaries can continue writing without our collations.
+type historyDate struct{ table, column, alias string }
+
+var createdDate = historyDate{"recordings", "created_at", "r"}
+var deletedDate = historyDate{"deleted_recordings", "deleted_at", "d"}
+
+func utcHistoryKey(column string) string {
+	return fmt.Sprintf(`substr(%[1]s,1,19) || substr(substr(rtrim(%[1]s,'Z'),21) || '000000000',1,9)`, column)
+}
+
+func (d historyDate) exceptional() string {
+	// A seconds-prefix round trip rejects invalid calendar dates. Restrict the
+	// date helper to year-prefixed inputs (SQLite also accepts "now").
+	return fmt.Sprintf(`CASE WHEN %[1]s GLOB '[0-9][0-9][0-9][0-9]-*' THEN (
+        instr(%[1]s,char(0))=0 AND substr(%[1]s,-1)='Z'
+        AND substr(%[1]s,1,19)=strftime('%%Y-%%m-%%dT%%H:%%M:%%S',substr(%[1]s,1,19)||'Z','+0 seconds')
+        AND (length(%[1]s)=20 OR (length(%[1]s)>21 AND substr(%[1]s,20,1)='.'
+            AND substr(%[1]s,21,length(%[1]s)-21) NOT GLOB '*[^0-9]*')))
+        END IS NOT TRUE`, d.column)
+}
+
+func (d historyDate) indexes() string {
+	return fmt.Sprintf(`CREATE INDEX IF NOT EXISTS history_%[1]s ON %[2]s(%[3]s DESC,id DESC);
+        CREATE INDEX IF NOT EXISTS history_legacy_%[1]s ON %[2]s(id) WHERE %[4]s;`,
+		d.column, d.table, utcHistoryKey(d.column), d.exceptional())
+}
+
+func (d historyDate) order(tx *sql.Tx) (string, error) {
+	var legacy bool
+	err := tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM ` + d.table + ` WHERE ` + d.exceptional() + `)`).Scan(&legacy)
+	column := d.alias + "." + d.column
+	if legacy {
+		return column + " COLLATE yap_datetime", err
+	}
+	return utcHistoryKey(column), err
+}
+
+// Keep the count, date-format check and result page on the same SQLite snapshot.
 func (s *Store) SearchSortedHistory(query string, page int, sortBy string, descending, deleted bool) (HistoryPage, error) {
 	out := HistoryPage{Entries: []Session{}, Page: page, PageSize: HistoryPageSize}
-	if page < 0 || page > 1000000 {
+	if page < 0 || page > 1000000 || len(query) > 1000 {
 		return out, errors.New("invalid History search or page")
 	}
-	order := ""
+	tx, err := s.db.Begin()
+	if err != nil {
+		return out, err
+	}
+	defer tx.Rollback()
+	var order string
 	switch sortBy {
 	case "dictation":
 		order = "COALESCE(NULLIF(" + sessionTitleColumn + ",''),o.transcript,r.transcript) COLLATE yap_text"
 	case "createdAt":
-		order = "r.created_at COLLATE yap_datetime"
+		order, err = createdDate.order(tx)
 	case "deletedAt":
 		if !deleted {
 			return out, errors.New("invalid History sort column")
 		}
-		order = "d.deleted_at COLLATE yap_datetime"
+		order, err = deletedDate.order(tx)
 	case "durationMs":
 		order = "r.duration_ms"
 	default:
 		return out, errors.New("invalid History sort column")
+	}
+	if err != nil {
+		return out, err
 	}
 	if descending {
 		order += " DESC"
 	} else {
 		order += " ASC"
 	}
-	err := s.visitHistoryOrdered(query, deleted, order+",r.id DESC", func(v Session) {
-		if out.Total >= page*HistoryPageSize && len(out.Entries) < HistoryPageSize {
-			out.Entries = append(out.Entries, v)
+	order += ",r.id DESC"
+	from, args := historyFrom(query, deleted, false)
+	if err := tx.QueryRow("SELECT count(*)"+from, args...).Scan(&out.Total); err != nil {
+		return out, err
+	}
+	if page*HistoryPageSize < out.Total {
+		out.Entries, err = readHistoryPage(tx, query, deleted, order, HistoryPageSize, page*HistoryPageSize)
+		if err != nil {
+			return out, err
 		}
-		out.Total++
-	})
-	return out, err
+	}
+	return out, tx.Commit()
 }
 
-// MatchingHistoryIDs uses the same search and ordering as the paginated list.
-func (s *Store) MatchingHistoryIDs(query string) ([]string, error) {
-	ids := []string{}
-	err := s.visitHistory(query, false, func(v Session) { ids = append(ids, v.ID) })
-	return ids, err
-}
-
-func (s *Store) visitHistory(query string, deleted bool, visit func(Session)) error {
-	order := "r.created_at"
+func historyFrom(query string, deleted, outputs bool) (string, []any) {
+	from := " FROM recordings r"
+	filter := " WHERE NOT EXISTS (SELECT 1 FROM deleted_recordings d WHERE d.id=r.id)"
 	if deleted {
-		order = "d.deleted_at"
+		from += " JOIN deleted_recordings d ON d.id=r.id"
+		filter = " WHERE 1=1"
 	}
-	return s.visitHistoryOrdered(query, deleted, order+" COLLATE yap_datetime DESC,r.id DESC", visit)
+	if outputs || query != "" {
+		from += " LEFT JOIN recording_outputs o ON o.id=r.id"
+	}
+	if query == "" {
+		return from + filter, nil
+	}
+	// A missing output has the same text as the raw transcript, already tested.
+	filter += ` AND (yap_history_contains(CAST(r.transcript AS TEXT),?1)
+        OR yap_history_contains(CAST(o.transcript AS TEXT),?1)
+        OR yap_history_contains(CAST(` + sessionTitleColumn + ` AS TEXT),?1))`
+	return from + filter, []any{strings.ToLower(query)}
 }
 
-func (s *Store) visitHistoryOrdered(query string, deleted bool, order string, visit func(Session)) error {
-	if len(query) > 1000 {
-		return errors.New("invalid History search or page")
-	}
-	filter := "d.id IS NULL"
+func readHistoryPage(tx *sql.Tx, query string, deleted bool, order string, limit, offset int) ([]Session, error) {
+	from, args := historyFrom(query, deleted, true)
+	stamp := "''"
 	if deleted {
-		filter = "d.id IS NOT NULL"
+		stamp = "d.deleted_at"
 	}
-	rows, err := s.db.Query(`SELECT r.id,r.created_at,r.duration_ms,r.transcript,r.model,r.language,r.audio_path,COALESCE(o.transcript,r.transcript),COALESCE(d.deleted_at,''),` + sessionTitleColumn + `,` + speechStatsColumn + `
-		FROM recordings r LEFT JOIN recording_outputs o ON r.id=o.id LEFT JOIN deleted_recordings d ON d.id=r.id WHERE ` + filter + ` ORDER BY ` + order)
+	rows, err := tx.Query(`SELECT r.id,r.created_at,r.duration_ms,r.transcript,r.model,r.language,r.audio_path,COALESCE(o.transcript,r.transcript),`+stamp+","+sessionTitleColumn+","+speechStatsColumn+from+" ORDER BY "+order+" LIMIT ? OFFSET ?", append(args, limit, offset)...)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer rows.Close()
-	query = strings.ToLower(query)
+	entries := []Session{}
 	for rows.Next() {
-		var v Session
-		if err := scanSession(rows, &v, true); err != nil {
-			return err
+		var entry Session
+		if err := scanSession(rows, &entry, true); err != nil {
+			return nil, err
 		}
-		if query != "" && !strings.Contains(strings.ToLower(v.Title), query) && !strings.Contains(strings.ToLower(v.RawTranscript), query) && !strings.Contains(strings.ToLower(v.FinalTranscript), query) {
-			continue
-		}
-		visit(v)
+		entries = append(entries, entry)
 	}
-	return rows.Err()
+	return entries, rows.Err()
+}
+
+// MatchingHistoryIDs only projects the identifiers required by selection and export.
+func (s *Store) MatchingHistoryIDs(query string) ([]string, error) {
+	ids := []string{}
+	if len(query) > 1000 {
+		return ids, errors.New("invalid History search or page")
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return ids, err
+	}
+	defer tx.Rollback()
+	order, err := createdDate.order(tx)
+	if err != nil {
+		return ids, err
+	}
+	from, args := historyFrom(query, false, false)
+	rows, err := tx.Query("SELECT r.id"+from+" ORDER BY "+order+" DESC,r.id DESC", args...)
+	if err != nil {
+		return ids, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return ids, err
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		return ids, err
+	}
+	return ids, tx.Commit()
 }
 
 // Resolve the entire selection before export. The app serializes reads and writes.

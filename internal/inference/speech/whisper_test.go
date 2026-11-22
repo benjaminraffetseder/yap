@@ -14,6 +14,13 @@ import (
 
 // The child test process emulates the CLI contract without a shell or inference dependency.
 func TestMain(m *testing.M) {
+	if handled, err := RunWorker(os.Args[1:]); handled {
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		os.Exit(0)
+	}
 	if mode := os.Getenv("YAP_TEST_WHISPER"); mode != "" {
 		if mode == "wait" {
 			time.Sleep(10 * time.Second)

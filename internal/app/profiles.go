@@ -63,16 +63,24 @@ func (a *App) ApplyDictationProfile(id string) error {
 	if err != nil {
 		return err
 	}
-	a.publishProfileLocked(selection)
-	return nil
+	return a.publishProfileLocked(selection)
 }
 
-func (a *App) publishProfileLocked(selection profiles.Selection) {
+func (a *App) publishProfileLocked(selection profiles.Selection) error {
 	connectionChanged := textprocessing.ConnectionChanged(a.textConfig, selection.Config)
+	speechChanged := a.settings.ModelPath != selection.Settings.ModelPath || a.settings.WhisperPath != selection.Settings.WhisperPath
 	a.settings, a.textConfig = selection.Settings, selection.Config
+	if speechChanged {
+		if err := a.releaseSpeechModelLocked(); err != nil {
+			return err
+		}
+	}
 	if connectionChanged {
 		a.releaseTextModel()
 	}
 	a.diagnostic = DiagnosticResult{}
+	a.updateTrayLocked()
 	a.event("setup:changed", []string{"configuration"})
+	a.pumpQueuesLocked()
+	return nil
 }

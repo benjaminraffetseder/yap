@@ -124,7 +124,7 @@ export function SetupPage() {
   const [basicRequested, setBasicRequested] = useState(false);
   const [recipeEdited, setRecipeEdited] = useState(false);
   const [workflowDraft, setWorkflowDraft] = useState(() => createWorkflowDraft("everyday"));
-  const [baseTextConfig, setBaseTextConfig] = useState(snapshot.textProcessing);
+  const baseTextConfig = snapshot.textProcessing;
   const [profileID] = useState(() => crypto.randomUUID());
   const [profileName, setProfileName] = useState(() =>
     uniqueProfileName(t("onboarding.defaultProfileName.everyday"), snapshot.dictationProfiles),
@@ -207,9 +207,6 @@ export function SetupPage() {
       : baseTextConfig.model;
   const trialProcessing = step === 5 && snapshot.status.phase === "text-processing";
 
-  useEffect(() => {
-    setBaseTextConfig(snapshot.textProcessing);
-  }, [snapshot.textProcessing]);
   useEffect(() => {
     const element = footer.current;
     if (!element) return;

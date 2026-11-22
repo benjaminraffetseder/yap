@@ -421,6 +421,29 @@ test.describe("desktop commands and history", () => {
     await expect(dialog).toBeHidden();
   });
 
+  test("a failed recent history read keeps commands available and can be retried in place", async ({
+    page,
+  }) => {
+    await page.evaluate(() => {
+      const app = Reflect.get(window, "mockBackend").app.App;
+      let failed = false;
+      app.GetRecentHistory = async () => {
+        if (!failed) {
+          failed = true;
+          throw new Error("Recent History unavailable");
+        }
+        return structuredClone(window.commandTest.snapshot.history.slice(0, 5));
+      };
+    });
+    const dialog = await openMenu(page);
+    await expect(dialog.getByRole("status")).toHaveText("History search failed.");
+    await expect(dialog.getByRole("option", { name: "Models", exact: true })).toBeEnabled();
+    await dialog.getByRole("option", { name: "Retry", exact: true }).click();
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByRole("option").filter({ hasText: "Edited dictation" })).toHaveCount(5);
+    await expect(dialog.getByRole("status")).toHaveCount(0);
+  });
+
   test("history search debounces, uses the first page, and keeps backend matches regardless of their label", async ({
     page,
   }) => {

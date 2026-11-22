@@ -124,6 +124,8 @@ func (a *App) cycleDictationProfileLocked() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	a.publishProfileLocked(selection)
+	if err := a.publishProfileLocked(selection); err != nil {
+		return "", err
+	}
 	return selection.Name, nil
 }

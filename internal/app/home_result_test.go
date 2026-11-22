@@ -355,6 +355,10 @@ func TestHomeConcurrentReadsAfterNavigation(t *testing.T) {
 				}
 			} else {
 				a.latestResult = &TemporaryResult{Session: entry, Text: entry.FinalTranscript}
+				// Temporary results only wait on SQLite for a legacy snapshot consumer.
+				if _, err := a.GetSnapshot(); err != nil {
+					t.Fatal(err)
+				}
 			}
 			conn, err := homeTestDB(a).Conn(context.Background())
 			if err != nil {
@@ -392,5 +396,58 @@ func TestHomeConcurrentReadsAfterNavigation(t *testing.T) {
 				t.Fatal("result read left the app busy")
 			}
 		})
+	}
+}
+
+func TestTemporaryHomeReadFinishesWhileSQLiteIsReserved(t *testing.T) {
+	a := testApp(t)
+	entry := storage.NewSession("temporary", 1000, "Unsaved text", "tiny", "en", "")
+	a.latestResult = &TemporaryResult{Session: entry, Text: entry.FinalTranscript}
+	conn, err := homeTestDB(a).Conn(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	done := make(chan error, 1)
+	go func() {
+		result, err := a.GetHomeResult()
+		if err == nil && (result == nil || result.Session.ID != entry.ID) {
+			err = errors.New("missing temporary Home result")
+		}
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("temporary Home read tried to acquire the database")
+	}
+}
+
+func TestHomeReleaseUnlocksTrayAfterShortcutLoss(t *testing.T) {
+	a := testApp(t)
+	f := &fakeTray{}
+	a.tray = f
+	if _, _, err := a.beginHomeResult(); err != nil {
+		t.Fatal(err)
+	}
+	a.mu.Lock()
+	a.status.ShortcutError = "shortcut lost"
+	a.emitStatusLocked()
+	a.mu.Unlock()
+	a.endHomeResult()
+	if _, err := a.GetHomeResult(); err != nil {
+		t.Fatal(err)
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if len(f.states) != 2 {
+		t.Fatalf("expected a locked and a released tray state, got %+v", f.states)
+	}
+	locked, released := f.states[0], f.states[1]
+	if !locked.Busy || !locked.HistoryLocked || released.Busy || released.HistoryLocked || !released.ShortcutUnavailable {
+		t.Fatalf("unexpected tray state after shortcut loss and Home release: %+v", f.states)
 	}
 }

@@ -1,9 +1,16 @@
 import { historySearchPreview, searchRanges } from "@/features/history/lib/history-search";
 import type { Session } from "@/lib/backend";
 import { cn } from "cn";
+import { memo } from "react";
 import { useTranslation } from "react-i18next";
 
-export function DictationPreview({ entry, query = "" }: { entry: Session; query?: string }) {
+export const DictationPreview = memo(function DictationPreview({
+  entry,
+  query = "",
+}: {
+  entry: Session;
+  query?: string;
+}) {
   const { t } = useTranslation();
   const title = entry.title?.trim();
   // Keep the same query-specific excerpt for search and a short transcript
@@ -34,7 +41,7 @@ export function DictationPreview({ entry, query = "" }: { entry: Session; query?
       )}
     </>
   );
-}
+});
 
 function SearchHighlight({ text, query }: { text: string; query: string }) {
   const ranges = searchRanges(text, query);

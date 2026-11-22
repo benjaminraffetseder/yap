@@ -58,9 +58,9 @@ func TestNativeTranscriptionMemoryError(t *testing.T) {
 		{"other engine", "moonshine", assertion, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			err := nativeTranscriptionError(tc.kind, cause, []byte(tc.log))
-			if !errors.Is(err, cause) || !strings.Contains(err.Error(), tc.log[max(0, len(tc.log)-2000):]) {
-				t.Fatalf("lost underlying error or diagnostic tail: %v", err)
+			err := nativeTranscriptionError(tc.kind, cause, []byte(tc.log+" private transcript"))
+			if !errors.Is(err, cause) || strings.Contains(err.Error(), "private transcript") {
+				t.Fatalf("lost underlying error or exposed runtime output: %v", err)
 			}
 			if got := strings.Contains(err.Error(), "ran out of memory"); got != tc.memory {
 				t.Fatalf("incorrect memory diagnosis: %v", err)

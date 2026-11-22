@@ -51,7 +51,11 @@ import {
   type Microphone,
 } from "@/lib/backend";
 import { useLanguages } from "@/lib/languages";
-import { useConfiguration, useSavedActions } from "@/lib/queries/saved-queries";
+import {
+  useConfiguration,
+  useSavedActions,
+  useSavedReadVersion,
+} from "@/lib/queries/saved-queries";
 import { cn } from "@/lib/utils";
 import {
   ArrowRight,
@@ -94,6 +98,7 @@ export function SettingsPage({
   const { t, i18n } = useTranslation();
   const savedActions = useSavedActions();
   const configuration = useConfiguration();
+  const readVersion = useSavedReadVersion("configuration");
   const sections = [
     { value: "dictation", label: t("historyEntryPage.dictation"), icon: Mic },
     { value: "profiles", label: t("settingsPage.profiles"), icon: Users },
@@ -137,11 +142,13 @@ export function SettingsPage({
   const [settings, setSettings, settingsDraft] = useSavedDraft(
     "settings",
     configuration.data?.settings ?? snapshot.settings,
+    readVersion,
   );
   const savedProfileShortcut = snapshot.profileShortcut ?? "";
   const [profileShortcut, setProfileShortcut, shortcutDraft] = useSavedDraft(
     "profile-shortcut",
     savedProfileShortcut,
+    readVersion,
   );
   const [editingText, setEditingText] = useState(false);
   const [confirmRetention, setConfirmRetention] = useState(false);
@@ -297,10 +304,9 @@ export function SettingsPage({
   const settingsDirty = settingsDraft.dirty;
   const profileShortcutDirty = shortcutDraft.dirty;
   const dirty = settingsDirty || profileShortcutDirty;
-  const draftKey = JSON.stringify([settings, profileShortcut]);
   const retentionNeedsConfirm =
     settings.historyRetentionDays > 0 &&
-    settings.historyRetentionDays !== snapshot.settings.historyRetentionDays;
+    settings.historyRetentionDays !== settingsDraft.baseline.historyRetentionDays;
   const selectedMicrophoneMissing =
     microphonesLoaded &&
     !microphoneError &&
@@ -368,24 +374,28 @@ export function SettingsPage({
     setConfirmRetention(false);
     clearError();
     toastManager.close("settings-save");
-    const saveSettings = () => savedActions.settings(settings);
+    // Both operations belong to this validated shortcut/retention combination.
+    const submittedSettings = settingsDraft.entry.snapshot();
+    const submittedShortcut = shortcutDraft.entry.snapshot();
+    const saveSettings = () => settingsDraft.entry.submit(savedActions.settings, submittedSettings);
     const saveProfileShortcut = () =>
-      savedActions.saveProfileAutomation(snapshot.appProfileRules ?? [], profileShortcut);
+      shortcutDraft.entry.submit(
+        (value) => savedActions.saveProfileAutomation(snapshot.appProfileRules ?? [], value),
+        submittedShortcut,
+      );
     // Each save rejects a shortcut the other one still holds, so free the
     // recording shortcut's new combination first when it was the profile one.
-    const steps = !profileShortcutDirty
+    const steps = !shortcutDraft.entry.dirty()
       ? [saveSettings]
-      : !settingsDirty
+      : !settingsDraft.entry.dirty()
         ? [saveProfileShortcut]
-        : sameShortcut(settings.shortcut, savedProfileShortcut)
+        : sameShortcut(settings.shortcut, shortcutDraft.baseline)
           ? [saveProfileShortcut, saveSettings]
           : [saveSettings, saveProfileShortcut];
     try {
       if (profileShortcut.trim() && sameShortcut(profileShortcut, settings.shortcut))
         throw new Error(t("settingsPage.recordingAndProfileCyclingMustUseDifferentShortcuts"));
       for (const step of steps) await step();
-      settingsDraft.markSubmitted(settings);
-      shortcutDraft.markSubmitted(profileShortcut);
       await run(refresh, false);
     } catch (cause) {
       await refresh().catch(() => {});
@@ -401,7 +411,9 @@ export function SettingsPage({
     }
   }
   const autoSave = useAutoSave({
-    draftKey,
+    owner: settingsDraft.entry.writer,
+    version: `${settingsDraft.edits}/${shortcutDraft.edits}`,
+    hasChanges: () => settingsDraft.entry.dirty() || shortcutDraft.entry.dirty(),
     dirty,
     canSave:
       isDesktop &&
@@ -433,12 +445,12 @@ export function SettingsPage({
     setConfirmRetention(false);
     setSettings((old) => ({
       ...old,
-      historyRetentionDays: snapshot.settings.historyRetentionDays,
+      historyRetentionDays: settingsDraft.baseline.historyRetentionDays,
     }));
   }
   function discard() {
-    setSettings(snapshot.settings);
-    setProfileShortcut(savedProfileShortcut);
+    setSettings(settingsDraft.baseline);
+    setProfileShortcut(shortcutDraft.baseline);
     toastManager.close("settings-save");
   }
   function selectSection(value: string, focus?: string) {

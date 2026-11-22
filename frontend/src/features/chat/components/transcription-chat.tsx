@@ -57,11 +57,21 @@ import {
   Square,
   X,
 } from "lucide-react";
-import { Fragment, useEffect, useRef, useState, type ComponentProps } from "react";
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ComponentProps,
+  type RefObject,
+} from "react";
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router";
 
 export type ChatSelection = { text: string; source: "transcript" | "original" };
+
+const noReferences: ChatReference[] = [];
 
 function ChatAction({
   label,
@@ -78,6 +88,196 @@ function ChatAction({
       </TooltipTrigger>
       <TooltipContent>{label}</TooltipContent>
     </Tooltip>
+  );
+}
+
+const ChatMessageItem = memo(function ChatMessageItem({
+  message: msg,
+  sourceUpdated,
+  saved,
+  saving,
+  saveDisabled,
+  editing,
+  rewriteDisabled,
+  onHighlight,
+  onSave,
+  onReview,
+}: {
+  message: ChatMessage;
+  sourceUpdated: boolean;
+  saved: boolean;
+  saving: boolean;
+  saveDisabled: boolean;
+  editing: boolean;
+  rewriteDisabled: boolean;
+  onHighlight: (msg: ChatMessage, references?: ChatReference[]) => void;
+  onSave: (msg: ChatMessage) => void;
+  onReview: (msg: ChatMessage) => void;
+}) {
+  const { t } = useTranslation();
+  const refs = msg.references ?? noReferences;
+  const handleReference = useCallback(
+    (ref: ChatReference) => onHighlight(msg, [ref]),
+    [msg, onHighlight],
+  );
+  return (
+    <>
+      {sourceUpdated && (
+        <p className="border-t pt-2 text-[11px] text-muted-foreground">{t("chat.sourceUpdated")}</p>
+      )}
+      <article
+        aria-label={t(msg.role === "user" ? "chat.you" : "chat.assistant")}
+        className={
+          msg.role === "user" ? "ml-5 space-y-1.5 rounded-lg bg-muted/60 px-3 py-2" : "space-y-1.5"
+        }
+      >
+        {msg.selection && msg.role === "user" && (
+          <blockquote className="line-clamp-2 border-l-2 pl-2 text-xs text-muted-foreground">
+            {msg.selection}
+          </blockquote>
+        )}
+        {msg.outputText && (
+          <p className="text-[11px] text-muted-foreground">{t("chat.discussingOutput")}</p>
+        )}
+        {msg.content && (
+          <ChatCitationContent
+            text={msg.content}
+            references={refs}
+            onReference={handleReference}
+            className="text-sm leading-6"
+          />
+        )}
+        {msg.state === "complete" && msg.role === "assistant" && (
+          <div
+            data-slot="chat-reply-actions"
+            className="flex items-center gap-0.5 text-muted-foreground"
+          >
+            <CopyButton
+              iconOnly
+              variant="ghost"
+              text={replyText(msg.content)}
+              label={t("chat.copyReply")}
+            />
+            <ChatAction
+              label={t(saved ? "chat.saved" : "chat.saveOutput")}
+              disabled={saveDisabled}
+              onClick={() => onSave(msg)}
+            >
+              {saving ? (
+                <Loader2 className="animate-spin motion-reduce:animate-none" />
+              ) : saved ? (
+                <Check />
+              ) : (
+                <Save />
+              )}
+            </ChatAction>
+            {!!refs.length && (
+              <ChatAction
+                label={t("chat.highlightAll")}
+                disabled={editing}
+                onClick={() => onHighlight(msg)}
+              >
+                <Highlighter />
+              </ChatAction>
+            )}
+            <ChatAction
+              label={t("chat.reviewRewrite")}
+              disabled={rewriteDisabled}
+              onClick={() => onReview(msg)}
+            >
+              <FilePenLine />
+            </ChatAction>
+          </div>
+        )}
+        {(msg.state === "failed" || msg.state === "cancelled") && (
+          <p className="text-xs text-muted-foreground">
+            {msg.state === "cancelled"
+              ? t("chat.stopped")
+              : nativeText(msg.error ?? t("chat.failed"))}
+          </p>
+        )}
+      </article>
+    </>
+  );
+});
+
+function ChatLiveTurn({
+  sessionID,
+  requestRef,
+  externalRequestRef,
+  activeRequestID,
+  pending,
+  externalID,
+  waiting,
+  stopping,
+  sendingText,
+  onStreamChange,
+}: {
+  sessionID: string;
+  requestRef: RefObject<string | null>;
+  externalRequestRef: RefObject<string | null>;
+  activeRequestID: string | null;
+  pending: boolean;
+  externalID: string | null;
+  waiting: boolean;
+  stopping: boolean;
+  sendingText: string;
+  onStreamChange: () => void;
+}) {
+  const { t } = useTranslation();
+  const [progress, setProgress] = useState<{
+    requestId: string;
+    stream: string;
+    compacting: boolean;
+  } | null>(null);
+  useEffect(() => {
+    if (!isDesktop) return;
+    const off = Events.On(
+      "chat:progress",
+      ({
+        data,
+      }: {
+        data: { sessionId: string; requestId: string; content: string; compacting: boolean };
+      }) => {
+        if (
+          data.sessionId !== sessionID ||
+          (data.requestId !== requestRef.current && data.requestId !== externalRequestRef.current)
+        )
+          return;
+        setProgress({
+          requestId: data.requestId,
+          stream: data.content,
+          compacting: data.compacting,
+        });
+      },
+    );
+    return () => off();
+  }, [sessionID, requestRef, externalRequestRef]);
+  const stream = activeRequestID && progress?.requestId === activeRequestID ? progress.stream : "";
+  const compacting = Boolean(
+    activeRequestID && progress?.requestId === activeRequestID && progress.compacting,
+  );
+  useEffect(() => {
+    if (stream) onStreamChange();
+  }, [stream, onStreamChange]);
+  return (
+    <>
+      {pending && (
+        <article className="space-y-3">
+          <p className="ml-5 rounded-lg bg-muted/60 px-3 py-2 text-sm whitespace-pre-wrap break-words">
+            {sendingText}
+          </p>
+          {stream && <MarkdownContent className="text-sm leading-6">{stream}</MarkdownContent>}
+        </article>
+      )}
+      {waiting && (
+        <p role="status" className="flex items-center gap-2 text-xs text-muted-foreground">
+          <Loader2 aria-hidden="true" className="size-3 animate-spin motion-reduce:animate-none" />
+          {t(stopping ? "chat.stopping" : compacting ? "chat.compacting" : "chat.replying")}
+        </p>
+      )}
+      {!pending && !!externalID && stream && <MarkdownContent>{stream}</MarkdownContent>}
+    </>
   );
 }
 
@@ -125,9 +325,8 @@ export function TranscriptionChat({
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [pending, setPending] = useState(false);
+  const [requestID, setRequestID] = useState<string | null>(null);
   const [stopping, setStopping] = useState(false);
-  const [compacting, setCompacting] = useState(false);
-  const [stream, setStream] = useState("");
   const [sendingText, setSendingText] = useState("");
   const [savingID, setSavingID] = useState("");
   const [savedIDs, setSavedIDs] = useState<Set<string>>(new Set());
@@ -163,6 +362,9 @@ export function TranscriptionChat({
     setDraft((value) => (value.trim() ? `${value.trimEnd()} ${text}` : text));
     requestAnimationFrame(() => input.current?.focus({ preventScroll: true }));
   });
+  const scrollToLatest = useCallback(() => {
+    if (follow.current && log.current) log.current.scrollTop = log.current.scrollHeight;
+  }, []);
   useEffect(() => {
     const field = input.current;
     if (!field || !open) return;
@@ -191,28 +393,8 @@ export function TranscriptionChat({
     };
   }, []);
   useEffect(() => {
-    if (!isDesktop) return;
-    const off = Events.On(
-      "chat:progress",
-      ({
-        data,
-      }: {
-        data: { sessionId: string; requestId: string; content: string; compacting: boolean };
-      }) => {
-        if (
-          data.sessionId !== session.id ||
-          (data.requestId !== request.current && data.requestId !== externalRequest.current)
-        )
-          return;
-        setStream(data.content);
-        setCompacting(data.compacting);
-      },
-    );
-    return () => off();
-  }, [session.id]);
-  useEffect(() => {
-    if (follow.current && log.current) log.current.scrollTop = log.current.scrollHeight;
-  }, [stream, chat.messages.length, sendingText]);
+    scrollToLatest();
+  }, [chat.messages.length, sendingText, scrollToLatest]);
   useEffect(() => {
     if (selection || output) input.current?.focus();
   }, [selection, output]);
@@ -262,11 +444,11 @@ export function TranscriptionChat({
     };
     request.current = id;
     follow.current = true;
+    setRequestID(id);
     setPending(true);
     setStopping(false);
     setError("");
     setNotice("");
-    setStream("");
     setSendingText(retry ? (lastUser?.content ?? "") : draft);
     try {
       await sendMutation.mutateAsync({ id, payload });
@@ -281,10 +463,9 @@ export function TranscriptionChat({
     } finally {
       request.current = null;
       if (mounted.current) {
+        setRequestID(null);
         setPending(false);
         setStopping(false);
-        setCompacting(false);
-        setStream("");
         setSendingText("");
         input.current?.focus({ preventScroll: true });
       }
@@ -376,6 +557,18 @@ export function TranscriptionChat({
       setClearing(false);
     }
   }
+  const actions = useRef({ highlight, save, reviewReply });
+  actions.current = { highlight, save, reviewReply };
+  const handleHighlight = useCallback(
+    (msg: ChatMessage, references?: ChatReference[]) => actions.current.highlight(msg, references),
+    [],
+  );
+  const handleSave = useCallback((msg: ChatMessage) => {
+    void actions.current.save(msg);
+  }, []);
+  const handleReview = useCallback((msg: ChatMessage) => {
+    actions.current.reviewReply(msg);
+  }, []);
   const canSend =
     isDesktop &&
     enabled &&
@@ -388,6 +581,7 @@ export function TranscriptionChat({
     Array.from(draft).length <= 8000 &&
     !invalidSelection;
   const last = chat.messages.at(-1);
+  const rewriteDisabled = waiting || voice.busy || editing;
 
   return (
     <section
@@ -525,109 +719,37 @@ export function TranscriptionChat({
         )}
         {chat.messages.map((msg, index) => {
           const previous = index > 1 ? chat.messages[index - 2] : null;
-          const refs = msg.references ?? [];
+          const saved = savedIDs.has(msg.id);
           return (
-            <Fragment key={msg.id}>
-              {msg.role === "user" && previous && previous.sourceId !== msg.sourceId && (
-                <p className="border-t pt-2 text-[11px] text-muted-foreground">
-                  {t("chat.sourceUpdated")}
-                </p>
-              )}
-              <article
-                aria-label={t(msg.role === "user" ? "chat.you" : "chat.assistant")}
-                className={
-                  msg.role === "user"
-                    ? "ml-5 space-y-1.5 rounded-lg bg-muted/60 px-3 py-2"
-                    : "space-y-1.5"
-                }
-              >
-                {msg.selection && msg.role === "user" && (
-                  <blockquote className="line-clamp-2 border-l-2 pl-2 text-xs text-muted-foreground">
-                    {msg.selection}
-                  </blockquote>
-                )}
-                {msg.outputText && (
-                  <p className="text-[11px] text-muted-foreground">{t("chat.discussingOutput")}</p>
-                )}
-                {msg.content && (
-                  <ChatCitationContent
-                    text={msg.content}
-                    references={refs}
-                    onReference={(ref) => highlight(msg, [ref])}
-                    className="text-sm leading-6"
-                  />
-                )}
-                {msg.state === "complete" && msg.role === "assistant" && (
-                  <div
-                    data-slot="chat-reply-actions"
-                    className="flex items-center gap-0.5 text-muted-foreground"
-                  >
-                    <CopyButton
-                      iconOnly
-                      variant="ghost"
-                      text={replyText(msg.content)}
-                      label={t("chat.copyReply")}
-                    />
-                    <ChatAction
-                      label={t(savedIDs.has(msg.id) ? "chat.saved" : "chat.saveOutput")}
-                      disabled={!!savingID || savedIDs.has(msg.id)}
-                      onClick={() => void save(msg)}
-                    >
-                      {savingID === msg.id ? (
-                        <Loader2 className="animate-spin motion-reduce:animate-none" />
-                      ) : savedIDs.has(msg.id) ? (
-                        <Check />
-                      ) : (
-                        <Save />
-                      )}
-                    </ChatAction>
-                    {!!refs.length && (
-                      <ChatAction
-                        label={t("chat.highlightAll")}
-                        disabled={editing}
-                        onClick={() => highlight(msg)}
-                      >
-                        <Highlighter />
-                      </ChatAction>
-                    )}
-                    <ChatAction
-                      label={t("chat.reviewRewrite")}
-                      disabled={waiting || voice.busy || editing}
-                      onClick={() => reviewReply(msg)}
-                    >
-                      <FilePenLine />
-                    </ChatAction>
-                  </div>
-                )}
-                {(msg.state === "failed" || msg.state === "cancelled") && (
-                  <p className="text-xs text-muted-foreground">
-                    {msg.state === "cancelled"
-                      ? t("chat.stopped")
-                      : nativeText(msg.error ?? t("chat.failed"))}
-                  </p>
-                )}
-              </article>
-            </Fragment>
+            <ChatMessageItem
+              key={msg.id}
+              message={msg}
+              sourceUpdated={
+                msg.role === "user" && !!previous && previous.sourceId !== msg.sourceId
+              }
+              saved={saved}
+              saving={savingID === msg.id}
+              saveDisabled={!!savingID || saved}
+              editing={editing}
+              rewriteDisabled={rewriteDisabled}
+              onHighlight={handleHighlight}
+              onSave={handleSave}
+              onReview={handleReview}
+            />
           );
         })}
-        {pending && (
-          <article className="space-y-3">
-            <p className="ml-5 rounded-lg bg-muted/60 px-3 py-2 text-sm whitespace-pre-wrap break-words">
-              {sendingText}
-            </p>
-            {stream && <MarkdownContent className="text-sm leading-6">{stream}</MarkdownContent>}
-          </article>
-        )}
-        {waiting && (
-          <p role="status" className="flex items-center gap-2 text-xs text-muted-foreground">
-            <Loader2
-              aria-hidden="true"
-              className="size-3 animate-spin motion-reduce:animate-none"
-            />
-            {t(stopping ? "chat.stopping" : compacting ? "chat.compacting" : "chat.replying")}
-          </p>
-        )}
-        {!pending && !!externalID && stream && <MarkdownContent>{stream}</MarkdownContent>}
+        <ChatLiveTurn
+          sessionID={session.id}
+          requestRef={request}
+          externalRequestRef={externalRequest}
+          activeRequestID={requestID ?? externalID}
+          pending={pending}
+          externalID={externalID}
+          waiting={waiting}
+          stopping={stopping}
+          sendingText={sendingText}
+          onStreamChange={scrollToLatest}
+        />
         {!waiting && (last?.state === "failed" || last?.state === "cancelled") && (
           <Button
             size="xs"

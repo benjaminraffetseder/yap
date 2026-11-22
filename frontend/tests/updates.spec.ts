@@ -70,6 +70,7 @@ test.beforeEach(async ({ page }) => {
       downloads: 0,
       restarts: 0,
       stage: false,
+      rejectCheck: false,
       installFail: false,
       fail: false,
       pending: false,
@@ -99,6 +100,8 @@ test.beforeEach(async ({ page }) => {
                 await new Promise<void>((resolve) => {
                   state.finish = resolve;
                 });
+              if (state.rejectCheck)
+                throw new Error("an update is already in progress; use the Yap Update window");
               if (state.fail)
                 return {
                   ...update,
@@ -241,6 +244,67 @@ test("a staged update can restart from Settings after the native window closes",
   expect(await page.evaluate(() => Reflect.get(window, "updateTest").restarts)).toBe(1);
   expect(await page.evaluate(() => Reflect.get(window, "updateTest").downloads)).toBe(1);
   await expect(page.getByRole("button", { name: "Check for updates" })).toBeDisabled();
+});
+
+test("remounting or reloading with an already staged update hydrates Restart & Apply without rechecking or redownloading", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const state = Reflect.get(window, "updateTest");
+    state.update.ready = true;
+    state.rejectCheck = true;
+  });
+  await page.goto("/");
+  const notice = page.getByRole("region", { name: "App update available" });
+  await expect(notice).toContainText("Yap 0.2.0 is available.");
+  await expect(notice.getByRole("button", { name: "Restart & Apply" })).toBeVisible();
+  expect(await page.evaluate(() => Reflect.get(window, "updateTest").checks)).toEqual([]);
+  expect(await page.evaluate(() => Reflect.get(window, "updateTest").downloads)).toBe(0);
+
+  await page.goto("/#/settings?section=general");
+  await page.reload();
+  const settings = page
+    .locator("section")
+    .filter({ has: page.getByRole("heading", { name: "App updates", exact: true }) });
+  await expect(settings).toContainText("Yap 0.2.0 is available.");
+  await expect(settings.getByRole("alert")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Check for updates" })).toBeDisabled();
+  await settings.getByRole("button", { name: "Restart & Apply" }).click();
+  expect(await page.evaluate(() => Reflect.get(window, "updateTest").restarts)).toBe(1);
+  expect(await page.evaluate(() => Reflect.get(window, "updateTest").downloads)).toBe(0);
+  expect(await page.evaluate(() => Reflect.get(window, "updateTest").checks)).toEqual([]);
+});
+
+test("native update-ready event wins over a delayed check response", async ({ page }) => {
+  await page.addInitScript(() => {
+    const state = Reflect.get(window, "updateTest");
+    state.pending = true;
+    state.fail = true;
+  });
+  await page.goto("/#/settings?section=general");
+  const settings = page
+    .locator("section")
+    .filter({ has: page.getByRole("heading", { name: "App updates", exact: true }) });
+  await expect
+    .poll(() => page.evaluate(() => Reflect.get(window, "updateTest").checks.length))
+    .toBe(1);
+  await page.evaluate(() => {
+    Reflect.get(window, "_wails").dispatchWailsEvent({
+      name: "wails:updater:update-ready",
+      data: { version: "0.3.0" },
+    });
+  });
+  await expect(settings).toContainText("Yap 0.3.0 is available.");
+  await expect(settings.getByRole("button", { name: "Restart & Apply" })).toBeVisible();
+  await page.evaluate(() => {
+    Reflect.get(window, "updateTest").finish();
+  });
+  await expect(settings.getByRole("alert")).toHaveCount(0);
+  await expect(settings).toContainText("Yap 0.3.0 is available.");
+  await expect(page.getByRole("button", { name: "Check for updates" })).toBeDisabled();
+  await settings.getByRole("button", { name: "Restart & Apply" }).click();
+  expect(await page.evaluate(() => Reflect.get(window, "updateTest").restarts)).toBe(1);
+  expect(await page.evaluate(() => Reflect.get(window, "updateTest").downloads)).toBe(0);
 });
 
 test("installation prevents duplicate actions and reports failures in Settings", async ({

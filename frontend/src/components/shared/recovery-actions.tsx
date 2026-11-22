@@ -17,7 +17,7 @@ export function RecoveryActions({
 }: {
   source: string;
   details: string;
-  onRetry: () => void;
+  onRetry?: () => void;
   retryLabel?: string;
 }) {
   const { t } = useTranslation();
@@ -84,15 +84,18 @@ export function RecoveryActions({
   return (
     <div className="space-y-3 text-foreground">
       <div className="flex flex-wrap gap-2">
+        {onRetry && (
+          <button
+            ref={retry}
+            type="button"
+            className={`${buttonClass} bg-primary text-primary-foreground hover:bg-primary/90`}
+            onClick={onRetry}
+          >
+            {retryLabel}
+          </button>
+        )}
         <button
-          ref={retry}
-          type="button"
-          className={`${buttonClass} bg-primary text-primary-foreground hover:bg-primary/90`}
-          onClick={onRetry}
-        >
-          {retryLabel}
-        </button>
-        <button
+          ref={!onRetry ? retry : undefined}
           type="button"
           className={`${buttonClass} border bg-background hover:bg-accent`}
           onClick={() => window.location.reload()}

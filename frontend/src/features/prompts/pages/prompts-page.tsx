@@ -50,7 +50,11 @@ import {
   type TextProcessing,
   type TextPrompt,
 } from "@/lib/backend";
-import { useConfiguration, useSavedActions } from "@/lib/queries/saved-queries";
+import {
+  useConfiguration,
+  useSavedActions,
+  useSavedReadVersion,
+} from "@/lib/queries/saved-queries";
 import { validateTextProcessing } from "@/lib/validation/draft-validation";
 import { Menu } from "@base-ui/react/menu";
 import { Ellipsis, History, Info, Plus, RefreshCw, Sparkles, Trash2 } from "lucide-react";
@@ -100,6 +104,7 @@ export function PromptsPage() {
   const savedActions = useSavedActions();
   const navigate = useNavigate();
   const configuration = useConfiguration();
+  const readVersion = useSavedReadVersion("configuration");
   const serverOptions = [...localServers, { value: "custom", label: t("promptsPage.custom") }];
   const sections = [
     { value: "prompts", label: t("promptsPage.prompts") },
@@ -119,7 +124,11 @@ export function PromptsPage() {
     status: { phase: useDictationPhase() },
   };
   const saved = configuration.data?.textProcessing ?? snapshot.textProcessing;
-  const [draft, setDraft, draftState] = useSavedDraft<TextProcessing>("prompts", saved);
+  const [draft, setDraft, draftState] = useSavedDraft<TextProcessing>(
+    "prompts",
+    saved,
+    readVersion,
+  );
   const [selected, setSelected] = useState(saved.prompts[0]?.id ?? "");
   const [saveError, setSaveError] = useState("");
   const [historyPrompt, setHistoryPrompt] = useState<TextPrompt | null>(null);
@@ -156,26 +165,25 @@ export function PromptsPage() {
   useEffect(() => {
     if (!draft.prompts.some((p) => p.id === selected)) setSelected(draft.prompts[0]?.id ?? "");
   }, [draft.prompts, selected]);
-  useEffect(() => {
-    if (modelTest.pending) {
-      toastManager.close("prompt-model-test");
-      return;
-    }
-    if (modelTest.result)
-      toastManager.add({
-        id: "prompt-model-test",
-        type: "success",
-        title: i18n.t("promptsPage.modelRespondedSuccessfully"),
-      });
-    else if (modelTest.error)
-      toastManager.add({
-        id: "prompt-model-test",
-        type: "error",
-        title: modelTest.error,
-        priority: "high",
-        timeout: 8000,
-      });
-  }, [modelTest.pending, modelTest.result, modelTest.error]);
+  function testModel() {
+    toastManager.close("prompt-model-test");
+    void modelTest.request(backend.testTextModel, (outcome) => {
+      if (outcome.status === "success")
+        toastManager.add({
+          id: "prompt-model-test",
+          type: "success",
+          title: i18n.t("promptsPage.modelRespondedSuccessfully"),
+        });
+      else if (outcome.status === "error")
+        toastManager.add({
+          id: "prompt-model-test",
+          type: "error",
+          title: outcome.error,
+          priority: "high",
+          timeout: 8000,
+        });
+    });
+  }
   const dirty = draftState.dirty;
   const reason = validateTextProcessing(draft);
   const busy = isBusy(snapshot.status.phase) || modelTest.pending || refinement.pending;
@@ -271,8 +279,7 @@ export function PromptsPage() {
     clearError();
     setSaveError("");
     try {
-      await savedActions.textProcessing(draft);
-      draftState.markSubmitted(draft);
+      await draftState.entry.submit(savedActions.textProcessing);
       modelTest.clear();
       await run(refresh, false);
     } catch (cause) {
@@ -288,8 +295,7 @@ export function PromptsPage() {
     }
   }
   const autoSave = useAutoSave({
-    draftKey: JSON.stringify(draft),
-    dirty,
+    ...draftState.autosave,
     canSave: !controlsDisabled && !reason,
     save,
     delay: 1000,
@@ -321,7 +327,7 @@ export function PromptsPage() {
                 retry={autoSave.retry}
                 disabled={controlsDisabled}
                 discard={() => {
-                  setDraft(saved);
+                  setDraft(draftState.baseline);
                   setManualModel(false);
                   setCustomServer(false);
                   modelTest.clear();
@@ -476,7 +482,7 @@ export function PromptsPage() {
                         !snapshot.textRuntimeAvailable ||
                         !snapshot.textModels?.find((model) => model.id === draft.model)?.installed
                       }
-                      onClick={() => void modelTest.request(backend.testTextModel)}
+                      onClick={testModel}
                     >
                       {t("promptsPage.testModel")}
                     </Button>
@@ -566,7 +572,7 @@ export function PromptsPage() {
                             <Button
                               size="sm"
                               disabled={controlsDisabled || dirty || !saved.enabled}
-                              onClick={() => void modelTest.request(backend.testTextModel)}
+                              onClick={testModel}
                             >
                               {t("promptsPage.testModel")}
                             </Button>

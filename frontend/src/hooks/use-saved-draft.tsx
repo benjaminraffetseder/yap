@@ -1,173 +1,97 @@
 import {
   createContext,
-  useCallback,
   useContext,
   useEffect,
-  useRef,
+  useLayoutEffect,
+  useMemo,
   useState,
-  type Dispatch,
+  useSyncExternalStore,
   type ReactNode,
-  type SetStateAction,
 } from "react";
+import { SavedDraft } from "./saved-draft";
 
-type Draft = { saved: unknown; value: unknown; submitted?: unknown; awaitingSaved?: boolean };
-const DraftContext = createContext<Map<string, Draft> | null>(null);
-const same = (left: unknown, right: unknown) => JSON.stringify(left) === JSON.stringify(right);
-const clean = (draft: Draft) =>
-  same(draft.saved, draft.value) || same(draft.submitted, draft.value);
-function reconcile<T>(value: T, baseline: unknown, saved: T): T {
-  if (same(value, baseline)) return saved;
-  if (
-    value &&
-    baseline &&
-    saved &&
-    typeof value === "object" &&
-    typeof baseline === "object" &&
-    typeof saved === "object" &&
-    !Array.isArray(value)
-  ) {
-    // A profile or tray action may change other settings while this page is
-    // away. Preserve edited fields and adopt fresh values for untouched ones.
-    const old = baseline as Record<string, unknown>;
-    return {
-      ...saved,
-      ...Object.fromEntries(Object.entries(value).filter(([key, field]) => !same(field, old[key]))),
-    };
+class DraftStore {
+  private drafts = new Map<string, SavedDraft<unknown>>();
+  pendingIDs = new Map<string, string>();
+
+  entry<T>(key: string, saved: T) {
+    if (!this.drafts.has(key)) this.drafts.set(key, new SavedDraft<unknown>(saved));
+    return this.drafts.get(key) as SavedDraft<T>;
   }
-  return value;
+  get protected() {
+    return Array.from(this.drafts.values()).some((draft) => draft.protected);
+  }
 }
 
+const DraftContext = createContext<DraftStore | null>(null);
+
 export function DraftProvider({ children }: { children: ReactNode }) {
-  const drafts = useRef(new Map<string, Draft>());
+  const [store] = useState(() => new DraftStore());
   useEffect(() => {
     const beforeUnload = (event: BeforeUnloadEvent) => {
-      if ([...drafts.current.values()].some((draft) => !clean(draft))) {
+      if (store.protected) {
         event.preventDefault();
         event.returnValue = "";
       }
     };
     window.addEventListener("beforeunload", beforeUnload);
     return () => window.removeEventListener("beforeunload", beforeUnload);
-  }, []);
-  return <DraftContext.Provider value={drafts.current}>{children}</DraftContext.Provider>;
+  }, [store]);
+  return <DraftContext.Provider value={store}>{children}</DraftContext.Provider>;
 }
 
-// Drafts live above the router, in memory only. Clean drafts follow backend
-// updates; dirty drafts survive navigation and failed saves until discarded.
-// eslint-disable-next-line react-refresh/only-export-components -- The hook shares the provider's private in-memory cache.
-export function useSavedDraft<T>(
-  key: string,
-  saved: T,
-): [
-  T,
-  Dispatch<SetStateAction<T>>,
-  { dirty: boolean; lastSubmitted: T | undefined; markSubmitted: (value: T) => void },
-] {
-  const drafts = useContext(DraftContext);
-  if (!drafts) throw new Error("DraftProvider is required");
-  const [draft, update] = useState<T>(() => {
-    const cached = drafts.get(key);
-    return cached && (cached.awaitingSaved || !clean(cached)) ? (cached.value as T) : saved;
+function useStore() {
+  const store = useContext(DraftContext);
+  if (!store) throw new Error("DraftProvider is required");
+  return store;
+}
+
+// A pending creation keeps its ID across routes and failures. The receipt
+// releases only this creation; the editor keeps its ordinary ID-keyed draft.
+// eslint-disable-next-line react-refresh/only-export-components -- Shares the draft lifecycle.
+export function useCreationID(kind: string, existingID: string) {
+  const store = useStore();
+  const [id] = useState(() => {
+    if (existingID) return existingID;
+    const pending = store.pendingIDs.get(kind) ?? crypto.randomUUID();
+    store.pendingIDs.set(kind, pending);
+    return pending;
   });
-  const latestSaved = useRef(saved);
-  latestSaved.current = saved;
-  const [lastSubmitted, setSubmitted] = useState<T | undefined>(
-    () => drafts.get(key)?.submitted as T | undefined,
-  );
-  useEffect(() => {
-    const cached = drafts.get(key);
-    const receivedSaved = cached && !same(cached.saved, saved);
-    update((value) => {
-      // Once the submitted value has received its backend snapshot, later
-      // external updates can replace a clean draft (for example profile switches).
-      const external =
-        cached && clean(cached) && !cached.awaitingSaved && !same(cached.saved, saved);
-      const next =
-        !cached || external
-          ? saved
-          : reconcile(
-              value,
-              cached.awaitingSaved && receivedSaved && !Array.isArray(value)
-                ? cached.submitted
-                : cached.saved,
-              saved,
-            );
-      drafts.set(key, {
-        ...cached,
-        saved,
-        value: next,
-        awaitingSaved: cached?.awaitingSaved && !receivedSaved,
-        submitted: external ? undefined : cached?.submitted,
-      });
-      return next;
-    });
-    if (cached && clean(cached) && !cached.awaitingSaved && !same(cached.saved, saved))
-      setSubmitted(undefined);
-  }, [drafts, key, saved]);
-  const setDraft = useCallback<Dispatch<SetStateAction<T>>>(
-    (action) => {
-      update((value) => {
-        const next = typeof action === "function" ? (action as (value: T) => T)(value) : action;
-        drafts.set(key, {
-          ...drafts.get(key),
-          saved: drafts.get(key)?.saved ?? saved,
-          value: next,
-        });
-        return next;
-      });
+  return {
+    id,
+    finish() {
+      if (store.pendingIDs.get(kind) === id) store.pendingIDs.delete(kind);
     },
-    [drafts, key, saved],
+  };
+}
+
+// Query-backed editors pass the successful read count for the source of saved.
+// Other editors reconcile when their saved value changes.
+// eslint-disable-next-line react-refresh/only-export-components -- Shares the provider's private in-memory cache.
+export function useSavedDraft<T>(key: string, saved: T, readVersion?: number) {
+  const store = useStore();
+  const entry = store.entry(key, saved);
+  const state = useSyncExternalStore(entry.subscribe, entry.snapshot);
+  const visible = useMemo(
+    () => entry.project(saved, readVersion, state),
+    [entry, saved, readVersion, state],
   );
-  const markSubmitted = useCallback(
-    (value: T) => {
-      const cached = drafts.get(key);
-      if (!same(saved, latestSaved.current)) {
-        // Collection forms retain their submitted spelling/alias formatting.
-        // Their saved query baseline is normalized independently by the backend.
-        const current = (cached?.value ?? value) as T;
-        const next = Array.isArray(value)
-          ? current
-          : reconcile(current, value, latestSaved.current);
-        const submitted = Array.isArray(value) ? value : undefined;
-        drafts.set(key, { saved: latestSaved.current, value: next, submitted });
-        update(next);
-        setSubmitted(submitted);
-        return;
-      }
-      drafts.set(key, {
-        saved,
-        value: cached?.value ?? value,
-        ...cached,
-        submitted: value,
-        awaitingSaved: true,
-      });
-      setSubmitted(value);
-    },
-    [drafts, key, saved],
-  );
-  // Project a fresh baseline during the render that receives it. Effects commit
-  // the reconciled draft afterwards; clean fields never flash old profile data.
-  const cached = drafts.get(key);
-  const external = cached && clean(cached) && !cached.awaitingSaved && !same(cached.saved, saved);
-  const visible =
-    !cached || external
-      ? saved
-      : reconcile(
-          draft,
-          // A committed write can outlive a failed refetch. Until a new baseline
-          // arrives, the old saved value must not replace the submitted draft.
-          cached.awaitingSaved && !same(cached.saved, saved) && !Array.isArray(draft)
-            ? cached.submitted
-            : cached.saved,
-          saved,
-        );
+  useLayoutEffect(() => entry.receive(saved, readVersion), [entry, saved, readVersion]);
+  const dirty = useMemo(() => entry.dirty(visible), [entry, visible]);
   return [
-    visible,
-    setDraft,
+    visible.value,
+    entry.edit,
     {
-      dirty: !same(visible, saved) && !same(visible, lastSubmitted),
-      lastSubmitted,
-      markSubmitted,
+      entry,
+      dirty,
+      autosave: {
+        owner: entry.writer,
+        version: String(visible.edits),
+        dirty,
+        hasChanges: () => entry.dirty(),
+      },
+      baseline: visible.baseline,
+      edits: visible.edits,
     },
-  ];
+  ] as const;
 }

@@ -169,6 +169,22 @@ querying History or the database connection held by a backup. `GetSnapshot` rema
 an additive compatibility API, assembled from the same helpers; the main frontend
 uses `GetRuntimeSnapshot` for runtime synchronization instead.
 
+Transient runtime snapshots do not query or carry saved History. The command
+menu uses the cached `GetRecentHistory` query only while open; History events
+invalidate it independently. Concurrent runtime refresh requests share one
+in-flight read. An event arriving during that read supersedes its reply and
+requests one trailing read, retaining the status/queue revision guards.
+
+History counts and SQL pages share one read transaction. Canonical UTC dates use
+builtin SQLite expression indexes; offset or malformed legacy dates retain the
+original date collation. Unicode substring matching remains Go-compatible, and
+membership reads select IDs without decoding full sessions. Filtered searches
+still scan candidate text. `RecentHistory(1)` serves Home's latest-record lookup.
+Home refreshes the 500-row compatibility cache only after a legacy `GetSnapshot`
+consumer appears. The command menu uses up to five cached records during a backup.
+Recent reads overlapping a Home operation wait for its release outside `App.mu`,
+then read the current five rows so a cold or stale cache cannot persist.
+
 `useSavedActions` runs existing persisted writes as Query mutations. It cancels
 older saved reads before a write and refreshes the affected query domains after
 settlement, including failures that might follow partial persistence. Responses
@@ -233,6 +249,12 @@ read after actions; accepted capture expires temporary cached text too.
 
 `DraftProvider` keeps unsaved edits in memory across navigation. Home result edits
 require **Apply changes**; the History transcript editor saves automatically.
+Each draft entry also owns its pending submission and serialized autosave writer,
+so a replacement editor joins existing work rather than starting a second writer.
+Record submissions before invoking the native write. A saved-data event may arrive
+before its receipt; edits made since submission must survive that event, including
+an undo to the old saved value. If the follow-up read fails, the acknowledged write
+becomes the comparison baseline for later edits and unload protection.
 Home drafts belong to a session ID and result revision: preserve a draft when
 returning to the same result, and do not apply it to a replacement result. Cancel
 discards the Home draft; a successful Apply must leave it clean.
@@ -241,6 +263,43 @@ Keep output-generation requests mounted while the inline transcript editor is
 open. Hiding the detail tabs preserves their request owner; unmounting it cancels
 the request. Copy confirmation must also belong to the text version that started
 the request, so a late reply cannot confirm a different tab's text.
+
+Generated output controls subscribe to the operation phase. Only the small live
+chain-status label subscribes to native messages; progress does not rerender the
+saved output document. Keep saved-output sorting tied to query data and derive a
+valid prompt selection in the render that submits it. The subscription fixture
+checks actual output and Markdown function calls during unrelated progress events.
+
+History revalidates exclusions outside the loaded pages after a completed list
+refresh. `GetHistorySelectionIDs` streams native search membership without reading
+generated outputs or creating an export preview. Pagination alone does not repeat
+that read; failed revalidation retains the exclusions and offers an explicit retry.
+An open bulk-processing confirmation belongs to its validated History revision.
+A refresh retires that confirmation so its count cannot outlive the selected data.
+
+Playback obtains a loopback URL through `GetAudioURL`. An app-owned HTTP server
+revalidates its bounded capability against the current saved session,
+opens owned audio with the existing path/size checks, and streams a fixed file
+section with HTTP byte ranges outside `App.mu`. Capabilities expire two hours
+after issue regardless of playback activity. Direct HTTP bypasses Windows'
+buffered Wails asset responses; shutdown closes connections before draining
+request workers. The legacy `GetAudio` API remains
+available for compatibility. No full WAV or base64 string crosses the current
+frontend playback bridge.
+The macOS plists allow HTTP for the numeric loopback address only; packaged
+playback still requires native macOS verification.
+
+Speech uses `speech.Managed` after storage opens. Compatible managed Whisper
+servers and isolated Moonshine/Parakeet workers reuse one native model across
+serial jobs, with a two-minute idle timeout. Custom/CLI-only runtimes and inputs
+outside a managed worker's supported contract retain CLI execution. Model/runtime
+fingerprints retire changed workers. File replacement and model selection reserve
+speech maintenance before releasing `App.mu` to drain a worker; shutdown waits
+for that reservation and closes the engine outside the lock. Queue pumps resume
+after the calling operation finishes changing configuration or model files.
+The Whisper server and selected CLI must match the pinned b5454 executable hashes
+and managed archive layout before each new server process; otherwise transcription
+uses the selected CLI. Warm requests reuse the verified living worker.
 
 ## Validation and form ownership
 

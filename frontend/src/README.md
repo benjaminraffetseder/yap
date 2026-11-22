@@ -78,6 +78,12 @@ pieces stay with the domain that owns their behavior.
 Browser fixtures and regressions remain in `frontend/tests`. Generated Wails
 bindings remain in `frontend/bindings` and are not edited manually.
 
+Runtime synchronization carries transient state only. Use `recentHistoryQuery`
+for the command menu and the existing History/session queries for saved text.
+Playback sources come from `GetAudioURL`; an app-owned loopback HTTP server owns
+byte-range streaming and retained-file validation. It bypasses the Windows asset
+response buffer and closes active playback connections during shutdown.
+
 ## Validation and forms
 
 Keep domain Zod schemas in the owning feature's `lib` folder. Shared text and
@@ -97,3 +103,14 @@ Autosaved settings, prompts, profiles and vocabulary continue to use
 `useSavedDraft` and `useAutoSave`. These hooks own navigation-persistent drafts
 and reconciliation with saved data. Keep that ownership when adding form
 controls rather than introducing a second copy of the same draft.
+
+`hooks/saved-draft.ts` owns each draft's editing baseline, submission and shared
+writer. Submit native writes through the draft entry so edits made during a
+pending write, including undo, survive its saved-data refresh. Pass the entry's
+autosave ownership to `useAutoSave`; keep the same logical owner across route
+mounts. New profile creation reserves a stable ID until its successful receipt,
+then releases that creation slot for the next profile.
+
+Query-backed editors also pass `useSavedReadVersion` to the draft hook. A successful
+read can restore the original value while an older receipt is pending, so value
+equality alone cannot establish which snapshot is current.

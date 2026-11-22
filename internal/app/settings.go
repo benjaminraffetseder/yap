@@ -88,6 +88,11 @@ func (a *App) SaveSettings(settings storage.Settings) error {
 		return err
 	}
 	a.settings = settings
+	if old.ModelPath != settings.ModelPath || old.WhisperPath != settings.WhisperPath {
+		if err := a.releaseSpeechModelLocked(); err != nil {
+			return err
+		}
+	}
 	if change.InvalidatesDiagnostics() {
 		a.diagnostic = DiagnosticResult{}
 	}

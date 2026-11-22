@@ -3,10 +3,10 @@ import { ActionMenu, ActionMenuItem } from "@/components/ui/action-menu";
 import { SessionTitleAction } from "@/features/transcripts/components/session-title-action";
 import type { Session } from "@/lib/backend";
 import { Pencil, Trash2 } from "lucide-react";
-import { useRef, useState } from "react";
+import { memo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-export function HistoryRowActions({
+export const HistoryRowActions = memo(function HistoryRowActions({
   entry,
   disabled,
   onRenamed,
@@ -19,6 +19,7 @@ export function HistoryRowActions({
 }) {
   const { t } = useTranslation();
   const [renaming, setRenaming] = useState(false);
+  const [renameMounted, setRenameMounted] = useState(false);
   const trigger = useRef<HTMLButtonElement>(null);
   return (
     <div className="flex items-center gap-1">
@@ -37,7 +38,13 @@ export function HistoryRowActions({
           if (node) node.dataset.dictationTitleAction = entry.id;
         }}
       >
-        <ActionMenuItem disabled={disabled} onClick={() => setRenaming(true)}>
+        <ActionMenuItem
+          disabled={disabled}
+          onClick={() => {
+            setRenameMounted(true);
+            setRenaming(true);
+          }}
+        >
           <Pencil aria-hidden="true" />
           {t("uiPolish.rename")}
         </ActionMenuItem>
@@ -46,15 +53,17 @@ export function HistoryRowActions({
           {t("ux.history.moveToRecentlyDeleted")}
         </ActionMenuItem>
       </ActionMenu>
-      <SessionTitleAction
-        entry={entry}
-        disabled={disabled}
-        open={renaming}
-        onOpenChange={setRenaming}
-        hideTrigger
-        returnFocus={trigger}
-        onSaved={onRenamed}
-      />
+      {renameMounted && (
+        <SessionTitleAction
+          entry={entry}
+          disabled={disabled}
+          open={renaming}
+          onOpenChange={setRenaming}
+          hideTrigger
+          returnFocus={trigger}
+          onSaved={onRenamed}
+        />
+      )}
     </div>
   );
-}
+});

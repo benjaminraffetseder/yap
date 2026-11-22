@@ -24,15 +24,17 @@ import {
   ExportTranscripts,
   GenerateSessionOutput,
   GenerateSessionTitle,
-  GetAudio,
   GetAudioSupport,
+  GetAudioURL,
   GetConfiguration,
   GetDiagnosticChecks,
   GetHistory,
+  GetHistorySelectionIDs,
   GetHomeResult,
   GetMicrophones,
   GetModelCatalog,
   GetProfileApplications,
+  GetRecentHistory,
   GetRecentlyDeleted,
   GetRevisions,
   GetRuntimeSnapshot,
@@ -538,6 +540,7 @@ export const backend = {
       bulkTextQueue: value.bulkTextQueue ?? [],
     };
   },
+  recentHistory: async (): Promise<Session[]> => (await GetRecentHistory()) ?? [],
   installTextModel: InstallTextModel,
   updateTextRuntime: UpdateTextRuntime,
   removeTextModel: RemoveTextModel,
@@ -683,7 +686,7 @@ export const backend = {
   stopDictationTest: StopDiagnosticTest,
   copy: CopyText,
   remove: DeleteSession,
-  audio: GetAudio,
+  audio: GetAudioURL,
   exportTranscripts: ExportTranscripts,
   exportPreview: async (selection: TranscriptExportSelection) => {
     const result = await GetTranscriptExportPreview({
@@ -708,6 +711,8 @@ export const backend = {
         : await GetSortedHistory(query, page, sortBy, descending, false);
     return { ...result, entries: result.entries ?? [] };
   },
+  historySelectionIDs: async (query: string): Promise<string[]> =>
+    (await GetHistorySelectionIDs(query)) ?? [],
   recentlyDeleted: async (
     query: string,
     page: number,

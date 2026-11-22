@@ -43,7 +43,7 @@ func Resolve(store *storage.Store, result *HomeResult, hidden bool) (*HomeResult
 		return nil, nil
 	}
 	if result == nil {
-		history, err := store.History()
+		history, err := store.RecentHistory(1)
 		if err != nil || len(history) == 0 {
 			return nil, err
 		}
