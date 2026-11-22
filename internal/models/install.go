@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"time"
+	"yap/internal/inference/speech"
 )
 
 type Model struct {
@@ -237,7 +238,7 @@ func installModel(ctx context.Context, dir string, model Model, url string, repo
 	})
 }
 
-const WhisperRuntimeVersion = "1.9.5"
+const WhisperRuntimeVersion = speech.WhisperRuntimeVersion
 
 func RuntimePath(dir string) string {
 	return runtimePathIn(filepath.Join(dir, "runtime", "whisper-"+WhisperRuntimeVersion))

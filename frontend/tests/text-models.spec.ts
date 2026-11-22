@@ -210,6 +210,39 @@ test.beforeEach(async ({ page }) => {
   });
 });
 
+test("model test cancellation stays inline while genuine failures notify", async ({ page }) => {
+  await page.addInitScript(() => {
+    const app = Reflect.get(window, "mockBackend").app.App;
+    app.TestTextModel = () =>
+      new Promise<string>((resolve) => Reflect.set(window, "finishCancelledModelTest", resolve));
+  });
+  await page.goto("/#/prompts?section=models");
+  const testModel = page.getByRole("button", { name: "Test model", exact: true });
+  await expect(testModel).toBeEnabled();
+  await testModel.click();
+  await page.getByRole("button", { name: "Cancel test", exact: true }).click();
+  await page.evaluate(() =>
+    Reflect.get(window, "finishCancelledModelTest")("Late successful result"),
+  );
+  await expect(testModel).toBeEnabled();
+  await expect(page.getByRole("status").filter({ hasText: "Processing cancelled" })).toBeVisible();
+  await expect(
+    page.locator('[data-slot="toast"]').filter({ hasText: "Processing cancelled" }),
+  ).toHaveCount(0);
+  await expect(
+    page.locator('[data-slot="toast"]').filter({ hasText: "Model responded successfully" }),
+  ).toHaveCount(0);
+  await page.evaluate(() => {
+    Reflect.get(window, "mockBackend").app.App.TestTextModel = async () => {
+      throw new Error("Synthetic model connection failure");
+    };
+  });
+  await testModel.click();
+  await expect(
+    page.locator('[data-slot="toast"]').filter({ hasText: "Synthetic model connection failure" }),
+  ).toBeVisible();
+});
+
 test("text runtime updates keep model and prompt selections through failure, cancel and success", async ({
   page,
 }) => {

@@ -13,9 +13,143 @@ import { HistoryDate } from "@/features/history/components/history-date";
 import { duration, type HistorySortColumn, type Session } from "@/lib/backend";
 import { cn } from "@/lib/utils";
 import { ArrowDown, ArrowUp, ArrowUpDown } from "lucide-react";
-import { useLayoutEffect, useRef, type CSSProperties, type ReactNode, type RefObject } from "react";
+import {
+  cloneElement,
+  isValidElement,
+  memo,
+  useCallback,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  type CSSProperties,
+  type ReactNode,
+  type RefObject,
+} from "react";
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router";
+
+const fadingCellClassName =
+  "[contain:layout_style] opacity-[var(--deletion-opacity,1)] group-hover:opacity-100 group-focus-within:opacity-100 group-data-[state=selected]:opacity-100";
+
+const HistoryTableRow = memo(function HistoryTableRow({
+  entry,
+  index,
+  deleted,
+  daysLeft,
+  query,
+  detailSearch,
+  disabled,
+  selected,
+  onSelect,
+  isSelectionActive,
+  renderActions,
+}: {
+  entry: Session;
+  index: number;
+  deleted: boolean;
+  daysLeft: number | null;
+  query: string;
+  detailSearch: string;
+  disabled: boolean;
+  selected: boolean;
+  onSelect: (entry: Session, checked: boolean, range?: boolean) => void;
+  isSelectionActive: () => boolean;
+  renderActions: (
+    entry: Session,
+    deleted: boolean,
+    disabled: boolean,
+    language?: string,
+  ) => ReactNode;
+}) {
+  const { t, i18n } = useTranslation();
+  const language = i18n.resolvedLanguage;
+  const actions = useMemo(
+    () => renderActions(entry, deleted, disabled, language),
+    [renderActions, entry, deleted, disabled, language],
+  );
+  return (
+    <TableRow
+      data-state={selected ? "selected" : undefined}
+      className="group [[data-selection-active]_&]:cursor-pointer"
+      style={
+        daysLeft === null
+          ? undefined
+          : ({
+              "--deletion-opacity": 0.65 + (0.35 * Math.min(daysLeft, 30)) / 30,
+            } as CSSProperties)
+      }
+      onClickCapture={(event) => {
+        if (
+          (!isSelectionActive() && !event.shiftKey) ||
+          disabled ||
+          !(event.target instanceof Element) ||
+          !event.currentTarget.contains(event.target)
+        )
+          return;
+        const checkbox = event.target.closest('[role="checkbox"], input[type="checkbox"]');
+        if (checkbox && !event.shiftKey) return;
+        // Keep native controls and portalled dialogs independent of row selection.
+        if (
+          !checkbox &&
+          event.target.closest('button, input, label, [role="checkbox"], [role="menuitem"]')
+        )
+          return;
+        event.preventDefault();
+        event.stopPropagation();
+        onSelect(entry, !selected, event.shiftKey);
+      }}
+      onMouseDown={(event) => {
+        if (isSelectionActive() && event.shiftKey) event.preventDefault();
+      }}
+    >
+      <TableCell className="pt-[1.125rem] pl-3 align-top [contain:layout_style] lg:pl-4 [&:has([role=checkbox])]:pr-2">
+        <Checkbox
+          aria-label={t("historyPage.selectDictation", { index: index + 1 })}
+          checked={selected}
+          disabled={disabled}
+          onCheckedChange={(checked) => onSelect(entry, checked)}
+        />
+      </TableCell>
+      <TableCell className={cn("max-w-0 whitespace-normal", fadingCellClassName)}>
+        {deleted ? (
+          <div className="flex flex-col gap-0.5 py-1.5">
+            <DictationPreview entry={entry} query={query} />
+            {daysLeft !== null && (
+              <p className="text-xs leading-5 text-muted-foreground [overflow-wrap:anywhere]">
+                {t("historyPage.daysToRestore", { days: daysLeft })}
+              </p>
+            )}
+          </div>
+        ) : (
+          <Link
+            to={`/history/${encodeURIComponent(entry.id)}${detailSearch}`}
+            aria-disabled={disabled}
+            onClick={(event) => {
+              if (disabled) event.preventDefault();
+            }}
+            className="flex flex-col gap-0.5 rounded-sm py-1.5 outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <DictationPreview entry={entry} query={query} />
+          </Link>
+        )}
+      </TableCell>
+      <TableCell className={cn("text-muted-foreground tabular-nums", fadingCellClassName)}>
+        <HistoryDate value={entry.createdAt} />
+      </TableCell>
+      {deleted && (
+        <TableCell className={cn("text-muted-foreground tabular-nums", fadingCellClassName)}>
+          <HistoryDate value={entry.deletedAt} />
+        </TableCell>
+      )}
+      <TableCell className={cn("text-muted-foreground tabular-nums", fadingCellClassName)}>
+        {duration(entry.durationMs)}
+      </TableCell>
+      <TableCell className="pr-3 pl-1 [contain:layout_style] lg:pr-4 lg:pl-2">
+        <div className="flex items-center justify-end gap-1">{actions}</div>
+      </TableCell>
+    </TableRow>
+  );
+});
 
 export function HistoryTable({
   toolbar,
@@ -53,6 +187,42 @@ export function HistoryTable({
   const { t } = useTranslation();
   const table = useRef<HTMLTableElement>(null);
   const header = useRef<HTMLTableSectionElement>(null);
+  const latest = useRef({ onSelect, renderActions, selectionActive });
+  latest.current = { onSelect, renderActions, selectionActive };
+  const handleSelect = useCallback(
+    (entry: Session, checked: boolean, range?: boolean) =>
+      latest.current.onSelect(entry, checked, range),
+    [],
+  );
+  const isSelectionActive = useCallback(() => latest.current.selectionActive, []);
+  const handleRenderActions = useCallback(
+    (entry: Session, _deleted: boolean, _disabled: boolean, _language?: string) => {
+      void _deleted;
+      void _disabled;
+      void _language;
+      const node = latest.current.renderActions(entry);
+      if (
+        !isValidElement<{
+          onRenamed?: () => void;
+          onRemove?: () => void;
+        }>(node) ||
+        (typeof node.props.onRenamed !== "function" && typeof node.props.onRemove !== "function")
+      ) {
+        return node;
+      }
+      return cloneElement(node, {
+        onRenamed: () => {
+          const current = latest.current.renderActions(entry);
+          if (isValidElement<{ onRenamed?: () => void }>(current)) current.props.onRenamed?.();
+        },
+        onRemove: () => {
+          const current = latest.current.renderActions(entry);
+          if (isValidElement<{ onRemove?: () => void }>(current)) current.props.onRemove?.();
+        },
+      });
+    },
+    [],
+  );
   useLayoutEffect(() => {
     const tableNode = table.current;
     const headerNode = header.current;
@@ -143,6 +313,7 @@ export function HistoryTable({
           </TableRow>
         </TableHeader>
         <TableBody
+          data-selection-active={selectionActive && !disabled ? "" : undefined}
           onFocusCapture={(event) => {
             // Pointer focus must not move a control between pointer-down and click.
             // Focus can also bubble from dialogs rendered outside the table.
@@ -165,99 +336,26 @@ export function HistoryTable({
           }}
         >
           {entries.map((entry, index) => {
-            const deletedAt = Date.parse(entry.deletedAt ?? "");
+            const deletedAt = deleted ? Date.parse(entry.deletedAt ?? "") : Number.NaN;
             const daysLeft =
               deleted && !Number.isNaN(deletedAt)
                 ? Math.max(0, Math.ceil((deletedAt + 30 * 86400000 - Date.now()) / 86400000))
                 : null;
-            const fading =
-              "opacity-[var(--deletion-opacity,1)] group-hover:opacity-100 group-focus-within:opacity-100 group-data-[state=selected]:opacity-100";
             return (
-              <TableRow
+              <HistoryTableRow
                 key={entry.id}
-                data-state={isSelected(entry) ? "selected" : undefined}
-                className={cn("group", selectionActive && !disabled && "cursor-pointer")}
-                style={
-                  daysLeft === null
-                    ? undefined
-                    : ({
-                        "--deletion-opacity": 0.65 + (0.35 * Math.min(daysLeft, 30)) / 30,
-                      } as CSSProperties)
-                }
-                onClickCapture={(event) => {
-                  if (
-                    (!selectionActive && !event.shiftKey) ||
-                    disabled ||
-                    !(event.target instanceof Element) ||
-                    !event.currentTarget.contains(event.target)
-                  )
-                    return;
-                  const checkbox = event.target.closest(
-                    '[role="checkbox"], input[type="checkbox"]',
-                  );
-                  if (checkbox && !event.shiftKey) return;
-                  // Keep native controls and portalled dialogs independent of row selection.
-                  if (
-                    !checkbox &&
-                    event.target.closest(
-                      'button, input, label, [role="checkbox"], [role="menuitem"]',
-                    )
-                  )
-                    return;
-                  event.preventDefault();
-                  event.stopPropagation();
-                  onSelect(entry, !isSelected(entry), event.shiftKey);
-                }}
-                onMouseDown={(event) => {
-                  if (selectionActive && event.shiftKey) event.preventDefault();
-                }}
-              >
-                <TableCell className="pt-[1.125rem] pl-3 align-top lg:pl-4 [&:has([role=checkbox])]:pr-2">
-                  <Checkbox
-                    aria-label={t("historyPage.selectDictation", { index: index + 1 })}
-                    checked={isSelected(entry)}
-                    disabled={disabled}
-                    onCheckedChange={(checked) => onSelect(entry, checked)}
-                  />
-                </TableCell>
-                <TableCell className={cn("max-w-0 whitespace-normal", fading)}>
-                  {deleted ? (
-                    <div className="flex flex-col gap-0.5 py-1.5">
-                      <DictationPreview entry={entry} query={query} />
-                      {daysLeft !== null && (
-                        <p className="text-xs leading-5 text-muted-foreground [overflow-wrap:anywhere]">
-                          {t("historyPage.daysToRestore", { days: daysLeft })}
-                        </p>
-                      )}
-                    </div>
-                  ) : (
-                    <Link
-                      to={`/history/${encodeURIComponent(entry.id)}${detailSearch}`}
-                      aria-disabled={disabled}
-                      onClick={(event) => {
-                        if (disabled) event.preventDefault();
-                      }}
-                      className="flex flex-col gap-0.5 rounded-sm py-1.5 outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                    >
-                      <DictationPreview entry={entry} query={query} />
-                    </Link>
-                  )}
-                </TableCell>
-                <TableCell className={cn("text-muted-foreground tabular-nums", fading)}>
-                  <HistoryDate value={entry.createdAt} />
-                </TableCell>
-                {deleted && (
-                  <TableCell className={cn("text-muted-foreground tabular-nums", fading)}>
-                    <HistoryDate value={entry.deletedAt} />
-                  </TableCell>
-                )}
-                <TableCell className={cn("text-muted-foreground tabular-nums", fading)}>
-                  {duration(entry.durationMs)}
-                </TableCell>
-                <TableCell className="pr-3 pl-1 lg:pr-4 lg:pl-2">
-                  <div className="flex items-center justify-end gap-1">{renderActions(entry)}</div>
-                </TableCell>
-              </TableRow>
+                entry={entry}
+                index={index}
+                deleted={deleted}
+                daysLeft={daysLeft}
+                query={query}
+                detailSearch={detailSearch}
+                disabled={disabled}
+                selected={isSelected(entry)}
+                onSelect={handleSelect}
+                isSelectionActive={isSelectionActive}
+                renderActions={handleRenderActions}
+              />
             );
           })}
         </TableBody>

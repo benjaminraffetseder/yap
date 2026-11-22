@@ -124,8 +124,23 @@ function EntryDetail({ id }: { id: string }) {
   const [deleteError, setDeleteError] = useState("");
   const [exporting, setExporting] = useState(false);
   const actionsTrigger = useRef<HTMLButtonElement>(null);
-  const [audio, setAudio] = useState("");
-  const [loadingAudio, setLoadingAudio] = useState(false);
+  const [audioState, setAudioState] = useState<{
+    source: string;
+    src: string;
+    loading: boolean;
+  } | null>(null);
+  const audioSource = entry?.audioPath ? `${entry.id}:${entry.audioPath}` : "";
+  const audioOwner = useRef({ request: 0, source: "" });
+  useLayoutEffect(() => {
+    audioOwner.current = { request: audioOwner.current.request + 1, source: audioSource };
+    setAudioState((current) => (current && current.source !== audioSource ? null : current));
+    return () => {
+      audioOwner.current = { request: audioOwner.current.request + 1, source: "" };
+    };
+  }, [audioSource]);
+  const activeAudio = audioSource && audioState?.source === audioSource ? audioState : null;
+  const audio = activeAudio?.src ?? "";
+  const loadingAudio = activeAudio?.loading ?? false;
   const playTrigger = useRef<HTMLButtonElement>(null);
   const playerDock = useRef<HTMLDivElement>(null);
   const [playerHeight, setPlayerHeight] = useState(0);
@@ -141,9 +156,6 @@ function EntryDetail({ id }: { id: string }) {
   useEffect(() => {
     if (!loading) title.current?.focus();
   }, [loading]);
-  useEffect(() => {
-    if (detail.isSuccess && !entry) setAudio("");
-  }, [detail.isSuccess, entry]);
   const unavailable = !isDesktop || loading || !!error || deletingNow;
   const text = entry?.finalTranscript ?? entry?.rawTranscript ?? "";
   const changed = !!entry && text !== entry.rawTranscript;
@@ -171,15 +183,41 @@ function EntryDetail({ id }: { id: string }) {
     window.addEventListener("keydown", keydown);
     return () => window.removeEventListener("keydown", keydown);
   }, [back, navigate, editing, deletingNow]);
-  async function play() {
-    setLoadingAudio(true);
+  async function play(renew = false): Promise<string | false> {
+    if (!audioSource || loadingAudio) return false;
+    const request = ++audioOwner.current.request;
+    const source = audioSource;
+    const previous = renew ? (activeAudio?.src ?? "") : "";
+    let received: string | false = false;
+    audioOwner.current.source = source;
+    setAudioState({ source, src: previous, loading: true });
     await run(async () => {
-      setAudio(await backend.audio(id));
+      try {
+        const src = await backend.audio(id);
+        if (audioOwner.current.request !== request || audioOwner.current.source !== source) return;
+        setAudioState({ source, src, loading: false });
+        received = src;
+      } catch (cause) {
+        if (audioOwner.current.request !== request || audioOwner.current.source !== source) return;
+        throw cause;
+      }
     }, false);
-    setLoadingAudio(false);
+    if (audioOwner.current.request === request && audioOwner.current.source === source) {
+      setAudioState((current) =>
+        current && current.source === source && current.loading
+          ? previous
+            ? { ...current, loading: false }
+            : null
+          : current,
+      );
+    }
+    return audioOwner.current.request === request && audioOwner.current.source === source
+      ? received
+      : false;
   }
   function closeAudio() {
-    setAudio("");
+    audioOwner.current.request++;
+    setAudioState(null);
     requestAnimationFrame(() => {
       const trigger = playTrigger.current;
       if (trigger && !trigger.disabled) trigger.focus({ preventScroll: true });
@@ -188,6 +226,8 @@ function EntryDetail({ id }: { id: string }) {
   }
   async function remove() {
     if (deletingNow) return;
+    audioOwner.current.request++;
+    setAudioState(null);
     setDeletingNow(true);
     setDeleteError("");
     try {
@@ -680,7 +720,7 @@ function EntryDetail({ id }: { id: string }) {
           />
         )}
       </div>
-      {audio && (
+      {audio && entry && (
         <div
           ref={playerDock}
           data-slot="recording-player-dock"
@@ -689,9 +729,10 @@ function EntryDetail({ id }: { id: string }) {
           <div className="mx-auto max-w-5xl px-3 sm:px-10 lg:px-20">
             <AudioPlayer
               src={audio}
-              durationMs={entry?.durationMs}
+              durationMs={entry.durationMs}
               autoPlay
               onClose={closeAudio}
+              onRetry={() => play(true)}
               className="pointer-events-auto bg-card shadow-lg"
             />
           </div>

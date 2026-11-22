@@ -20,6 +20,7 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { ChatCitationContent } from "@/features/chat/components/chat-citation-content";
 import {
+  useDictationPhase,
   useDictationStatus,
   useSavedConfiguration,
 } from "@/features/dictation/hooks/use-dictation-state";
@@ -27,7 +28,6 @@ import { ProcessingCombobox } from "@/features/processing/components/processing-
 import { useTextRequest } from "@/features/processing/hooks/use-text-request";
 import { InferenceStats } from "@/features/transcripts/components/inference-stats";
 import { TranscriptExportDialog } from "@/features/transcripts/components/transcript-export-dialog";
-import i18n from "@/i18n";
 import { nativeText } from "@/i18n/native-text";
 import {
   backend,
@@ -51,9 +51,17 @@ import {
   Trash2,
   Workflow,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router";
+
+const noOutputs: GeneratedOutput[] = [];
+
+// Only the small live label follows native messages. Saved controls and
+// Markdown do not subscribe to unrelated progress or transcript updates.
+function ChainGenerationStatus() {
+  return nativeText(useDictationStatus().message);
+}
 
 export function GeneratedOutputs({
   sessionID,
@@ -72,13 +80,27 @@ export function GeneratedOutputs({
   trialPromptID?: string;
   onTrialComplete?: () => void;
 }) {
-  const { t } = useTranslation();
-  const snapshot = { ...useSavedConfiguration(), status: useDictationStatus() };
+  const { t, i18n } = useTranslation();
+  const snapshot = useSavedConfiguration();
+  const phase = useDictationPhase();
   const { enabled } = snapshot.textProcessing;
-  const options = processingOptions(snapshot.textProcessing);
-  const [selected, setSelected] = useState(trialPromptID ?? options[0]?.value ?? "");
+  const options = useMemo(
+    () => processingOptions(snapshot.textProcessing),
+    [snapshot.textProcessing],
+  );
+  const [preferredPrompt, setSelected] = useState(trialPromptID ?? options[0]?.value ?? "");
+  // Keep the user's preference if an option is temporarily unavailable, while
+  // using a valid fallback for both the control and the generation request.
+  const selected =
+    trialPromptID || options.some((option) => option.value === preferredPrompt)
+      ? preferredPrompt
+      : (options[0]?.value ?? "");
   const outputsResource = useQuery(outputsQuery(sessionID));
-  const outputs = outputsResource.data ?? [];
+  const outputs = outputsResource.data ?? noOutputs;
+  const ordered = useMemo(
+    () => [...outputs].sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt)),
+    [outputs],
+  );
   const loading = outputsResource.isPending || outputsResource.isFetching;
   const error = outputsResource.error ? message(outputsResource.error) : "";
   const deleteOutput = useMutation({
@@ -110,32 +132,24 @@ export function GeneratedOutputs({
   // The backend saves outputs and reports activity even after navigation.
   const generation = useTextRequest({ cancelOnUnmount: false });
   useEffect(() => {
-    if (
-      !trialPromptID &&
-      !processingOptions(snapshot.textProcessing).some((option) => option.value === selected)
-    )
-      setSelected(processingOptions(snapshot.textProcessing)[0]?.value ?? "");
-  }, [snapshot.textProcessing, selected, trialPromptID]);
-  useEffect(() => {
     const value = outputsResource.data;
     if (!value) return;
     const previous = seenOutputs.current;
     // Cached existing outputs are not new generation. Only unseen saved IDs
     // from a later query result select the newest tab.
-    const newest = [...value].sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
     const added =
       previous?.sessionID === sessionID
-        ? newest.find((output) => !previous.ids.has(output.id))
+        ? ordered.find((output) => !previous.ids.has(output.id))
         : undefined;
     setActiveOutput(
       (current) =>
         added?.id ??
-        (value.some((output) => output.id === current) ? current : (newest[0]?.id ?? "")),
+        (value.some((output) => output.id === current) ? current : (ordered[0]?.id ?? "")),
     );
     seenOutputs.current = { sessionID, ids: new Set(value.map((output) => output.id)) };
-  }, [sessionID, outputsResource.data]);
+  }, [sessionID, outputsResource.data, ordered]);
   const disabled = unavailable || loading || !!error || deletingNow || generation.pending;
-  const modelBusy = isBusy(snapshot.status.phase);
+  const modelBusy = isBusy(phase);
   const canGenerate = !disabled && !modelBusy && enabled;
   const trialUnavailable =
     !!trialPromptID &&
@@ -163,19 +177,24 @@ export function GeneratedOutputs({
   const selectedChain = (snapshot.textProcessing.chains ?? []).find(
     (chain) => chain.id === selected,
   );
-  const ordered = [...outputs].sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
   const output = ordered.find((item) => item.id === activeOutput) ?? ordered[0];
   useEffect(() => {
     onCopyTargetChange(disabled ? null : (output ?? null));
   }, [output, disabled, onCopyTargetChange]);
-  const generationStatus = selectedChain
-    ? nativeText(snapshot.status.message)
-    : t("generatedOutputs.generatingOutput");
-  const outputOptions = ordered.map((item) => ({
-    value: item.id,
-    label: `${item.prompt.name}${item.chain ? ` · ${item.chain.name} ${item.chain.step}/${item.chain.total}` : ""} · ${new Date(item.createdAt).toLocaleString(i18n.resolvedLanguage, { dateStyle: "medium", timeStyle: "short" })}`,
-    output: item,
-  }));
+  const generationStatus = selectedChain ? (
+    <ChainGenerationStatus />
+  ) : (
+    t("generatedOutputs.generatingOutput")
+  );
+  const outputOptions = useMemo(
+    () =>
+      ordered.map((item) => ({
+        value: item.id,
+        label: `${item.prompt.name}${item.chain ? ` · ${item.chain.name} ${item.chain.step}/${item.chain.total}` : ""} · ${new Date(item.createdAt).toLocaleString(i18n.resolvedLanguage, { dateStyle: "medium", timeStyle: "short" })}`,
+        output: item,
+      })),
+    [ordered, i18n.resolvedLanguage],
+  );
   const selectedIdentity = outputOptions.find((item) => item.value === output?.id)?.label;
   const sourceOutput = output?.chain?.sourceOutputId
     ? outputs.find((item) => item.id === output.chain?.sourceOutputId)

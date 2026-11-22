@@ -2,6 +2,11 @@ import i18n from "@/i18n";
 import { backend, message } from "@/lib/backend";
 import { useEffect, useRef, useState } from "react";
 
+export type TextRequestOutcome =
+  | { status: "success"; output: string }
+  | { status: "cancelled" }
+  | { status: "error"; error: string };
+
 // Request identity protects a new preview against late replies/cancellation
 // from an older one. Saved operations can outlive the screen that started them.
 export function useTextRequest({ cancelOnUnmount = true }: { cancelOnUnmount?: boolean } = {}) {
@@ -18,7 +23,10 @@ export function useTextRequest({ cancelOnUnmount = true }: { cancelOnUnmount?: b
     },
     [cancelOnUnmount],
   );
-  async function request(action: (id: string) => Promise<string>) {
+  async function request(
+    action: (id: string) => Promise<string>,
+    onComplete?: (outcome: TextRequestOutcome) => void,
+  ) {
     if (current.current) return;
     const id = crypto.randomUUID();
     current.current = id;
@@ -26,22 +34,32 @@ export function useTextRequest({ cancelOnUnmount = true }: { cancelOnUnmount?: b
     setPending(true);
     setResult("");
     setError("");
+    let outcome: TextRequestOutcome | undefined;
     try {
       const output = await action(id);
       if (current.current === id) {
-        if (cancelled.current) setError(i18n.t("useTextRequest.processingCancelled"));
-        else {
+        if (cancelled.current) {
+          setError(i18n.t("useTextRequest.processingCancelled"));
+          outcome = { status: "cancelled" };
+        } else {
           setResult(output);
+          outcome = { status: "success", output };
           return output;
         }
       }
     } catch (cause) {
-      if (current.current === id)
-        setError(cancelled.current ? i18n.t("useTextRequest.processingCancelled") : message(cause));
+      if (current.current === id) {
+        const error = cancelled.current
+          ? i18n.t("useTextRequest.processingCancelled")
+          : message(cause);
+        setError(error);
+        outcome = cancelled.current ? { status: "cancelled" } : { status: "error", error };
+      }
     } finally {
       if (current.current === id) {
         current.current = null;
         setPending(false);
+        if (outcome) onComplete?.(outcome);
       }
     }
   }

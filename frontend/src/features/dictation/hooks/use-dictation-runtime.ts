@@ -55,48 +55,65 @@ export function useDictationRuntime() {
   const importBatch = useRef(new Map<string, ImportJob>());
   const latestStatus = useRef(empty.status);
   const modelDownload = useRef<{ model: Model; started: boolean } | null>(null);
-  const refreshRuntime = useCallback(async () => {
-    if (!isDesktop) return;
-    const request = ++snapshotRequest.current;
-    const revision = statusRevision.current;
-    const importRevision = queueRevision.current;
-    const textRevision = textQueueRevision.current;
-    let value: RuntimeSnapshot;
-    try {
-      value = await backend.runtimeSnapshot();
-    } catch (cause) {
-      // An obsolete failure is as stale as an obsolete successful snapshot.
-      if (request !== snapshotRequest.current) return;
-      throw cause;
-    }
-    if (request !== snapshotRequest.current) return;
-    if (revision === statusRevision.current) latestStatus.current = value.status;
-    if (importRevision === queueRevision.current) {
-      const jobs = value.importQueue ?? [];
-      queueWasPending.current = jobs.some(importPending);
-      knownImportIDs.current = new Set(jobs.map((job) => job.id));
-      for (const job of jobs)
-        if (importPending(job) || importBatch.current.has(job.id))
-          importBatch.current.set(job.id, job);
-    }
-    // Bridge replies may arrive out of order or after a newer status event.
-    setSnapshot((old) =>
-      request !== snapshotRequest.current
-        ? old
-        : {
-            ...value,
-            bulkTextQueue:
-              textRevision === textQueueRevision.current
-                ? (value.bulkTextQueue ?? [])
-                : old.bulkTextQueue,
-            importQueue:
-              importRevision === queueRevision.current
-                ? (value.importQueue ?? [])
-                : old.importQueue,
-            status: revision === statusRevision.current ? value.status : old.status,
-          },
-    );
-    setLoading(false);
+  const runtimeActive = useRef(false);
+  const runtimeRefresh = useRef<Promise<void> | null>(null);
+  const refreshRuntime = useCallback((): Promise<void> => {
+    if (!isDesktop) return Promise.resolve();
+    snapshotRequest.current++;
+    if (runtimeRefresh.current) return runtimeRefresh.current;
+    const work = Promise.resolve()
+      .then(async () => {
+        // Requests in one burst share a read. An event during that read makes
+        // its result obsolete and requests one trailing read for the whole burst.
+        while (runtimeActive.current) {
+          const request = snapshotRequest.current;
+          const revision = statusRevision.current;
+          const importRevision = queueRevision.current;
+          const textRevision = textQueueRevision.current;
+          let value: RuntimeSnapshot;
+          try {
+            value = await backend.runtimeSnapshot();
+          } catch (cause) {
+            if (!runtimeActive.current) return;
+            if (request !== snapshotRequest.current) continue;
+            throw cause;
+          }
+          if (!runtimeActive.current) return;
+          if (request !== snapshotRequest.current) continue;
+          if (revision === statusRevision.current) latestStatus.current = value.status;
+          if (importRevision === queueRevision.current) {
+            const jobs = value.importQueue ?? [];
+            queueWasPending.current = jobs.some(importPending);
+            knownImportIDs.current = new Set(jobs.map((job) => job.id));
+            for (const job of jobs)
+              if (importPending(job) || importBatch.current.has(job.id))
+                importBatch.current.set(job.id, job);
+          }
+          setSnapshot((old) =>
+            request !== snapshotRequest.current
+              ? old
+              : {
+                  ...value,
+                  bulkTextQueue:
+                    textRevision === textQueueRevision.current
+                      ? (value.bulkTextQueue ?? [])
+                      : old.bulkTextQueue,
+                  importQueue:
+                    importRevision === queueRevision.current
+                      ? (value.importQueue ?? [])
+                      : old.importQueue,
+                  status: revision === statusRevision.current ? value.status : old.status,
+                },
+          );
+          setLoading(false);
+          return;
+        }
+      })
+      .finally(() => {
+        if (runtimeRefresh.current === work) runtimeRefresh.current = null;
+      });
+    runtimeRefresh.current = work;
+    return work;
   }, []);
   const refresh = useCallback(async () => {
     const failed = savedResources.filter(
@@ -184,6 +201,7 @@ export function useDictationRuntime() {
   ]);
   useEffect(() => {
     if (!isDesktop) return;
+    runtimeActive.current = true;
     let active = true;
     const offStatus = Events.On("dictation:status", ({ data: status }: { data: Status }) => {
       if (!active) return;
@@ -365,6 +383,7 @@ export function useDictationRuntime() {
     });
     return () => {
       active = false;
+      runtimeActive.current = false;
       snapshotRequest.current++;
       offStatus();
       offQueue();

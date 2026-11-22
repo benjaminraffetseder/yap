@@ -9,8 +9,6 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
-
-	"yap/internal/process"
 )
 
 // Bundle describes the files needed by Moonshine's native runtime.
@@ -146,14 +144,15 @@ func (Local) Transcribe(ctx context.Context, audio string, opts Options) (string
 		}
 		args = []string{"--yap-moonshine-worker", RuntimeFor(opts), opts.Model, audio, out, opts.Prompt}
 	}
-	cmd := exec.CommandContext(ctx, executable, args...)
-	process.Hide(cmd)
-	log, err := cmd.CombinedOutput()
+	cmd := exec.Command(executable, args...)
+	log := &progressLog{}
+	cmd.Stdout, cmd.Stderr = log, log
+	err = runIsolatedCLI(ctx, cmd)
 	if err != nil {
 		if ctx.Err() != nil {
 			return "", ctx.Err()
 		}
-		return "", nativeTranscriptionError(Kind(opts.Model), err, log)
+		return "", nativeTranscriptionError(Kind(opts.Model), err, log.tail)
 	}
 	data, err := os.ReadFile(out)
 	if err != nil {
@@ -172,7 +171,7 @@ func nativeTranscriptionError(kind string, err error, log []byte) error {
 	}
 	message := strings.TrimSpace(string(log))
 	if kind == "parakeet" && strings.Contains(message, "GGML_ASSERT(ctx->mem_buffer != NULL) failed") {
-		return fmt.Errorf("Parakeet ran out of memory; close other memory-heavy apps or select a smaller speech model in Models, then retry: %w\n%s", err, message)
+		return fmt.Errorf("Parakeet ran out of memory; close other memory-heavy apps or select a smaller speech model in Models, then retry: %w", err)
 	}
-	return fmt.Errorf("%s transcription failed: %w\n%s", kind, err, message)
+	return fmt.Errorf("%s transcription failed: %w", kind, err)
 }

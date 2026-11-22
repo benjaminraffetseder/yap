@@ -113,7 +113,13 @@ func (a *App) RemoveModel(id string) error {
 	if a.busyLocked() {
 		return errors.New("finish the current operation before removing a model")
 	}
+	if err := a.releaseSpeechModelLocked(); err != nil {
+		return err
+	}
+	// Work queued during release can resume once the removal attempt finishes.
+	defer a.pumpQueuesLocked()
 	if err := modelmanagement.RemoveSpeech(a.store.Dir, id, a.settings.ModelPath); err != nil {
+		a.updateTrayLocked()
 		return err
 	}
 	a.event("dictation:history")
@@ -125,4 +131,20 @@ func (a *App) releaseTextModel() {
 	if engine, ok := a.textEngine.(interface{ Release() }); ok {
 		engine.Release()
 	}
+}
+
+// Reserve maintenance before releasing mu: callbacks and shutdown must remain
+// able to acquire it while a child drains. New jobs cannot enter this interval.
+func (a *App) releaseSpeechModelLocked() error {
+	if engine, ok := a.engine.(interface{ Release() }); ok {
+		a.speechMaintenance = true
+		a.wg.Add(1)
+		a.mu.Unlock()
+		engine.Release()
+		a.mu.Lock()
+		a.speechMaintenance = false
+		a.wg.Done()
+		return a.availableLocked()
+	}
+	return nil
 }

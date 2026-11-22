@@ -24,15 +24,17 @@ import {
   ExportTranscripts,
   GenerateSessionOutput,
   GenerateSessionTitle,
-  GetAudio,
   GetAudioSupport,
+  GetAudioURL,
   GetConfiguration,
   GetDiagnosticChecks,
   GetHistory,
+  GetHistorySelectionIDs,
   GetHomeResult,
   GetMicrophones,
   GetModelCatalog,
   GetProfileApplications,
+  GetRecentHistory,
   GetRecentlyDeleted,
   GetRevisions,
   GetRuntimeSnapshot,
@@ -52,6 +54,7 @@ import {
   InstallUpdate,
   ListTextModels,
   PermanentlyDeleteSessions,
+  PermanentlyDeleteSessionsWithResult,
   PreviewBackup,
   PreviewWorkflow,
   ProcessText,
@@ -89,6 +92,7 @@ import {
   StopDiagnosticTest,
   StopMicrophoneTest,
   StopRecording,
+  SwapSettingsShortcuts,
   TestTextModel,
   UpdateAudioSupport,
   UpdateModelRuntime,
@@ -538,6 +542,7 @@ export const backend = {
       bulkTextQueue: value.bulkTextQueue ?? [],
     };
   },
+  recentHistory: async (): Promise<Session[]> => (await GetRecentHistory()) ?? [],
   installTextModel: InstallTextModel,
   updateTextRuntime: UpdateTextRuntime,
   removeTextModel: RemoveTextModel,
@@ -642,12 +647,16 @@ export const backend = {
   stop: StopRecording,
   cancel: Cancel,
   microphones: async (): Promise<Microphone[]> => (await GetMicrophones()) ?? [],
-  settings: (settings: Settings) =>
-    SaveSettings({
+  settings: (settings: Settings, swappedProfileShortcut?: string) => {
+    const native = {
       ...settings,
       autoGenerateTitles: settings.autoGenerateTitles ?? false,
       statsForNerds: settings.statsForNerds ?? false,
-    }),
+    };
+    return swappedProfileShortcut === undefined
+      ? SaveSettings(native)
+      : SwapSettingsShortcuts(native, swappedProfileShortcut);
+  },
   setSaveHistory: SetSaveHistory,
   saveLatestResult: SaveLatestResult,
   dismissLatestResult: DismissLatestResult,
@@ -683,7 +692,7 @@ export const backend = {
   stopDictationTest: StopDiagnosticTest,
   copy: CopyText,
   remove: DeleteSession,
-  audio: GetAudio,
+  audio: GetAudioURL,
   exportTranscripts: ExportTranscripts,
   exportPreview: async (selection: TranscriptExportSelection) => {
     const result = await GetTranscriptExportPreview({
@@ -708,6 +717,8 @@ export const backend = {
         : await GetSortedHistory(query, page, sortBy, descending, false);
     return { ...result, entries: result.entries ?? [] };
   },
+  historySelectionIDs: async (query: string): Promise<string[]> =>
+    (await GetHistorySelectionIDs(query)) ?? [],
   recentlyDeleted: async (
     query: string,
     page: number,
@@ -725,6 +736,10 @@ export const backend = {
   },
   permanentlyDeleteSessions: async (ids: string[]): Promise<void> => {
     return updateHistorySessions(ids, PermanentlyDeleteSessions);
+  },
+  purgeSessions: async (ids: string[]) => {
+    const result = await PermanentlyDeleteSessionsWithResult(ids);
+    return { ...result, deletedIds: result.deletedIds ?? [] };
   },
   session: async (id: string): Promise<Session | null> => {
     return GetSession(id);

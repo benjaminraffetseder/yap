@@ -1513,6 +1513,7 @@
   "bulkText.generateTitles": "Generate titles",
   "bulkText.runPromptOrChain": "Run prompt or chain",
   "bulkText.promptOrChain": "Prompt or chain",
+  "bulkText.preparingSelection": "Preparing selection…",
   "bulkText.selected_one": "{{count}} transcript selected.",
   "bulkText.selected_other": "{{count}} transcripts selected.",
   "bulkText.titleHelp": "Generated titles are saved automatically. Existing titles are kept by default.",

@@ -24,7 +24,7 @@ import { useAutoSave } from "@/hooks/use-auto-save";
 import { useSavedDraft } from "@/hooks/use-saved-draft";
 import { nativeText } from "@/i18n/native-text";
 import { isBusy, isDesktop, message, type VocabularyEntry } from "@/lib/backend";
-import { useSavedActions, useVocabulary } from "@/lib/queries/saved-queries";
+import { useSavedActions, useSavedReadVersion, useVocabulary } from "@/lib/queries/saved-queries";
 import {
   vocabularyDraft as draftOf,
   validateVocabulary,
@@ -41,12 +41,13 @@ export function VocabularyPage() {
   const { t } = useTranslation();
   const savedActions = useSavedActions();
   const vocabulary = useVocabulary();
+  const readVersion = useSavedReadVersion("vocabulary");
   const { refresh, run } = useDictationActions();
   const { loading } = useDictationConnection();
   const snapshot = { vocabulary: useSavedVocabulary(), status: { phase: useDictationPhase() } };
   const entries = vocabulary.data ?? snapshot.vocabulary;
   const saved = useMemo(() => draftOf(entries), [entries]);
-  const [draft, setDraft, draftState] = useSavedDraft("vocabulary", saved);
+  const [draft, setDraft, draftState] = useSavedDraft("vocabulary", saved, readVersion);
   const [error, setError] = useState("");
   const [history, setHistory] = useState(false);
   const [page, setPage] = useState(0);
@@ -67,8 +68,12 @@ export function VocabularyPage() {
   async function save() {
     setError("");
     try {
-      await savedActions.vocabulary(payload);
-      draftState.markSubmitted(draft);
+      await draftState.entry.submit(
+        (value) => savedActions.vocabulary(vocabularyPayload(value, snapshot.vocabulary)),
+        undefined,
+        (result) =>
+          draftOf((result ?? []).map((entry) => ({ ...entry, aliases: entry.aliases ?? [] }))),
+      );
       await run(refresh, false);
     } catch (cause) {
       setError(message(cause));
@@ -83,8 +88,7 @@ export function VocabularyPage() {
     }
   }
   const autoSave = useAutoSave({
-    draftKey: JSON.stringify(draft),
-    dirty: draftState.dirty,
+    ...draftState.autosave,
     canSave: !disabled && !reason,
     save,
     delay: 800,
@@ -110,7 +114,7 @@ export function VocabularyPage() {
                 showDiscard={draftState.dirty && !autoSave.saving}
                 reason={reason}
                 retry={autoSave.retry}
-                discard={() => setDraft(saved)}
+                discard={() => setDraft(draftState.baseline)}
                 disabled={disabled}
               />
             </div>

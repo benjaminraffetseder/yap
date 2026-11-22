@@ -1,7 +1,8 @@
 import i18n from "@/i18n";
+import { memo } from "react";
 import { useTranslation } from "react-i18next";
 
-export function HistoryDate({ value }: { value?: string }) {
+export const HistoryDate = memo(function HistoryDate({ value }: { value?: string }) {
   const { t } = useTranslation();
   if (!value || Number.isNaN(Date.parse(value))) return t("historyPage.unknownDate");
   const date = new Date(value);
@@ -29,4 +30,4 @@ export function HistoryDate({ value }: { value?: string }) {
         : date.toLocaleDateString(language, { dateStyle: "medium" })}
     </time>
   );
-}
+});

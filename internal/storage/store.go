@@ -86,6 +86,7 @@ func Open(dir string) (*Store, error) {
 	CREATE TABLE IF NOT EXISTS pending_audio_deletions (id TEXT PRIMARY KEY, original TEXT NOT NULL, staged TEXT NOT NULL);
 	CREATE TABLE IF NOT EXISTS discarded_audio (path TEXT PRIMARY KEY);
 	CREATE TABLE IF NOT EXISTS deleted_recordings (id TEXT PRIMARY KEY, deleted_at TEXT NOT NULL);
+	CREATE INDEX IF NOT EXISTS history_duration ON recordings(duration_ms DESC,id DESC);
 	CREATE TABLE IF NOT EXISTS revisions (id INTEGER PRIMARY KEY AUTOINCREMENT, kind TEXT NOT NULL, item_id TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, value TEXT NOT NULL);
 	CREATE INDEX IF NOT EXISTS revisions_item ON revisions(kind,item_id,id);
 	CREATE TRIGGER IF NOT EXISTS delete_recording_revisions AFTER DELETE ON recordings BEGIN DELETE FROM revisions WHERE kind='transcript' AND item_id=OLD.id; END;
@@ -122,6 +123,10 @@ func Open(dir string) (*Store, error) {
 	CREATE TABLE IF NOT EXISTS recording_chats (recording_id TEXT PRIMARY KEY, value TEXT NOT NULL);
 	CREATE TRIGGER IF NOT EXISTS delete_recording_chat AFTER DELETE ON recordings BEGIN DELETE FROM recording_chats WHERE recording_id=OLD.id; END;`)
 	if err != nil {
+		db.Close()
+		return nil, err
+	}
+	if _, err := db.Exec(createdDate.indexes() + deletedDate.indexes()); err != nil {
 		db.Close()
 		return nil, err
 	}
@@ -198,20 +203,27 @@ func (s *Store) AddWithOutputs(v Session, outputs []GeneratedOutput) error {
 	return tx.Commit()
 }
 func (s *Store) History() ([]Session, error) {
-	rows, err := s.db.Query("SELECT r.id,r.created_at,r.duration_ms,r.transcript,r.model,r.language,r.audio_path,COALESCE(o.transcript,r.transcript)," + sessionTitleColumn + "," + speechStatsColumn + " FROM recordings r LEFT JOIN recording_outputs o ON r.id=o.id WHERE NOT EXISTS (SELECT 1 FROM deleted_recordings d WHERE d.id=r.id) ORDER BY r.created_at COLLATE yap_datetime DESC,r.id DESC LIMIT 500")
+	return s.RecentHistory(500)
+}
+
+func (s *Store) RecentHistory(limit int) ([]Session, error) {
+	if limit < 1 || limit > 500 {
+		return nil, errors.New("recent History limit must be between 1 and 500")
+	}
+	tx, err := s.db.Begin()
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-	out := []Session{}
-	for rows.Next() {
-		var v Session
-		if err = scanSession(rows, &v, false); err != nil {
-			return nil, err
-		}
-		out = append(out, v)
+	defer tx.Rollback()
+	order, err := createdDate.order(tx)
+	if err != nil {
+		return nil, err
 	}
-	return out, rows.Err()
+	entries, err := readHistoryPage(tx, "", false, order+" DESC,r.id DESC", limit, 0)
+	if err != nil {
+		return nil, err
+	}
+	return entries, tx.Commit()
 }
 func (s *Store) Session(id string) (Session, error) {
 	v, err := s.sessionIncludingDeleted(id)
@@ -219,6 +231,14 @@ func (s *Store) Session(id string) (Session, error) {
 		return Session{}, sql.ErrNoRows
 	}
 	return v, err
+}
+
+// HasActiveSession checks identity without loading transcript or output payloads.
+func (s *Store) HasActiveSession(id string) (bool, error) {
+	var exists bool
+	err := s.db.QueryRow(`SELECT EXISTS(SELECT 1 FROM recordings r WHERE r.id=?
+		AND NOT EXISTS(SELECT 1 FROM deleted_recordings d WHERE d.id=r.id))`, id).Scan(&exists)
+	return exists, err
 }
 
 func (s *Store) sessionIncludingDeleted(id string) (Session, error) {

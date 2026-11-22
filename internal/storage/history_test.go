@@ -1,13 +1,142 @@
 package storage
 
 import (
+	"database/sql/driver"
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
+
+	"modernc.org/sqlite"
 )
+
+func TestHistoryDateIndexesAllowLegacyWrites(t *testing.T) {
+	s, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	// A separate driver has none of the app's SQL functions or collations.
+	legacy, err := new(sqlite.Driver).Open(filepath.Join(s.Dir, "database.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer legacy.Close()
+	write := func(statement string) {
+		t.Helper()
+		if _, err := legacy.(driver.ExecerContext).ExecContext(t.Context(), statement, nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write(`INSERT INTO recordings VALUES
+		('a','2024-02-29T12:00:00.000000001Z',0,'one','','',''),
+		('b','2024-02-29T12:00:00Z',0,'two','','',''),
+		('c','2024-02-29T12:00:00.0000000010Z',0,'three','','','')`)
+	ids, err := s.MatchingHistoryIDs("")
+	if err != nil || !slices.Equal(ids, []string{"c", "a", "b"}) {
+		t.Fatalf("UTC nanoseconds and equivalent instants: %v, %v", ids, err)
+	}
+	write(`UPDATE recordings SET created_at='2024-02-29T13:00:00+01:00' WHERE id='c';
+		UPDATE recordings SET created_at='2025-02-29T12:00:00Z' WHERE id='b';`)
+	ids, err = s.MatchingHistoryIDs("")
+	if err != nil || !slices.Equal(ids, []string{"a", "c", "b"}) {
+		t.Fatalf("offset and malformed date: %v, %v", ids, err)
+	}
+	write(`INSERT INTO deleted_recordings VALUES('a','2024-02-29T13:00:00+01:00');
+		UPDATE deleted_recordings SET deleted_at='malformed' WHERE id='a';`)
+	recent, err := s.RecentHistory(1)
+	if err != nil || len(recent) != 1 || recent[0].ID != "c" {
+		t.Fatalf("latest active dictation: %v, %v", recent, err)
+	}
+	for _, limit := range []int{0, 501} {
+		if _, err := s.RecentHistory(limit); err == nil {
+			t.Fatalf("accepted invalid limit %d", limit)
+		}
+	}
+}
+
+func TestHistoryMembershipAfterEditsAndTrash(t *testing.T) {
+	s, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	for _, id := range []string{"a", "b", "c"} {
+		entry := NewSession(id, 42, "prefix-İZMİR-suffix", "base", "en", "")
+		entry.CreatedAt = "2026-01-01T00:00:00Z"
+		if err := s.Add(entry); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := s.UpdateTranscript("b", "corrected ĶELVIN"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SaveSessionTitle("b", "NEW TITLE"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.TrashSessions([]string{"c"}, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	for query, want := range map[string][]string{
+		"": {"b", "a"}, "izmi": {"b", "a"}, "Ķelv": {"b"}, "w ti": {"b"}, "%": {},
+	} {
+		ids, err := s.MatchingHistoryIDs(query)
+		if err != nil || !slices.Equal(ids, want) {
+			t.Fatalf("membership %q: got %v, %v; want %v", query, ids, err, want)
+		}
+		page, err := s.SearchHistory(query, 1)
+		if err != nil || page.Total != len(want) || page.Entries == nil || len(page.Entries) != 0 {
+			t.Fatalf("empty page %q: %+v, %v", query, page, err)
+		}
+	}
+	page, err := s.SearchRecentlyDeleted("izmi", 0)
+	if err != nil || page.Total != 1 || page.Entries[0].ID != "c" {
+		t.Fatalf("deleted search: %+v, %v", page, err)
+	}
+}
+
+func BenchmarkHistoryQueries(b *testing.B) {
+	s, err := Open(b.TempDir())
+	if err != nil {
+		b.Fatal(err)
+	}
+	defer s.Close()
+	tx, err := s.db.Begin()
+	if err != nil {
+		b.Fatal(err)
+	}
+	defer tx.Rollback()
+	transcript := strings.Repeat("Recorded words. ", 128)
+	for i := range 1000 {
+		at := time.Unix(int64(i), 0).UTC().Format(time.RFC3339Nano)
+		if _, err := tx.Exec("INSERT INTO recordings VALUES(?,?,0,?,'','','')", fmt.Sprint(i), at, transcript); err != nil {
+			b.Fatal(err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		b.Fatal(err)
+	}
+	for _, op := range []struct {
+		name string
+		run  func() error
+	}{
+		{"page", func() error { _, err := s.SearchHistory("", 9); return err }},
+		{"no-match", func() error { _, err := s.SearchHistory("missing", 0); return err }},
+		{"ids", func() error { _, err := s.MatchingHistoryIDs(""); return err }},
+	} {
+		b.Run(op.name, func(b *testing.B) {
+			b.ReportAllocs()
+			for b.Loop() {
+				if err := op.run(); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
+}
 
 func TestHistoryPagesSearchBeyond500AndKeepOriginals(t *testing.T) {
 	s, err := Open(t.TempDir())

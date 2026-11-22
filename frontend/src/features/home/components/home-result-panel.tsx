@@ -728,8 +728,7 @@ function HomeResultEditor({
     onCancel();
   }
   async function submit() {
-    if (await onSubmit(text)) {
-      draftState.markSubmitted([result.session.id, result.revision, text]);
+    if (await draftState.entry.submit(() => onSubmit(text))) {
       onCancel();
     }
   }

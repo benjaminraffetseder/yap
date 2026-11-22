@@ -5,7 +5,17 @@ import { backend, message } from "@/lib/backend";
 export async function deleteTranscriptions(ids: string[], refresh: () => Promise<void>) {
   const deleted = [...ids];
   await backend.removeSessions(deleted);
+  let remaining = deleted;
   let restoring = false;
+  async function restoreOutstanding() {
+    while (remaining.length) {
+      const batch = remaining.slice(0, 50);
+      await backend.restoreSessions(batch);
+      // Advance only after native acknowledgement. A retry must not replay a
+      // committed batch because native restore rejects already-active IDs.
+      remaining = remaining.slice(batch.length);
+    }
+  }
   const undo = {
     children: i18n.t("common.undo"),
     onClick: () => {
@@ -15,8 +25,7 @@ export async function deleteTranscriptions(ids: string[], refresh: () => Promise
         timeout: 0,
         actionProps: { ...undo, children: i18n.t("common.restoring"), disabled: true },
       });
-      void backend
-        .restoreSessions(deleted)
+      void restoreOutstanding()
         .then(async () => {
           toastManager.update(toastId, {
             type: "success",

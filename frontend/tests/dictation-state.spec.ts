@@ -662,6 +662,7 @@ async function settingsClarityScenario(
     { theme, collapsed },
   );
   await page.goto(`/#/settings?section=${section}`);
+  await expect(page.locator("[data-settings-search]")).toBeVisible();
 }
 
 for (const lang of ["en", "de"] as const) {
@@ -2979,12 +2980,23 @@ test("obsolete snapshot failures cannot undo connection recovery", async ({ page
     s.deferSnapshots = true;
     s.legacySnapshot = true;
     s.history();
+  });
+  await expect
+    .poll(() => page.evaluate(() => window.dictationTest.pendingSnapshots.length))
+    .toBe(1);
+  await page.evaluate(() => {
+    const s = window.dictationTest;
     s.legacySnapshot = false;
     s.history();
-    s.pendingSnapshots[1]();
   });
-  await expect(page.getByRole("button", { name: "Start recording", exact: true })).toBeEnabled();
   await page.evaluate(() => window.dictationTest.pendingSnapshots[0]());
+  await expect
+    .poll(() => page.evaluate(() => window.dictationTest.pendingSnapshots.length))
+    .toBe(2);
+  await page.evaluate(() => {
+    window.dictationTest.deferSnapshots = false;
+    window.dictationTest.pendingSnapshots[1]();
+  });
   await settle(page);
   await expect(page.getByRole("heading", { name: "Connection recovery", exact: true })).toHaveCount(
     0,
@@ -3953,6 +3965,10 @@ async function installDictationFixture(page: Page) {
               } else throw new Error("Unknown result action");
               state.history();
             },
+            GetRecentHistory: async () =>
+              structuredClone(
+                state.snapshot.history.filter((entry) => !entry.deletedAt).slice(0, 5),
+              ),
             GetHistory: async (query: string, page: number) => {
               state.historyRequests.push({ query, page, deleted: false });
               if (state.failHistory) throw new Error("History load failed");
@@ -4737,7 +4753,7 @@ test("pristine settings follow backend changes while failed saves retain edits",
   await expect(page.getByText("Changes not saved", { exact: true })).toBeVisible();
 });
 
-test("history replies preserve newer recording events and still update history", async ({
+test("runtime replies preserve newer recording events while recent History loads independently", async ({
   page,
 }) => {
   await page.goto("/");
@@ -4761,34 +4777,59 @@ test("history replies preserve newer recording events and still update history",
     state.status("recording");
   });
   await expect(page.getByRole("button", { name: "Stop recording" })).toBeEnabled();
+  await expect
+    .poll(() => page.evaluate(() => window.dictationTest.pendingSnapshots.length))
+    .toBe(1);
   await page.evaluate(() => window.dictationTest.pendingSnapshots[0]());
-  // The palette's unfiltered recent entries read the provider snapshot directly.
-  // A separate History fetch would not prove this deferred reply was accepted.
+  // Recent History is loaded by the palette's focused query, not carried in
+  // the transient snapshot whose stale status must not replace this event.
   await page.keyboard.press("Control+k");
   await expect(page.getByRole("option").filter({ hasText: "Fresh history entry" })).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(page.getByRole("button", { name: "Stop recording" })).toBeEnabled();
 });
 
-test("out-of-order replies cannot replace the newest snapshot", async ({ page }) => {
+test("runtime refresh bursts share a read and supersede it with one trailing read", async ({
+  page,
+}) => {
   await page.goto("/");
   await expect(page.getByRole("button", { name: "Start recording" })).toBeEnabled();
   await page.evaluate(() => {
     const state = window.dictationTest;
     state.deferSnapshots = true;
-    state.history();
     state.snapshot.status = {
       ...state.snapshot.status,
       phase: "recording",
       startedAt: Date.now(),
     } as Status;
     state.history();
-    state.pendingSnapshots[1]();
   });
-  await expect(page.getByRole("button", { name: "Stop recording" })).toBeEnabled();
-  await page.evaluate(() => window.dictationTest.pendingSnapshots[0]());
+  await expect
+    .poll(() => page.evaluate(() => window.dictationTest.pendingSnapshots.length))
+    .toBe(1);
+  await page.evaluate(() => {
+    const state = window.dictationTest;
+    state.snapshot.status = {
+      ...state.snapshot.status,
+      phase: "transcribing",
+      startedAt: Date.now(),
+    } as Status;
+    for (let index = 0; index < 12; index++) state.history();
+  });
   await settle(page);
-  await expect(page.getByRole("button", { name: "Stop recording" })).toBeEnabled();
+  expect(await page.evaluate(() => window.dictationTest.pendingSnapshots.length)).toBe(1);
+  await page.evaluate(() => window.dictationTest.pendingSnapshots[0]());
+  await expect
+    .poll(() => page.evaluate(() => window.dictationTest.pendingSnapshots.length))
+    .toBe(2);
+  await settle(page);
+  await expect(page.getByRole("button", { name: "Start recording" })).toBeEnabled();
+  await page.evaluate(() => {
+    window.dictationTest.deferSnapshots = false;
+    window.dictationTest.pendingSnapshots[1]();
+  });
+  await expect(page.getByRole("button", { name: "Transcribing…", exact: true })).toBeDisabled();
+  expect(await page.evaluate(() => window.dictationTest.pendingSnapshots.length)).toBe(2);
 });
 
 test("action refresh replies preserve status events received while awaiting them", async ({
@@ -4810,6 +4851,103 @@ test("action refresh replies preserve status events received while awaiting them
   await settle(page);
   await expect(page.getByRole("heading", { name: "Transcribing…", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Transcribing…", exact: true })).toBeDisabled();
+});
+
+test("recent History is fetched on command-menu demand and invalidated independently", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await expect(page.getByRole("button", { name: "Start recording" })).toBeEnabled();
+  await page.evaluate(() => {
+    const app = Reflect.get(window, "mockBackend").app.App;
+    const recent = app.GetRecentHistory;
+    Reflect.set(window, "recentReads", 0);
+    app.GetRecentHistory = async () => {
+      Reflect.set(window, "recentReads", Reflect.get(window, "recentReads") + 1);
+      return recent();
+    };
+    window.dictationTest.callbacks["setup:changed"](["configuration"]);
+  });
+  await settle(page);
+  expect(await page.evaluate(() => Reflect.get(window, "recentReads"))).toBe(0);
+  await page.keyboard.press("Control+k");
+  await expect.poll(() => page.evaluate(() => Reflect.get(window, "recentReads"))).toBe(1);
+  await page.keyboard.press("Escape");
+  await page.evaluate(() => {
+    window.dictationTest.snapshot.history.unshift({
+      id: "focused-recent",
+      createdAt: new Date().toISOString(),
+      durationMs: 1000,
+      rawTranscript: "New focused recent entry",
+      finalTranscript: "New focused recent entry",
+      speechModel: "tiny",
+      language: "en",
+      audioPath: "",
+    });
+    window.dictationTest.history();
+  });
+  await settle(page);
+  expect(await page.evaluate(() => Reflect.get(window, "recentReads"))).toBe(1);
+  await page.keyboard.press("Control+k");
+  await expect(
+    page.getByRole("option").filter({ hasText: "New focused recent entry" }),
+  ).toBeVisible();
+  expect(await page.evaluate(() => Reflect.get(window, "recentReads"))).toBe(2);
+});
+
+test("an obsolete runtime failure is replaced by the trailing refresh", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.getByRole("button", { name: "Start recording" })).toBeEnabled();
+  await page.evaluate(() => {
+    const app = Reflect.get(window, "mockBackend").app.App;
+    const read = app.GetRuntimeSnapshot;
+    let calls = 0;
+    Reflect.set(window, "runtimeReads", 0);
+    app.GetRuntimeSnapshot = async () => {
+      Reflect.set(window, "runtimeReads", ++calls);
+      if (calls === 1) {
+        await new Promise<void>((_resolve, reject) =>
+          Reflect.set(window, "rejectRuntime", () => reject(new Error("Obsolete runtime failure"))),
+        );
+      }
+      return read();
+    };
+    window.dictationTest.history();
+  });
+  await expect
+    .poll(() => page.evaluate(() => typeof Reflect.get(window, "rejectRuntime")))
+    .toBe("function");
+  await page.evaluate(() => {
+    window.dictationTest.status("recording");
+    window.dictationTest.history();
+    Reflect.get(window, "rejectRuntime")();
+  });
+  await expect.poll(() => page.evaluate(() => Reflect.get(window, "runtimeReads"))).toBe(2);
+  await settle(page);
+  await expect(page.getByRole("button", { name: "Stop recording" })).toBeEnabled();
+  await expect(page.getByText("Obsolete runtime failure", { exact: true })).toHaveCount(0);
+});
+
+test("a cached failed Settings chunk offers explicit window reload recovery", async ({ page }) => {
+  let attempts = 0;
+  await page.route("**/features/settings/pages/settings-page.tsx", async (route) => {
+    if (++attempts === 1) await route.abort("failed");
+    else await route.continue();
+  });
+  await page.goto("/");
+  await expect(page.getByRole("button", { name: "Start recording" })).toBeEnabled();
+  await page.evaluate(() => {
+    window.location.hash = "/settings";
+  });
+  const settings = page.getByRole("dialog", { name: "Settings", exact: true });
+  await expect(settings.getByRole("button", { name: "Reload window", exact: true })).toBeVisible();
+  await expect(settings.getByRole("button", { name: "Retry interface", exact: true })).toHaveCount(
+    0,
+  );
+  await settings.getByRole("button", { name: "Reload window", exact: true }).click();
+  await expect(settings.locator("[data-settings-search]")).toBeVisible();
+  expect(attempts).toBe(2);
+  await expect(page).toHaveURL(/#\/settings$/);
 });
 
 test("Dictionary matches the Models heading and keeps editing actions visible in narrow windows", async ({
@@ -9234,6 +9372,140 @@ test("Recently Deleted supports retry and restoration on narrow screens after th
   await expect(page.getByText("No recently deleted dictations", { exact: true })).toBeVisible();
 });
 
+test("session chat drafts survive trash and restore, and only a permanent deletion releases their unload protection", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const { snapshot } = window.dictationTest;
+    snapshot.textProcessing.enabled = true;
+    snapshot.history = ["First session", "Second session"].map((title, index) => ({
+      id: `session-${index}`,
+      title,
+      createdAt: "2026-10-07",
+      durationMs: 1000,
+      rawTranscript: "Original.",
+      finalTranscript: "Original.",
+      speechModel: "base",
+      language: "en",
+      audioPath: "",
+    }));
+  });
+  await page.goto("/#/history");
+  await page.evaluate(() => {
+    Reflect.get(window, "mockBackend").app.App.GetSessionChat = async (sessionId: string) => ({
+      sessionId,
+      sources: [],
+      messages: [],
+      summary: "",
+      compactedThrough: 0,
+    });
+  });
+  const composer = page.getByRole("textbox", { name: "Message", exact: true });
+  const open = async (title: string) => {
+    await page.getByRole("link", { name: new RegExp(title) }).click();
+    await page.getByRole("button", { name: "Chat", exact: true }).click();
+  };
+  const trashFirst = async () => {
+    const row = page.getByRole("row").filter({ hasText: "First session" });
+    await row.getByRole("button", { name: "Dictation actions", exact: true }).click();
+    await page.getByRole("menuitem", { name: "Move to Recently Deleted" }).click();
+    await expect(row).toHaveCount(0);
+    await page.getByRole("button", { name: "Show Recently Deleted" }).click();
+  };
+  await open("First session");
+  await composer.fill("Keep until purged");
+  await navigateMain(page, "History");
+  await trashFirst();
+  expect(await unloadProtected(page)).toBe(true);
+  await page.getByRole("button", { name: "Restore", exact: true }).click();
+  await expect(page.getByText("No recently deleted dictations", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Show all dictations" }).click();
+  await open("First session");
+  await expect(composer).toHaveValue("Keep until purged");
+  await navigateMain(page, "History");
+  await open("Second session");
+  await composer.fill("Keep this draft");
+  await navigateMain(page, "History");
+  await trashFirst();
+  await page.getByRole("button", { name: "Delete permanently", exact: true }).click();
+  await expect(page.getByText("No recently deleted dictations", { exact: true })).toBeVisible();
+  expect(await unloadProtected(page)).toBe(true);
+  await page.getByRole("button", { name: "Show all dictations" }).click();
+  await open("Second session");
+  await expect(composer).toHaveValue("Keep this draft");
+  await composer.fill("");
+  await expect.poll(() => unloadProtected(page)).toBe(false);
+});
+
+test("a partial permanent deletion releases only the drafts whose rows are gone", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const { snapshot } = window.dictationTest;
+    snapshot.textProcessing.enabled = true;
+    snapshot.history = ["First session", "Second session"].map((title, index) => ({
+      id: `session-${index}`,
+      title,
+      createdAt: "2026-10-07",
+      durationMs: 1000,
+      rawTranscript: "Original.",
+      finalTranscript: "Original.",
+      speechModel: "base",
+      language: "en",
+      audioPath: "",
+    }));
+  });
+  await page.goto("/#/history");
+  await page.evaluate(() => {
+    const methods = Reflect.get(window, "mockBackend").app.App;
+    methods.GetSessionChat = async (sessionId: string) => ({
+      sessionId,
+      sources: [],
+      messages: [],
+      summary: "",
+      compactedThrough: 0,
+    });
+    methods.PermanentlyDeleteSessionsWithResult = async (ids: string[]) => {
+      if (ids.length !== 2) throw new Error("Expected the two-row batch");
+      const deletedId = ids[0];
+      Reflect.set(window, "partialPurgedId", deletedId);
+      window.dictationTest.recentlyDeleted = window.dictationTest.recentlyDeleted.filter(
+        (entry) => entry.id !== deletedId,
+      );
+      window.dictationTest.history();
+      return { deletedIds: [deletedId], error: "Second recording is locked" };
+    };
+  });
+  const composer = page.getByRole("textbox", { name: "Message", exact: true });
+  for (const title of ["First session", "Second session"]) {
+    await page.getByRole("link", { name: new RegExp(title) }).click();
+    await page.getByRole("button", { name: "Chat", exact: true }).click();
+    await composer.fill(`Draft for ${title}`);
+    await navigateMain(page, "History");
+  }
+  await page.getByRole("checkbox", { name: "Select all loaded dictations", exact: true }).check();
+  await page.getByRole("button", { name: "Delete selected", exact: true }).click();
+  await expect(page.locator("tbody tr")).toHaveCount(0);
+  await page.getByRole("button", { name: "Show Recently Deleted" }).click();
+  await expect(page.locator("tbody tr")).toHaveCount(2);
+  await page.getByRole("checkbox", { name: "Select all loaded dictations", exact: true }).check();
+  await page.getByRole("button", { name: "Delete selected permanently", exact: true }).click();
+  await expect(page.getByRole("alert")).toHaveText("Second recording is locked");
+  await expect(page.locator("tbody tr")).toHaveCount(1);
+  expect(await unloadProtected(page)).toBe(true);
+  const retainedTitle = await page.evaluate(() =>
+    Reflect.get(window, "partialPurgedId") === "session-0" ? "Second session" : "First session",
+  );
+  await page.getByRole("button", { name: "Restore", exact: true }).click();
+  await expect(page.getByText("No recently deleted dictations", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Show all dictations" }).click();
+  await page.getByRole("link", { name: new RegExp(retainedTitle) }).click();
+  await page.getByRole("button", { name: "Chat", exact: true }).click();
+  await expect(composer).toHaveValue(`Draft for ${retainedTitle}`);
+  await composer.fill("");
+  await expect.poll(() => unloadProtected(page)).toBe(false);
+});
+
 test("Recently Deleted permanently deletes individual entries and selections without a modal", async ({
   page,
 }, testInfo) => {
@@ -13382,6 +13654,9 @@ test("chain step picker fits the available space and scrolls to every prompt", a
     await page.keyboard.press("Escape");
 
     await addStep.press("Enter");
+    await expect
+      .poll(() => menu.evaluate((node) => node.contains(document.activeElement)))
+      .toBe(true);
     await page.keyboard.press("End");
     await expect(lastPrompt).toBeFocused();
     await expect(lastPrompt).toBeInViewport({ ratio: 1 });
@@ -13463,6 +13738,110 @@ test("chain editor adds prompts with the keyboard and preserves references when 
   await expect(addStep).toBeDisabled();
   await expect(page.getByRole("button", { name: "Step 1 actions", exact: true })).toBeDisabled();
   await expect(page.getByRole("combobox", { name: "Step 1 input", exact: true })).toBeDisabled();
+});
+
+test("correcting a dictionary draft preserves a transcript addition and intentional removals", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const { snapshot } = window.dictationTest;
+    snapshot.vocabulary = ["Alpha", "Remove", "Obsolete"].map((canonical) => ({
+      id: canonical.toLowerCase(),
+      canonical,
+      aliases: [],
+      enabled: true,
+    }));
+    snapshot.history = [
+      {
+        id: "correction",
+        createdAt: "2026-10-07",
+        durationMs: 1000,
+        rawTranscript: "Beta",
+        finalTranscript: "Beta",
+        speechModel: "base",
+        language: "en",
+        audioPath: "",
+      },
+    ];
+  });
+  await page.goto("/#/vocabulary");
+  await page.locator("#term-alpha").fill("");
+  await page.getByRole("button", { name: "Remove Remove", exact: true }).click();
+  await navigateMain(page, "History");
+  await page.getByRole("link", { name: /Beta/ }).click();
+  await page.getByRole("button", { name: "Edit transcript", exact: true }).click();
+  const text = page.getByRole("textbox", { name: "Editable text" });
+  await text.press("Control+a");
+  await openSelectionMenu(page);
+  await page.getByRole("menuitem", { name: "Add to dictionary" }).click();
+  // Another editor changes an untouched field and deletes an untouched term.
+  await page.evaluate(() => {
+    const { snapshot } = window.dictationTest;
+    snapshot.vocabulary = snapshot.vocabulary.filter((entry) => entry.id !== "obsolete");
+    snapshot.vocabulary[0].enabled = false;
+  });
+  await page.getByRole("button", { name: "Save term", exact: true }).click();
+  await expect(page.getByRole("dialog", { name: "Add to dictionary" })).toBeHidden();
+  await page.getByRole("button", { name: "Done", exact: true }).click();
+  await navigateMain(page, "Dictionary");
+  await expect(page.locator("#term-alpha")).toHaveValue("");
+  await expect(page.getByLabel("Preferred spelling", { exact: true }).last()).toHaveValue("Beta");
+  await page.locator("#term-alpha").fill("Corrected Alpha");
+  await expect
+    .poll(() => page.evaluate(() => window.dictationTest.snapshot.vocabulary))
+    .toEqual([
+      { id: "alpha", canonical: "Corrected Alpha", aliases: [], enabled: false },
+      { id: expect.any(String), canonical: "Beta", aliases: [], enabled: true },
+    ]);
+});
+
+test("dictionary undo and raw aliases survive a delayed receipt and a concurrent addition", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    window.dictationTest.snapshot.vocabulary = [
+      { id: "alpha", canonical: "Alpha", aliases: [], enabled: true },
+    ];
+  });
+  await page.goto("/#/vocabulary");
+  await page.evaluate(() => {
+    const app = Reflect.get(window, "mockBackend").app.App;
+    const save = app.SaveVocabulary;
+    let calls = 0;
+    app.SaveVocabulary = async (entries: VocabularyEntry[]) => {
+      const receipt = await save(entries);
+      if (++calls === 1)
+        await new Promise<void>((resolve) =>
+          Reflect.set(window, "releaseVocabularyReceipt", resolve),
+        );
+      return receipt;
+    };
+  });
+  const spelling = page.locator("#term-alpha");
+  await spelling.fill("Edited Alpha");
+  await page.locator("#aliases-alpha").fill("first,second");
+  try {
+    await expect
+      .poll(() => page.evaluate(() => typeof Reflect.get(window, "releaseVocabularyReceipt")))
+      .toBe("function");
+    await spelling.fill("Alpha");
+    await page.evaluate(() => {
+      const state = window.dictationTest;
+      state.snapshot.vocabulary.push({ id: "beta", canonical: "Beta", aliases: [], enabled: true });
+      state.callbacks["setup:changed"](["vocabulary"]);
+    });
+    await expect(page.locator("#term-beta")).toHaveValue("Beta");
+  } finally {
+    await page.evaluate(() => Reflect.get(window, "releaseVocabularyReceipt")?.());
+  }
+  await expect
+    .poll(() => page.evaluate(() => window.dictationTest.snapshot.vocabulary))
+    .toEqual([
+      { id: "alpha", canonical: "Alpha", aliases: ["first", "second"], enabled: true },
+      { id: "beta", canonical: "Beta", aliases: [], enabled: true },
+    ]);
+  await expect(page.locator("#aliases-alpha")).toHaveValue("first,second");
+  await expect.poll(() => unloadProtected(page)).toBe(false);
 });
 
 test("auto-save vocabulary keeps submitted aliases without a loop and skips empty new rows", async ({
@@ -15042,6 +15421,17 @@ test("UI polish setup model guidance clears the sticky footer at normal and enla
   await page.screenshot({ path: info.outputPath("setup-footer-clearance.png") });
 });
 
+async function keepNativeAssetsAvailableOffline(page: Page) {
+  // Wails serves bundled assets locally even without internet. The browser
+  // fixture instead has a Vite HTTP origin; retain only that local asset route
+  // when CDP disables network access so lazy chunks model the native app.
+  const origin = new URL(page.url()).origin;
+  await page.route(`${origin}/**`, async (route) => {
+    const response = await route.fetch();
+    await route.fulfill({ response });
+  });
+}
+
 test("native resource queries and mutations run while internet is offline", async ({
   page,
   context,
@@ -15062,6 +15452,7 @@ test("native resource queries and mutations run while internet is offline", asyn
   });
   await page.goto("/");
   await expect(page.getByRole("button", { name: "Start recording", exact: true })).toBeEnabled();
+  await keepNativeAssetsAvailableOffline(page);
   await context.setOffline(true);
   expect(await page.evaluate(() => navigator.onLine)).toBe(false);
   await page.getByRole("link", { name: "History", exact: true }).click();
@@ -15208,6 +15599,7 @@ test("saved Query reads and mutations remain native while offline", async ({ pag
       return save(value);
     };
   });
+  await keepNativeAssetsAvailableOffline(page);
   await context.setOffline(true);
   await language.click();
   await page.getByRole("option", { name: "German", exact: true }).click();
@@ -15387,6 +15779,78 @@ test("a late settings receipt cannot undo a later native profile change or newer
   );
   expect(await page.evaluate(() => window.dictationTest.snapshot.settings.language)).toBe("de");
 });
+
+for (const rejects of [false, true]) {
+  test(`a changed configuration read before a settings write ${rejects ? "rejects keeps the draft retryable" : "commits keeps the draft protected until reconciled"}`, async ({
+    page,
+  }) => {
+    await page.goto("/#/settings?section=dictation");
+    const shortcut = page.getByLabel("Global shortcut", { exact: true });
+    const language = page.getByRole("combobox", { name: "Spoken language", exact: true });
+    const status = page.getByRole("dialog", { name: "Settings", exact: true }).getByRole("status");
+    await expect(status).toHaveText("Saved");
+    await page.evaluate((rejects) => {
+      const app = Reflect.get(window, "mockBackend").app.App;
+      const save = app.SaveSettings;
+      const writes: Settings[] = [];
+      Reflect.set(window, "settingsWrites", writes);
+      app.SaveSettings = async (settings: Settings) => {
+        writes.push(structuredClone(settings));
+        if (writes.length === 1) {
+          await new Promise<void>((resolve) => Reflect.set(window, "releaseFirstSave", resolve));
+          app.GetConfiguration = async () => {
+            throw new Error("Configuration unavailable");
+          };
+          if (rejects) throw new Error("Settings save failed");
+        } else if (writes.length === 2) {
+          await new Promise<void>((resolve) => Reflect.set(window, "releaseSecondSave", resolve));
+        }
+        return save(settings);
+      };
+    }, rejects);
+    try {
+      await shortcut.fill("Ctrl+Alt+J");
+      await shortcut.press("Tab");
+      await expect
+        .poll(() => page.evaluate(() => typeof Reflect.get(window, "releaseFirstSave")))
+        .toBe("function");
+      await page.evaluate(() => {
+        const state = window.dictationTest;
+        state.snapshot.settings.language = "de";
+        state.callbacks["setup:changed"](["configuration"]);
+      });
+      await expect(language).toContainText("German");
+      await expect(shortcut).toHaveValue("Ctrl+Alt+J");
+      expect(await unloadProtected(page)).toBe(true);
+      await page.evaluate(() => Reflect.get(window, "releaseFirstSave")());
+      if (rejects) {
+        await expect(status).toHaveText("Changes not saved");
+        await expect(shortcut).toHaveValue("Ctrl+Alt+J");
+        expect(await unloadProtected(page)).toBe(true);
+        await page.getByRole("button", { name: "Retry", exact: true }).click();
+      }
+      await expect
+        .poll(() => page.evaluate(() => typeof Reflect.get(window, "releaseSecondSave")))
+        .toBe("function");
+      expect(await unloadProtected(page)).toBe(true);
+      await page.evaluate(() => Reflect.get(window, "releaseSecondSave")());
+      await expect(status).toHaveText("Saved");
+      await expect(shortcut).toHaveValue("Ctrl+Alt+J");
+      await expect(language).toContainText("German");
+      expect(await page.evaluate(() => window.dictationTest.snapshot.settings)).toMatchObject({
+        shortcut: "Ctrl+Alt+J",
+        language: "de",
+      });
+      expect(await page.evaluate(() => Reflect.get(window, "settingsWrites").length)).toBe(2);
+      expect(await unloadProtected(page)).toBe(false);
+    } finally {
+      await page.evaluate(() => {
+        Reflect.get(window, "releaseFirstSave")?.();
+        Reflect.get(window, "releaseSecondSave")?.();
+      });
+    }
+  });
+}
 
 test("profile configuration reaches a clean settings form atomically", async ({ page }) => {
   await page.addInitScript(() => {
@@ -15721,3 +16185,337 @@ test("a late saved model catalog read cannot undo a completed installation", asy
   await expectActiveModel(tiny);
   await expect(currentSpeechModel(page)).toContainText("Whisper Tiny");
 });
+
+function unloadProtected(page: Page) {
+  return page.evaluate(
+    () => !window.dispatchEvent(new Event("beforeunload", { cancelable: true })),
+  );
+}
+
+test("a delayed prompt receipt serializes edits across route replacement", async ({ page }) => {
+  await page.goto("/#/prompts");
+  const field = page.getByLabel("Instructions", { exact: true });
+  await expect(field).toHaveValue("Clean up text.");
+  await page.evaluate(() => {
+    const app = Reflect.get(window, "mockBackend").app.App;
+    const save = app.SaveTextProcessing;
+    const writes: string[] = [];
+    Reflect.set(window, "promptWrites", writes);
+    app.SaveTextProcessing = async (config: TextProcessing) => {
+      writes.push(config.prompts[0].instruction);
+      const committed = await save(config);
+      if (writes.length === 1) {
+        await new Promise<void>((resolve) => Reflect.set(window, "releasePromptReceipt", resolve));
+      }
+      return committed;
+    };
+  });
+  try {
+    await field.fill("Receipt first");
+    await expect
+      .poll(() => page.evaluate(() => typeof Reflect.get(window, "releasePromptReceipt")))
+      .toBe("function");
+    await field.fill("Receipt second");
+    await page.getByRole("link", { name: "History", exact: true }).click();
+    await expect(page.getByRole("heading", { name: "History", exact: true })).toBeVisible();
+    await page.goBack();
+    await expect(field).toHaveValue("Receipt second");
+    // Give the replacement editor a complete debounce while the first receipt is outstanding.
+    await page.waitForTimeout(1200);
+    await field.fill("Receipt third");
+    expect(await page.evaluate(() => Reflect.get(window, "promptWrites"))).toEqual([
+      "Receipt first",
+    ]);
+  } finally {
+    await page.evaluate(() => Reflect.get(window, "releasePromptReceipt")?.());
+  }
+  await expect(page.locator('[data-slot="auto-save-status"]')).toContainText(
+    "Changes save automatically",
+  );
+  expect(await page.evaluate(() => Reflect.get(window, "promptWrites"))).toEqual([
+    "Receipt first",
+    "Receipt third",
+  ]);
+  expect(
+    await page.evaluate(() => window.dictationTest.snapshot.textProcessing.prompts[0].instruction),
+  ).toBe("Receipt third");
+  await expect(field).toHaveValue("Receipt third");
+  expect(await unloadProtected(page)).toBe(false);
+});
+
+test("undo survives the first native prompt snapshot before its delayed receipt", async ({
+  page,
+}) => {
+  await page.goto("/#/prompts");
+  const field = page.getByLabel("Instructions", { exact: true });
+  await expect(field).toHaveValue("Clean up text.");
+  await page.evaluate(() => {
+    const app = Reflect.get(window, "mockBackend").app.App;
+    const save = app.SaveTextProcessing;
+    const read = app.GetConfiguration;
+    const writes: string[] = [];
+    Reflect.set(window, "promptWrites", writes);
+    app.SaveTextProcessing = async (config: TextProcessing) => {
+      writes.push(config.prompts[0].instruction);
+      if (writes.length === 1) {
+        const receipt = new Promise<void>((resolve) =>
+          Reflect.set(window, "releasePromptReceipt", resolve),
+        );
+        await new Promise<void>((resolve) => Reflect.set(window, "commitPrompt", resolve));
+        const committed = await save(config);
+        await receipt;
+        return committed;
+      }
+      return save(config);
+    };
+    app.GetConfiguration = async () => {
+      const config = await read();
+      Reflect.set(window, "readInstruction", config.textProcessing.prompts[0].instruction);
+      return config;
+    };
+  });
+  try {
+    await field.fill("Pending edit");
+    await expect
+      .poll(() => page.evaluate(() => typeof Reflect.get(window, "commitPrompt")))
+      .toBe("function");
+    await field.fill("Clean up text.");
+    expect(await unloadProtected(page)).toBe(true);
+    await page.evaluate(() => Reflect.get(window, "commitPrompt")());
+    await expect
+      .poll(() => page.evaluate(() => Reflect.get(window, "readInstruction")))
+      .toBe("Pending edit");
+    await settle(page);
+    await expect(field).toHaveValue("Clean up text.");
+  } finally {
+    await page.evaluate(() => {
+      Reflect.get(window, "commitPrompt")?.();
+      Reflect.get(window, "releasePromptReceipt")?.();
+    });
+  }
+  await expect(page.locator('[data-slot="auto-save-status"]')).toContainText(
+    "Changes save automatically",
+  );
+  expect(await page.evaluate(() => Reflect.get(window, "promptWrites"))).toEqual([
+    "Pending edit",
+    "Clean up text.",
+  ]);
+  expect(
+    await page.evaluate(() => window.dictationTest.snapshot.textProcessing.prompts[0].instruction),
+  ).toBe("Clean up text.");
+  expect(await unloadProtected(page)).toBe(false);
+});
+
+test("undo after a successful prompt write and failed saved read sends a compensating write", async ({
+  page,
+}) => {
+  await page.goto("/#/prompts");
+  const field = page.getByLabel("Instructions", { exact: true });
+  const status = page.locator('[data-slot="auto-save-status"]');
+  await expect(field).toHaveValue("Clean up text.");
+  await page.evaluate(() => {
+    const app = Reflect.get(window, "mockBackend").app.App;
+    app.GetConfiguration = async () => {
+      throw new Error("Configuration read failed after commit");
+    };
+  });
+  await field.fill("Acknowledged edit");
+  await expect
+    .poll(() =>
+      page.evaluate(() => window.dictationTest.snapshot.textProcessing.prompts[0].instruction),
+    )
+    .toBe("Acknowledged edit");
+  await expect(status).toContainText("Changes save automatically");
+  expect(await unloadProtected(page)).toBe(false);
+  await field.fill("Clean up text.");
+  expect(await unloadProtected(page)).toBe(true);
+  await expect
+    .poll(() =>
+      page.evaluate(() => window.dictationTest.snapshot.textProcessing.prompts[0].instruction),
+    )
+    .toBe("Clean up text.");
+  await expect(status).toContainText("Changes save automatically");
+  expect(await unloadProtected(page)).toBe(false);
+});
+
+test("a second New profile after failed saved reads creates a distinct profile", async ({
+  page,
+}) => {
+  await page.goto("/#/settings?section=profiles");
+  const create = page.getByRole("button", { name: "New profile", exact: true });
+  await create.press("Enter");
+  const editor = profileEditor(page);
+  const name = editor.getByLabel("Profile name");
+  await expect(name).toBeVisible();
+  await page.evaluate(() => {
+    const app = Reflect.get(window, "mockBackend").app.App;
+    app.GetConfiguration = async () => {
+      throw new Error("Configuration read failed after creation");
+    };
+  });
+  for (const value of ["First creation", "Second creation"]) {
+    await expect(name).toHaveValue("");
+    await name.fill(value);
+    await expect
+      .poll(() =>
+        page.evaluate(
+          (value) =>
+            window.dictationTest.snapshot.dictationProfiles?.some(
+              (profile) => profile.name === value,
+            ),
+          value,
+        ),
+      )
+      .toBe(true);
+    await expect(editor.locator('[data-slot="auto-save-status"]')).toContainText(
+      "Changes save automatically",
+    );
+    await editor.getByRole("button", { name: "Done", exact: true }).press("Enter");
+    await expect(editor).toHaveCount(0);
+    if (value === "First creation") await create.press("Enter");
+  }
+  const profiles = await page.evaluate(() =>
+    window.dictationTest.snapshot.dictationProfiles?.filter((profile) =>
+      profile.name.endsWith("creation"),
+    ),
+  );
+  expect(profiles?.map((profile) => profile.name)).toEqual(["First creation", "Second creation"]);
+  expect(new Set(profiles?.map((profile) => profile.id)).size).toBe(2);
+  expect(await unloadProtected(page)).toBe(false);
+});
+
+test("leaving via desktop navigation flushes the focused Settings shortcut", async ({ page }) => {
+  await page.goto("/#/settings?section=dictation");
+  const field = page.getByLabel("Global shortcut", { exact: true });
+  await field.fill("Ctrl+Alt+J");
+  await expect(field).toBeFocused();
+  await page.evaluate(() => window.dictationTest.callbacks["desktop:navigate"]("/history"));
+  await expect(page.getByRole("heading", { name: "History", exact: true })).toBeVisible();
+  await expect
+    .poll(() => page.evaluate(() => window.dictationTest.snapshot.settings.shortcut))
+    .toBe("Ctrl+Alt+J");
+  await expect.poll(() => unloadProtected(page)).toBe(false);
+});
+
+test("a failed new profile flush on native navigation retains the creation for explicit retry", async ({
+  page,
+}) => {
+  await page.goto("/#/settings?section=profiles");
+  const create = page.getByRole("button", { name: "New profile", exact: true });
+  await create.press("Enter");
+  const editor = profileEditor(page);
+  const name = editor.getByLabel("Profile name");
+  await page.evaluate(() => {
+    window.dictationTest.failSave = true;
+    const app = Reflect.get(window, "mockBackend").app.App;
+    const save = app.SaveDictationProfile;
+    const writes: string[] = [];
+    Reflect.set(window, "profileWriteIDs", writes);
+    app.SaveDictationProfile = (value: DictationProfile) => {
+      writes.push(value.id);
+      return save(value);
+    };
+  });
+  await name.fill("Recover draft");
+  await page.evaluate(() => window.dictationTest.callbacks["desktop:navigate"]("/history"));
+  await expect(page.getByRole("heading", { name: "History", exact: true })).toBeVisible();
+  await expect
+    .poll(() => page.evaluate(() => Reflect.get(window, "profileWriteIDs").length))
+    .toBe(1);
+  expect(await unloadProtected(page)).toBe(true);
+  await page.evaluate(() => {
+    window.dictationTest.failSave = false;
+  });
+  await page.goBack();
+  await create.press("Enter");
+  await expect(name).toHaveValue("Recover draft");
+  await editor.getByRole("button", { name: "Retry", exact: true }).press("Enter");
+  await expect(editor.locator('[data-slot="auto-save-status"]')).toContainText(
+    "Changes save automatically",
+  );
+  const saved = await page.evaluate(() =>
+    window.dictationTest.snapshot.dictationProfiles?.filter(
+      (profile) => profile.name === "Recover draft",
+    ),
+  );
+  expect(saved).toHaveLength(1);
+  expect(await page.evaluate(() => Reflect.get(window, "profileWriteIDs"))).toEqual([
+    saved![0].id,
+    saved![0].id,
+  ]);
+  expect(await unloadProtected(page)).toBe(false);
+});
+
+for (const newerEdit of [false, true]) {
+  test(`an authoritative read equal to the original prompt survives a late receipt${newerEdit ? " and retains a newer edit" : ""}`, async ({
+    page,
+  }) => {
+    await page.goto("/#/prompts");
+    const field = page.getByLabel("Instructions", { exact: true });
+    await expect(field).toHaveValue("Clean up text.");
+    await page.evaluate(() => {
+      const state = window.dictationTest;
+      const app = Reflect.get(window, "mockBackend").app.App;
+      const original = structuredClone(state.snapshot.textProcessing);
+      const save = app.SaveTextProcessing;
+      const read = app.GetConfiguration;
+      let blocked = true;
+      let releaseReads!: () => void;
+      const gate = new Promise<void>((resolve) => {
+        releaseReads = resolve;
+      });
+      const writes: string[] = [];
+      Reflect.set(window, "promptWrites", writes);
+      app.GetConfiguration = async () => {
+        if (blocked) await gate;
+        const config = await read();
+        Reflect.set(window, "restoredRead", config.textProcessing.prompts[0].instruction);
+        return config;
+      };
+      app.SaveTextProcessing = async (config: TextProcessing) => {
+        writes.push(config.prompts[0].instruction);
+        const committed = await save(config);
+        if (writes.length === 1)
+          await new Promise<void>((resolve) =>
+            Reflect.set(window, "releasePromptReceipt", resolve),
+          );
+        return committed;
+      };
+      Reflect.set(window, "restorePrompt", () => {
+        state.snapshot.textProcessing = original;
+        blocked = false;
+        state.callbacks["setup:changed"](["configuration"]);
+        releaseReads();
+      });
+    });
+    const committed = "First committed edit";
+    const final = newerEdit ? "Edit made while receipt is pending" : "Clean up text.";
+    try {
+      await field.fill(committed);
+      await expect
+        .poll(() => page.evaluate(() => typeof Reflect.get(window, "releasePromptReceipt")))
+        .toBe("function");
+      if (newerEdit) await field.fill(final);
+      await page.evaluate(() => Reflect.get(window, "restorePrompt")());
+      await expect
+        .poll(() => page.evaluate(() => Reflect.get(window, "restoredRead")))
+        .toBe("Clean up text.");
+      await settle(page);
+    } finally {
+      await page.evaluate(() => Reflect.get(window, "releasePromptReceipt")?.());
+    }
+    await expect(field).toHaveValue(final);
+    await expect(page.locator('[data-slot="auto-save-status"]')).toContainText(
+      "Changes save automatically",
+    );
+    expect(
+      await page.evaluate(
+        () => window.dictationTest.snapshot.textProcessing.prompts[0].instruction,
+      ),
+    ).toBe(final);
+    expect(await page.evaluate(() => Reflect.get(window, "promptWrites"))).toEqual(
+      newerEdit ? [committed, final] : [committed],
+    );
+    expect(await unloadProtected(page)).toBe(false);
+  });
+}

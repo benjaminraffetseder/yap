@@ -140,7 +140,12 @@ func (a *App) modelCatalogLocked() ModelCatalog {
 func (a *App) GetRuntimeSnapshot() (RuntimeSnapshot, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	return a.runtimeSnapshotLocked()
+	if err := a.availableLocked(); err != nil {
+		return RuntimeSnapshot{}, err
+	}
+	// Transient refreshes must not read or serialize the recent transcript set.
+	// History consumers have focused reads; GetSnapshot keeps its legacy shape.
+	return a.runtimeStateLocked([]storage.Session{}), nil
 }
 
 func (a *App) runtimeSnapshotLocked() (RuntimeSnapshot, error) {
@@ -149,6 +154,21 @@ func (a *App) runtimeSnapshotLocked() (RuntimeSnapshot, error) {
 	}
 	// Backups own the single database connection. Serve the pre-operation
 	// history so refreshing the UI cannot hold a.mu and prevent cancellation.
+	a.legacyHistoryInUse = true
+	// Only full legacy reads populate homeHistory. The first caller must wait
+	// outside mu if Home owns SQLite and no full snapshot has been captured yet.
+	for a.homeResultOperation && a.homeHistory == nil && !a.closing {
+		if a.homeHistoryWait == nil {
+			a.homeHistoryWait = make(chan struct{})
+		}
+		released := a.homeHistoryWait
+		a.mu.Unlock()
+		<-released
+		a.mu.Lock()
+	}
+	if err := a.availableLocked(); err != nil {
+		return RuntimeSnapshot{}, err
+	}
 	history := a.backupHistory
 	if a.homeResultOperation {
 		history = a.homeHistory
@@ -161,8 +181,13 @@ func (a *App) runtimeSnapshotLocked() (RuntimeSnapshot, error) {
 	}
 	if !a.homeResultOperation && a.status.Phase != "backup" {
 		a.homeHistory = history
+		a.historyPresent, a.historyPresenceKnown = len(history) > 0, true
 		a.updateTrayLocked()
 	}
+	return a.runtimeStateLocked(cloneHistory(history)), nil
+}
+
+func (a *App) runtimeStateLocked(history []storage.Session) RuntimeSnapshot {
 	var latest *TemporaryResult
 	if a.latestResult != nil {
 		copy := *a.latestResult
@@ -188,7 +213,7 @@ func (a *App) runtimeSnapshotLocked() (RuntimeSnapshot, error) {
 		FloatingIndicator:      a.indicator != nil,
 		LaunchAtLoginAvailable: a.loginStart != nil,
 		StartInTrayAvailable:   a.tray != nil && !a.development,
-	}, nil
+	}
 }
 
 func (a *App) GetSnapshot() (Snapshot, error) {

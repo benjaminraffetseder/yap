@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"net/http"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -62,17 +63,18 @@ type App struct {
 
 	// Shared capture and inference resources. Recording choices are frozen at
 	// capture start so later preference edits cannot change in-flight work.
-	recorder         audio.Capture
-	microphones      func() ([]audio.Device, error)
-	engine           speech.Engine
-	textEngine       textmodel.Engine
-	id, path, target string
-	recordSettings   storage.Settings
-	recordTextConfig textmodel.Config
-	recordVocabulary []vocabulary.Entry
-	timer            *time.Timer
-	cancel           context.CancelFunc
-	chatVoice        *chatVoiceCapture
+	recorder          audio.Capture
+	microphones       func() ([]audio.Device, error)
+	engine            speech.Engine
+	speechMaintenance bool
+	textEngine        textmodel.Engine
+	id, path, target  string
+	recordSettings    storage.Settings
+	recordTextConfig  textmodel.Config
+	recordVocabulary  []vocabulary.Entry
+	timer             *time.Timer
+	cancel            context.CancelFunc
+	chatVoice         *chatVoiceCapture
 
 	// Text jobs and discovery share cancellation identities with chat/voice.
 	textJobID             string
@@ -81,14 +83,22 @@ type App struct {
 	modelDiscoveryCancels map[string]context.CancelFunc
 
 	// Published results and cached history while a feature owns the database.
-	status              Status
-	latestResult        *TemporaryResult
-	homeResult          *HomeResult
-	homeResultHidden    bool
-	homeResultOperation bool
-	homeHistory         []storage.Session
-	backupHistory       []storage.Session
-	homeResultReadMu    sync.Mutex // Serializes result reads that release mu.
+	status               Status
+	latestResult         *TemporaryResult
+	homeResult           *HomeResult
+	homeResultHidden     bool
+	homeResultOperation  bool
+	homeHistory          []storage.Session // Nil unless a full legacy snapshot is current; empty snapshots are non-nil.
+	homeHistoryWait      chan struct{}     // Closed on Home release if a history reader is waiting.
+	legacyHistoryInUse   bool
+	backupHistory        []storage.Session
+	homeResultReadMu     sync.Mutex // Serializes result reads that release mu.
+	audioLinks           map[string]audioLink
+	audioServer          *http.Server
+	audioOrigin          string
+	historyPresenceKnown bool
+	historyPresent       bool
+	lastTrayState        *tray.State
 
 	// Setup tests share the recorder. Audio callbacks update micSignal without mu.
 	diagnostic                       DiagnosticResult

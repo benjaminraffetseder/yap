@@ -51,7 +51,11 @@ import {
   type Microphone,
 } from "@/lib/backend";
 import { useLanguages } from "@/lib/languages";
-import { useConfiguration, useSavedActions } from "@/lib/queries/saved-queries";
+import {
+  useConfiguration,
+  useSavedActions,
+  useSavedReadVersion,
+} from "@/lib/queries/saved-queries";
 import { cn } from "@/lib/utils";
 import {
   ArrowRight,
@@ -70,7 +74,7 @@ import {
   Users,
   X,
 } from "lucide-react";
-import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
+import { useCallback, useEffect, useRef, useState, type MouseEvent, type RefObject } from "react";
 import { useTranslation } from "react-i18next";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router";
 import { version } from "../../../../package.json";
@@ -94,6 +98,7 @@ export function SettingsPage({
   const { t, i18n } = useTranslation();
   const savedActions = useSavedActions();
   const configuration = useConfiguration();
+  const readVersion = useSavedReadVersion("configuration");
   const sections = [
     { value: "dictation", label: t("historyEntryPage.dictation"), icon: Mic },
     { value: "profiles", label: t("settingsPage.profiles"), icon: Users },
@@ -137,11 +142,13 @@ export function SettingsPage({
   const [settings, setSettings, settingsDraft] = useSavedDraft(
     "settings",
     configuration.data?.settings ?? snapshot.settings,
+    readVersion,
   );
   const savedProfileShortcut = snapshot.profileShortcut ?? "";
   const [profileShortcut, setProfileShortcut, shortcutDraft] = useSavedDraft(
     "profile-shortcut",
     savedProfileShortcut,
+    readVersion,
   );
   const [editingText, setEditingText] = useState(false);
   const [confirmRetention, setConfirmRetention] = useState(false);
@@ -156,6 +163,7 @@ export function SettingsPage({
   const focusedTargetRequest = useRef<string | null>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const profileBeforeClose = useRef<(() => Promise<boolean>) | null>(null);
+  const leavingSettings = useRef(false);
   const targetFocusEpoch = useRef(0);
   const [query, setQuery] = useState("");
   const [searchIndex, setSearchIndex] = useState<
@@ -297,10 +305,9 @@ export function SettingsPage({
   const settingsDirty = settingsDraft.dirty;
   const profileShortcutDirty = shortcutDraft.dirty;
   const dirty = settingsDirty || profileShortcutDirty;
-  const draftKey = JSON.stringify([settings, profileShortcut]);
   const retentionNeedsConfirm =
     settings.historyRetentionDays > 0 &&
-    settings.historyRetentionDays !== snapshot.settings.historyRetentionDays;
+    settings.historyRetentionDays !== settingsDraft.baseline.historyRetentionDays;
   const selectedMicrophoneMissing =
     microphonesLoaded &&
     !microphoneError &&
@@ -368,24 +375,41 @@ export function SettingsPage({
     setConfirmRetention(false);
     clearError();
     toastManager.close("settings-save");
-    const saveSettings = () => savedActions.settings(settings);
+    // Both operations belong to this validated shortcut/retention combination.
+    const submittedSettings = settingsDraft.entry.snapshot();
+    const submittedShortcut = shortcutDraft.entry.snapshot();
+    const saveSettings = () => settingsDraft.entry.submit(savedActions.settings, submittedSettings);
     const saveProfileShortcut = () =>
-      savedActions.saveProfileAutomation(snapshot.appProfileRules ?? [], profileShortcut);
-    // Each save rejects a shortcut the other one still holds, so free the
-    // recording shortcut's new combination first when it was the profile one.
-    const steps = !profileShortcutDirty
-      ? [saveSettings]
-      : !settingsDirty
-        ? [saveProfileShortcut]
-        : sameShortcut(settings.shortcut, savedProfileShortcut)
-          ? [saveProfileShortcut, saveSettings]
-          : [saveSettings, saveProfileShortcut];
+      shortcutDraft.entry.submit(
+        (value) => savedActions.saveProfileAutomation(snapshot.appProfileRules ?? [], value),
+        submittedShortcut,
+      );
+    const settingsChanged = settingsDraft.entry.dirty();
+    const profileChanged = shortcutDraft.entry.dirty();
+    const releaseProfileFirst = sameShortcut(
+      submittedSettings.value.shortcut,
+      submittedShortcut.baseline,
+    );
     try {
-      if (profileShortcut.trim() && sameShortcut(profileShortcut, settings.shortcut))
+      if (sameShortcut(submittedShortcut.value, submittedSettings.value.shortcut))
         throw new Error(t("settingsPage.recordingAndProfileCyclingMustUseDifferentShortcuts"));
-      for (const step of steps) await step();
-      settingsDraft.markSubmitted(settings);
-      shortcutDraft.markSubmitted(profileShortcut);
+      const swapping =
+        settingsChanged &&
+        profileChanged &&
+        releaseProfileFirst &&
+        sameShortcut(submittedShortcut.value, submittedSettings.baseline.shortcut);
+      if (swapping) {
+        const receipt = savedActions.settings(submittedSettings.value, submittedShortcut.value);
+        await Promise.all([
+          settingsDraft.entry.submit(() => receipt, submittedSettings),
+          shortcutDraft.entry.submit(() => receipt, submittedShortcut),
+        ]);
+      } else {
+        // Release the other binding first for a one-way reassignment.
+        if (profileChanged && releaseProfileFirst) await saveProfileShortcut();
+        if (settingsChanged) await saveSettings();
+        if (profileChanged && !releaseProfileFirst) await saveProfileShortcut();
+      }
       await run(refresh, false);
     } catch (cause) {
       await refresh().catch(() => {});
@@ -401,7 +425,9 @@ export function SettingsPage({
     }
   }
   const autoSave = useAutoSave({
-    draftKey,
+    owner: settingsDraft.entry.writer,
+    version: `${settingsDraft.edits}/${shortcutDraft.edits}`,
+    hasChanges: () => settingsDraft.entry.dirty() || shortcutDraft.entry.dirty(),
     dirty,
     canSave:
       isDesktop &&
@@ -413,32 +439,65 @@ export function SettingsPage({
     waitForBlur: editingText,
   });
   const saving = autoSave.saving;
+  const checkingExit = useRef(false);
   useEffect(() => {
     beforeClose.current = async () => {
-      if (profileBeforeClose.current && !(await profileBeforeClose.current())) return false;
-      if (dirty && retentionNeedsConfirm) {
-        setConfirmRetention(true);
-        return false;
+      if (checkingExit.current) return false;
+      checkingExit.current = true;
+      try {
+        if (profileBeforeClose.current && !(await profileBeforeClose.current())) return false;
+        if (dirty && retentionNeedsConfirm) {
+          setConfirmRetention(true);
+          return false;
+        }
+        // Failed drafts remain in DraftProvider with retry available on return.
+        await autoSave.retry();
+        return beforeClose.current !== null;
+      } finally {
+        checkingExit.current = false;
       }
-      // Flush focused fields on Escape too. Failed drafts remain in DraftProvider
-      // when the user leaves, with the existing save-error toast and retry on return.
-      await autoSave.retry();
-      return true;
     };
     return () => {
       beforeClose.current = null;
     };
   }, [beforeClose, autoSave, dirty, retentionNeedsConfirm]);
+  async function leaveFor(path: string) {
+    if (leavingSettings.current) return;
+    leavingSettings.current = true;
+    try {
+      if (!beforeClose.current || (await beforeClose.current())) navigate(path);
+    } finally {
+      leavingSettings.current = false;
+    }
+  }
+  function guardedLink(path: string) {
+    return {
+      to: path,
+      onClick(event: MouseEvent<HTMLAnchorElement>) {
+        if (
+          event.defaultPrevented ||
+          event.button !== 0 ||
+          event.altKey ||
+          event.ctrlKey ||
+          event.metaKey ||
+          event.shiftKey
+        )
+          return;
+        event.preventDefault();
+        void leaveFor(path);
+      },
+    };
+  }
   function cancelRetention() {
     setConfirmRetention(false);
     setSettings((old) => ({
       ...old,
-      historyRetentionDays: snapshot.settings.historyRetentionDays,
+      historyRetentionDays: settingsDraft.baseline.historyRetentionDays,
     }));
   }
   function discard() {
-    setSettings(snapshot.settings);
-    setProfileShortcut(savedProfileShortcut);
+    setSettings(settingsDraft.baseline);
+    setProfileShortcut(shortcutDraft.baseline);
     toastManager.close("settings-save");
   }
   function selectSection(value: string, focus?: string) {
@@ -666,7 +725,7 @@ export function SettingsPage({
                     className="flex w-full items-center gap-3 rounded-lg border px-4 py-3 text-left outline-none hover:bg-accent/50 focus-visible:ring-2 focus-visible:ring-ring"
                     onClick={() => {
                       setQuery("");
-                      if (entry.path) navigate(entry.path);
+                      if (entry.path) void leaveFor(entry.path);
                       else selectSection(entry.section, entry.id);
                     }}
                   >
@@ -879,7 +938,7 @@ export function SettingsPage({
                         {t("settingsPage.lLMInstructionsAndGeneratedOutputs")}
                       </span>
                       <Link
-                        to="/prompts?section=prompts"
+                        {...guardedLink("/prompts?section=prompts")}
                         className="text-sm font-medium text-primary underline underline-offset-4"
                       >
                         {t("settingsPage.managePrompts")}
@@ -1146,7 +1205,7 @@ export function SettingsPage({
                         {t("settingsPage.downloadAndSwitchSpeechModelsParakeetAnd")}
                       </span>
                       <Link
-                        to="/models"
+                        {...guardedLink("/models")}
                         className="text-sm font-medium text-primary underline underline-offset-4"
                       >
                         {t("settingsPage.manageModels")}

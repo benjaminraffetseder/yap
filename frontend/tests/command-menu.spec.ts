@@ -272,6 +272,7 @@ test.describe("desktop commands and history", () => {
           autoPromptId: "",
         })),
         activeProfileId: "Work",
+        profileShortcut: "Ctrl+Alt+P",
         ready: true,
         dataDir: "",
         floatingIndicator: false,
@@ -365,8 +366,25 @@ test.describe("desktop commands and history", () => {
                 snapshot.activeProfileId = id;
               },
               SaveSettings: async (settings: Settings) => {
+                if (settings.shortcut === snapshot.profileShortcut)
+                  throw new Error("Shortcut collision");
                 await action(`model:${settings.modelPath}`);
                 snapshot.settings = settings;
+              },
+              SaveProfileAutomation: async (_rules: unknown[], shortcut: string) => {
+                if (shortcut === snapshot.settings.shortcut) throw new Error("Shortcut collision");
+                await action("profile-shortcut");
+                snapshot.profileShortcut = shortcut;
+              },
+              SwapSettingsShortcuts: async (settings: Settings, shortcut: string) => {
+                if (
+                  settings.shortcut !== snapshot.profileShortcut ||
+                  shortcut !== snapshot.settings.shortcut
+                )
+                  throw new Error("Expected reciprocal swap");
+                await action("swap-shortcuts");
+                snapshot.settings = settings;
+                snapshot.profileShortcut = shortcut;
               },
               BeginShortcutCapture: async () => "capture-token",
               EndShortcutCapture: async () => {},
@@ -419,6 +437,29 @@ test.describe("desktop commands and history", () => {
     await dialog.getByRole("option").filter({ hasText: "Edited dictation 0" }).click();
     await expect(page).toHaveURL(/#\/history\/entry-0$/);
     await expect(dialog).toBeHidden();
+  });
+
+  test("a failed recent history read keeps commands available and can be retried in place", async ({
+    page,
+  }) => {
+    await page.evaluate(() => {
+      const app = Reflect.get(window, "mockBackend").app.App;
+      let failed = false;
+      app.GetRecentHistory = async () => {
+        if (!failed) {
+          failed = true;
+          throw new Error("Recent History unavailable");
+        }
+        return structuredClone(window.commandTest.snapshot.history.slice(0, 5));
+      };
+    });
+    const dialog = await openMenu(page);
+    await expect(dialog.getByRole("status")).toHaveText("History search failed.");
+    await expect(dialog.getByRole("option", { name: "Models", exact: true })).toBeEnabled();
+    await dialog.getByRole("option", { name: "Retry", exact: true }).click();
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByRole("option").filter({ hasText: "Edited dictation" })).toHaveCount(5);
+    await expect(dialog.getByRole("status")).toHaveCount(0);
   });
 
   test("history search debounces, uses the first page, and keeps backend matches regardless of their label", async ({
@@ -583,6 +624,64 @@ test.describe("desktop commands and history", () => {
     await expect(
       dialog.getByRole("option", { name: "Import audio files…", exact: true }),
     ).toBeEnabled();
+  });
+
+  test("Settings saves a reciprocal recording and profile shortcut swap once", async ({ page }) => {
+    await page.goto("/#/settings?section=dictation");
+    await page.locator('[data-slot="profile-shortcut-options"] summary').click();
+    const recording = page.locator("#shortcut");
+    const profile = page.locator("#profile-cycle-shortcut");
+    await expect(profile).toHaveValue("Ctrl+Alt+P");
+    await recording.fill("Ctrl+Alt+P");
+    await profile.fill("Ctrl+Alt+Space");
+    await profile.blur();
+    await expect
+      .poll(() =>
+        page.evaluate(() => ({
+          recording: window.commandTest.snapshot.settings.shortcut,
+          profile: window.commandTest.snapshot.profileShortcut,
+        })),
+      )
+      .toEqual({ recording: "Ctrl+Alt+P", profile: "Ctrl+Alt+Space" });
+    await expect(recording).toHaveValue("Ctrl+Alt+P");
+    await expect(profile).toHaveValue("Ctrl+Alt+Space");
+    await page.keyboard.press("Escape");
+    await expect(page).not.toHaveURL(/#\/settings/);
+    expect(
+      await page.evaluate(() =>
+        window.commandTest.actions.filter((action) => !action.startsWith("updates:")),
+      ),
+    ).toEqual(["swap-shortcuts"]);
+  });
+
+  test("Manage models checks pending retention and cancel keeps all history", async ({ page }) => {
+    await page.goto("/#/settings?section=history");
+    const retention = page.getByRole("combobox", { name: "History retention", exact: true });
+    await retention.click();
+    const days = page.getByRole("option", { name: "30 days", exact: true });
+    await expect(days).toBeVisible();
+    await page.clock.install({ time: new Date("2026-11-04T12:00:00Z") });
+    await page.clock.pauseAt(new Date("2026-11-04T12:01:00Z"));
+    await days.click({ force: true });
+    await page.getByRole("tab", { name: "Advanced", exact: true }).dispatchEvent("click");
+    await page
+      .getByRole("link", { name: "Manage models", exact: true })
+      .dispatchEvent("click", { button: 0 });
+    const confirmation = page.getByRole("dialog", { name: "Enable automatic deletion?" });
+    await expect(confirmation).toBeVisible();
+    await expect(page).toHaveURL(/#\/settings/);
+    await page.clock.resume();
+    await confirmation.getByRole("button", { name: "Cancel", exact: true }).click();
+    await expect(confirmation).toBeHidden();
+    await page.getByRole("link", { name: "Manage models", exact: true }).click();
+    await expect(page).toHaveURL(/#\/models$/);
+    expect(
+      await page.evaluate(() => ({
+        retention: window.commandTest.snapshot.settings.historyRetentionDays,
+        rows: window.commandTest.snapshot.history.length,
+        writes: window.commandTest.actions.filter((action) => !action.startsWith("updates:")),
+      })),
+    ).toEqual({ retention: 0, rows: 10, writes: [] });
   });
 
   test("Ctrl+K is captured as a shortcut, including when a capture button has focus", async ({

@@ -11,44 +11,61 @@ import (
 	"github.com/ebitengine/purego"
 )
 
-// Moonshine runs in an isolated child process. Cancellation terminates native
-// inference, and a native failure cannot take down the desktop application.
+// RunWorker handles the native child entry points before desktop startup.
 func RunWorker(args []string) (handled bool, err error) {
-	if len(args) == 0 || (args[0] != "--yap-moonshine-worker" && args[0] != "--yap-moonshine-check") {
+	if len(args) == 0 || (args[0] != "--yap-moonshine-worker" && args[0] != "--yap-moonshine-check" && args[0] != nativeWorkerFlag) {
 		return false, nil
 	}
 	handled = true
 	defer func() {
 		if p := recover(); p != nil {
-			err = fmt.Errorf("Moonshine runtime: %v", p)
+			err = fmt.Errorf("speech runtime: %v", p)
 		}
 	}()
+	if args[0] == nativeWorkerFlag {
+		return true, runNative(args)
+	}
 	if len(args) < 2 {
 		return true, fmt.Errorf("missing Moonshine runtime")
 	}
-	h, closeLibrary, err := openMoonshine(args[1])
+	h, closeLibrary, err := openSpeechLibrary(args[1])
 	if err != nil {
 		return true, err
 	}
 	defer closeLibrary()
-	var version func() int32
-	purego.RegisterLibFunc(&version, h, "moonshine_get_version")
-	if version() != 30000 {
-		return true, fmt.Errorf("unsupported Moonshine runtime version")
-	}
 	if args[0] == "--yap-moonshine-check" {
-		return true, nil
+		return true, checkMoonshineVersion(h)
 	}
 	if len(args) != 6 {
 		return true, fmt.Errorf("invalid Moonshine worker arguments")
 	}
-	bundle, err := ReadBundle(args[2])
+	run, unload, err := loadMoonshine(h, args[2])
 	if err != nil {
 		return true, err
 	}
-	audio, err := readPCM(args[3])
+	defer unload()
+	text, err := run(speechRequest{Audio: args[3], Prompt: args[5]})
 	if err != nil {
 		return true, err
+	}
+	return true, os.WriteFile(args[4], []byte(text), 0600)
+}
+
+func checkMoonshineVersion(h uintptr) error {
+	var version func() int32
+	purego.RegisterLibFunc(&version, h, "moonshine_get_version")
+	if version() != 30000 {
+		return fmt.Errorf("unsupported Moonshine runtime version")
+	}
+	return nil
+}
+func loadMoonshine(h uintptr, path string) (nativeTranscribe, func(), error) {
+	if err := checkMoonshineVersion(h); err != nil {
+		return nil, nil, err
+	}
+	bundle, err := ReadBundle(path)
+	if err != nil {
+		return nil, nil, err
 	}
 	var load func(string, uint32, uintptr, uint64, int32) int32
 	var free func(int32)
@@ -56,45 +73,53 @@ func RunWorker(args []string) (handled bool, err error) {
 	purego.RegisterLibFunc(&load, h, "moonshine_load_transcriber_from_files")
 	purego.RegisterLibFunc(&free, h, "moonshine_free_transcriber")
 	purego.RegisterLibFunc(&transcribe, h, "moonshine_transcribe_without_streaming")
-	model := load(args[2], bundle.Arch, 0, 0, 30000)
+	model := load(path, bundle.Arch, 0, 0, 30000)
 	if model < 0 {
-		return true, fmt.Errorf("Moonshine could not load model (%d)", model)
+		return nil, nil, fmt.Errorf("Moonshine could not load model (%d)", model)
 	}
-	defer free(model)
-	if bundle.Arch != 1 && args[5] != "" {
-		var keyterms func(int32, string) int32
+	var keyterms func(int32, string) int32
+	if bundle.Arch != 1 {
 		purego.RegisterLibFunc(&keyterms, h, "moonshine_transcriber_set_keyterms")
-		if code := keyterms(model, args[5]); code != 0 {
-			return true, fmt.Errorf("Moonshine vocabulary failed (%d)", code)
+	}
+	run := func(req speechRequest) (string, error) {
+		audio, err := readPCM(req.Audio)
+		if err != nil {
+			return "", err
 		}
-	}
-	var result *nativeTranscript
-	code := transcribe(model, &audio[0], uint64(len(audio)), 16000, 0, &result)
-	runtime.KeepAlive(audio)
-	if code != 0 {
-		return true, fmt.Errorf("Moonshine transcription failed (%d)", code)
-	}
-	if result == nil || result.Count > 100000 || (result.Count > 0 && result.Lines == nil) {
-		return true, fmt.Errorf("invalid Moonshine transcript")
-	}
-	var lines []string
-	for _, line := range unsafe.Slice(result.Lines, int(result.Count)) {
-		if line.Text == nil {
-			continue
-		}
-		var text []byte
-		for i := 0; i < 1<<20; i++ {
-			c := *(*byte)(unsafe.Add(unsafe.Pointer(line.Text), i))
-			if c == 0 {
-				break
+		if keyterms != nil {
+			if code := keyterms(model, req.Prompt); code != 0 {
+				return "", fmt.Errorf("Moonshine vocabulary failed (%d)", code)
 			}
-			text = append(text, c)
 		}
-		if s := strings.TrimSpace(string(text)); s != "" {
-			lines = append(lines, s)
+		var result *nativeTranscript
+		code := transcribe(model, &audio[0], uint64(len(audio)), 16000, 0, &result)
+		runtime.KeepAlive(audio)
+		if code != 0 {
+			return "", fmt.Errorf("Moonshine transcription failed (%d)", code)
 		}
+		if result == nil || result.Count > 100000 || (result.Count > 0 && result.Lines == nil) {
+			return "", fmt.Errorf("invalid Moonshine transcript")
+		}
+		var lines []string
+		for _, line := range unsafe.Slice(result.Lines, int(result.Count)) {
+			if line.Text == nil {
+				continue
+			}
+			var text []byte
+			for i := 0; i < 1<<20; i++ {
+				c := *(*byte)(unsafe.Add(unsafe.Pointer(line.Text), i))
+				if c == 0 {
+					break
+				}
+				text = append(text, c)
+			}
+			if s := strings.TrimSpace(string(text)); s != "" {
+				lines = append(lines, s)
+			}
+		}
+		return strings.Join(lines, " "), nil
 	}
-	return true, os.WriteFile(args[4], []byte(strings.Join(lines, " ")), 0600)
+	return run, func() { free(model) }, nil
 }
 
 // Layout from the pinned Moonshine v0.1.6 C header (64-bit platforms).
@@ -144,7 +169,7 @@ func readPCM(path string) ([]float32, error) {
 		pos = int(end) + (int(n) & 1)
 	}
 	if !valid || len(pcm) < 2 || len(pcm)%2 != 0 {
-		return nil, fmt.Errorf("Moonshine needs 16 kHz mono PCM16 WAV audio")
+		return nil, fmt.Errorf("audio must be 16 kHz mono PCM16 WAV")
 	}
 	samples := make([]float32, len(pcm)/2)
 	for i := range samples {

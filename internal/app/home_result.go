@@ -43,13 +43,53 @@ func (a *App) beginHomeResult() (*HomeResult, bool, error) {
 }
 
 func (a *App) endHomeResult() {
-	history, err := a.store.History()
+	a.finishHomeResult(false)
+}
+
+func (a *App) finishHomeResult(changed bool) {
 	a.mu.Lock()
-	if err == nil && !a.closing {
-		a.homeHistory = history
+	if changed {
+		a.invalidateHistoryLocked()
+	}
+	if !a.closing && !a.legacyHistoryInUse && a.tray != nil && !a.historyPresenceKnown {
+		a.mu.Unlock()
+		recent, err := a.store.RecentHistory(1)
+		a.mu.Lock()
+		if err == nil && !a.closing {
+			a.historyPresent, a.historyPresenceKnown = len(recent) > 0, true
+		}
+	}
+	// GetSnapshot can subscribe while the tray read is in flight.
+	if !a.closing && a.legacyHistoryInUse {
+		a.mu.Unlock()
+		history, err := a.store.History()
+		a.mu.Lock()
+		if err == nil && !a.closing {
+			a.homeHistory = history
+			a.historyPresent, a.historyPresenceKnown = len(history) > 0, true
+		}
 	}
 	a.homeResultOperation = false
-	a.pumpQueuesLocked()
+	if changed {
+		a.retireDeletedHomeResultLocked()
+	}
+	if a.homeHistoryWait != nil {
+		close(a.homeHistoryWait)
+		a.homeHistoryWait = nil
+	}
+	if changed && !a.closing {
+		a.emitStatusLocked()
+		// The action invalidated History before settling the full legacy cache.
+		// Publish that settled state without invalidating its fresh cache again.
+		if a.notify != nil {
+			a.notify("dictation:history")
+		}
+	} else {
+		a.pumpQueuesLocked()
+		if !a.closing {
+			a.updateTrayLocked()
+		}
+	}
 	a.mu.Unlock()
 	a.wg.Done()
 }
@@ -78,15 +118,7 @@ func (a *App) HomeResultAction(id, revision, action, text string) error {
 	if err != nil {
 		return err
 	}
-	defer func() {
-		a.endHomeResult()
-		a.mu.Lock()
-		if !a.closing {
-			a.emitStatusLocked()
-			a.event("dictation:history")
-		}
-		a.mu.Unlock()
-	}()
+	defer a.finishHomeResult(true)
 	result, err = a.resolveHomeResult(result, hidden)
 	if err != nil {
 		return err

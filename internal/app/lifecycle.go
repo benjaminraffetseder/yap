@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"yap/internal/inference/speech"
 	textmodel "yap/internal/inference/text"
 	"yap/internal/models"
 	"yap/internal/startup"
@@ -40,6 +41,7 @@ func (a *App) startup(ctx context.Context) {
 		a.failLocked(err)
 		return
 	}
+	a.engine = speech.NewManaged(a.store.Dir)
 	a.textEngine = &textmodel.Managed{Dir: a.store.Dir}
 	a.settings, err = a.store.Settings()
 	if err != nil {
@@ -141,6 +143,7 @@ func (a *App) shutdown(ctx context.Context) {
 			a.historyCleanupTimer.Stop()
 		}
 		a.latestResult = nil
+		a.audioLinks = nil
 		a.clearHomeResultLocked()
 		a.status.Transcript = ""
 		a.updating.Cancel()
@@ -164,11 +167,18 @@ func (a *App) shutdown(ctx context.Context) {
 			_ = a.discardAudioLocked(a.path)
 		}
 		registrations := a.shortcuts.Shutdown()
+		audioServer := a.audioServer
 		a.mu.Unlock()
+		if audioServer != nil {
+			_ = audioServer.Close()
+		}
 		for _, registration := range registrations {
 			registration.Close()
 		}
 		a.wg.Wait()
+		if engine, ok := a.engine.(interface{ Close() }); ok {
+			engine.Close()
+		}
 		if engine, ok := a.textEngine.(interface{ Close() }); ok {
 			engine.Close()
 		}

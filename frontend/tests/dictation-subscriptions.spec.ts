@@ -98,6 +98,93 @@ test("progress updates only render status consumers", async ({ page }) => {
     expect(after[key], `${key} must ignore progress`).toBe(before[key]);
   }
 });
+
+test("saved output controls and document ignore unrelated native progress", async ({ page }) => {
+  await expect(page.getByRole("article", { name: "Summary output", exact: true })).toBeVisible();
+  await page.evaluate(() => {
+    const fixture = Reflect.get(window, "subscriptionFixture");
+    fixture.snapshot.status.phase = "transcribing";
+    fixture.emit("dictation:status", structuredClone(fixture.snapshot.status));
+  });
+  await expect(page.getByTestId("phase")).toHaveText("transcribing");
+  await settle(page);
+  const profiler = await page.context().newCDPSession(page);
+  await profiler.send("Profiler.enable");
+  await profiler.send("Profiler.startPreciseCoverage", { callCount: true, detailed: false });
+  try {
+    for (const progress of [20, 40, 60]) {
+      await page.evaluate((progress) => {
+        const fixture = Reflect.get(window, "subscriptionFixture");
+        fixture.snapshot.status.progress = progress;
+        fixture.emit("dictation:status", structuredClone(fixture.snapshot.status));
+      }, progress);
+      await expect(page.getByTestId("progress")).toHaveText(String(progress));
+    }
+    const { result } = await profiler.send("Profiler.takePreciseCoverage");
+    const calls = Object.fromEntries(
+      ["GeneratedOutputs", "MarkdownContent"].map((name) => [
+        name,
+        result
+          .filter((script) =>
+            /\/(generated-outputs|markdown-content)\.tsx(?:\?|$)/.test(script.url),
+          )
+          .flatMap((script) => script.functions)
+          .filter((fn) => fn.functionName === name)
+          .reduce((sum, fn) => sum + fn.ranges[0].count, 0),
+      ]),
+    );
+    expect(calls).toEqual({ GeneratedOutputs: 0, MarkdownContent: 0 });
+  } finally {
+    await profiler.send("Profiler.stopPreciseCoverage");
+    await profiler.detach();
+  }
+});
+
+test("output generation uses a valid option while retaining an unavailable preference", async ({
+  page,
+}) => {
+  async function changeOptions(includeSummary: boolean) {
+    await page.evaluate((includeSummary) => {
+      const fixture = Reflect.get(window, "subscriptionFixture");
+      fixture.snapshot.textProcessing.enabled = true;
+      fixture.snapshot.textProcessing.model = "local-model";
+      fixture.snapshot.textProcessing.prompts = [
+        { id: "cleanup", name: "Cleanup", instruction: "Clean the source." },
+        ...(includeSummary
+          ? [{ id: "summary", name: "Summary", instruction: "Summarize the source." }]
+          : []),
+      ];
+      fixture.emit("setup:changed", ["configuration"]);
+    }, includeSummary);
+  }
+  await changeOptions(true);
+  await page.getByRole("button", { name: "New output", exact: true }).click();
+  const picker = page.locator("#output-prompt");
+  await expect(picker).toBeEnabled();
+  await picker.click();
+  await page.getByRole("option", { name: "Summary", exact: true }).click();
+  await expect(picker).toContainText("Summary");
+  await changeOptions(false);
+  await expect(picker).toContainText("Cleanup");
+  await changeOptions(true);
+  await expect(picker).toContainText("Summary");
+  await changeOptions(false);
+  await expect(picker).toContainText("Cleanup");
+  await page.evaluate(() => {
+    Reflect.get(window, "mockBackend").app.App.GenerateSessionOutput = async (
+      _requestID: string,
+      _sessionID: string,
+      promptID: string,
+    ) => {
+      Reflect.set(window, "generatedPrompt", promptID);
+      return "Saved output";
+    };
+  });
+  await page.getByRole("button", { name: "Generate output", exact: true }).click();
+  await expect
+    .poll(() => page.evaluate(() => Reflect.get(window, "generatedPrompt")))
+    .toBe("cleanup");
+});
 test("queue and audio events leave unrelated subscriptions idle", async ({ page }) => {
   const before = await commits(page);
   await page.evaluate(() => {

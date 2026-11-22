@@ -9,6 +9,8 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 
 	"yap/internal/process"
 )
@@ -82,18 +84,16 @@ func (Whisper) Transcribe(ctx context.Context, audio string, opts Options) (stri
 	if opts.Prompt != "" {
 		args = append(args, "--prompt", opts.Prompt)
 	}
-	cmd := exec.CommandContext(ctx, opts.Executable, args...)
-	process.Hide(cmd)
+	cmd := exec.Command(opts.Executable, args...)
 	log := &progressLog{progress: opts.Progress}
 	cmd.Stderr = log
-	err = cmd.Run()
+	err = runIsolatedCLI(ctx, cmd)
 	log.flush()
 	if err != nil {
 		if ctx.Err() != nil {
 			return "", ctx.Err()
 		}
-		message := string(log.tail)
-		return "", fmt.Errorf("Whisper failed: %w\n%s", err, strings.TrimSpace(message))
+		return "", fmt.Errorf("Whisper failed: %w", err)
 	}
 	data, err := os.ReadFile(out + ".txt")
 	if err != nil {
@@ -104,6 +104,26 @@ func (Whisper) Transcribe(ctx context.Context, audio string, opts Options) (stri
 		return "", ErrNoSpeech
 	}
 	return text, nil
+}
+
+func runIsolatedCLI(ctx context.Context, cmd *exec.Cmd) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	cmd.WaitDelay = time.Second
+	cleanup, err := process.StartManaged(cmd)
+	if err != nil {
+		return err
+	}
+	kill := sync.OnceFunc(cleanup)
+	stop := context.AfterFunc(ctx, kill)
+	err = cmd.Wait()
+	stop()
+	kill()
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+	return err
 }
 
 var progressPattern = regexp.MustCompile(`\bprogress\s*=\s*([0-9]+)%`)

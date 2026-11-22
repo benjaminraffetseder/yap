@@ -20,20 +20,18 @@ import {
   type BulkTextRequest,
   type TranscriptExportSelection,
 } from "@/lib/backend";
-import { useRef, useState, type RefObject } from "react";
+import { useEffect, useRef, useState, type RefObject } from "react";
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router";
 
 export function BulkTextDialog({
   action,
   selection,
-  count,
   returnFocus,
   onClose,
 }: {
   action: BulkTextRequest["action"];
   selection: TranscriptExportSelection;
-  count: number;
   returnFocus: RefObject<HTMLButtonElement | null>;
   onClose: () => void;
 }) {
@@ -45,17 +43,74 @@ export function BulkTextDialog({
   const [pending, setPending] = useState(false);
   const submitting = useRef(false);
   const [error, setError] = useState("");
+  const [preparationAttempt, setPreparationAttempt] = useState(0);
+  const [preparation, setPreparation] = useState<{
+    selection: TranscriptExportSelection;
+    ids: readonly string[] | null;
+    pending: boolean;
+    error: string;
+  }>(() => ({
+    selection,
+    ids: selection.allMatching ? null : Object.freeze([...selection.sessionIds]),
+    pending: selection.allMatching,
+    error: "",
+  }));
   const configured = snapshot.textProcessing.enabled && !!snapshot.textProcessing.model.trim();
   const validPrompt = options.some((option) => option.value === selected);
+  const currentPreparation = preparation.selection === selection ? preparation : null;
+  const frozenIds = currentPreparation?.ids ?? null;
+  const preparing = selection.allMatching && (currentPreparation?.pending ?? true);
+  const preparationError = currentPreparation?.error ?? "";
+
+  useEffect(() => {
+    let current = true;
+    if (!selection.allMatching) {
+      setPreparation({
+        selection,
+        ids: Object.freeze([...selection.sessionIds]),
+        pending: false,
+        error: "",
+      });
+      return () => {
+        current = false;
+      };
+    }
+    setPreparation({ selection, ids: null, pending: true, error: "" });
+    // StrictMode's discarded setup must not start an uncancellable native read.
+    void Promise.resolve()
+      .then(() => (current ? backend.historySelectionIDs(selection.query) : undefined))
+      .then((ids) => {
+        if (!current || !ids) return;
+        const excluded = new Set(selection.excludedSessionIds ?? []);
+        setPreparation({
+          selection,
+          ids: Object.freeze(ids.filter((id) => !excluded.has(id))),
+          pending: false,
+          error: "",
+        });
+      })
+      .catch((cause) => {
+        if (!current) return;
+        setPreparation({ selection, ids: null, pending: false, error: message(cause) });
+      });
+    return () => {
+      current = false;
+    };
+  }, [selection, preparationAttempt]);
 
   async function queue() {
-    if (submitting.current) return;
+    if (submitting.current || preparing || preparationError || !frozenIds?.length) return;
     submitting.current = true;
     setPending(true);
     setError("");
     try {
       const queued = await backend.queueBulkText({
-        selection,
+        selection: {
+          sessionIds: [...frozenIds],
+          allMatching: false,
+          query: "",
+          excludedSessionIds: [],
+        },
         action,
         promptId: action === "output" ? selected : "",
         replaceTitles,
@@ -86,8 +141,12 @@ export function BulkTextDialog({
           <DialogTitle>
             {action === "title" ? t("bulkText.generateTitles") : t("bulkText.runPromptOrChain")}
           </DialogTitle>
-          <DialogDescription>
-            {t("bulkText.selected", { count })}{" "}
+          <DialogDescription aria-busy={preparing}>
+            {preparing
+              ? t("bulkText.preparingSelection")
+              : frozenIds
+                ? t("bulkText.selected", { count: frozenIds.length })
+                : null}{" "}
             {action === "title" ? t("bulkText.titleHelp") : t("bulkText.outputHelp")}
           </DialogDescription>
         </DialogHeader>
@@ -122,6 +181,19 @@ export function BulkTextDialog({
             {t("generatedOutputs.setUpTextModel")}
           </Link>
         )}
+        {preparationError && (
+          <div role="alert" className="flex items-center gap-3 text-sm text-destructive">
+            {nativeText(preparationError)}
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={pending}
+              onClick={() => setPreparationAttempt((old) => old + 1)}
+            >
+              {t("common.retry")}
+            </Button>
+          </div>
+        )}
         {error && (
           <p role="alert" className="text-sm text-destructive">
             {nativeText(error)}
@@ -132,7 +204,14 @@ export function BulkTextDialog({
             {t("common.cancel")}
           </Button>
           <Button
-            disabled={pending || !configured || (action === "output" && !validPrompt)}
+            disabled={
+              pending ||
+              preparing ||
+              !!preparationError ||
+              !frozenIds?.length ||
+              !configured ||
+              (action === "output" && !validPrompt)
+            }
             onClick={() => void queue()}
           >
             {pending ? t("bulkText.adding") : t("bulkText.addToQueue")}
