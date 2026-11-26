@@ -34,8 +34,11 @@ func (a *App) finishTextJobLocked(previous Status, savedText string) {
 	a.status.Phase, a.status.Message, a.status.Transcript = previous.Phase, previous.Message, previous.Transcript
 	if previous.Phase == "done" && a.id != "" && !a.closing {
 		if entry, err := a.store.Session(a.id); err == nil {
+			change, refreshErr := a.refreshSavedHomeResultLocked(a.id)
 			if entry.FinalTranscript != savedText {
 				a.status.Transcript, a.status.Message = entry.FinalTranscript, "Transcript updated in History"
+			} else if refreshErr == nil && change.Changed {
+				a.status.Transcript, a.status.Message = change.Text, change.Message
 			}
 		} else {
 			a.status.Phase, a.status.Message, a.status.Transcript = "idle", "Ready", ""

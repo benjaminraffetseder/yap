@@ -91,6 +91,40 @@ test("Home copy confirms in its button and resets when its text or view changes"
   await expect(page.getByRole("button", { name: "Copy", exact: true })).toBeVisible();
 });
 
+test("latest result uses icon actions and copies with the document shortcut without stealing editor keys", async ({
+  page,
+}, info) => {
+  await scenario(page);
+  await page.screenshot({ path: info.outputPath("latest-entry-icon-actions.png") });
+  const actions = page.locator('[data-slot="home-result-actions"]');
+  const copy = actions.getByRole("button", { name: "Copy", exact: true });
+  await expect(copy).toHaveAttribute("aria-keyshortcuts", "Control+Shift+C Meta+Shift+C");
+  const copyBox = await copy.boundingBox();
+  expect(copyBox!.width).toBe(copyBox!.height);
+  const editBox = await actions
+    .getByRole("button", { name: "Edit result", exact: true })
+    .boundingBox();
+  expect(editBox!.width).toBe(editBox!.height);
+  await selectWord(page.getByLabel("Result text", { exact: true }), "recognition");
+  await page.keyboard.press("Control+Shift+C");
+  expect(await page.evaluate(() => window.homeResultsTest.calls)).toEqual([]);
+  await page.evaluate(() => window.getSelection()?.removeAllRanges());
+  await page.keyboard.press("Control+Shift+C");
+  await expect
+    .poll(() => page.evaluate(() => window.homeResultsTest.clipboard))
+    .toBe("Synthetic recognition: share the meeting notes tomorrow.");
+  await expect(actions.getByRole("button", { name: "Copied", exact: true })).toBeVisible();
+  await actions.getByRole("button", { name: "Edit result", exact: true }).click();
+  const editor = page.getByRole("region", { name: "Edit result", exact: true });
+  const field = editor.getByRole("textbox", { name: "Your text", exact: true });
+  await field.fill("A draft that has not been applied.");
+  await field.press("Control+Shift+C");
+  expect(await page.evaluate(() => window.homeResultsTest.clipboard)).toBe(
+    "Synthetic recognition: share the meeting notes tomorrow.",
+  );
+  expect(await page.evaluate(() => window.homeResultsTest.calls)).toEqual(["copy"]);
+});
+
 test("Home copy feedback arrives before refresh and a delayed reply cannot confirm a new result", async ({
   page,
 }) => {
@@ -719,6 +753,49 @@ async function selectWord(reader: Locator, word: string, occurrence = 0) {
   );
 }
 
+for (const saved of [true, false]) {
+  test(`latest ${saved ? "saved" : "temporary"} dictation renders Markdown and copies its source`, async ({
+    page,
+  }) => {
+    await scenario(page, saved);
+    const markdown = [
+      "## Meeting notes",
+      "",
+      "Start with **Claude code** and *review* the `changes`.",
+      "",
+      "- First task",
+      "- Second task",
+      "",
+      "| Owner | Status |",
+      "| --- | --- |",
+      "| Alex | Ready |",
+    ].join("\n");
+    await page.evaluate((markdown) => {
+      const result = window.homeResultsTest.result!;
+      result.text = result.session.finalTranscript = markdown;
+      window.homeResultsTest.emit();
+    }, markdown);
+    const reader = page.getByLabel("Result text", { exact: true });
+    await expect(reader.getByRole("heading", { name: "Meeting notes", level: 2 })).toBeVisible();
+    await expect(reader.locator("strong")).toHaveText("Claude code");
+    await expect(reader.locator("em")).toHaveText("review");
+    await expect(reader.locator("code")).toHaveText("changes");
+    await expect(reader.getByRole("listitem")).toHaveText(["First task", "Second task"]);
+    await expect(reader.getByRole("cell", { name: "Alex", exact: true })).toBeAttached();
+    await page.getByRole("button", { name: "Copy", exact: true }).click();
+    await expect.poll(() => page.evaluate(() => window.homeResultsTest.clipboard)).toBe(markdown);
+    await page.getByRole("button", { name: "Edit result", exact: true }).click();
+    const editor = page.getByRole("region", { name: "Edit result", exact: true });
+    await editor.getByRole("button", { name: "Markdown source", exact: true }).click();
+    await expect(editor.getByRole("textbox", { name: "Your text", exact: true })).toHaveText(
+      markdown,
+      { useInnerText: true },
+    );
+    await editor.getByRole("button", { name: "Cancel", exact: true }).click();
+    expect(await page.evaluate(() => window.homeResultsTest.result!.text)).toBe(markdown);
+  });
+}
+
 test("correct and remember changes the selected Home occurrence and preserves recognition", async ({
   page,
 }) => {
@@ -728,7 +805,7 @@ test("correct and remember changes the selected Home occurrence and preserves re
     result.text =
       result.session.finalTranscript =
       result.session.rawTranscript =
-        "Jon called Jon today.";
+        "Jon called **Jon** today.";
     window.homeResultsTest.emit();
   });
   const reader = page.getByLabel("Result text", { exact: true });
@@ -745,7 +822,10 @@ test("correct and remember changes the selected Home occurrence and preserves re
     aliases: ["Jon"],
   });
   expect(await page.evaluate(() => window.homeResultsTest.result!.session.rawTranscript)).toBe(
-    "Jon called Jon today.",
+    "Jon called **Jon** today.",
+  );
+  expect(await page.evaluate(() => window.homeResultsTest.result!.text)).toBe(
+    "Jon called **John** today.",
   );
   expect(await page.evaluate(() => window.homeResultsTest.clipboard)).toBe("");
 });
@@ -805,7 +885,7 @@ test("one-time corrections stay in the Home draft until Apply changes", async ({
   await scenario(page, false);
   await page.getByRole("button", { name: "Edit result", exact: true }).click();
   const editor = page.getByRole("region", { name: "Edit result", exact: true });
-  const input = editor.getByLabel("Your text", { exact: true });
+  const input = editor.getByRole("textbox", { name: "Your text", exact: true });
   await input.fill("Jon called today.");
   await input.press("Home");
   await input.press("Control+Shift+ArrowRight");
@@ -815,7 +895,7 @@ test("one-time corrections stay in the Home draft until Apply changes", async ({
   await dialog.getByLabel("Correct spelling", { exact: true }).fill("John");
   await dialog.getByRole("checkbox", { name: "Remember for future dictations" }).uncheck();
   await dialog.getByRole("button", { name: "Apply correction" }).click();
-  await expect(input).toHaveValue("John called today.");
+  await expect(input).toHaveText("John called today.");
   await expect(input).toBeFocused();
   expect(await page.evaluate(() => window.homeResultsTest.calls)).toEqual([]);
   expect(await page.evaluate(() => window.homeResultsTest.snapshot.vocabulary)).toEqual([]);
@@ -875,7 +955,7 @@ test("correction errors, cancellation and stale results keep the original text",
   expect(await page.evaluate(() => window.homeResultsTest.calls)).toEqual([]);
   await page.getByRole("button", { name: "Edit result", exact: true }).click();
   const editor = page.getByRole("region", { name: "Edit result", exact: true });
-  const input = editor.getByLabel("Your text", { exact: true });
+  const input = editor.getByRole("textbox", { name: "Your text", exact: true });
   await input.press("Home");
   await input.press("Control+Shift+ArrowRight");
   await openSelectionMenu(page);
@@ -916,7 +996,7 @@ test("History editor autosaves a remembered correction without changing original
   const dialog = page.getByRole("dialog", { name: "Correct and remember" });
   await dialog.getByLabel("Correct spelling", { exact: true }).fill("John");
   await dialog.getByRole("button", { name: "Apply correction" }).click();
-  await expect(input).toHaveValue("John called today.");
+  await expect(input).toHaveText("John called today.");
   await expect(input).toBeFocused();
   await expect
     .poll(() => page.evaluate(() => window.homeResultsTest.result!.text))
@@ -1012,7 +1092,7 @@ test("editor context menus support keyboard access, long copies, and native menu
   await scenario(page, false);
   await page.getByRole("button", { name: "Edit result", exact: true }).click();
   const editor = page.getByRole("region", { name: "Edit result", exact: true });
-  const input = editor.getByLabel("Your text", { exact: true });
+  const input = editor.getByRole("textbox", { name: "Your text", exact: true });
   const text = "A long selected passage. ".repeat(8) + "\nA second paragraph.";
   await input.fill(text);
   await input.press("End");
@@ -1032,7 +1112,7 @@ test("editor context menus support keyboard access, long copies, and native menu
   ).toHaveCount(0);
   await page.getByRole("menuitem", { name: "Copy selection", exact: true }).click();
   expect(await page.evaluate(() => window.homeResultsTest.clipboard)).toBe(text);
-  await expect(input).toHaveValue(text);
+  await expect(input).toHaveText(text);
   expect(await page.evaluate(() => window.homeResultsTest.calls)).toEqual([]);
 });
 
@@ -1091,6 +1171,38 @@ test("History rows reveal search matches and copy the complete edited transcript
   await expect(link.locator("p")).toHaveCSS("white-space", "nowrap");
 });
 
+test("Home editor chrome stays flush with the editor header while its document scrolls", async ({
+  page,
+}, info) => {
+  await scenario(page);
+  await page.evaluate(() => {
+    const state = window.homeResultsTest;
+    const text = Array.from(
+      { length: 90 },
+      (_, index) => `Paragraph ${index + 1}. Long document editing text.`,
+    ).join("\n\n");
+    state.result!.text = state.result!.session.finalTranscript = text;
+    state.emit();
+    document.documentElement.classList.add("dark");
+  });
+  await page.getByRole("button", { name: "Edit result", exact: true }).click();
+  const editor = page.getByRole("region", { name: "Edit result", exact: true });
+  const toolbar = editor.locator('[data-slot="content-editor-toolbar"]');
+  const scrollTop = await toolbar.evaluate((node) => {
+    let scroller = node.parentElement;
+    while (scroller && !/auto|scroll/.test(getComputedStyle(scroller).overflowY))
+      scroller = scroller.parentElement;
+    if (!scroller) throw new Error("Missing editor scroll container");
+    scroller.scrollTop = 600;
+    return scroller.getBoundingClientRect().top + scroller.clientTop;
+  });
+  await expect
+    .poll(async () => Math.abs((await toolbar.boundingBox())!.y - scrollTop))
+    .toBeLessThan(2);
+  await expect(editor.getByRole("button", { name: "Apply changes", exact: true })).toBeInViewport();
+  await page.screenshot({ path: info.outputPath("home-editor-toolbar-flush.png") });
+});
+
 test("saved edits submit explicitly, cancel without writes, return focus and keep provenance", async ({
   page,
 }) => {
@@ -1103,33 +1215,43 @@ test("saved edits submit explicitly, cancel without writes, return focus and kee
   await edit.click();
   const dialog = page.getByRole("region", { name: "Edit result", exact: true });
   await expect(dialog).toHaveAccessibleDescription("Apply saves to History · Original preserved.");
-  await expect(dialog.getByLabel("Your text")).toBeFocused();
-  const draftMeasure = await dialog.getByLabel("Your text").evaluate((node) => {
-    const style = getComputedStyle(node);
-    return {
-      contentWidth:
-        node.getBoundingClientRect().width -
-        parseFloat(style.paddingLeft) -
-        parseFloat(style.paddingRight) -
-        parseFloat(style.borderLeftWidth) -
-        parseFloat(style.borderRightWidth),
-      lineHeight: style.lineHeight,
-    };
-  });
+  await expect(dialog.getByRole("textbox", { name: "Your text", exact: true })).toBeFocused();
+  const draftMeasure = await dialog
+    .getByRole("textbox", { name: "Your text", exact: true })
+    .evaluate((node) => {
+      const style = getComputedStyle(node);
+      return {
+        contentWidth:
+          node.getBoundingClientRect().width -
+          parseFloat(style.paddingLeft) -
+          parseFloat(style.paddingRight) -
+          parseFloat(style.borderLeftWidth) -
+          parseFloat(style.borderRightWidth),
+        lineHeight: style.lineHeight,
+      };
+    });
   expect(Math.abs(draftMeasure.contentWidth - readingMeasure.width)).toBeLessThan(1);
   expect(draftMeasure.lineHeight).toBe(readingMeasure.lineHeight);
   expect(
-    await dialog.getByLabel("Your text").evaluate((node) => node.clientHeight),
-  ).toBeGreaterThan(240);
-  await dialog.getByLabel("Your text").fill("Synthetic discarded draft.");
+    await dialog
+      .getByRole("textbox", { name: "Your text", exact: true })
+      .evaluate((node) => node.clientHeight),
+  ).toBeGreaterThanOrEqual(240);
+  await dialog
+    .getByRole("textbox", { name: "Your text", exact: true })
+    .fill("Synthetic discarded draft.");
   await page.waitForTimeout(1200);
   expect(await page.evaluate(() => window.homeResultsTest.calls)).toEqual([]);
   await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
   await expect(dialog).toHaveCount(0);
   await expect(edit).toBeFocused();
   await edit.click();
-  await expect(dialog.getByLabel("Your text")).not.toHaveValue("Synthetic discarded draft.");
-  await dialog.getByLabel("Your text").fill("Synthetic corrected text.");
+  await expect(dialog.getByRole("textbox", { name: "Your text", exact: true })).not.toHaveText(
+    "Synthetic discarded draft.",
+  );
+  await dialog
+    .getByRole("textbox", { name: "Your text", exact: true })
+    .fill("Synthetic corrected text.");
   await page.keyboard.press("Enter");
   expect(await page.evaluate(() => window.homeResultsTest.calls)).toEqual([]);
   await dialog.getByRole("button", { name: "Apply changes", exact: true }).click();
@@ -1152,7 +1274,7 @@ for (const saved of [true, false]) {
     const original = await page.evaluate(() => window.homeResultsTest.result!.text);
     const edit = page.getByRole("button", { name: "Edit result", exact: true });
     const editor = page.getByRole("region", { name: "Edit result", exact: true });
-    const draft = editor.getByLabel("Your text", { exact: true });
+    const draft = editor.getByRole("textbox", { name: "Your text", exact: true });
     await edit.click();
     await draft.fill("Unsaved correction retained across navigation.");
     await page.getByRole("link", { name: "History", exact: true }).click();
@@ -1160,16 +1282,16 @@ for (const saved of [true, false]) {
     expect(await page.evaluate(() => window.homeResultsTest.result!.text)).toBe(original);
     await page.getByRole("link", { name: "Dictate", exact: true }).click();
     await edit.click();
-    await expect(draft).toHaveValue("Unsaved correction retained across navigation.");
+    await expect(draft).toHaveText("Unsaved correction retained across navigation.");
 
     await editor.getByRole("button", { name: "Cancel", exact: true }).click();
     await edit.click();
-    await expect(draft).toHaveValue(original);
+    await expect(draft).toHaveText(original);
     await draft.fill("Explicitly applied correction.");
     await editor.getByRole("button", { name: "Apply changes", exact: true }).click();
     await expect(editor).toHaveCount(0);
     await edit.click();
-    await expect(draft).toHaveValue("Explicitly applied correction.");
+    await expect(draft).toHaveText("Explicitly applied correction.");
     expect(await page.evaluate(() => window.homeResultsTest.calls)).toEqual(["edit"]);
     expect(await page.evaluate(() => window.homeResultsTest.result!.saved)).toBe(saved);
     expect(
@@ -1240,7 +1362,9 @@ for (const replacement of ["revision", "session"] as const) {
     const edit = page.getByRole("button", { name: "Edit result", exact: true });
     const editor = page.getByRole("region", { name: "Edit result", exact: true });
     await edit.click();
-    await editor.getByLabel("Your text").fill("A draft for the old result only.");
+    await editor
+      .getByRole("textbox", { name: "Your text", exact: true })
+      .fill("A draft for the old result only.");
     await page.getByRole("link", { name: "History", exact: true }).click();
     await page.evaluate((replacement) => {
       const result = window.homeResultsTest.result!;
@@ -1250,7 +1374,9 @@ for (const replacement of ["revision", "session"] as const) {
     }, replacement);
     await page.getByRole("link", { name: "Dictate", exact: true }).click();
     await edit.click();
-    await expect(editor.getByLabel("Your text")).toHaveValue("Current replacement result.");
+    await expect(editor.getByRole("textbox", { name: "Your text", exact: true })).toHaveText(
+      "Current replacement result.",
+    );
     await expect(editor.getByRole("button", { name: "Apply changes", exact: true })).toBeDisabled();
     expect(
       await page.evaluate(() => {
@@ -1293,7 +1419,7 @@ test("temporary edit is memory-only, IME cannot submit, busy keeps draft, failur
   await scenario(page, false);
   await page.getByRole("button", { name: "Edit result", exact: true }).click();
   const dialog = page.getByRole("region", { name: "Edit result", exact: true });
-  const input = dialog.getByLabel("Your text");
+  const input = dialog.getByRole("textbox", { name: "Your text", exact: true });
   await input.fill("Synthetic 日本語 correction.");
   await input.dispatchEvent("compositionstart");
   await input.press("Control+Enter");
@@ -1301,7 +1427,7 @@ test("temporary edit is memory-only, IME cannot submit, busy keeps draft, failur
   await input.dispatchEvent("compositionend");
   await page.evaluate(() => window.homeResultsTest.setBusy(true));
   await expect(dialog.getByRole("button", { name: "Apply changes" })).toBeDisabled();
-  await expect(input).toHaveValue("Synthetic 日本語 correction.");
+  await expect(input).toHaveText("Synthetic 日本語 correction.");
   await page.evaluate(() => window.homeResultsTest.setBusy(false));
   await expect(dialog.getByRole("button", { name: "Apply changes" })).toBeEnabled();
   await page.evaluate(() => {
@@ -1309,7 +1435,7 @@ test("temporary edit is memory-only, IME cannot submit, busy keeps draft, failur
   });
   await input.press("Control+Enter");
   await expect(dialog.getByRole("alert")).toContainText("draft is kept");
-  await expect(input).toHaveValue("Synthetic 日本語 correction.");
+  await expect(input).toHaveText("Synthetic 日本語 correction.");
   await page.evaluate(() => {
     window.homeResultsTest.fail = "";
   });
@@ -1348,7 +1474,9 @@ test("pending edits reject duplicate submit and dismissal; replacement/deletion 
   await scenario(page);
   await page.getByRole("button", { name: "Edit result", exact: true }).click();
   const dialog = page.getByRole("region", { name: "Edit result", exact: true });
-  await dialog.getByLabel("Your text").fill("Synthetic pending edit.");
+  await dialog
+    .getByRole("textbox", { name: "Your text", exact: true })
+    .fill("Synthetic pending edit.");
   await page.evaluate(() => {
     window.homeResultsTest.defer = true;
   });
@@ -1363,13 +1491,17 @@ test("pending edits reject duplicate submit and dismissal; replacement/deletion 
   });
   await expect(dialog).toHaveCount(0);
   await page.getByRole("button", { name: "Edit result", exact: true }).click();
-  await dialog.getByLabel("Your text").fill("Synthetic stale draft to retain.");
+  await dialog
+    .getByRole("textbox", { name: "Your text", exact: true })
+    .fill("Synthetic stale draft to retain.");
   await page.evaluate(() => {
     window.homeResultsTest.result = null;
     window.homeResultsTest.emit();
   });
   await expect(dialog.getByRole("button", { name: "Apply changes" })).toBeDisabled();
-  await expect(dialog.getByLabel("Your text")).toHaveValue("Synthetic stale draft to retain.");
+  await expect(dialog.getByRole("textbox", { name: "Your text", exact: true })).toHaveText(
+    "Synthetic stale draft to retain.",
+  );
   await expect(dialog.getByText("The result changed.", { exact: false })).toBeVisible();
   await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
   await expect(page.getByRole("button", { name: "Start recording", exact: true })).toBeFocused();
@@ -1459,9 +1591,11 @@ test("a read failure inside the editor retains the draft through an explicit ref
   await scenario(page);
   await page.getByRole("button", { name: "Edit result", exact: true }).click();
   const dialog = page.getByRole("region", { name: "Edit result", exact: true });
-  await dialog.getByLabel("Your text").fill("");
+  await dialog.getByRole("textbox", { name: "Your text", exact: true }).fill("");
   await expect(dialog.getByRole("button", { name: "Apply changes" })).toBeDisabled();
-  await dialog.getByLabel("Your text").fill("Synthetic draft retained during read failure.");
+  await dialog
+    .getByRole("textbox", { name: "Your text", exact: true })
+    .fill("Synthetic draft retained during read failure.");
   await page.evaluate(() => {
     window.homeResultsTest.failRead = true;
     window.homeResultsTest.emit();
@@ -1473,7 +1607,7 @@ test("a read failure inside the editor retains the draft through an explicit ref
   });
   await dialog.getByRole("button", { name: "Refresh result" }).click();
   await expect(dialog.getByRole("button", { name: "Apply changes" })).toBeEnabled();
-  await expect(dialog.getByLabel("Your text")).toHaveValue(
+  await expect(dialog.getByRole("textbox", { name: "Your text", exact: true })).toHaveText(
     "Synthetic draft retained during read failure.",
   );
   await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
@@ -1507,11 +1641,11 @@ test("accepted capture/import expires temporary text despite cancel/read failure
   await page.getByRole("button", { name: "Edit result", exact: true }).click();
   const dialog = page.getByRole("region", { name: "Edit result", exact: true });
   await dialog
-    .getByLabel("Your text")
+    .getByRole("textbox", { name: "Your text", exact: true })
     .fill("Synthetic dirty draft retained after accepted import.");
   await page.evaluate(() => window.homeResultsTest.accept(true));
   await expect(page.getByLabel("Result text")).toHaveCount(0);
-  await expect(dialog.getByLabel("Your text")).toHaveValue(
+  await expect(dialog.getByRole("textbox", { name: "Your text", exact: true })).toHaveText(
     "Synthetic dirty draft retained after accepted import.",
   );
   await expect(dialog.getByRole("button", { name: "Apply changes" })).toBeDisabled();
@@ -1521,7 +1655,7 @@ test("accepted capture/import expires temporary text despite cancel/read failure
     window.homeResultsTest.setBusy(false);
   });
   await expect(dialog.getByRole("button", { name: "Refresh result" })).toBeVisible();
-  await expect(dialog.getByLabel("Your text")).toHaveValue(
+  await expect(dialog.getByRole("textbox", { name: "Your text", exact: true })).toHaveText(
     "Synthetic dirty draft retained after accepted import.",
   );
   await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
@@ -1590,16 +1724,16 @@ for (const theme of ["light", "dark"] as const) {
     await region.getByRole("button", { name: "Edit result", exact: true }).click();
     const dialog = page.getByRole("region", { name: "Edit result", exact: true });
     await dialog
-      .getByLabel("Your text")
+      .getByRole("textbox", { name: "Your text", exact: true })
       .fill("Synthetic demo · Share the revised notes tomorrow and confirm the next steps.");
     await expect(dialog.getByText("Apply changes in memory.", { exact: false })).toHaveCount(0);
     await expect(dialog.getByText("Submit with Apply changes", { exact: false })).toHaveCount(0);
     await expect(dialog).toHaveAccessibleDescription(
       "Temporary result · Apply doesn’t save to History.",
     );
-    await expect(dialog.getByLabel("Your text")).toHaveAccessibleDescription(
-      "Temporary result · Apply doesn’t save to History.",
-    );
+    await expect(
+      dialog.getByRole("textbox", { name: "Your text", exact: true }),
+    ).toHaveAccessibleDescription("Temporary result · Apply doesn’t save to History.");
     await page.screenshot({ path: info.outputPath(`synthetic-home-editor-${theme}-desktop.png`) });
     await page.waitForTimeout(600);
     await dialog.getByRole("button", { name: "Apply changes" }).click();

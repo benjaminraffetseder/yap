@@ -2,6 +2,7 @@ import { CopyButton } from "@/components/shared/copy-button";
 import { ActionMenu, ActionMenuItem } from "@/components/ui/action-menu";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { AudioPlayer } from "@/features/audio/components/audio-player";
 import { ChatSourceText } from "@/features/chat/components/chat-source-text";
 import {
@@ -19,6 +20,10 @@ import {
 import { deleteTranscriptions } from "@/features/history/lib/delete-transcriptions";
 import { speechModelLabel } from "@/features/models/lib/speech-model-label";
 import { GeneratedOutputs } from "@/features/processing/components/generated-outputs";
+import {
+  DocumentFind,
+  type DocumentFindHandle,
+} from "@/features/transcripts/components/document-find";
 import { InferenceStats } from "@/features/transcripts/components/inference-stats";
 import { SessionTitleAction } from "@/features/transcripts/components/session-title-action";
 import { TextPanel } from "@/features/transcripts/components/text-panel";
@@ -51,6 +56,7 @@ import {
   Loader2,
   MessageSquare,
   Pencil,
+  Search,
   Sparkles,
   Trash2,
 } from "lucide-react";
@@ -80,9 +86,15 @@ function EntryDetail({ id }: { id: string }) {
   const loading = isDesktop && (connecting || detail.isPending);
   const error = detail.error ? message(detail.error) : "";
   const saveTranscript = useMutation({
-    mutationFn: (value: string) => backend.saveTranscript(id, value),
+    mutationFn: (value: string) =>
+      backend.saveTranscriptChecked(
+        id,
+        value,
+        entry?.finalTranscript ?? entry?.rawTranscript ?? "",
+      ),
   });
   const [editing, setEditing] = useState<Session | null>(null);
+  const [outputEditing, setOutputEditing] = useState(false);
   const [activeTab, setActiveTab] = useState(trialPromptID ? "outputs" : "transcription");
   useEffect(() => {
     if (trialPromptID) setActiveTab("outputs");
@@ -124,6 +136,8 @@ function EntryDetail({ id }: { id: string }) {
   const [deleteError, setDeleteError] = useState("");
   const [exporting, setExporting] = useState(false);
   const actionsTrigger = useRef<HTMLButtonElement>(null);
+  const transcriptFind = useRef<DocumentFindHandle>(null);
+  const originalFind = useRef<DocumentFindHandle>(null);
   const [audioState, setAudioState] = useState<{
     source: string;
     src: string;
@@ -172,6 +186,7 @@ function EntryDetail({ id }: { id: string }) {
         event.altKey ||
         event.shiftKey ||
         editing ||
+        outputEditing ||
         deletingNow ||
         hasOpenKeyboardOverlay() ||
         document.querySelector('[data-slot="session-title-form"]')
@@ -182,7 +197,7 @@ function EntryDetail({ id }: { id: string }) {
     }
     window.addEventListener("keydown", keydown);
     return () => window.removeEventListener("keydown", keydown);
-  }, [back, navigate, editing, deletingNow]);
+  }, [back, navigate, editing, outputEditing, deletingNow]);
   async function play(renew = false): Promise<string | false> {
     if (!audioSource || loadingAudio) return false;
     const request = ++audioOwner.current.request;
@@ -323,23 +338,31 @@ function EntryDetail({ id }: { id: string }) {
                   data-slot="detail-primary-actions"
                   className="flex max-w-full flex-wrap items-center gap-1.5 @min-[44rem]/detail:justify-end"
                 >
-                  <Button
-                    ref={chatTrigger}
-                    size="sm"
-                    variant={chatOpen ? "secondary" : "outline"}
-                    aria-expanded={chatOpen}
-                    aria-controls="transcription-chat"
-                    disabled={unavailable}
-                    onClick={() => {
-                      if (chatOpen) setChatOpen(false);
-                      else openChat();
-                    }}
-                  >
-                    <MessageSquare aria-hidden="true" className="size-3.5" />
-                    {t("chat.title")}
-                  </Button>
+                  <Tooltip>
+                    <TooltipTrigger
+                      render={
+                        <Button
+                          ref={chatTrigger}
+                          size="icon-sm"
+                          variant={chatOpen ? "secondary" : "outline"}
+                          disabled={unavailable}
+                        />
+                      }
+                      aria-label={t("chat.title")}
+                      aria-expanded={chatOpen}
+                      aria-controls="transcription-chat"
+                      disabled={unavailable}
+                      onClick={() => {
+                        if (chatOpen) setChatOpen(false);
+                        else openChat();
+                      }}
+                    >
+                      <MessageSquare aria-hidden="true" />
+                    </TooltipTrigger>
+                    <TooltipContent>{t("chat.title")}</TooltipContent>
+                  </Tooltip>
                   <CopyButton
-                    compact
+                    iconOnly
                     shortcut
                     text={
                       activeTab === "outputs"
@@ -360,42 +383,54 @@ function EntryDetail({ id }: { id: string }) {
                     disabled={unavailable || (activeTab === "outputs" && !copyOutput)}
                   />
 
-                  <Button
-                    ref={editTrigger}
-                    size="sm"
-                    variant="outline"
-                    className="h-auto min-h-8 max-w-full whitespace-normal @max-[44rem]/detail:px-[8px]"
-                    aria-label={
-                      activeTab === "original"
-                        ? t("uiPolish.editSavedTranscript")
-                        : t("historyEntryPage.editTranscript")
-                    }
-                    aria-description={
-                      activeTab === "original" ? t("uiPolish.originalPreserved") : undefined
-                    }
-                    disabled={unavailable}
-                    onClick={() => setEditing(entry)}
-                  >
-                    <Pencil className="size-3.5" />
-                    {activeTab === "original" ? (
-                      <span className="min-w-0 [overflow-wrap:anywhere]">
-                        {t("uiPolish.editSavedTranscript")}
-                      </span>
-                    ) : (
-                      <>
-                        <span className="sm:hidden">{t("common.edit")}</span>
-                        <span className="hidden sm:inline">
-                          {t("historyEntryPage.editTranscript")}
-                        </span>
-                      </>
-                    )}
-                  </Button>
+                  {activeTab !== "outputs" && (
+                    <Tooltip>
+                      <TooltipTrigger
+                        render={
+                          <Button
+                            ref={editTrigger}
+                            size="icon-sm"
+                            variant="outline"
+                            disabled={unavailable}
+                          />
+                        }
+                        aria-label={
+                          activeTab === "original"
+                            ? t("uiPolish.editSavedTranscript")
+                            : t("historyEntryPage.editTranscript")
+                        }
+                        aria-description={
+                          activeTab === "original" ? t("uiPolish.originalPreserved") : undefined
+                        }
+                        disabled={unavailable}
+                        onClick={() => setEditing(entry)}
+                      >
+                        <Pencil aria-hidden="true" />
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        {activeTab === "original"
+                          ? t("uiPolish.editSavedTranscript")
+                          : t("historyEntryPage.editTranscript")}
+                      </TooltipContent>
+                    </Tooltip>
+                  )}
 
                   <ActionMenu
                     triggerRef={actionsTrigger}
-                    disabled={unavailable}
+                    disabled={unavailable || outputEditing}
                     label={t("uiPolish.dictationActions")}
                   >
+                    {(activeTab === "transcription" || activeTab === "original") && (
+                      <ActionMenuItem
+                        disabled={unavailable}
+                        onClick={() =>
+                          (activeTab === "original" ? originalFind : transcriptFind).current?.open()
+                        }
+                      >
+                        <Search aria-hidden="true" />
+                        {t("contentEditor.findInDocument")}
+                      </ActionMenuItem>
+                    )}
                     <ActionMenuItem disabled={unavailable} onClick={() => setExporting(true)}>
                       <Download aria-hidden="true" />
                       {t("historyEntryPage.export")}
@@ -528,7 +563,12 @@ function EntryDetail({ id }: { id: string }) {
               className="min-w-0 gap-4 sm:pl-11"
               aria-busy={loading}
             >
-              <div className="sticky top-0 z-10 overflow-x-auto border-b bg-background pb-1">
+              <div
+                className={cn(
+                  "overflow-x-auto border-b bg-background pb-1",
+                  !outputEditing && "sticky top-0 z-10",
+                )}
+              >
                 <TabsList
                   variant="line"
                   aria-label={t("historyEntryPage.dictationContents")}
@@ -580,26 +620,36 @@ function EntryDetail({ id }: { id: string }) {
                       : t("historyEntryPage.savedTranscription"),
                   })}
                 >
-                  <TranscriptContextMenu
+                  <DocumentFind
+                    ref={transcriptFind}
                     text={text}
-                    disabled={unavailable || isBusy(snapshot.status.phase)}
-                    onApply={async (value) => {
-                      await saveTranscript.mutateAsync(value);
-                      void run(refresh, false);
-                      return true;
-                    }}
-                    onAskSelection={(selected) => askSelection("transcript", selected)}
+                    active={!editing && activeTab === "transcription"}
+                    showTrigger={false}
+                    returnFocus={actionsTrigger}
                   >
-                    <div
-                      tabIndex={0}
-                      className="rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    <TranscriptContextMenu
+                      text={text}
+                      disabled={unavailable || isBusy(snapshot.status.phase)}
+                      onApply={async (value) => {
+                        await saveTranscript.mutateAsync(value);
+                        void run(refresh, false);
+                        return true;
+                      }}
+                      onAskSelection={(selected) => askSelection("transcript", selected)}
                     >
-                      <ChatSourceText
-                        text={text}
-                        references={highlights.source === "transcript" ? highlights.references : []}
-                      />
-                    </div>
-                  </TranscriptContextMenu>
+                      <div
+                        tabIndex={0}
+                        className="rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      >
+                        <ChatSourceText
+                          text={text}
+                          references={
+                            highlights.source === "transcript" ? highlights.references : []
+                          }
+                        />
+                      </div>
+                    </TranscriptContextMenu>
+                  </DocumentFind>
                 </TextPanel>
               </TabsContent>
               <TabsContent value="original" keepMounted>
@@ -609,24 +659,34 @@ function EntryDetail({ id }: { id: string }) {
                   kind="source"
                   description={t("historyEntryPage.fromTheRecordingReadOnly")}
                 >
-                  <TranscriptContextMenu
+                  <DocumentFind
+                    ref={originalFind}
                     text={entry.rawTranscript}
-                    onAskSelection={(selected) => askSelection("original", selected)}
+                    active={!editing && activeTab === "original"}
+                    showTrigger={false}
+                    returnFocus={actionsTrigger}
                   >
-                    <div
-                      tabIndex={0}
-                      className="rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    <TranscriptContextMenu
+                      text={entry.rawTranscript}
+                      onAskSelection={(selected) => askSelection("original", selected)}
                     >
-                      <ChatSourceText
-                        text={entry.rawTranscript}
-                        references={highlights.source === "original" ? highlights.references : []}
-                      />
-                    </div>
-                  </TranscriptContextMenu>
+                      <div
+                        tabIndex={0}
+                        className="rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      >
+                        <ChatSourceText
+                          text={entry.rawTranscript}
+                          references={highlights.source === "original" ? highlights.references : []}
+                        />
+                      </div>
+                    </TranscriptContextMenu>
+                  </DocumentFind>
                 </TextPanel>
               </TabsContent>
               <TabsContent value="outputs" keepMounted>
                 <GeneratedOutputs
+                  active={!editing && activeTab === "outputs"}
+                  onEditingChange={setOutputEditing}
                   sessionID={id}
                   trialPromptID={trialPromptID}
                   onTrialComplete={completePromptTrial}
@@ -683,7 +743,7 @@ function EntryDetail({ id }: { id: string }) {
           {editing && (
             <div className="min-w-0 sm:pl-11">
               <TranscriptEditor
-                session={editing}
+                session={entry ?? editing}
                 returnFocus={editTrigger}
                 onClose={() => setEditing(null)}
                 onSaved={() => {
@@ -697,7 +757,7 @@ function EntryDetail({ id }: { id: string }) {
           <TranscriptionChat
             session={entry}
             open={chatOpen}
-            editing={!!editing}
+            editing={!!editing || outputEditing}
             source={chatSource}
             onSource={setChatSource}
             selection={chatSelection}

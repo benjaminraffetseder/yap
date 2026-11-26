@@ -36,7 +36,7 @@ export function HistorySearch({
     return () => clearTimeout(timer);
   }, [active, value, query, onSearch]);
   return (
-    <div className="relative min-w-0 flex-1 basis-48 lg:w-64 lg:flex-none">
+    <div className="relative min-w-0 flex-1 @min-[44rem]/history-toolbar:w-64 @min-[44rem]/history-toolbar:flex-none">
       <Search
         aria-hidden="true"
         className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"

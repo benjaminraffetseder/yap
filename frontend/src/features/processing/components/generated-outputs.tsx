@@ -1,5 +1,6 @@
 import { MarkdownContent } from "@/components/shared/markdown-content";
 import { ActionMenu, ActionMenuItem } from "@/components/ui/action-menu";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -24,10 +25,16 @@ import {
   useDictationStatus,
   useSavedConfiguration,
 } from "@/features/dictation/hooks/use-dictation-state";
+import { OutputEditor } from "@/features/processing/components/output-editor";
 import { ProcessingCombobox } from "@/features/processing/components/processing-combobox";
 import { useTextRequest } from "@/features/processing/hooks/use-text-request";
+import {
+  DocumentFind,
+  type DocumentFindHandle,
+} from "@/features/transcripts/components/document-find";
 import { InferenceStats } from "@/features/transcripts/components/inference-stats";
 import { TranscriptExportDialog } from "@/features/transcripts/components/transcript-export-dialog";
+import { useDiscardOutputDraft } from "@/hooks/use-saved-draft";
 import { nativeText } from "@/i18n/native-text";
 import {
   backend,
@@ -44,8 +51,10 @@ import {
   FileText,
   Loader2,
   MessageSquare,
+  Pencil,
   Plus,
   RefreshCw,
+  Search,
   Sparkles,
   Square,
   Trash2,
@@ -71,6 +80,8 @@ export function GeneratedOutputs({
   onCopyTargetChange,
   trialPromptID,
   onTrialComplete,
+  active = true,
+  onEditingChange,
 }: {
   sessionID: string;
   unavailable: boolean;
@@ -79,9 +90,12 @@ export function GeneratedOutputs({
   onCopyTargetChange: (output: GeneratedOutput | null) => void;
   trialPromptID?: string;
   onTrialComplete?: () => void;
+  active?: boolean;
+  onEditingChange?: (editing: boolean) => void;
 }) {
   const { t, i18n } = useTranslation();
   const snapshot = useSavedConfiguration();
+  const discardOutputDraft = useDiscardOutputDraft();
   const phase = useDictationPhase();
   const { enabled } = snapshot.textProcessing;
   const options = useMemo(
@@ -108,6 +122,21 @@ export function GeneratedOutputs({
   });
   const seenOutputs = useRef<{ sessionID: string; ids: Set<string> } | null>(null);
   const [activeOutput, setActiveOutput] = useState("");
+  const [editingOutput, setEditingOutput] = useState("");
+  useEffect(() => {
+    if (
+      editingOutput &&
+      outputsResource.isSuccess &&
+      !outputs.some((item) => item.id === editingOutput)
+    ) {
+      void discardOutputDraft(sessionID, editingOutput);
+      setEditingOutput("");
+    }
+  }, [editingOutput, outputsResource.isSuccess, outputs, sessionID, discardOutputDraft]);
+  useEffect(() => {
+    onEditingChange?.(!!editingOutput);
+    return () => onEditingChange?.(false);
+  }, [editingOutput, onEditingChange]);
   const [composerOpen, setComposerOpen] = useState(!!trialPromptID);
   const previousTrial = useRef(trialPromptID);
   useEffect(() => {
@@ -127,6 +156,9 @@ export function GeneratedOutputs({
   const [deleting, setDeleting] = useState<GeneratedOutput | null>(null);
   const [exporting, setExporting] = useState<string | null>(null);
   const outputActionsTrigger = useRef<HTMLButtonElement>(null);
+  const editTrigger = useRef<HTMLButtonElement>(null);
+  const findTrigger = useRef<HTMLButtonElement>(null);
+  const find = useRef<DocumentFindHandle>(null);
   const [deletingNow, setDeletingNow] = useState(false);
   const [deleteError, setDeleteError] = useState("");
   // The backend saves outputs and reports activity even after navigation.
@@ -143,12 +175,13 @@ export function GeneratedOutputs({
         : undefined;
     setActiveOutput(
       (current) =>
-        added?.id ??
+        (!editingOutput ? added?.id : undefined) ??
         (value.some((output) => output.id === current) ? current : (ordered[0]?.id ?? "")),
     );
     seenOutputs.current = { sessionID, ids: new Set(value.map((output) => output.id)) };
-  }, [sessionID, outputsResource.data, ordered]);
-  const disabled = unavailable || loading || !!error || deletingNow || generation.pending;
+  }, [sessionID, outputsResource.data, ordered, editingOutput]);
+  const disabled =
+    unavailable || loading || !!error || deletingNow || generation.pending || !!editingOutput;
   const modelBusy = isBusy(phase);
   const canGenerate = !disabled && !modelBusy && enabled;
   const trialUnavailable =
@@ -166,6 +199,7 @@ export function GeneratedOutputs({
     setDeleteError("");
     try {
       await deleteOutput.mutateAsync(deleting.id);
+      await discardOutputDraft(sessionID, deleting.id);
       setDeleting(null);
       generation.clear();
     } catch (cause) {
@@ -213,7 +247,7 @@ export function GeneratedOutputs({
   return (
     <section
       aria-label={t("generatedOutputs.generatedOutputs")}
-      className="@container/outputs min-w-0 space-y-5 text-base"
+      className="@container/outputs flex min-w-0 max-w-[72ch] flex-col gap-4 text-base"
     >
       <Dialog
         open={composerOpen}
@@ -311,7 +345,7 @@ export function GeneratedOutputs({
       </Dialog>
       <div
         data-slot="output-toolbar"
-        className="flex min-w-0 flex-col gap-3 @min-[28rem]/outputs:flex-row @min-[28rem]/outputs:items-center"
+        className="flex min-w-0 flex-col gap-2 border-b pb-3 @min-[28rem]/outputs:flex-row @min-[28rem]/outputs:items-center"
       >
         <div className="min-w-0 flex-1">
           {output ? (
@@ -332,23 +366,21 @@ export function GeneratedOutputs({
                   id="saved-output"
                   title={selectedIdentity}
                   aria-description={selectedIdentity}
-                  className="h-auto min-h-14 w-full gap-3 border-border bg-card/50 px-3 py-2 shadow-none hover:bg-accent/50 data-popup-open:border-ring dark:bg-card/50 dark:hover:bg-accent/50"
+                  className="min-h-12 w-full gap-2.5 px-3 py-1.5 data-[size=default]:h-auto"
                 >
-                  <span
-                    aria-hidden="true"
-                    className="flex size-8 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground"
-                  >
-                    {output.chain ? (
-                      <Workflow className="size-4" />
-                    ) : (
-                      <FileText className="size-4" />
-                    )}
+                  <span aria-hidden="true" className="shrink-0 text-muted-foreground">
+                    {output.chain ? <Workflow /> : <FileText />}
                   </span>
                   <SelectValue className="min-w-0 leading-5" style={{ display: "block" }}>
-                    <span className="block truncate text-sm font-medium">{output.prompt.name}</span>
+                    <span className="flex min-w-0 items-center gap-2 text-sm font-medium">
+                      <span className="truncate">{output.prompt.name}</span>
+                      {output.edited && (
+                        <Badge variant="secondary">{t("contentEditor.edited")}</Badge>
+                      )}
+                    </span>
                     <span
                       role={generation.pending ? "status" : undefined}
-                      className="block truncate text-xs font-normal text-muted-foreground"
+                      className="block truncate text-xs leading-4 font-normal text-muted-foreground"
                     >
                       {generation.pending ? (
                         generationStatus
@@ -422,6 +454,45 @@ export function GeneratedOutputs({
           )}
         </div>
         <div className="flex max-w-full flex-wrap items-center justify-end gap-1">
+          {output && !editingOutput && (
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button ref={editTrigger} size="icon-sm" variant="outline" disabled={disabled} />
+                }
+                aria-label={t("contentEditor.editOutput")}
+                disabled={disabled}
+                onClick={() => setEditingOutput(output.id)}
+              >
+                <Pencil aria-hidden="true" />
+              </TooltipTrigger>
+              <TooltipContent>{t("contentEditor.editOutput")}</TooltipContent>
+            </Tooltip>
+          )}
+          {output && (
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    ref={findTrigger}
+                    size="icon-sm"
+                    variant="ghost"
+                    disabled={!!editingOutput}
+                  />
+                }
+                aria-label={t("contentEditor.findInDocument")}
+                aria-keyshortcuts="Control+F Meta+F"
+                disabled={!!editingOutput}
+                onClick={() => find.current?.open()}
+              >
+                <Search aria-hidden="true" />
+              </TooltipTrigger>
+              <TooltipContent>
+                {t("contentEditor.findInDocument")}
+                <kbd className="ml-1 text-[10px] opacity-70">Ctrl / ⌘ F</kbd>
+              </TooltipContent>
+            </Tooltip>
+          )}
           <Tooltip>
             <TooltipTrigger
               render={
@@ -429,8 +500,7 @@ export function GeneratedOutputs({
                   ref={composerTrigger}
                   pressFeedback
                   size="icon-sm"
-                  variant="outline"
-                  className="shadow-none"
+                  variant="ghost"
                   disabled={
                     unavailable || deletingNow || (!generation.pending && (loading || !!error))
                   }
@@ -465,32 +535,20 @@ export function GeneratedOutputs({
           </Tooltip>
           {output && (
             <>
-              <Tooltip>
-                <TooltipTrigger
-                  render={
-                    <Button
-                      pressFeedback
-                      size="icon-sm"
-                      variant="ghost"
-                      className="text-muted-foreground hover:text-foreground"
-                      disabled={!canGenerate || output.prompt.id === "chat"}
-                    />
-                  }
-                  aria-label={t("generatedOutputs.regenerate")}
+              <ActionMenu
+                triggerRef={outputActionsTrigger}
+                label={t("uiPolish.outputActions")}
+                disabled={disabled}
+              >
+                <ActionMenuItem
                   disabled={!canGenerate || output.prompt.id === "chat"}
                   onClick={() =>
                     void generate((id) => backend.regenerateOutput(id, sessionID, output.id))
                   }
                 >
                   <RefreshCw aria-hidden="true" />
-                </TooltipTrigger>
-                <TooltipContent>{t("generatedOutputs.regenerate")}</TooltipContent>
-              </Tooltip>
-              <ActionMenu
-                triggerRef={outputActionsTrigger}
-                label={t("uiPolish.outputActions")}
-                disabled={disabled}
-              >
+                  {t("generatedOutputs.regenerate")}
+                </ActionMenuItem>
                 {onDiscuss && (
                   <ActionMenuItem disabled={disabled} onClick={() => onDiscuss(output)}>
                     <MessageSquare aria-hidden="true" />
@@ -546,84 +604,87 @@ export function GeneratedOutputs({
         </div>
       )}
       {output && (
-        <article
-          aria-label={t("generatedOutputs.output", { name: output.prompt.name })}
-          aria-busy={loading}
-          className="max-w-[72ch] space-y-4 border-t py-4 text-base"
-        >
-          <div className="space-y-1 text-xs leading-5 text-muted-foreground">
-            {output.chain && (
-              <p>
-                {output.chain.name} · {t("uiPolish.step")} {output.chain.step}/{output.chain.total}
-              </p>
-            )}
-            <p>
-              {t("uiPolish.generatedWith", { model: output.model })} ·{" "}
-              {t("uiPolish.fromSource", { source: sourceLabel })}
-            </p>
-          </div>
-          {output.citations && onReveal ? (
-            <ChatCitationContent
-              text={output.text}
-              references={output.citations.references ?? []}
-              onReference={(ref) => onReveal(output, [ref])}
-              className="text-base leading-7"
+        <>
+          {editingOutput === output.id && (
+            <OutputEditor
+              output={output}
+              disabled={unavailable || deletingNow}
+              onClose={() => {
+                setEditingOutput("");
+                requestAnimationFrame(() => editTrigger.current?.focus());
+              }}
             />
-          ) : (
-            <MarkdownContent className="text-base leading-7">{output.text}</MarkdownContent>
           )}
-          <details className="border-t pt-4 text-sm">
-            <summary className="cursor-pointer text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring">
-              {t("uiPolish.sourceAndPrompt")}
-            </summary>
-            <div className="mt-4 space-y-5">
-              <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
-                <span>{output.model}</span>
-                <time dateTime={output.createdAt}>
-                  {new Date(output.createdAt).toLocaleString(i18n.resolvedLanguage)}
-                </time>
-                <InferenceStats output={output} />
-              </div>
-              {output.chain && (
-                <p className="text-xs text-muted-foreground">
-                  {output.chain.name} · {t("uiPolish.step")} {output.chain.step}{" "}
-                  {t("historyPage.of")} {output.chain.total}
-                  {t("generatedOutputs.input")}
-                  {output.chain.input === "original"
-                    ? t("historyEntryPage.originalTranscription")
-                    : output.chain.input === "transcript"
-                      ? t("generatedOutputs.savedTranscript")
-                      : (() => {
-                          const source = outputs.find(
-                            (item) => item.id === output.chain?.sourceOutputId,
-                          );
-                          return source
-                            ? t("generatedOutputs.stepLabel", {
-                                step: source.chain?.step,
-                                prompt: source.prompt.name,
-                              })
-                            : t("generatedOutputs.earlierStepSavedInputBelow");
-                        })()}
-                </p>
+          <article
+            hidden={!!editingOutput}
+            aria-label={t("generatedOutputs.output", { name: output.prompt.name })}
+            aria-busy={loading}
+            className="flex min-w-0 flex-col gap-4 text-base"
+          >
+            <DocumentFind
+              ref={find}
+              text={output.text}
+              active={active && !editingOutput}
+              showTrigger={false}
+              returnFocus={findTrigger}
+            >
+              {output.citations && onReveal ? (
+                <ChatCitationContent
+                  text={output.text}
+                  references={output.citations.references ?? []}
+                  onReference={(ref) => onReveal(output, [ref])}
+                  className="text-base leading-7"
+                />
+              ) : (
+                <MarkdownContent className="text-base leading-7">{output.text}</MarkdownContent>
               )}
-              <div>
-                <h4 className="text-sm font-medium">{t("generatedOutputs.inputText")}</h4>
-                <MarkdownContent className="mt-2 text-sm leading-7 text-muted-foreground">
-                  {output.input}
-                </MarkdownContent>
-              </div>
-              <div>
-                <h4 className="text-sm font-medium">{t("generatedOutputs.promptInstructions")}</h4>
-                <p className="mt-2 whitespace-pre-wrap text-sm leading-7 text-muted-foreground">
-                  {output.prompt.instruction}
+            </DocumentFind>
+            <details className="border-t pt-4 text-sm">
+              <summary className="cursor-pointer text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                {t("uiPolish.sourceAndPrompt")}
+              </summary>
+              <div className="mt-4 space-y-5">
+                <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+                  <span className="min-w-0 [overflow-wrap:anywhere]">{output.model}</span>
+                  <time dateTime={output.createdAt}>
+                    {new Date(output.createdAt).toLocaleString(i18n.resolvedLanguage)}
+                  </time>
+                  <InferenceStats output={output} />
+                </div>
+                {output.chain && (
+                  <p className="text-xs text-muted-foreground [overflow-wrap:anywhere]">
+                    {output.chain.name} · {t("uiPolish.step")} {output.chain.step}{" "}
+                    {t("historyPage.of")} {output.chain.total}
+                    {t("generatedOutputs.input")}
+                    {sourceLabel}
+                  </p>
+                )}
+                {!output.chain && (
+                  <p className="text-xs text-muted-foreground [overflow-wrap:anywhere]">
+                    {t("uiPolish.fromSource", { source: sourceLabel })}
+                  </p>
+                )}
+                <div>
+                  <h4 className="text-sm font-medium">{t("generatedOutputs.inputText")}</h4>
+                  <MarkdownContent className="mt-2 text-sm leading-7 text-muted-foreground">
+                    {output.input}
+                  </MarkdownContent>
+                </div>
+                <div>
+                  <h4 className="text-sm font-medium">
+                    {t("generatedOutputs.promptInstructions")}
+                  </h4>
+                  <p className="mt-2 whitespace-pre-wrap text-sm leading-7 text-muted-foreground">
+                    {output.prompt.instruction}
+                  </p>
+                </div>
+                <p className="text-xs leading-5 text-muted-foreground">
+                  {t("generatedOutputs.regeneratingReusesTheSavedInputAndPrompt")}
                 </p>
               </div>
-              <p className="text-xs leading-5 text-muted-foreground">
-                {t("generatedOutputs.regeneratingReusesTheSavedInputAndPrompt")}
-              </p>
-            </div>
-          </details>
-        </article>
+            </details>
+          </article>
+        </>
       )}
       <Dialog
         open={!!deleting}

@@ -30,17 +30,19 @@ type OutputCitations struct {
 }
 
 type GeneratedOutput struct {
-	ID        string           `json:"id"`
-	SessionID string           `json:"sessionId"`
-	CreatedAt string           `json:"createdAt"`
-	Prompt    textmodel.Prompt `json:"prompt"`
-	Model     string           `json:"model"`
-	Endpoint  string           `json:"endpoint"`
-	Input     string           `json:"input"`
-	Text      string           `json:"text"`
-	Chain     OutputChain      `json:"chain"`
-	Stats     *textmodel.Stats `json:"stats,omitempty"`
-	Citations *OutputCitations `json:"citations,omitempty"`
+	ID           string           `json:"id"`
+	SessionID    string           `json:"sessionId"`
+	CreatedAt    string           `json:"createdAt"`
+	Prompt       textmodel.Prompt `json:"prompt"`
+	Model        string           `json:"model"`
+	Endpoint     string           `json:"endpoint"`
+	Input        string           `json:"input"`
+	Text         string           `json:"text"`
+	OriginalText string           `json:"originalText"`
+	Edited       bool             `json:"edited"`
+	Chain        OutputChain      `json:"chain"`
+	Stats        *textmodel.Stats `json:"stats,omitempty"`
+	Citations    *OutputCitations `json:"citations,omitempty"`
 }
 
 func validateOutputCitations(v GeneratedOutput) error {
@@ -63,7 +65,7 @@ func validateOutputCitations(v GeneratedOutput) error {
 
 func NewGeneratedOutput(sessionID, input, output string, config textmodel.Config, prompt textmodel.Prompt) GeneratedOutput {
 	// Fixed fractional precision keeps SQLite's text ordering chronological.
-	return GeneratedOutput{ID: uuid.NewString(), SessionID: sessionID, CreatedAt: time.Now().UTC().Format("2006-01-02T15:04:05.000000000Z"), Prompt: prompt, Model: config.Model, Endpoint: config.Endpoint, Input: input, Text: output}
+	return GeneratedOutput{ID: uuid.NewString(), SessionID: sessionID, CreatedAt: time.Now().UTC().Format("2006-01-02T15:04:05.000000000Z"), Prompt: prompt, Model: config.Model, Endpoint: config.Endpoint, Input: input, Text: output, OriginalText: output}
 }
 
 func (s *Store) AddGeneratedOutput(v GeneratedOutput) error {
@@ -97,10 +99,18 @@ func validateOutputChain(v OutputChain) error {
 }
 
 func insertGeneratedOutput(tx *sql.Tx, v GeneratedOutput) error {
+	// Archives from before editing contain only Text. New archives explicitly
+	// carry both versions; the original always stays in the generation row.
+	if v.OriginalText == "" {
+		v.OriginalText = v.Text
+	}
 	if err := textmodel.ValidateText(v.Input); err != nil {
 		return err
 	}
 	if err := textmodel.ValidateText(v.Text); err != nil {
+		return err
+	}
+	if err := textmodel.ValidateText(v.OriginalText); err != nil {
 		return err
 	}
 	if _, err := textmodel.Normalize(textmodel.Config{Enabled: true, Endpoint: v.Endpoint, Model: v.Model, Prompts: []textmodel.Prompt{v.Prompt}}); err != nil {
@@ -125,7 +135,7 @@ func insertGeneratedOutput(tx *sql.Tx, v GeneratedOutput) error {
 	// cannot create an orphan, and duplicate output IDs never overwrite a version.
 	result, err := tx.Exec(`INSERT INTO generated_outputs
 		SELECT ?,id,?,?,?,?,?,?,?,? FROM recordings WHERE id=? AND NOT EXISTS (SELECT 1 FROM deleted_recordings d WHERE d.id=recordings.id)`,
-		v.ID, v.CreatedAt, v.Prompt.ID, v.Prompt.Name, v.Prompt.Instruction, v.Model, v.Endpoint, v.Input, v.Text, v.SessionID)
+		v.ID, v.CreatedAt, v.Prompt.ID, v.Prompt.Name, v.Prompt.Instruction, v.Model, v.Endpoint, v.Input, v.OriginalText, v.SessionID)
 	if err != nil {
 		return err
 	}
@@ -135,6 +145,11 @@ func insertGeneratedOutput(tx *sql.Tx, v GeneratedOutput) error {
 	}
 	if err != nil {
 		return err
+	}
+	if v.Text != v.OriginalText {
+		if _, err := tx.Exec("INSERT INTO generated_output_edits(output_id,output) VALUES(?,?)", v.ID, v.Text); err != nil {
+			return err
+		}
 	}
 	if err := insertInferenceStats(tx, "text", v.ID, v.Stats); err != nil {
 		return err
@@ -159,13 +174,14 @@ func insertGeneratedOutput(tx *sql.Tx, v GeneratedOutput) error {
 	return err
 }
 
-const generatedOutputColumns = "id,recording_id,created_at,prompt_id,prompt_name,instruction,model,endpoint,input,output,COALESCE((SELECT value FROM generated_output_chains WHERE output_id=generated_outputs.id),'{}')," + textStatsColumn + ",COALESCE((SELECT value FROM generated_output_citations WHERE output_id=generated_outputs.id),'null')"
+const generatedOutputColumns = "id,recording_id,created_at,prompt_id,prompt_name,instruction,model,endpoint,input,output,COALESCE((SELECT output FROM generated_output_edits WHERE output_id=generated_outputs.id),output),COALESCE((SELECT value FROM generated_output_chains WHERE output_id=generated_outputs.id),'{}')," + textStatsColumn + ",COALESCE((SELECT value FROM generated_output_citations WHERE output_id=generated_outputs.id),'null')"
 
 func scanGeneratedOutput(row interface{ Scan(...any) error }, v *GeneratedOutput) error {
 	var chain, stats, citations string
-	if err := row.Scan(&v.ID, &v.SessionID, &v.CreatedAt, &v.Prompt.ID, &v.Prompt.Name, &v.Prompt.Instruction, &v.Model, &v.Endpoint, &v.Input, &v.Text, &chain, &stats, &citations); err != nil {
+	if err := row.Scan(&v.ID, &v.SessionID, &v.CreatedAt, &v.Prompt.ID, &v.Prompt.Name, &v.Prompt.Instruction, &v.Model, &v.Endpoint, &v.Input, &v.OriginalText, &v.Text, &chain, &stats, &citations); err != nil {
 		return err
 	}
+	v.Edited = v.Text != v.OriginalText
 	if err := json.Unmarshal([]byte(stats), &v.Stats); err != nil {
 		return err
 	}
@@ -178,7 +194,7 @@ func scanGeneratedOutput(row interface{ Scan(...any) error }, v *GeneratedOutput
 	// Older chat outputs still have an immutable input snapshot. Recover their
 	// numbered references even when they predate explicit citation metadata.
 	if v.Citations == nil && v.Prompt.ID == "chat" {
-		refs := ChatReferences(v.Text, v.Input)
+		refs := ChatReferences(v.OriginalText, v.Input)
 		if len(refs) > 0 {
 			v.Citations = &OutputCitations{Source: "transcript", References: refs}
 		}

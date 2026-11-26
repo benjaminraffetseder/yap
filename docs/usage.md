@@ -46,6 +46,9 @@ Copying there checks that the result is still current and never pastes into anot
 app. Cancelled automatic processing leaves the speech transcript available.
 
 Home shows the latest saved or temporary result with **Copy** and **Edit result**.
+These actions use icon buttons with descriptive hover labels. Ctrl/Cmd+Shift+C
+copies the current result while its transcript view is visible; it does not
+intercept shortcuts in an editor or another text field.
 Known copy and paste-request outcomes stay beside the result; **Paste requested**
 does not confirm that the target app accepted the text. **Open transcript** opens
 the full saved workspace. The recorder keeps its hold/toggle shortcut guidance visible.
@@ -260,9 +263,25 @@ stop playback; **Play recording** opens it again. Leaving the dictation also
 stops playback.
 
 Transcriptions, generated outputs, and processing previews display Markdown,
-including headings, emphasis, lists, tables, and code blocks. Edit the Markdown
-source in **Edit transcript**. Copy and export keep the source text and formatting
-markers so you can reuse them elsewhere.
+including headings, emphasis, lists, tables, and code blocks. **Edit transcript**
+and **Edit output** open the same visual editor. Use its toolbar or formatting
+shortcuts for headings, bold, italic, links, lists, checklists, quotes, code, and
+tables. The three-dot **More editing actions** menu holds less-used tools,
+dictionary correction, and refinement. The toolbar stays visible while you scroll.
+Table tools support rows, columns, header cells, and alignment within
+Markdown's limits. **Markdown source** switches to source editing. Documents with
+unsupported constructs, including deliberately escaped citation markers, stay in
+source mode so their content is preserved. Merely
+opening the editor or switching modes does not save a normalized replacement.
+Copy and export keep the Markdown source and formatting markers.
+
+Ctrl/Cmd+F finds text in the active dictation document, with match navigation,
+case sensitivity, and whole-word matching. In the editor, the search bar also
+offers **Replace** and **Replace all**. Visual mode searches visible text; source
+mode searches Markdown source. Original recognition supports finding only.
+**Replace all** is one undoable change. **Remember replacement in dictionary**
+explicitly saves a valid term and its alias; ordinary replacements do not teach
+the dictionary automatically.
 
 **Edit transcript** changes the saved result while keeping the original
 transcription. It opens an inline editor; **Compare with original** shows a read-only
@@ -271,6 +290,23 @@ reference alongside the draft where space allows. Edits save after a short pause
 saved. Ctrl/Cmd+Enter saves immediately and keeps the editor open. To reuse a
 corrected spelling, select a name or phrase, right-click, and choose **Add to dictionary**;
 the transcript continues to save automatically.
+
+**Apply dictionary**, in the editor's three-dot menu, previews known aliases changing to their preferred spellings
+for the selection or whole document. It preserves formatting, code, and link
+addresses and needs no model. Apply the reviewed changes in one undo step. This
+normalizes known terms; it is not a general spelling dictionary.
+
+For broader edits, select a passage and choose **Refine selection** from the
+three-dot toolbar menu or right-click menu. Its submenu offers **Concise**, **Proofread**,
+**Rewrite**, **Friendly**, **Professional**, and **Summary**. Choosing a preset starts
+processing immediately; an inline indicator offers **Cancel generation**. The comparison
+opens when processing finishes. Choose **Apply**, **Retry**, or **Discard**; Retry runs
+the same preset and reopens the comparison after processing.
+Apply replaces only the selected passage, including for Summary, in one undo
+step. If the document changed, select it again and generate a fresh preview.
+Unsupported structural selections are left unchanged. The presets require a
+configured local text model; ordinary editing and dictionary correction do not.
+Model results can miss mistakes or change meaning, so review the comparison.
 
 To fix a spelling, select a word or short phrase, right-click, and choose **Correct and remember**.
 Enter the correct spelling and choose **Apply correction**. **Remember for future
@@ -399,6 +435,14 @@ There are three ways to process text:
   **Output prompt**, then choose **Generate** or **Run chain**. A single prompt uses
   the saved transcript. Use the output picker above the text to switch versions;
   **Source & prompt** shows their captured input, instructions, and model details.
+  **Edit output** changes that output in place with autosave. The **Edited** label,
+  **Version history** and **Restore original** in **Editing tools** keep the original generation available.
+  Generation metadata and existing downstream outputs stay intact. Surviving
+  original citation markers retain their links; edits do not create or verify
+  citations. Copy/export use the edited text, and backups preserve both original
+  and current output text. Finish editing before exporting. If another view
+  changes the document, a conflicting save keeps the draft for recovery instead
+  of overwriting the newer text.
   **Regenerate** uses that saved input and prompt with your current model. Opening
   **Edit transcript** leaves generation running. Leaving the dictation page cancels
   an unfinished generation request; completed outputs remain saved.

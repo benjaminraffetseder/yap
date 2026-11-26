@@ -11,6 +11,24 @@ func (a *App) SaveTranscript(id, text string) error {
 	return a.saveTranscriptLocked(id, text)
 }
 
+// SaveTranscriptChecked rejects an editor whose saved baseline is obsolete.
+func (a *App) SaveTranscriptChecked(id, text, expectedText string) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if err := a.historyAvailableLocked(); err != nil {
+		return err
+	}
+	change, err := history.EditChecked(a.store, history.Current{ID: a.id, Phase: a.status.Phase}, id, text, expectedText)
+	if err != nil {
+		return err
+	}
+	if text != expectedText {
+		a.publishHistoryChangeLocked(change)
+		a.event("dictation:history")
+	}
+	return nil
+}
+
 func (a *App) saveTranscriptLocked(id, text string) error {
 	if err := a.historyAvailableLocked(); err != nil {
 		return err

@@ -42,6 +42,15 @@ func (a *App) ProcessText(requestID, input, promptID string) (string, error) {
 	return a.processTextRequest(requestID, textprocessing.Request{Input: input, PromptID: promptID})
 }
 
+// RefineSelection returns a preview for a captured passage. The editor owns
+// range/version validation and explicitly applies the replacement after review.
+func (a *App) RefineSelection(requestID, preset, input, beforeContext, afterContext string) (string, error) {
+	return a.processTextRequest(requestID, textprocessing.Request{
+		Input:     input,
+		Selection: &textprocessing.SelectionRefinement{Preset: preset, Before: beforeContext, After: afterContext},
+	})
+}
+
 // PreviewWorkflow runs an unsaved recipe against temporary sample text. The
 // regular request owner handles cancellation and shutdown, while trial steps
 // never enter history, the prompt library, or desktop delivery.
@@ -119,8 +128,16 @@ func (a *App) DeleteSessionOutput(sessionID, outputID string) error {
 	if err := a.store.DeleteGeneratedOutput(sessionID, outputID); err != nil {
 		return err
 	}
+	change, err := a.refreshSavedHomeResultLocked(sessionID)
+	if change.Changed {
+		a.status.Transcript = change.Text
+		if a.status.Phase == "done" {
+			a.status.Message = change.Message
+		}
+		a.emitStatusLocked()
+	}
 	a.event("dictation:history")
-	return nil
+	return err
 }
 
 func (a *App) processTextRequest(requestID string, request textprocessing.Request) (string, error) {

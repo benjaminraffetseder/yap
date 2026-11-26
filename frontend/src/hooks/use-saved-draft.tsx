@@ -19,7 +19,18 @@ class DraftStore {
     return this.drafts.get(key) as SavedDraft<T>;
   }
   discardSessionDrafts = async (ids: readonly string[]) => {
-    const keys = ids.flatMap((id) => [`chat:${id}`, `transcript:${id}`]);
+    const keys = [...this.drafts.keys()].filter((key) =>
+      ids.some(
+        (id) =>
+          key === `chat:${id}` || key === `transcript:${id}` || key.startsWith(`output:${id}:`),
+      ),
+    );
+    await this.discardKeys(keys);
+  };
+  discardOutputDraft = async (sessionID: string, outputID: string) => {
+    await this.discardKeys([`output:${sessionID}:${outputID}`]);
+  };
+  private discardKeys = async (keys: string[]) => {
     await Promise.all(
       keys.map(async (key) => {
         const entry = this.drafts.get(key);
@@ -63,6 +74,11 @@ function useStore() {
 // eslint-disable-next-line react-refresh/only-export-components -- Shares the provider's private in-memory cache.
 export function useDiscardSessionDrafts(): (ids: readonly string[]) => Promise<void> {
   return useStore().discardSessionDrafts;
+}
+
+// eslint-disable-next-line react-refresh/only-export-components -- Shares the draft lifecycle.
+export function useDiscardOutputDraft() {
+  return useStore().discardOutputDraft;
 }
 
 // A pending creation keeps its ID across routes and failures. The receipt

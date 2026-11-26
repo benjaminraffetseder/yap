@@ -476,6 +476,11 @@ func validateBackupManifest(m *backupManifest) error {
 		if err := textmodel.ValidateText(v.Text); err != nil {
 			return err
 		}
+		if v.OriginalText != "" {
+			if err := textmodel.ValidateText(v.OriginalText); err != nil {
+				return err
+			}
+		}
 		if err := validateOutputChain(v.Chain); err != nil {
 			return err
 		}

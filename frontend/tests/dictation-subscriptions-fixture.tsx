@@ -17,6 +17,7 @@ import {
 import { GeneratedOutputs } from "../src/features/processing/components/generated-outputs";
 import { ProcessingPanel } from "../src/features/processing/components/processing-panel";
 import { UpdatePanel } from "../src/features/updates/components/update-panel";
+import { DraftProvider } from "../src/hooks/use-saved-draft";
 import "../src/index.css";
 import { emptySnapshot } from "../src/lib/queries/resource-defaults";
 import { createQueryClient } from "../src/lib/queries/resource-queries";
@@ -107,46 +108,48 @@ function Connection() {
 }
 createRoot(document.getElementById("root")!).render(
   <QueryClientProvider client={createQueryClient()}>
-    <DictationProvider>
-      <MemoryRouter>
-        <TooltipProvider>
-          <ProcessingPanel />
-          <Measure id="outputs">
-            <GeneratedOutputs
-              sessionID="render-check-session"
-              unavailable={false}
-              onCopyTargetChange={() => undefined}
-            />
-          </Measure>
-        </TooltipProvider>
-      </MemoryRouter>
-      <Measure id="actions">
-        <Actions />
-      </Measure>
-      <Measure id="phase">
-        <Phase />
-      </Measure>
-      <Measure id="status">
-        <Status />
-      </Measure>
-      <Measure id="activity">
-        <Activity />
-      </Measure>
-      <Measure id="queue">
-        <Queue />
-      </Measure>
-      <Measure id="level">
-        <Level />
-      </Measure>
-      <Measure id="configuration">
-        <Configuration />
-      </Measure>
-      <Measure id="connection">
-        <Connection />
-      </Measure>
-      <Measure id="updates">
-        <UpdatePanel />
-      </Measure>
-    </DictationProvider>
+    <DraftProvider>
+      <DictationProvider>
+        <MemoryRouter>
+          <TooltipProvider>
+            <ProcessingPanel />
+            <Measure id="outputs">
+              <GeneratedOutputs
+                sessionID="render-check-session"
+                unavailable={false}
+                onCopyTargetChange={() => undefined}
+              />
+            </Measure>
+          </TooltipProvider>
+        </MemoryRouter>
+        <Measure id="actions">
+          <Actions />
+        </Measure>
+        <Measure id="phase">
+          <Phase />
+        </Measure>
+        <Measure id="status">
+          <Status />
+        </Measure>
+        <Measure id="activity">
+          <Activity />
+        </Measure>
+        <Measure id="queue">
+          <Queue />
+        </Measure>
+        <Measure id="level">
+          <Level />
+        </Measure>
+        <Measure id="configuration">
+          <Configuration />
+        </Measure>
+        <Measure id="connection">
+          <Connection />
+        </Measure>
+        <Measure id="updates">
+          <UpdatePanel />
+        </Measure>
+      </DictationProvider>
+    </DraftProvider>
   </QueryClientProvider>,
 );

@@ -23,7 +23,7 @@ import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 function preview(kind: RevisionKind, value: string, prompts: TextPrompt[]): string {
-  if (kind === "transcript") return value;
+  if (kind === "transcript" || kind === "output") return value;
   const parsed = JSON.parse(value);
   if (kind === "prompt") return `${parsed.name}\n\n${parsed.instruction}`;
   if (kind === "vocabulary")
@@ -51,7 +51,7 @@ function preview(kind: RevisionKind, value: string, prompts: TextPrompt[]): stri
     .join("\n")}`;
 }
 function same(kind: RevisionKind, left: string, right: string) {
-  if (kind === "transcript") return left === right;
+  if (kind === "transcript" || kind === "output") return left === right;
   try {
     return JSON.stringify(JSON.parse(left)) === JSON.stringify(JSON.parse(right));
   } catch {

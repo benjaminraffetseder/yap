@@ -2,7 +2,11 @@ import { expect, type Page } from "@playwright/test";
 
 export async function openSelectionMenu(page: Page) {
   await expect(page.locator('[data-slot="dialog-content"]')).toHaveCount(0);
-  const editing = await page.evaluate(() => document.activeElement instanceof HTMLTextAreaElement);
+  const editing = await page.evaluate(
+    () =>
+      document.activeElement instanceof HTMLTextAreaElement ||
+      (document.activeElement instanceof HTMLElement && document.activeElement.isContentEditable),
+  );
   if (editing) {
     await page.keyboard.press("Shift+F10");
   } else {

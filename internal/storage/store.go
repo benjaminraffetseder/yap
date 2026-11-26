@@ -106,7 +106,10 @@ func Open(dir string) (*Store, error) {
 	BEGIN DELETE FROM generated_outputs WHERE recording_id=OLD.id; END;
 	CREATE TABLE IF NOT EXISTS generated_output_chains (output_id TEXT PRIMARY KEY, value TEXT NOT NULL);
 	CREATE TRIGGER IF NOT EXISTS delete_generated_output_chain AFTER DELETE ON generated_outputs
-	BEGIN DELETE FROM generated_output_chains WHERE output_id=OLD.id; END;`)
+	BEGIN DELETE FROM generated_output_chains WHERE output_id=OLD.id; END;
+	CREATE TABLE IF NOT EXISTS generated_output_edits (output_id TEXT PRIMARY KEY, output TEXT NOT NULL);
+	CREATE TRIGGER IF NOT EXISTS delete_generated_output_edit AFTER DELETE ON generated_outputs
+	BEGIN DELETE FROM generated_output_edits WHERE output_id=OLD.id; DELETE FROM revisions WHERE kind='output' AND item_id=OLD.id; END;`)
 	if err != nil {
 		db.Close()
 		return nil, err
@@ -251,6 +254,16 @@ func (s *Store) sessionIncludingDeleted(id string) (Session, error) {
 // metadata remain immutable. The INSERT selects only an existing recording so
 // deleting a session cannot leave an orphaned correction.
 func (s *Store) UpdateTranscript(id, text string) error {
+	return s.updateTranscript(id, text, nil)
+}
+
+// UpdateTranscriptChecked saves only while the exact text the editor read is
+// still current. The check and revision/content writes share one transaction.
+func (s *Store) UpdateTranscriptChecked(id, text, expectedText string) error {
+	return s.updateTranscript(id, text, &expectedText)
+}
+
+func (s *Store) updateTranscript(id, text string, expectedText *string) error {
 	if strings.TrimSpace(text) == "" {
 		return errors.New("enter a transcript before saving")
 	}
@@ -272,6 +285,12 @@ func (s *Store) UpdateTranscript(id, text string) error {
 	}
 	if err != nil {
 		return err
+	}
+	if expectedText != nil && before != *expectedText {
+		return ErrContentChanged
+	}
+	if before == text {
+		return tx.Commit()
 	}
 	result, err := tx.Exec(`INSERT INTO recording_outputs(id,transcript)
 		SELECT id,? FROM recordings WHERE id=? AND NOT EXISTS (SELECT 1 FROM deleted_recordings d WHERE d.id=recordings.id)

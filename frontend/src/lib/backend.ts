@@ -61,6 +61,7 @@ import {
   QueueBulkText,
   RefinePrompt,
   RefinePromptWithConfig,
+  RefineSelection,
   RegenerateSessionOutput,
   RemoveImport,
   RemoveModel,
@@ -77,9 +78,11 @@ import {
   SaveDictationProfile,
   SaveLatestResult,
   SaveProfileAutomation,
+  SaveSessionOutput,
   SaveSettings,
   SaveTextProcessing,
   SaveTranscript,
+  SaveTranscriptChecked,
   SaveVocabulary,
   SelectFile,
   SendChatMessage,
@@ -145,7 +148,7 @@ export function captureProfileTextModel(config: TextProcessing): ProfileTextMode
 export type ProfileApplication = { id: string; name: string };
 export type AppProfileRule = { applicationId: string; applicationName: string; profileId: string };
 export type TextPrompt = { id: string; name: string; instruction: string };
-export type RevisionKind = "prompt" | "chain" | "vocabulary" | "transcript";
+export type RevisionKind = "prompt" | "chain" | "vocabulary" | "transcript" | "output";
 export type Revision = { id: number; createdAt: string; updatedAt: string; value: string };
 export type PromptChainStep = { id: string; promptId: string; input: string };
 export type PromptChain = { id: string; name: string; steps: PromptChainStep[] };
@@ -321,6 +324,8 @@ function normalizeChat(value: Awaited<ReturnType<typeof GetSessionChat>>): Sessi
   return { ...value, messages: value.messages ?? [], sources: value.sources ?? [] } as SessionChat;
 }
 export type GeneratedOutput = {
+  originalText?: string;
+  edited?: boolean;
   citations?: { source: string; references: ChatReference[] | null } | null;
   id: string;
   sessionId: string;
@@ -702,6 +707,16 @@ export const backend = {
     return { ...result, sessionIds: result.sessionIds ?? [], outputs: result.outputs ?? [] };
   },
   saveTranscript: SaveTranscript,
+  saveTranscriptChecked: SaveTranscriptChecked,
+  saveOutput: async (
+    sessionID: string,
+    outputID: string,
+    text: string,
+    expectedText: string,
+  ): Promise<GeneratedOutput> => {
+    const output = await SaveSessionOutput(sessionID, outputID, text, expectedText);
+    return { ...output, chain: output.chain?.runId ? output.chain : null };
+  },
   renameSession: RenameSession,
   generateSessionTitle: GenerateSessionTitle,
   addVocabularyTerm: AddVocabularyTerm,
@@ -787,6 +802,7 @@ export const backend = {
       }),
     ),
   processText: ProcessText,
+  refineSelection: RefineSelection,
   previewWorkflow: (
     requestID: string,
     config: TextProcessing,

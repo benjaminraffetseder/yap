@@ -57,7 +57,7 @@ func recordRevision(tx *sql.Tx, kind, itemID, before, after string, now time.Tim
 
 func (s *Store) Revisions(kind, itemID string) ([]Revision, error) {
 	switch kind {
-	case "prompt", "chain", "transcript":
+	case "prompt", "chain", "transcript", "output":
 		if itemID == "" {
 			return nil, errors.New("choose an item for version history")
 		}

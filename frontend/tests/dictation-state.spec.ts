@@ -80,7 +80,7 @@ async function showServerAddress(page: Page) {
   await expect(field).toBeVisible();
 }
 async function outputAction(page: Page, action: string) {
-  if (action === "Delete output") {
+  if (action === "Delete output" || action === "Regenerate") {
     await page
       .getByRole("region", { name: "Generated outputs", exact: true })
       .getByRole("button", { name: "Output actions", exact: true })
@@ -6526,6 +6526,7 @@ test("transcription and editor Changes compare the correct versions and remain u
     animations: "disabled",
   });
   await page.getByRole("button", { name: "Edit transcript", exact: true }).click();
+  await page.getByRole("button", { name: "Markdown source", exact: true }).click();
   const dialog = page.getByRole("region", { name: "Edit transcript", exact: true });
   const input = dialog.getByRole("textbox", { name: "Editable text" });
   await dialog.getByRole("button", { name: "Compare with original" }).click();
@@ -6559,8 +6560,9 @@ test("transcription and editor Changes compare the correct versions and remain u
     });
   }
   await reference.getByRole("tab", { name: "Original", exact: true }).click();
-  await expect(input).toHaveValue(
+  await expect(input).toHaveText(
     "Send PostgreSQL on Friday.\n\nConfirm the meeting with the team.",
+    { useInnerText: true },
   );
   await expect(dialog.getByRole("region", { name: "Original transcription" })).toContainText(
     "postgres tomorrow",
@@ -6574,11 +6576,13 @@ test("transcription and editor Changes compare the correct versions and remain u
     .poll(() => page.evaluate(() => window.dictationTest.snapshot.status.transcript))
     .toBe("Send PostgreSQL on Friday.\n\nConfirm the meeting with the team.");
   await page.getByRole("button", { name: "Edit transcript", exact: true }).click();
+  await page.getByRole("button", { name: "Markdown source", exact: true }).click();
   await input.fill("Send postgres tomorrow.\n\nConfirm the meeting with the team.");
   await dialog.getByRole("button", { name: "Done", exact: true }).click();
   await expect(contents.getByRole("tab", { name: "Changes", exact: true })).toHaveCount(0);
   await expect(page.getByRole("region", { name: "Transcription", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Edit transcript", exact: true }).click();
+  await page.getByRole("button", { name: "Markdown source", exact: true }).click();
   await input.fill("New saved transcription.");
   await dialog.getByRole("button", { name: "Done", exact: true }).click();
   await contents.getByRole("tab", { name: "Changes", exact: true }).click();
@@ -7019,8 +7023,8 @@ test("saved outputs retain their recipes, regenerate as new versions and leave e
   expect(await createOutput.innerText()).toBe("");
   const copyOutput = page.getByRole("button", { name: "Copy output", exact: true });
   const copyBounds = (await copyOutput.boundingBox())!;
-  expect(copyBounds.width).toBeGreaterThan(copyBounds.height);
-  await expect(copyOutput.locator('[aria-live="polite"]')).toHaveText("Copy");
+  expect(copyBounds.width).toBeCloseTo(copyBounds.height, 0);
+  await expect(copyOutput.locator('[aria-live="polite"]')).toHaveText("Copy output");
   await expect(toolbar.getByRole("button", { name: "Copy output", exact: true })).toHaveCount(0);
   await expect(
     page
@@ -7055,6 +7059,7 @@ test("saved outputs retain their recipes, regenerate as new versions and leave e
     .toBe("Compare the new model's recognition of names and technical terms.");
   await expect(copyOutput.locator("svg.lucide-check")).toBeVisible();
   await expect.poll(() => copyOutput.boundingBox()).toEqual(copyBounds);
+  await page.getByRole("tab", { name: "Transcription", exact: true }).click();
   await page.getByRole("button", { name: "Edit transcript", exact: true }).click();
   await page
     .getByRole("textbox", { name: "Editable text", exact: true })
@@ -7068,6 +7073,7 @@ test("saved outputs retain their recipes, regenerate as new versions and leave e
     );
     state.callbacks["setup:changed"]();
   });
+  await page.getByRole("tab", { name: "Outputs", exact: true }).click();
   await outputAction(page, "Regenerate");
   await expect
     .poll(() => page.evaluate(() => window.dictationTest.processing?.input))
@@ -7199,7 +7205,7 @@ test("output generation handles failure and cancellation and survives navigation
   await page.getByRole("tab", { name: "Outputs", exact: true }).click();
   await page.evaluate(() => window.dictationTest.processing!.resolve("Finished after navigation"));
   await expect(page.getByRole("article")).toContainText("Finished after navigation");
-  await page.getByRole("button", { name: "Regenerate", exact: true }).click();
+  await outputAction(page, "Regenerate");
   const regenerationID = await page.evaluate(() => window.dictationTest.processing!.id);
   await navigateMain(page, "Models");
   await expect(page).toHaveURL(/#\/models$/);
@@ -7394,7 +7400,9 @@ test("saved outputs remain usable with the model disabled and recover after a fa
     exact: true,
   });
   await expect(output).toContainText("previous-model");
-  await expect(page.getByRole("button", { name: "Regenerate", exact: true })).toBeDisabled();
+  await page.getByRole("button", { name: "Output actions", exact: true }).click();
+  await expect(page.getByRole("menuitem", { name: "Regenerate", exact: true })).toBeDisabled();
+  await page.keyboard.press("Escape");
   await page.getByRole("button", { name: "Copy output", exact: true }).click();
   await expect
     .poll(() => page.evaluate(() => window.dictationTest.snapshot.status.transcript))
@@ -8453,8 +8461,9 @@ test("saved transcript edits drive display, search, copy and export while keepin
     name: "Editable text",
     exact: true,
   });
-  await expect(input).toHaveValue("Send PostgreSQL.");
+  await expect(input).toHaveText("Send PostgreSQL.", { useInnerText: true });
   await expect(input).toBeFocused();
+  await dialog.getByRole("button", { name: "Markdown source", exact: true }).click();
   await expect(
     dialog
       .getByRole("status")
@@ -8522,10 +8531,10 @@ test("editor retains its draft across refresh and failed saves, then saves with 
     window.dictationTest.history();
   });
   await settle(page);
-  await expect(input).toHaveValue("My correction.");
+  await expect(input).toHaveText("My correction.", { useInnerText: true });
   await dialog.getByRole("button", { name: "Done" }).click();
   await expect(dialog.getByRole("alert")).toHaveText("Transcript save failed");
-  await expect(input).toHaveValue("My correction.");
+  await expect(input).toHaveText("My correction.", { useInnerText: true });
   await expect
     .poll(() => page.evaluate(() => window.dictationTest.snapshot.history[0].finalTranscript))
     .toBe("Original plain transcript.");
@@ -8580,7 +8589,7 @@ test("Done and Escape flush edits, empty edits cannot be saved, and outside clic
   ).toBeVisible();
   await input.fill("Discard this.");
   await page.mouse.click(5, 5);
-  await expect(input).toHaveValue("Discard this.");
+  await expect(input).toHaveText("Discard this.", { useInnerText: true });
   await dialog.getByRole("button", { name: "Done", exact: true }).click();
   await expect(dialog).toHaveCount(0);
   await expect(edit).toBeFocused();
@@ -8588,7 +8597,7 @@ test("Done and Escape flush edits, empty edits cannot be saved, and outside clic
     .poll(() => page.evaluate(() => window.dictationTest.snapshot.history[0].finalTranscript))
     .toBe("Discard this.");
   await edit.click();
-  await expect(input).toHaveValue("Discard this.");
+  await expect(input).toHaveText("Discard this.", { useInnerText: true });
   await input.fill("Escape this.");
   await input.press("Escape");
   await expect(dialog).toHaveCount(0);
@@ -8625,8 +8634,9 @@ test("deleted recordings fail safely without losing the editor draft", async ({ 
   await settle(page);
   await dialog.getByRole("button", { name: "Done" }).click();
   await expect(dialog.getByRole("alert")).toHaveText("This dictation no longer exists");
-  await expect(dialog.getByRole("textbox", { name: "Editable text", exact: true })).toHaveValue(
+  await expect(dialog.getByRole("textbox", { name: "Editable text", exact: true })).toHaveText(
     "Keep my draft.",
+    { useInnerText: true },
   );
   await dialog.getByRole("button", { name: "Discard changes", exact: true }).click();
   await dialog.getByRole("button", { name: "Done", exact: true }).click();
@@ -8694,7 +8704,7 @@ test("a selected correction adds a confirmed term without saving the transcript 
   await term.getByRole("button", { name: "Save term", exact: true }).click();
   await expect(page.getByRole("region", { name: "Edit transcript" })).toBeVisible();
   await expect(page.getByRole("status").filter({ hasText: "Added to dictionary" })).toBeVisible();
-  await expect(input).toHaveValue("PostgreSQL connection ready.");
+  await expect(input).toHaveText("PostgreSQL connection ready.", { useInnerText: true });
   await expect(input).toBeFocused();
   await expect
     .poll(() =>
@@ -8761,7 +8771,7 @@ test("term save failures and conflicts preserve both drafts for retry", async ({
   );
   await aliases.fill("post gre SQL");
   await aliases.press("Enter");
-  await expect(input).toHaveValue("PostgreSQL connection ready.");
+  await expect(input).toHaveText("PostgreSQL connection ready.", { useInnerText: true });
   await expect
     .poll(() => page.evaluate(() => window.dictationTest.snapshot.vocabulary.length))
     .toBe(2);
@@ -8783,7 +8793,7 @@ test("Cancel and Escape return from vocabulary confirmation without losing edits
     if (cancelWithEscape)
       await term.getByLabel("Preferred spelling", { exact: true }).press("Escape");
     else await term.getByRole("button", { name: "Cancel", exact: true }).click();
-    await expect(input).toHaveValue("PostgreSQL connection ready.");
+    await expect(input).toHaveText("PostgreSQL connection ready.", { useInnerText: true });
     await expect(input).toBeFocused();
   }
   await expect
@@ -8832,7 +8842,7 @@ test("vocabulary selection rejects multiline or oversized terms and respects act
     window.dictationTest.status("idle");
   });
   await term.getByRole("button", { name: "Save term", exact: true }).click();
-  await expect(input).toHaveValue("PostgreSQL");
+  await expect(input).toHaveText("PostgreSQL", { useInnerText: true });
 });
 
 for (const deleted of [false, true]) {
@@ -10647,8 +10657,9 @@ test("prompt previews use the draft and change History only after apply and save
     .poll(() => page.evaluate(() => window.dictationTest.snapshot.history[0].finalTranscript))
     .toBe("Saved correction.");
   await page.getByRole("button", { name: "Replace draft", exact: true }).click();
-  await expect(page.getByRole("textbox", { name: "Editable text", exact: true })).toHaveValue(
+  await expect(page.getByRole("textbox", { name: "Editable text", exact: true })).toHaveText(
     "Concise summary.",
+    { useInnerText: true },
   );
   await expect
     .poll(() => page.evaluate(() => window.dictationTest.snapshot.status.transcript))
@@ -10764,7 +10775,9 @@ test("Markdown formats transcriptions and outputs while copy, export and editing
     .click();
   await expect.poll(() => page.evaluate(() => window.dictationTest.exportedText)).toBe(source);
   await page.getByRole("button", { name: "Edit transcript", exact: true }).click();
-  await expect(page.getByRole("textbox", { name: "Editable text" })).toHaveValue(source);
+  await expect(page.getByRole("textbox", { name: "Editable text" })).toHaveText(source, {
+    useInnerText: true,
+  });
   await page.getByRole("button", { name: "Done", exact: true }).click();
   await page.getByRole("tab", { name: "Original", exact: true }).click();
   const original = page.getByRole("region", { name: "Original transcription", exact: true });
@@ -10817,8 +10830,10 @@ test("Markdown previews render formatting and apply the original source to the d
   await expect(preview.getByRole("listitem")).toHaveCount(2);
   await expect(preview.locator("strong")).toHaveText("First");
   await page.getByRole("button", { name: "Replace draft", exact: true }).click();
-  await expect(page.getByRole("textbox", { name: "Editable text", exact: true })).toHaveValue(
+  await page.getByRole("button", { name: "Markdown source", exact: true }).click();
+  await expect(page.getByRole("textbox", { name: "Editable text", exact: true })).toHaveText(
     source,
+    { useInnerText: true },
   );
   await page.getByRole("button", { name: "Done", exact: true }).click();
   await expect(
@@ -10850,21 +10865,24 @@ test("failed and cancelled generation retain the draft and suppress late results
   await expect(page.getByText("Processing cancelled", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Replace draft", exact: true })).toBeDisabled();
   await page.getByRole("button", { name: "Back to transcript", exact: true }).click();
-  await expect(page.getByRole("textbox", { name: "Editable text", exact: true })).toHaveValue(
+  await expect(page.getByRole("textbox", { name: "Editable text", exact: true })).toHaveText(
     "Unsaved draft for summary.",
+    { useInnerText: true },
   );
   await page.getByRole("button", { name: "Run prompt or chain…", exact: true }).click();
   await page.getByRole("button", { name: "Generate preview", exact: true }).click();
   await page.keyboard.press("Escape");
-  await expect(page.getByRole("textbox", { name: "Editable text", exact: true })).toHaveValue(
+  await expect(page.getByRole("textbox", { name: "Editable text", exact: true })).toHaveText(
     "Unsaved draft for summary.",
+    { useInnerText: true },
   );
   await expect
     .poll(() => page.evaluate(() => window.dictationTest.cancelledProcessing.length))
     .toBe(2);
   await page.evaluate(() => window.dictationTest.processing!.resolve("Another late reply."));
-  await expect(page.getByRole("textbox", { name: "Editable text", exact: true })).toHaveValue(
+  await expect(page.getByRole("textbox", { name: "Editable text", exact: true })).toHaveText(
     "Unsaved draft for summary.",
+    { useInnerText: true },
   );
 });
 
@@ -11934,8 +11952,11 @@ test("audio import handles file-picker cancellation, unavailable models, invalid
     name: "Import audio",
     exact: true,
   });
-  await expect(button).toHaveAttribute("title", /WAV, MP3, M4A, AAC, FLAC, OGG, Opus, AIFF, WMA/);
-  await expect(button).toHaveAttribute("title", /up to 25 minutes/);
+  await button.focus();
+  await expect(page.locator('[data-slot="tooltip-content"]')).toContainText(
+    "WAV, MP3, M4A, AAC, FLAC, OGG, Opus, AIFF, WMA",
+  );
+  await expect(page.locator('[data-slot="tooltip-content"]')).toContainText("up to 25 minutes");
   await page.evaluate(() => {
     window.dictationTest.cancelAudioDialog = true;
   });
@@ -12897,6 +12918,7 @@ for (const chain of [false, true]) {
     await generateWith(page, chain ? "Run chain" : "Generate output");
     await expect.poll(() => page.evaluate(() => !!window.dictationTest.processing)).toBe(true);
     await page.getByRole("button", { name: "Minimize activity pane", exact: true }).click();
+    await page.getByRole("tab", { name: "Transcription", exact: true }).click();
     await page.getByRole("button", { name: "Edit transcript", exact: true }).click();
     const editor = page.getByRole("region", { name: "Edit transcript", exact: true });
     await expect(editor).toBeVisible();
@@ -12915,6 +12937,7 @@ for (const chain of [false, true]) {
       .toBe(chain ? 2 : 1);
     expect(await page.evaluate(() => window.dictationTest.cancelledProcessing)).toEqual([]);
     await editor.getByRole("button", { name: "Done", exact: true }).click();
+    await page.getByRole("tab", { name: "Outputs", exact: true }).click();
     await expect(page.getByRole("combobox", { name: /Saved output/ })).toBeVisible();
     await expect(
       page.getByRole("article", { name: chain ? "Summary output" : "Cleanup output", exact: true }),
@@ -14333,8 +14356,9 @@ test("auto-save history restores the vocabulary list and transcript, marks curre
   await expect(history.locator("del")).toContainText("Current");
   await expect(history.locator("ins")).toContainText("Earlier");
   await history.getByRole("button", { name: "Restore version", exact: true }).click();
-  await expect(editor.getByRole("textbox", { name: "Editable text" })).toHaveValue(
+  await expect(editor.getByRole("textbox", { name: "Editable text" })).toHaveText(
     "Earlier correction",
+    { useInnerText: true },
   );
   await editor.getByRole("button", { name: "Done", exact: true }).click();
   await expect
@@ -14884,7 +14908,8 @@ test("UI polish long transcript comparison preserves literal source, fits the dr
     .poll(() => draft.evaluate((node) => node.scrollHeight <= node.clientHeight))
     .toBe(true);
   const layout = await editor.evaluate((node) => {
-    const draft = node.querySelector<HTMLTextAreaElement>("#transcript-editor")!;
+    const draft = node.querySelector<HTMLElement>("#transcript-editor")!;
+    const frame = draft.closest<HTMLElement>('[data-slot="content-editor"]')!;
     const original = node.querySelector<HTMLElement>('[data-slot="editor-original"]')!;
     const a = getComputedStyle(draft),
       b = getComputedStyle(original);
@@ -14894,10 +14919,7 @@ test("UI polish long transcript comparison preserves literal source, fits the dr
       draftLine: a.lineHeight,
       originalLine: b.lineHeight,
       topDelta: Math.abs(
-        draft.getBoundingClientRect().top +
-          parseFloat(a.borderTopWidth) +
-          parseFloat(a.paddingTop) -
-          original.getBoundingClientRect().top,
+        frame.getBoundingClientRect().top - original.parentElement!.getBoundingClientRect().top,
       ),
       widthDelta: Math.abs(
         draft.clientWidth -
@@ -14919,6 +14941,7 @@ test("UI polish long transcript comparison preserves literal source, fits the dr
   await draft.press("Control+End");
   await page.keyboard.type(" Final correction.");
   const done = editor.getByRole("button", { name: "Done", exact: true });
+  await done.scrollIntoViewIfNeeded();
   await expect(done).toBeInViewport();
   await done.click();
   await expect(editor).toHaveCount(0);
@@ -14971,7 +14994,7 @@ for (const [language, width, height] of [
     await edit.press("Enter");
     await expect(
       page.getByRole("textbox", { name: copy["transcriptEditor.editableText"], exact: true }),
-    ).toHaveValue("Original saved transcript.");
+    ).toHaveText("Original saved transcript.");
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
       true,
     );
@@ -15459,7 +15482,7 @@ test("native resource queries and mutations run while internet is offline", asyn
   await page.getByRole("link", { name: "Offline original", exact: true }).click();
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("Offline original");
   await page.getByRole("button", { name: "Edit transcript", exact: true }).click();
-  const editor = page.getByLabel("Editable text", { exact: true });
+  const editor = page.getByRole("textbox", { name: "Editable text", exact: true });
   await editor.fill("Saved without internet");
   await page.getByRole("button", { name: "Done", exact: true }).click();
   await expect(page.getByRole("region", { name: "Result", exact: true })).toContainText(

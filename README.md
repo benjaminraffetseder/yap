@@ -22,6 +22,8 @@ on the session and its portals; see the [Linux notes](docs/linux.md) for require
 - Export selected transcripts or all search matches, with optional separate files
   for generated outputs, as a ZIP archive or folder.
 - Add names and preferred spellings to a custom dictionary.
+- Edit transcripts and generated outputs visually or as Markdown, find and replace
+  words, apply dictionary corrections, and review local-model refinements of selected passages.
 - Switch dictation profiles with saved speech-model, language, cleanup, and prompt choices.
 - Choose profiles automatically per app, or cycle them with a global shortcut.
 - Transcribe audio files, including WAV, MP3, and M4A.
