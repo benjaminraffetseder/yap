@@ -12974,7 +12974,7 @@ test("copy confirmation ignores a reply for a different transcript tab", async (
   await expect(originalCopy).toBeDisabled();
   await page.evaluate(() => Reflect.get(window, "finishDelayedCopy")());
   await expect(originalCopy).toBeEnabled();
-  expect(await originalCopy.textContent()).toBe("Copy");
+  await expect(originalCopy).toHaveText("Copy original");
   expect(await page.evaluate(() => window.dictationTest.clipboard)).toBe("Edited transcript.");
   await originalCopy.click();
   await page.evaluate(() => Reflect.get(window, "finishDelayedCopy")());
