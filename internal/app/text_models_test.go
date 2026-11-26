@@ -5,6 +5,7 @@ import (
 	"reflect"
 	"testing"
 	textmodel "yap/internal/inference/text"
+	"yap/internal/models"
 )
 
 func TestTextRuntimeUpdateRespectsOwnershipAndPreservesConfiguration(t *testing.T) {
@@ -26,6 +27,12 @@ func TestTextRuntimeUpdateRespectsOwnershipAndPreservesConfiguration(t *testing.
 	a.textJobID = ""
 	if err := a.UpdateTextRuntime("unknown-model"); err == nil || engine.releases != 0 {
 		t.Fatal("invalid update released the text engine", err)
+	}
+	if !models.TextRuntimeAvailable() {
+		if err := a.UpdateTextRuntime("gemma-4-e2b"); err == nil || engine.releases != 0 || !reflect.DeepEqual(a.textConfig, before) {
+			t.Fatal("unsupported runtime update changed text configuration or released the worker", engine.releases, err)
+		}
+		return
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()

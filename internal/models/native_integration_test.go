@@ -24,6 +24,19 @@ func TestMain(m *testing.M) {
 		}
 		os.Exit(0)
 	}
+	// Installers resolve their storage roots before comparing paths. Keep test
+	// fixtures in that same form on macOS /var aliases and Windows short paths.
+	temp, err := filepath.EvalSymlinks(os.TempDir())
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	for _, name := range []string{"TMPDIR", "TMP", "TEMP"} {
+		if err := os.Setenv(name, temp); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+	}
 	os.Exit(m.Run())
 }
 
