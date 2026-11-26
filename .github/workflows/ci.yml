@@ -1,0 +1,124 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Windows x64
+            runner: windows-2022
+            arch: amd64
+            cgo: '0'
+          - name: Linux x64
+            runner: ubuntu-24.04
+            arch: amd64
+            cgo: '1'
+          - name: macOS Apple Silicon
+            runner: macos-15
+            arch: arm64
+            cgo: '1'
+          - name: macOS Intel
+            runner: macos-15-intel
+            arch: amd64
+            cgo: '1'
+    defaults:
+      run:
+        shell: bash
+    env:
+      CGO_ENABLED: ${{ matrix.cgo }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: |
+            go.sum
+            third_party/hotkey/go.sum
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '22.22.0'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install Linux build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y \
+            build-essential pkg-config libgtk-4-dev libwebkitgtk-6.0-dev \
+            libx11-dev libxext-dev dbus-daemon
+
+      - name: Set macOS deployment target
+        if: runner.os == 'macOS'
+        run: |
+          printf '%s\n' \
+            'MACOSX_DEPLOYMENT_TARGET=13.3' \
+            'CGO_CFLAGS=-mmacosx-version-min=13.3' \
+            'CGO_LDFLAGS=-mmacosx-version-min=13.3' >> "$GITHUB_ENV"
+
+      - name: Install Wails CLI
+        run: go install github.com/wailsapp/wails/v3/cmd/wails3@v3.1.0
+
+      # A fresh checkout has neither frontend/dist nor frontend/bindings.
+      # Build first so Go's embed and the frontend tests use generated assets.
+      - name: Build production app
+        run: wails3 build ARCH=${{ matrix.arch }}
+
+      - name: Test Go packages
+        run: go test ./...
+
+      - name: Vet Go packages
+        run: go vet ./...
+
+      # This replacement is a separate Go module, outside the root test pattern.
+      - name: Test patched hotkey module
+        working-directory: third_party/hotkey
+        run: go test ./...
+
+      - name: Lint frontend
+        if: runner.os == 'Windows'
+        working-directory: frontend
+        run: npm run lint
+
+      - name: Install Chromium
+        if: runner.os == 'Windows'
+        working-directory: frontend
+        run: npx playwright install chromium
+
+      - name: Test frontend
+        if: runner.os == 'Windows'
+        working-directory: frontend
+        run: npm run test:ui -- --workers=2 --reporter=line,html --trace=retain-on-failure
+
+      - name: Upload frontend failure report
+        if: failure() && runner.os == 'Windows'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: playwright-failure-${{ github.run_attempt }}
+          path: |
+            frontend/playwright-report/
+            frontend/.playwright/test-results/
+          include-hidden-files: true
+          if-no-files-found: ignore
+          retention-days: 7
