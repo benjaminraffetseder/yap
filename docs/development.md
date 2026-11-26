@@ -369,7 +369,7 @@ combine all final package entries into one `SHA256SUMS` as described in the
 update/relaunch checks still need desktop testing. The macOS packaging path still
 needs its first native verification; adding a workflow alone does not validate it.
 
-Go comes from `go.mod`; Node is pinned to 22.22.0 and Wails to 3.1.0 in both
+Go comes from `go.mod`; Node is pinned to 26.13.1 and Wails to 3.1.0 in both
 workflows. Keep these pins aligned with the documented prerequisites. Third-party
 actions are pinned to full commit hashes, with their release versions in comments.
 
