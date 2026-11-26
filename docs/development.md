@@ -340,12 +340,21 @@ The landing site is maintained separately. It isn't needed to build or run Yap.
 ### GitHub Actions
 
 The **CI** workflow runs on pull requests and pushes to `main`, and can also be
-started manually. It builds the production app and runs Go tests/vet on Windows
-x64, Ubuntu 24.04 x64, and both Apple Silicon and Intel Macs. The build generates
-Wails bindings and frontend assets before tests; no generated files need to be
-committed. It also tests the separate patched hotkey module. Windows runs ESLint
-and the Chromium Playwright suite, retaining a report and traces for seven days
-when a run fails. TypeScript checking is part of every frontend build.
+started manually. Documentation-only changes skip the build and test jobs.
+Code changes build the production app and run Go tests/vet and the separate
+patched hotkey module tests on Windows x64 and Ubuntu 24.04 x64. Both Apple
+Silicon and Intel Macs join that matrix for backend/native code, build scripts,
+dependencies, frontend build configuration, or CI changes. Manual CI runs include
+all four platforms; run CI manually before a Mac release when automatic checks
+have not covered that commit. Native jobs have a 30-minute limit.
+
+A separate Windows **Frontend** job generates Wails bindings, checks TypeScript,
+runs ESLint, and runs the Chromium Playwright suite. It starts alongside the
+native jobs and uses two workers with test-level parallelism, including tests in
+the large dictation spec. Its 60-minute limit leaves room for the complete suite;
+reports and traces from failed runs are retained for seven days. Native builds
+generate their own bindings and frontend assets. No generated files need to be
+committed.
 
 The **Build packages** workflow is manual: select it under **Actions**, choose
 **Run workflow**, and select the branch to build. GitHub needs the workflow

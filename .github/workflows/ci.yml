@@ -14,30 +14,40 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  changes:
+    name: Select checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      code: ${{ steps.scope.outputs.code }}
+      native_matrix: ${{ steps.scope.outputs.native_matrix }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '26.13.1'
+          package-manager-cache: false
+
+      - name: Select code and native platform checks
+        id: scope
+        env:
+          CI_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          CI_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: node .github/scripts/ci-scope.mjs
+
   build-and-test:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - name: Windows x64
-            runner: windows-2022
-            arch: amd64
-            cgo: '0'
-          - name: Linux x64
-            runner: ubuntu-24.04
-            arch: amd64
-            cgo: '1'
-          - name: macOS Apple Silicon
-            runner: macos-15
-            arch: arm64
-            cgo: '1'
-          - name: macOS Intel
-            runner: macos-15-intel
-            arch: amd64
-            cgo: '1'
+      matrix: ${{ fromJSON(needs.changes.outputs.native_matrix) }}
     defaults:
       run:
         shell: bash
@@ -81,7 +91,7 @@ jobs:
         run: go install github.com/wailsapp/wails/v3/cmd/wails3@v3.1.0
 
       # A fresh checkout has neither frontend/dist nor frontend/bindings.
-      # Build first so Go's embed and the frontend tests use generated assets.
+      # Build first so Go's embed has generated frontend assets.
       - name: Build production app
         run: wails3 build ARCH=${{ matrix.arch }}
 
@@ -96,23 +106,63 @@ jobs:
         working-directory: third_party/hotkey
         run: go test ./...
 
+  frontend:
+    name: Frontend
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    runs-on: windows-2022
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+    env:
+      CGO_ENABLED: '0'
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: |
+            go.sum
+            third_party/hotkey/go.sum
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '26.13.1'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Install Wails CLI
+        run: go install github.com/wailsapp/wails/v3/cmd/wails3@v3.1.0
+
+      - name: Generate Wails bindings
+        run: wails3 generate bindings -ts -i -names
+
+      - name: Typecheck frontend
+        working-directory: frontend
+        run: npm run typecheck
+
       - name: Lint frontend
-        if: runner.os == 'Windows'
         working-directory: frontend
         run: npm run lint
 
       - name: Install Chromium
-        if: runner.os == 'Windows'
         working-directory: frontend
         run: npx playwright install chromium
 
       - name: Test frontend
-        if: runner.os == 'Windows'
         working-directory: frontend
-        run: npm run test:ui -- --workers=2 --reporter=line,html --trace=retain-on-failure
+        run: npm run test:ui -- --workers=2 --fully-parallel --reporter=line,html --trace=retain-on-failure
 
       - name: Upload frontend failure report
-        if: failure() && runner.os == 'Windows'
+        if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: playwright-failure-${{ github.run_attempt }}

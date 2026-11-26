@@ -314,6 +314,8 @@ test("editing chrome uses matching button sizes, shadcn checkbox, overflow menu 
   await page.getByRole("tab", { name: "Outputs", exact: true }).click();
   await page.getByRole("button", { name: "Edit output", exact: true }).click();
   const editor = page.locator('[data-slot="output-editor"]');
+  const textbox = editor.getByRole("textbox", { name: "Editing output", exact: true });
+  await expect(textbox).toBeFocused();
   const copy = await editor.getByRole("button", { name: "Copy", exact: true }).boundingBox();
   const done = await editor.getByRole("button", { name: "Done", exact: true }).boundingBox();
   expect(copy!.height).toBe(done!.height);
@@ -321,7 +323,6 @@ test("editing chrome uses matching button sizes, shadcn checkbox, overflow menu 
   await editor.getByRole("button", { name: "Editing tools", exact: true }).click();
   await expect(page.getByRole("menuitem", { name: "Version history", exact: true })).toBeVisible();
   await page.keyboard.press("Escape");
-  const textbox = editor.getByRole("textbox", { name: "Editing output", exact: true });
   await textbox.focus();
   await page.keyboard.press("Control+f");
   const search = editor.getByRole("search");
