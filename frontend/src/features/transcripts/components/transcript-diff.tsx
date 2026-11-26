@@ -2,7 +2,7 @@ import { Button } from "@/components/ui/button";
 import { transcriptDiff } from "@/features/transcripts/lib/transcript-diff";
 import { cn } from "@/lib/utils";
 import { ChevronDown, ChevronUp } from "lucide-react";
-import { useMemo, useRef, useState } from "react";
+import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 export function TranscriptDiff({
@@ -17,6 +17,23 @@ export function TranscriptDiff({
   const { t } = useTranslation();
   const parts = useMemo(() => transcriptDiff(before, after), [before, after]);
   const root = useRef<HTMLDivElement>(null);
+  const controls = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    let scroller = root.current?.parentElement ?? null;
+    while (scroller && !/auto|scroll/.test(getComputedStyle(scroller).overflowY))
+      scroller = scroller.parentElement;
+    if (!scroller || !controls.current) return;
+    const align = () => {
+      // Sticky offsets start at the scroll container's padding edge. Cancel
+      // that inset so text cannot scroll into a strip above these controls.
+      if (controls.current)
+        controls.current.style.top = `${-(parseFloat(getComputedStyle(scroller).paddingTop) || 0)}px`;
+    };
+    align();
+    const observer = new ResizeObserver(align);
+    observer.observe(scroller);
+    return () => observer.disconnect();
+  }, [before, after]);
   const [selection, setSelection] = useState({ before, after, active: -1 });
   const active = selection.before === before && selection.after === after ? selection.active : -1;
   const changes = useMemo(() => {
@@ -57,7 +74,11 @@ export function TranscriptDiff({
     );
   return (
     <div ref={root} className="space-y-5">
-      <div className="sticky top-0 z-10 flex flex-wrap items-center justify-between gap-3 bg-background py-2">
+      <div
+        ref={controls}
+        data-slot="transcript-diff-controls"
+        className="sticky top-0 z-10 flex flex-wrap items-center justify-between gap-3 border-b bg-background py-2"
+      >
         <div
           className="flex flex-wrap gap-4 text-xs text-muted-foreground"
           aria-label={t("transcriptDiff.changeLegend")}

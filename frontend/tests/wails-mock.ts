@@ -63,6 +63,17 @@ if (methods) {
         ?.filter((entry) => !entry.deletedAt)
         .slice(0, 5) ?? [];
   if (!methods.GetAudioURL) methods.GetAudioURL = (...args: unknown[]) => methods.GetAudio(...args);
+  if (!methods.SaveTranscriptChecked && methods.SaveTranscript)
+    methods.SaveTranscriptChecked = async (id: unknown, text: unknown, expected: unknown) => {
+      const session = (await methods.GetSession(id)) as {
+        finalTranscript?: string;
+        rawTranscript: string;
+      } | null;
+      if (!session) throw new Error("This dictation no longer exists");
+      if ((session.finalTranscript ?? session.rawTranscript) !== expected)
+        throw new Error("the transcript changed while editing; your draft was kept");
+      return methods.SaveTranscript(id, text);
+    };
   if (!methods.PermanentlyDeleteSessionsWithResult)
     methods.PermanentlyDeleteSessionsWithResult = async (ids: unknown) => {
       await methods.PermanentlyDeleteSessions(ids);

@@ -95,10 +95,7 @@ export function VocabularyPage() {
   });
   return (
     <div className="space-y-7">
-      <PageHeading
-        title={t("common.vocabulary")}
-        description={t("vocabularyPage.teachYapTheNamesBrandsAndTerms")}
-      />
+      <PageHeading title={t("common.vocabulary")} />
       <fieldset disabled={disabled} className="min-w-0 space-y-6 disabled:opacity-60">
         <section aria-labelledby="vocabulary-terms-heading" className="space-y-4">
           <div className="sticky top-0 z-20 flex flex-wrap items-center justify-between gap-3 bg-background py-3">

@@ -40,6 +40,7 @@ src/
 | `features/backup`      | Backup export, preview, and restore                                        |
 | `features/chat`        | Transcription chat, voice input, citations, and source references          |
 | `features/dictation`   | Recording, shortcuts, diagnostics, and runtime contexts/events             |
+| `features/editing`     | Visual/source Markdown editing, search, dictionary, and refinement         |
 | `features/history`     | History lists, search, selection, deletion, and session pages              |
 | `features/home`        | Home page and the latest-result surface                                    |
 | `features/indicator`   | Independent floating recording/status window                               |

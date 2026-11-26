@@ -361,6 +361,14 @@ ID, then run `go test ./internal/app -run '^TestChatLiveLocalModel$' -v -count=1
 root. It uses synthetic history in a temporary database to check source updates,
 passage references, and conversation compaction without changing app settings.
 
+For a selection-refinement smoke test using an already installed built-in model,
+set `YAP_REFINEMENT_MODEL_DIR` to the existing Yap data directory and run
+`go test ./internal/app/textprocessing -run '^TestSelectionRefinementLiveLocalModel$' -v -count=1 -timeout 10m`.
+It uses synthetic English/German passages for all six presets and checks central
+names and numbers. `YAP_REFINEMENT_MODEL` optionally selects the installed model
+(default `gemma-4-e2b`). It does not download weights or read user history/settings.
+This checks the local request path and basic fidelity, not general editorial quality.
+
 To smoke-test a built-in Gemma model on Windows x64 or Linux x64/arm64, set
 `YAP_GEMMA_INTEGRATION`
 to `gemma-4-e2b`, `gemma-4-e4b`, or `gemma-4-12b`, then run

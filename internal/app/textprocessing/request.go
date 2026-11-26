@@ -23,6 +23,7 @@ type Request struct {
 	Target          *OutputTarget
 	Refinement      *PromptRefinement
 	Preview         *PreviewInput
+	Selection       *SelectionRefinement
 }
 
 type Source interface {
@@ -78,6 +79,13 @@ func Prepare(saved textmodel.Config, request Request, source Source) (Prepared, 
 		prepared.Session = storage.Session{RawTranscript: sample.Original, FinalTranscript: sample.Transcript}
 		prepared.Recipe, prepared.preview = &recipe, true
 		return prepared, nil
+	}
+	if selection := request.Selection; selection != nil {
+		if err := textmodel.ValidateText(input); err != nil {
+			return Prepared{}, err
+		}
+		prepared.Prompt, err = selectionPrompt(*selection)
+		return prepared, err
 	}
 	if request.TitleSessionID != "" {
 		entry, err := source.Session(request.TitleSessionID)

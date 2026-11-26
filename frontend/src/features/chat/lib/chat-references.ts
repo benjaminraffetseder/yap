@@ -2,7 +2,7 @@ import type { ChatReference } from "@/lib/backend";
 
 export type SourceRange = { start: number; end: number };
 
-const citationPattern = /\[\[\d{1,5}(?:(?:\]\s*,\s*\[|,\s*)\d{1,5})*\]\]/g;
+export const citationPattern = /\[\[\d{1,5}(?:(?:\]\s*,\s*\[|,\s*)\d{1,5})*\]\]/g;
 
 export function chatReplyText(text: string) {
   return text.replace(new RegExp(`[ \\t]*${citationPattern.source}`, "g"), "").trim();

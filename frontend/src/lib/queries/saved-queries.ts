@@ -17,20 +17,23 @@ export const useModelCatalog = () => useQuery({ ...modelCatalogQuery, enabled: i
 // Only draft editors need to distinguish identical successful reads. Query's
 // success counter advances even for structurally shared data in the same millisecond.
 export function useSavedReadVersion(domain: "configuration" | "vocabulary") {
+  return useResourceReadVersion(resourceKeys[domain]);
+}
+
+export function useResourceReadVersion(key: readonly unknown[]) {
   const client = useQueryClient();
-  const key = resourceKeys[domain];
+  const identity = JSON.stringify(key);
   const subscribe = useCallback(
     (notify: () => void) =>
       client.getQueryCache().subscribe((event) => {
         if (
           event.type === "updated" &&
           event.action.type === "success" &&
-          event.query.queryKey[0] === key[0] &&
-          event.query.queryKey[1] === key[1]
+          JSON.stringify(event.query.queryKey) === identity
         )
           notify();
       }),
-    [client, key],
+    [client, identity],
   );
   return useSyncExternalStore(subscribe, () => client.getQueryState(key)?.dataUpdateCount ?? 0);
 }

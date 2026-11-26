@@ -1,5 +1,6 @@
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   useDictationActions,
   useDictationConnection,
@@ -16,10 +17,12 @@ export function AudioImportButton({
   showDownloadProgress = true,
   quiet = false,
   label,
+  iconOnly = false,
 }: {
   showDownloadProgress?: boolean;
   quiet?: boolean;
   label?: ReactNode;
+  iconOnly?: boolean;
 }) {
   const { t } = useTranslation();
   const { run } = useDictationActions();
@@ -34,20 +37,37 @@ export function AudioImportButton({
       setPending(false);
     }
   }
+  const disabled = !isDesktop || loading || !snapshot.ready || pending;
+  const button = (
+    <Button
+      pressFeedback
+      variant={quiet ? "ghost" : "outline"}
+      size={iconOnly ? "icon" : "default"}
+      className={quiet ? "max-w-full whitespace-normal text-muted-foreground" : undefined}
+      aria-label={t("audioImportButton.importAudio")}
+      title={iconOnly ? undefined : t("audioImportButton.wAVMP3M4AAACFLACOGGOpus")}
+      disabled={disabled}
+      onClick={() => void importAudio()}
+    >
+      <Upload aria-hidden="true" />
+      <span className={iconOnly ? "sr-only" : undefined}>
+        {label ?? t("audioImportButton.importAudio")}
+      </span>
+    </Button>
+  );
   return (
     <div className="flex flex-wrap items-center gap-3">
-      <Button
-        pressFeedback
-        variant={quiet ? "ghost" : "outline"}
-        className={quiet ? "max-w-full whitespace-normal text-muted-foreground" : undefined}
-        aria-label={t("audioImportButton.importAudio")}
-        title={t("audioImportButton.wAVMP3M4AAACFLACOGGOpus")}
-        disabled={!isDesktop || loading || !snapshot.ready || pending}
-        onClick={() => void importAudio()}
-      >
-        <Upload aria-hidden="true" className="size-4" />
-        {label ?? t("audioImportButton.importAudio")}
-      </Button>
+      {iconOnly ? (
+        <Tooltip>
+          <TooltipTrigger render={button} disabled={disabled} />
+          <TooltipContent className="flex-col items-start">
+            <span>{t("audioImportButton.importAudio")}</span>
+            <span>{t("audioImportButton.wAVMP3M4AAACFLACOGGOpus")}</span>
+          </TooltipContent>
+        </Tooltip>
+      ) : (
+        button
+      )}
       {showDownloadProgress &&
         snapshot.status.phase === "downloading" &&
         !snapshot.status.importId && (

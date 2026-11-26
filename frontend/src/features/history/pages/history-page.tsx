@@ -87,26 +87,27 @@ export function HistoryPage({ active = true }: { active?: boolean }) {
       key={deleted ? "deleted" : "history"}
       active={active}
       viewToggle={
-        <Button
-          ref={toggle}
-          variant="outline"
-          aria-label={toggleLabel}
-          aria-pressed={deleted}
-          className="text-muted-foreground"
-          onClick={() => {
-            focusToggle.current = true;
-            setParams((old) => {
-              const next = new URLSearchParams();
-              const tryPrompt = old.get("tryPrompt");
-              if (tryPrompt) next.set("tryPrompt", tryPrompt);
-              if (!deleted) next.set("view", "deleted");
-              return next;
-            });
-          }}
-        >
-          {deleted ? <History aria-hidden="true" /> : <Trash2 aria-hidden="true" />}
-          {deleted ? t("historyPage.showAllDictations") : t("historyPage.recentlyDeleted")}
-        </Button>
+        <Tooltip>
+          <TooltipTrigger
+            render={<Button ref={toggle} variant="outline" size="icon" />}
+            aria-label={toggleLabel}
+            aria-pressed={deleted}
+            className="text-muted-foreground"
+            onClick={() => {
+              focusToggle.current = true;
+              setParams((old) => {
+                const next = new URLSearchParams();
+                const tryPrompt = old.get("tryPrompt");
+                if (tryPrompt) next.set("tryPrompt", tryPrompt);
+                if (!deleted) next.set("view", "deleted");
+                return next;
+              });
+            }}
+          >
+            {deleted ? <History aria-hidden="true" /> : <Trash2 aria-hidden="true" />}
+          </TooltipTrigger>
+          <TooltipContent>{toggleLabel}</TooltipContent>
+        </Tooltip>
       }
     />
   );
@@ -699,14 +700,9 @@ function HistoryList({ viewToggle, active }: { viewToggle: ReactNode; active: bo
       >
         <PageHeading
           title={deleted ? t("historyPage.recentlyDeleted") : t("common.history")}
-          description={
-            deleted
-              ? t("historyPage.restoreDictationsWithin30DaysOrDelete")
-              : t("historyPage.yourDictationsReadyToRevisit")
-          }
-          className="grid grid-cols-1 items-start gap-3 border-b-0 pb-0 @min-[58rem]/history-toolbar:grid-cols-[minmax(0,1fr)_auto] @min-[58rem]/history-toolbar:items-center @min-[58rem]/history-toolbar:gap-4"
+          className="grid grid-cols-1 items-center gap-3 border-b-0 pb-0 @min-[44rem]/history-toolbar:grid-cols-[minmax(0,1fr)_auto] @min-[44rem]/history-toolbar:gap-6"
         >
-          <div className="flex w-full min-w-0 flex-wrap items-center gap-2.5 lg:ml-auto lg:w-auto lg:gap-3">
+          <div className="flex w-full min-w-0 items-center gap-2.5 @min-[44rem]/history-toolbar:w-auto">
             <HistorySearch
               active={active}
               ref={searchInput}
@@ -714,7 +710,7 @@ function HistoryList({ viewToggle, active }: { viewToggle: ReactNode; active: bo
               onSearch={changeSearch}
               onPendingChange={setSearchPending}
             />
-            {!deleted && <AudioImportButton showDownloadProgress={false} />}
+            {!deleted && <AudioImportButton showDownloadProgress={false} iconOnly />}
             {viewToggle}
           </div>
           <p role="status" className="sr-only">

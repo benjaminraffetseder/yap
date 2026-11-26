@@ -8,20 +8,26 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { ChatSourceText } from "@/features/chat/components/chat-source-text";
 import {
   useDictationActions,
   useDictationActivity,
   useDictationConnection,
 } from "@/features/dictation/hooks/use-dictation-state";
+import {
+  ContentEditor,
+  type ContentEditorHandle,
+} from "@/features/transcripts/components/content-editor";
 import { InferenceStats } from "@/features/transcripts/components/inference-stats";
 import { TranscriptContextMenu } from "@/features/transcripts/components/transcript-context-menu";
 import { useSavedDraft } from "@/hooks/use-saved-draft";
 import i18n from "@/i18n";
 import { nativeText } from "@/i18n/native-text";
 import { backend, isBusy, isDesktop, type HomeResult } from "@/lib/backend";
+import { hasOpenKeyboardOverlay } from "@/lib/keyboard-shortcuts";
 import { homeResultQuery, resourceKeys } from "@/lib/queries/resource-queries";
 import { isCancelledError, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowUpRight, Check, Copy, Loader2, Pencil, X } from "lucide-react";
+import { ArrowUpRight, Check, Copy, Loader2, Pencil, Save, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router";
@@ -104,6 +110,36 @@ export function HomeResultPanel({
   const copiedAction = copiedReceipt?.context === copyContext ? copiedReceipt.action : "";
   const latestCopyContext = useRef(copyContext);
   const mounted = useRef(true);
+  const copyShortcut = useRef({ enabled: false, copy: () => {} });
+  copyShortcut.current = {
+    enabled: !!result && !editing && visibleView === "result" && !busy && !pending && !fetchError,
+    copy: () => {
+      if (result) void act(result, "copy");
+    },
+  };
+  useEffect(() => {
+    function keydown(event: KeyboardEvent) {
+      if (
+        !copyShortcut.current.enabled ||
+        event.defaultPrevented ||
+        event.repeat ||
+        event.isComposing ||
+        event.altKey ||
+        !event.shiftKey ||
+        !(event.ctrlKey || event.metaKey) ||
+        event.key.toLowerCase() !== "c" ||
+        hasOpenKeyboardOverlay() ||
+        window.getSelection()?.isCollapsed === false ||
+        (event.target instanceof Element &&
+          event.target.closest('input, textarea, [contenteditable="true"]'))
+      )
+        return;
+      event.preventDefault();
+      copyShortcut.current.copy();
+    }
+    window.addEventListener("keydown", keydown);
+    return () => window.removeEventListener("keydown", keydown);
+  }, []);
   const actionNotice = copiedAction
     ? t("homeResultPanel.copiedToClipboardPasteManuallyWhenReady")
     : notice;
@@ -271,7 +307,7 @@ export function HomeResultPanel({
             : t("homeResultPanel.temporaryLatestResult")
           : t("homeResultPanel.latestResult")
       }
-      className={`@container/home-result flex flex-col overflow-clip ${embedded ? "rounded-b-2xl bg-transparent" : "rounded-2xl border bg-card"} [overflow-wrap:anywhere] [&_[data-slot=button]]:h-auto [&_[data-slot=button]]:min-h-9 [&_[data-slot=button]]:max-w-full [&_[data-slot=button]]:whitespace-normal @max-[20rem]/home-result:[&_[data-slot=button]]:min-h-[44px] ${result || editing ? "min-h-min flex-1" : "shrink-0"}`}
+      className={`@container/home-result flex flex-col overflow-clip ${embedded ? "rounded-b-2xl bg-transparent" : "rounded-2xl border bg-card"} [overflow-wrap:anywhere] ${result || editing ? "min-h-min flex-1" : "shrink-0"}`}
     >
       {!editing && (
         <header
@@ -351,10 +387,13 @@ export function HomeResultPanel({
               {visibleView === "result" && (
                 <>
                   <Button
-                    size="sm"
+                    size="icon-sm"
                     variant="outline"
-                    title={t(copiedAction === "copy" ? "ux.home.copied" : "common.copy")}
-                    className="@max-[20rem]/home-result:w-[44px] @max-[20rem]/home-result:min-w-[44px] @max-[20rem]/home-result:px-0"
+                    title={t(
+                      copiedAction === "copy" ? "ux.home.copied" : "homeResultPanel.copyShortcut",
+                    )}
+                    aria-keyshortcuts="Control+Shift+C Meta+Shift+C"
+                    className="@max-[20rem]/home-result:size-[44px]"
                     disabled={unavailable}
                     onClick={() => void act(result, "copy")}
                   >
@@ -363,16 +402,16 @@ export function HomeResultPanel({
                     ) : (
                       <Copy aria-hidden="true" data-icon="inline-start" />
                     )}
-                    <span className="@max-[20rem]/home-result:sr-only">
+                    <span className="sr-only">
                       {t(copiedAction === "copy" ? "ux.home.copied" : "common.copy")}
                     </span>
                   </Button>
                   <Button
                     ref={editTrigger}
-                    size="sm"
+                    size="icon-sm"
                     variant="ghost"
                     title={t("homeResultPanel.editResult")}
-                    className="@max-[20rem]/home-result:w-[44px] @max-[20rem]/home-result:min-w-[44px] @max-[20rem]/home-result:px-0"
+                    className="@max-[20rem]/home-result:size-[44px]"
                     disabled={unavailable}
                     onClick={() => {
                       setError("");
@@ -381,15 +420,20 @@ export function HomeResultPanel({
                     }}
                   >
                     <Pencil aria-hidden="true" />
-                    <span className="@max-[20rem]/home-result:sr-only">
-                      {t("homeResultPanel.editResult")}
-                    </span>
+                    <span className="sr-only">{t("homeResultPanel.editResult")}</span>
                   </Button>
                 </>
               )}
               {!result.saved && (
-                <Button size="sm" disabled={unavailable} onClick={() => void act(result, "save")}>
-                  {t("homeResultPanel.saveToHistory")}
+                <Button
+                  size="icon-sm"
+                  title={t("homeResultPanel.saveToHistory")}
+                  className="@max-[20rem]/home-result:size-[44px]"
+                  disabled={unavailable}
+                  onClick={() => void act(result, "save")}
+                >
+                  <Save aria-hidden="true" />
+                  <span className="sr-only">{t("homeResultPanel.saveToHistory")}</span>
                 </Button>
               )}
               {result.saved && (
@@ -398,20 +442,17 @@ export function HomeResultPanel({
                   to={`/history/${encodeURIComponent(result.session.id)}`}
                   title={t("ux.home.openTranscript")}
                   className={buttonVariants({
-                    size: "sm",
+                    size: "icon-sm",
                     variant: "ghost",
-                    className:
-                      "@max-[20rem]/home-result:w-[44px] @max-[20rem]/home-result:min-w-[44px] @max-[20rem]/home-result:px-0",
+                    className: "@max-[20rem]/home-result:size-[44px]",
                   })}
                 >
                   <ArrowUpRight aria-hidden="true" data-icon="inline-start" />
-                  <span className="@max-[20rem]/home-result:sr-only">
-                    {t("ux.home.openTranscript")}
-                  </span>
+                  <span className="sr-only">{t("ux.home.openTranscript")}</span>
                 </Link>
               )}
               <Button
-                size="icon"
+                size="icon-sm"
                 variant="ghost"
                 aria-label={t("homeResultPanel.dismiss")}
                 title={t("homeResultPanel.dismiss")}
@@ -572,7 +613,7 @@ export function HomeResultPanel({
                 {result.outputId ? (
                   <MarkdownContent className="text-base leading-7">{result.text}</MarkdownContent>
                 ) : (
-                  <p className="whitespace-pre-wrap break-words">{result.text}</p>
+                  <ChatSourceText text={result.text} references={[]} />
                 )}
               </div>
             </TranscriptContextMenu>
@@ -595,7 +636,7 @@ export function HomeResultPanel({
                     {output.prompt.name}
                   </h3>
                   <Button
-                    size="sm"
+                    size="icon-sm"
                     variant="outline"
                     aria-label={t(
                       copiedAction === `copy:${output.id}`
@@ -607,7 +648,7 @@ export function HomeResultPanel({
                         ? "ux.home.copied"
                         : "generatedOutputs.copyOutput",
                     )}
-                    className="@max-[20rem]/home-result:w-[44px] @max-[20rem]/home-result:min-w-[44px] @max-[20rem]/home-result:px-0"
+                    className="@max-[20rem]/home-result:size-[44px]"
                     disabled={unavailable}
                     onClick={() => void act(result, `copy:${output.id}`)}
                   >
@@ -616,7 +657,7 @@ export function HomeResultPanel({
                     ) : (
                       <Copy aria-hidden="true" data-icon="inline-start" />
                     )}
-                    <span className="@max-[20rem]/home-result:sr-only">
+                    <span className="sr-only">
                       {t(
                         copiedAction === `copy:${output.id}`
                           ? "ux.home.copied"
@@ -713,7 +754,6 @@ function HomeResultEditor({
     [result.session.id, result.revision, result.text],
   );
   const [draft, setDraft, draftState] = useSavedDraft("home-result-edit", baseline);
-  const [correctionOpen, setCorrectionOpen] = useState(false);
   const sameResult = draft[0] === result.session.id && draft[1] === result.revision;
   const text = sameResult ? draft[2] : result.text;
   // Keep the draft across navigation, but never reuse it for another result or revision.
@@ -732,7 +772,7 @@ function HomeResultEditor({
       onCancel();
     }
   }
-  const input = useRef<HTMLTextAreaElement>(null);
+  const input = useRef<ContentEditorHandle>(null);
   const composing = useRef(false);
   const invalid = !text.trim() || text.includes("\0") || Array.from(text).length > 100000;
   const describedBy =
@@ -754,7 +794,7 @@ function HomeResultEditor({
       className="flex min-h-min flex-1 flex-col"
       onKeyDown={(event) => {
         if (
-          correctionOpen ||
+          hasOpenKeyboardOverlay() ||
           event.defaultPrevented ||
           !event.currentTarget.contains(event.target as Node)
         )
@@ -769,6 +809,12 @@ function HomeResultEditor({
           event.stopPropagation();
           cancel();
         }
+      }}
+      onCompositionStart={() => {
+        composing.current = true;
+      }}
+      onCompositionEnd={() => {
+        composing.current = false;
       }}
     >
       <header className="flex shrink-0 flex-wrap items-start justify-between gap-3 border-b px-5 py-3 sm:px-7">
@@ -802,51 +848,29 @@ function HomeResultEditor({
           </Button>
         </div>
       </header>
-      <div className="flex min-h-[8rem] flex-1 flex-col gap-3 overflow-y-auto px-5 py-4 [contain:size] sm:px-7">
+      <div className="flex min-h-[8rem] flex-1 flex-col gap-3 overflow-y-auto px-5 pb-4 [contain:size] sm:px-7">
         <label htmlFor="home-result-draft" className="sr-only">
           {t("homeResultPanel.yourText")}
         </label>
-        <TranscriptContextMenu
-          text={text}
-          returnFocus={input}
-          disabled={busy || pending || stale || readFailed}
-          onDialogOpenChange={setCorrectionOpen}
-          onApply={(value) => {
-            setText(value);
-            return true;
-          }}
-        >
-          <textarea
+        <div className="w-full max-w-[calc(72ch+2rem+2px)] text-base">
+          <ContentEditor
             ref={input}
             id="home-result-draft"
             value={text}
-            rows={7}
-            disabled={pending}
-            aria-describedby={describedBy}
-            className="min-h-[3.5rem] w-full max-w-[calc(72ch+2rem+2px)] flex-1 resize-none rounded-lg border bg-transparent px-4 py-3 text-base leading-7 outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60"
-            onChange={(event) => {
-              setText(event.target.value);
+            onChange={setText}
+            disabled={pending || stale || readFailed}
+            describedBy={describedBy}
+            label={t("homeResultPanel.yourText")}
+            onSave={() => {
+              if (!composing.current && !busy && !invalid && !stale && text !== result.text)
+                void submit();
             }}
-            onCompositionStart={() => {
-              composing.current = true;
+            onClose={() => {
+              if (!pending && !composing.current) cancel();
             }}
-            onCompositionEnd={() => {
-              composing.current = false;
-            }}
-            onKeyDown={(event) => {
-              if (
-                event.key === "Enter" &&
-                (event.ctrlKey || event.metaKey) &&
-                !event.nativeEvent.isComposing &&
-                !composing.current &&
-                event.keyCode !== 229
-              ) {
-                event.preventDefault();
-                if (!busy && !invalid && !stale && text !== result.text) void submit();
-              }
-            }}
+            autoFocus
           />
-        </TranscriptContextMenu>
+        </div>
         {(stale || readFailed || busy) && (
           <p
             id="home-result-edit-state"

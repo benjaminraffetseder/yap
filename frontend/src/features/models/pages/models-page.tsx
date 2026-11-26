@@ -226,7 +226,7 @@ export function ModelsPage({ embedded = false }: { embedded?: boolean }) {
       className={embedded ? "@container/model-page gap-0" : "@container/model-page gap-6"}
     >
       {!embedded && (
-        <PageHeading title={t("modelsPage.models")} description={t("uiPolish.modelsDescription")}>
+        <PageHeading title={t("modelsPage.models")}>
           <p
             aria-label={t("modelsPage.modelStorage")}
             className="text-xs text-muted-foreground tabular-nums"

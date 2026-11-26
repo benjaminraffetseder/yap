@@ -31,16 +31,31 @@ func Session(store *storage.Store, id string) (*storage.Session, error) {
 }
 
 func Edit(store *storage.Store, current Current, id, text string) (Change, error) {
+	return edit(current, id, text, func() error { return store.UpdateTranscript(id, text) })
+}
+
+func EditChecked(store *storage.Store, current Current, id, text, expectedText string) (Change, error) {
+	return edit(current, id, text, func() error { return store.UpdateTranscriptChecked(id, text, expectedText) })
+}
+
+func edit(current Current, id, text string, save func() error) (Change, error) {
 	if id == current.ID && current.Phase == "transcribing" {
 		return Change{}, errors.New("finish the current dictation before editing its transcript")
 	}
-	if err := store.UpdateTranscript(id, text); err != nil {
+	if err := save(); err != nil {
 		return Change{}, err
 	}
 	if id == current.ID && current.Phase == "done" {
 		return Change{Changed: true, Text: text, Message: "Transcript updated in History"}, nil
 	}
 	return Change{}, nil
+}
+
+func EditOutput(store *storage.Store, current Current, sessionID, outputID, text, expectedText string) (storage.GeneratedOutput, error) {
+	if sessionID == current.ID && current.Phase == "transcribing" {
+		return storage.GeneratedOutput{}, errors.New("finish the current dictation before editing its output")
+	}
+	return store.UpdateGeneratedOutput(sessionID, outputID, text, expectedText)
 }
 
 func Trash(store *storage.Store, current Current, ids []string) (Change, error) {

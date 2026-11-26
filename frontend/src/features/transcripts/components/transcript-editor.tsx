@@ -17,24 +17,23 @@ import {
   useSavedConfiguration,
 } from "@/features/dictation/hooks/use-dictation-state";
 import { TranscriptProcessor } from "@/features/processing/components/transcript-processor";
+import {
+  ContentEditor,
+  type ContentEditorHandle,
+} from "@/features/transcripts/components/content-editor";
 import { RevisionHistory } from "@/features/transcripts/components/revision-history";
 import { TextPanel } from "@/features/transcripts/components/text-panel";
-import { TranscriptContextMenu } from "@/features/transcripts/components/transcript-context-menu";
 import { TranscriptDiff } from "@/features/transcripts/components/transcript-diff";
 import { useAutoSave } from "@/hooks/use-auto-save";
-import { useSavedDraft } from "@/hooks/use-saved-draft";
+import { useContentDraft } from "@/hooks/use-content-draft";
 import { nativeText } from "@/i18n/native-text";
 import { backend, isBusy, isDesktop, message, type Session } from "@/lib/backend";
-import { useSavedActions } from "@/lib/queries/saved-queries";
+import { resourceKeys } from "@/lib/queries/resource-queries";
+import { useResourceReadVersion, useSavedActions } from "@/lib/queries/saved-queries";
+import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState, type RefObject } from "react";
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router";
-
-function fitTranscript(field: HTMLTextAreaElement) {
-  field.style.height = "auto";
-  const borderHeight = field.offsetHeight - field.clientHeight;
-  field.style.height = `${Math.max(320, field.scrollHeight + borderHeight)}px`;
-}
 
 export function TranscriptEditor({
   session,
@@ -49,8 +48,14 @@ export function TranscriptEditor({
 }) {
   const { t } = useTranslation();
   const initial = session.finalTranscript ?? session.rawTranscript;
-  const [saved, setSaved] = useState(initial);
-  const [text, setText, draftState] = useSavedDraft(`transcript:${session.id}`, saved);
+  const queryClient = useQueryClient();
+  const queryKey = resourceKeys.session(session.id);
+  const readVersion = useResourceReadVersion(queryKey);
+  const [text, setText, draftState] = useContentDraft(
+    `transcript:${session.id}`,
+    initial,
+    readVersion,
+  );
   const [closing, setClosing] = useState(false);
   const [history, setHistory] = useState(false);
   const [error, setError] = useState("");
@@ -62,9 +67,9 @@ export function TranscriptEditor({
   const [compare, setCompare] = useState(false);
   const snapshot = { ...useSavedConfiguration(), status: { phase: useDictationPhase() } };
   const busy = isBusy(snapshot.status.phase);
-  const input = useRef<HTMLTextAreaElement>(null);
+  const input = useRef<ContentEditorHandle>(null);
   useEffect(() => {
-    if (term === null && !processing) input.current?.focus({ preventScroll: true });
+    if (term === null && !processing) input.current?.focus();
   }, [term, processing]);
   const dirty = text !== initial;
   if (!dirty && referenceTab === "changes") setReferenceTab("original");
@@ -78,9 +83,19 @@ export function TranscriptEditor({
   async function save() {
     setError("");
     try {
-      await draftState.entry.submit(async (value) => {
-        await backend.saveTranscript(session.id, value);
-        setSaved(value);
+      await draftState.entry.submit((value) => {
+        let boundary: number | undefined;
+        const writing = (async () => {
+          await queryClient.cancelQueries({ queryKey });
+          try {
+            await backend.saveTranscriptChecked(session.id, value, draftState.expectedText());
+            draftState.acknowledge(value);
+          } finally {
+            boundary = queryClient.getQueryState(queryKey)?.dataUpdateCount ?? 0;
+            await queryClient.invalidateQueries({ queryKey });
+          }
+        })();
+        return Object.assign(writing, { savedReadBoundary: () => boundary });
       });
       onSaved();
     } catch (cause) {
@@ -98,36 +113,19 @@ export function TranscriptEditor({
   async function close() {
     if (closing || adding) return;
     setClosing(true);
-    if (!draftState.dirty || reason || (await autoSave.retry())) {
+    if (!draftState.dirty || reason || (await draftState.retry(autoSave.retry))) {
       onClose();
       requestAnimationFrame(() => returnFocus.current?.focus({ preventScroll: true }));
     }
     setClosing(false);
   }
-  useEffect(() => {
-    const field = input.current;
-    if (!field) return;
-    fitTranscript(field);
-  }, [text, processing, term]);
-  useEffect(() => {
-    const field = input.current;
-    if (!field) return;
-    let width = field.clientWidth;
-    const observer = new ResizeObserver(() => {
-      if (field.clientWidth === width) return;
-      width = field.clientWidth;
-      fitTranscript(field);
-    });
-    observer.observe(field);
-    return () => observer.disconnect();
-  }, []);
   return (
     <section
       aria-label={t("historyEntryPage.editTranscript")}
       data-slot="transcript-editor"
       className="space-y-3"
     >
-      <header className="sticky top-0 z-20 flex flex-wrap items-center justify-between gap-2 border-b bg-background py-2">
+      <header className="flex flex-wrap items-center justify-between gap-2 border-b bg-background py-2">
         <div className="flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-1">
           <h2 className="text-sm font-semibold text-primary">{t("uiPolish.editingTranscript")}</h2>
           <p className="text-xs text-muted-foreground">{t("uiPolish.historyEditorScope")}</p>
@@ -137,11 +135,15 @@ export function TranscriptEditor({
             compact
             status={autoSave.status}
             reason={reason}
-            retry={autoSave.retry}
-            discard={() => setText(draftState.baseline)}
+            retry={() => draftState.retry(autoSave.retry)}
+            discard={() => {
+              setText(draftState.baseline);
+              draftState.resetExpected();
+              setError("");
+            }}
             disabled={closing}
           />
-          <Button disabled={closing} onClick={() => void close()}>
+          <Button size="sm" disabled={closing} onClick={() => void close()}>
             {t("dictationProfiles.done")}
           </Button>
         </div>
@@ -190,46 +192,23 @@ export function TranscriptEditor({
             >
               {t("transcriptEditor.yourDraft")}
             </Label>
-            <TranscriptContextMenu
-              text={text}
-              returnFocus={input}
-              disabled={busy || saving || closing}
-              onApply={(value) => {
-                setText(value);
-                setNotice(t("transcriptEditor.resultAppliedChangesSaveAutomatically"));
-                return true;
-              }}
+            <ContentEditor
+              ref={input}
+              id="transcript-editor"
+              value={text}
+              onChange={setText}
+              disabled={closing}
+              label={t("transcriptEditor.editableText")}
+              invalid={!!error}
+              describedBy={error ? "transcript-save-error" : undefined}
+              onSave={() => void draftState.retry(autoSave.retry)}
+              onClose={() => void close()}
               onAddToVocabulary={(selected) => {
                 setNotice("");
                 setTerm(selected);
               }}
-            >
-              <textarea
-                ref={input}
-                id="transcript-editor"
-                value={text}
-                disabled={closing}
-                maxLength={100000}
-                rows={12}
-                aria-label={t("transcriptEditor.editableText")}
-                aria-invalid={!!error}
-                aria-describedby={error ? "transcript-save-error" : undefined}
-                className="min-h-80 w-full resize-none overflow-hidden rounded-lg border border-input bg-card/30 px-4 py-3 text-base leading-7 outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30 disabled:opacity-60"
-                onChange={(event) => {
-                  setText(event.target.value);
-                }}
-                onKeyDown={(event) => {
-                  if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
-                    event.preventDefault();
-                    void autoSave.retry();
-                  }
-                  if (event.key === "Escape") {
-                    event.preventDefault();
-                    void close();
-                  }
-                }}
-              />
-            </TranscriptContextMenu>
+              autoFocus
+            />
             {error && (
               <p id="transcript-save-error" role="alert" className="text-sm text-destructive">
                 {nativeText(error)}
@@ -316,7 +295,10 @@ export function TranscriptEditor({
         <DialogContent
           showCloseButton={false}
           className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-3xl"
-          finalFocus={input}
+          finalFocus={() => {
+            input.current?.focus();
+            return false;
+          }}
         >
           {processing ? (
             <TranscriptProcessor
@@ -371,7 +353,7 @@ function VocabularyTermForm({
 }) {
   const { t } = useTranslation();
   const savedActions = useSavedActions();
-  const [canonical, setCanonical] = useState(selected);
+  const [canonical, setCanonical] = useState(selected.trim());
   const [aliases, setAliases] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
