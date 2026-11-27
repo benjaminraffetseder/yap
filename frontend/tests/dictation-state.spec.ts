@@ -8223,6 +8223,9 @@ test("Recently Deleted countdowns fit the title column and older entries fade wi
   await expect(expiring.locator("td").nth(3)).not.toContainText("left to restore");
   for (const width of [1086, 1280, 760]) {
     await page.setViewportSize({ width, height: 850 });
+    await expect(rows).toHaveCount(2);
+    const search = page.getByRole("textbox", { name: "Search transcripts", exact: true });
+    await expect(search).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
       true,
     );
@@ -8236,14 +8239,14 @@ test("Recently Deleted countdowns fit the title column and older entries fade wi
         tableSize.client + 1,
       );
     const deletedHeading = await page.getByRole("heading", { level: 1 }).boundingBox();
-    const deletedSearch = await page
-      .getByRole("textbox", { name: "Search transcripts", exact: true })
-      .boundingBox();
+    const deletedSearch = await search.boundingBox();
     await page.getByRole("button", { name: "Show all dictations", exact: true }).click();
+    await expect(
+      page.getByRole("heading", { level: 1, name: "History", exact: true }),
+    ).toBeVisible();
+    await expect(search).toBeVisible();
     const historyHeading = await page.getByRole("heading", { level: 1 }).boundingBox();
-    const historySearch = await page
-      .getByRole("textbox", { name: "Search transcripts", exact: true })
-      .boundingBox();
+    const historySearch = await search.boundingBox();
     expect(deletedHeading!.y).toBeCloseTo(historyHeading!.y, 0);
     expect(deletedSearch!.y).toBeCloseTo(historySearch!.y, 0);
     await page.getByRole("button", { name: "Show Recently Deleted", exact: true }).click();
@@ -8671,7 +8674,7 @@ async function openCorrectionEditor(page: Page) {
   return input;
 }
 
-test("a selected correction adds a confirmed term without saving the transcript draft", async ({
+test("a selected correction adds a confirmed term while the transcript draft autosaves", async ({
   page,
 }) => {
   const input = await openCorrectionEditor(page);
@@ -8725,8 +8728,11 @@ test("a selected correction adds a confirmed term without saving the transcript 
       },
     ]);
   await expect
-    .poll(() => page.evaluate(() => window.dictationTest.snapshot.history[0].finalTranscript))
-    .toBe("postgres connection ready.");
+    .poll(() => page.evaluate(() => window.dictationTest.snapshot.history[0]))
+    .toMatchObject({
+      rawTranscript: "postgres connection ready.",
+      finalTranscript: "PostgreSQL connection ready.",
+    });
   await expect
     .poll(() => page.evaluate(() => window.dictationTest.snapshot.status.transcript))
     .toBe("");
@@ -10619,10 +10625,13 @@ async function openPromptEditor(page: Page) {
   await page.getByRole("button", { name: "Run prompt or chain…", exact: true }).click();
 }
 
-test("prompt previews use the draft and change History only after apply and save", async ({
+test("prompt previews use edited text and apply generated changes explicitly", async ({
   page,
 }, testInfo) => {
   await openPromptEditor(page);
+  await expect
+    .poll(() => page.evaluate(() => window.dictationTest.snapshot.history[0].finalTranscript))
+    .toBe("Unsaved draft for summary.");
   const prompt = page.getByRole("combobox", { name: "Prompt", exact: true });
   await prompt.click();
   await expect(page.getByRole("option", { name: "Summary", exact: true })).toBeVisible();
@@ -10655,7 +10664,7 @@ test("prompt previews use the draft and change History only after apply and save
   });
   await expect
     .poll(() => page.evaluate(() => window.dictationTest.snapshot.history[0].finalTranscript))
-    .toBe("Saved correction.");
+    .toBe("Unsaved draft for summary.");
   await page.getByRole("button", { name: "Replace draft", exact: true }).click();
   await expect(page.getByRole("textbox", { name: "Editable text", exact: true })).toHaveText(
     "Concise summary.",
@@ -12974,7 +12983,7 @@ test("copy confirmation ignores a reply for a different transcript tab", async (
   await expect(originalCopy).toBeDisabled();
   await page.evaluate(() => Reflect.get(window, "finishDelayedCopy")());
   await expect(originalCopy).toBeEnabled();
-  expect(await originalCopy.textContent()).toBe("Copy");
+  await expect(originalCopy).toHaveText("Copy original");
   expect(await page.evaluate(() => window.dictationTest.clipboard)).toBe("Edited transcript.");
   await originalCopy.click();
   await page.evaluate(() => Reflect.get(window, "finishDelayedCopy")());

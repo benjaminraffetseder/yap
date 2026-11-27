@@ -3,6 +3,7 @@ package app
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -62,6 +63,9 @@ func TestRuntimeUpdateRejectsBusyAndUnknownModels(t *testing.T) {
 }
 
 func TestWhisperRuntimeUpdateMigratesOnlyManagedSelection(t *testing.T) {
+	if runtime.GOOS == "darwin" {
+		t.Skip("macOS uses bundled Whisper instead of managed runtime downloads")
+	}
 	for _, custom := range []bool{false, true} {
 		t.Run(map[bool]string{false: "managed", true: "custom"}[custom], func(t *testing.T) {
 			a := testApp(t)
@@ -120,6 +124,9 @@ func TestWhisperRuntimeUpdateMigratesOnlyManagedSelection(t *testing.T) {
 }
 
 func TestWhisperRuntimeUpdatePreservesCustomAliasIntoLegacyRuntime(t *testing.T) {
+	if runtime.GOOS == "darwin" {
+		t.Skip("macOS uses bundled Whisper instead of managed runtime downloads")
+	}
 	a := testApp(t)
 	self, err := os.Executable()
 	if err != nil {

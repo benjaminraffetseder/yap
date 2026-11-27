@@ -337,6 +337,59 @@ The landing site is maintained separately. It isn't needed to build or run Yap.
 
 ## Tests
 
+### GitHub Actions
+
+The **CI** workflow runs on pull requests and pushes to `main`, and can also be
+started manually. Documentation-only changes skip the build and test jobs.
+Code changes build the production app and run Go tests/vet and the separate
+patched hotkey module tests on Windows x64 and Ubuntu 24.04 x64. Both Apple
+Silicon and Intel Macs join that matrix for backend/native code, build scripts,
+dependencies, frontend build configuration, or CI changes. Manual CI runs include
+all four platforms; run CI manually before a Mac release when automatic checks
+have not covered that commit. Native jobs have a 30-minute limit.
+
+A separate Windows **Frontend** job generates Wails bindings, checks TypeScript,
+runs ESLint, and runs the Chromium Playwright suite. It starts alongside the
+native jobs and uses two workers with test-level parallelism, including tests in
+the large dictation spec. Its 60-minute limit leaves room for the complete suite;
+reports and traces from failed runs are retained for seven days. Native builds
+generate their own bindings and frontend assets. No generated files need to be
+committed.
+
+Playwright starts its Vite server with `--no-turbo-fast-api-calls` to avoid the
+[Node 26 fast API crash](https://github.com/nodejs/node/issues/66870) during long
+browser runs. This flag applies only to the test server; Node remains pinned to
+26.13.1 in CI. CI retries a failed browser test once in a fresh worker. A retry
+success is reported as flaky; a test that fails both attempts still fails the job.
+
+The **Build packages** workflow is manual: select it under **Actions**, choose
+**Run workflow**, and select the branch to build. GitHub needs the workflow
+on the default branch before it exposes manual dispatch. Once a run finishes,
+download the artifacts from its summary. Each includes `SHA256SUMS`; artifacts
+expire after 14 days. The packages are:
+
+- Windows x64: an unsigned versioned portable/update `.exe`, without an installer.
+- Linux x64: a `.deb` built on Ubuntu 24.04, with native dependencies derived from
+  that binary. It may require newer system libraries than older distributions have.
+- macOS universal: an ad hoc signed `.app` inside a ZIP, including Whisper and
+  FFmpeg. The existing packaging script runs its runtime transcription/decoding
+  smoke test on the build host; CI separately builds/tests the Intel app code.
+
+These workflows need no signing secrets and never create or publish releases.
+Windows distribution still needs Authenticode signing and any installer packaging;
+macOS distribution needs Developer ID signing and notarization. Signing changes
+the final bytes, so regenerate checksums afterward. Before a future release,
+combine all final package entries into one `SHA256SUMS` as described in the
+[updater guide](updater.md). Native microphone, shortcut, paste, permissions, and
+update/relaunch checks still need desktop testing. The macOS packaging path still
+needs its first native verification; adding a workflow alone does not validate it.
+
+Go comes from `go.mod`; Node is pinned to 26.13.1 and Wails to 3.1.0 in both
+workflows. Keep these pins aligned with the documented prerequisites. Third-party
+actions are pinned to full commit hashes, with their release versions in comments.
+
+### Local checks
+
 ```powershell
 go test ./...
 go vet ./...

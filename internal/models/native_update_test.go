@@ -191,6 +191,9 @@ func TestNativeRuntimeUpdateCatalogState(t *testing.T) {
 }
 
 func TestWhisperRuntimeUpdateCommitsSelectionBeforeCleanup(t *testing.T) {
+	if runtime.GOOS == "darwin" {
+		t.Skip("macOS uses bundled Whisper instead of managed runtime downloads")
+	}
 	for _, failSave := range []bool{false, true} {
 		t.Run(fmt.Sprintf("saveFailure=%t", failSave), func(t *testing.T) {
 			dir := t.TempDir()

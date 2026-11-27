@@ -227,6 +227,11 @@ function SessionTitleForm({
     };
   }, [inline]);
 
+  // Restore focus after React has committed the enabled input.
+  useEffect(() => {
+    if (!generation.pending && generation.result) input.current?.focus();
+  }, [generation.pending, generation.result]);
+
   async function suggest() {
     setSaveError("");
     const title = await generation.request((requestID) =>
@@ -234,7 +239,6 @@ function SessionTitleForm({
     );
     if (title !== undefined) {
       setDraft(title);
-      requestAnimationFrame(() => input.current?.focus());
     }
   }
 

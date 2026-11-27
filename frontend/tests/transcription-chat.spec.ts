@@ -533,8 +533,8 @@ test("docked chat shares space with the source, links output citations, and surv
     .click();
   await expect(source.locator("mark")).toHaveText("The deadline is Friday.");
   await page.getByRole("tab", { name: "Outputs", exact: true }).click();
-  await expect(page.getByRole("button", { name: "Regenerate", exact: true })).toBeDisabled();
   await page.getByRole("button", { name: "Output actions", exact: true }).click();
+  await expect(page.getByRole("menuitem", { name: "Regenerate", exact: true })).toBeDisabled();
   await page.getByRole("menuitem", { name: "Discuss in chat", exact: true }).click();
   await expect(panel.getByText("Discussing a saved output: Chat", { exact: true })).toBeVisible();
   await page.evaluate(() => {
