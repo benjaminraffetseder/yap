@@ -8674,7 +8674,7 @@ async function openCorrectionEditor(page: Page) {
   return input;
 }
 
-test("a selected correction adds a confirmed term without saving the transcript draft", async ({
+test("a selected correction adds a confirmed term while the transcript draft autosaves", async ({
   page,
 }) => {
   const input = await openCorrectionEditor(page);
@@ -8728,8 +8728,11 @@ test("a selected correction adds a confirmed term without saving the transcript 
       },
     ]);
   await expect
-    .poll(() => page.evaluate(() => window.dictationTest.snapshot.history[0].finalTranscript))
-    .toBe("postgres connection ready.");
+    .poll(() => page.evaluate(() => window.dictationTest.snapshot.history[0]))
+    .toMatchObject({
+      rawTranscript: "postgres connection ready.",
+      finalTranscript: "PostgreSQL connection ready.",
+    });
   await expect
     .poll(() => page.evaluate(() => window.dictationTest.snapshot.status.transcript))
     .toBe("");

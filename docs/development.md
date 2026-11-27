@@ -356,6 +356,12 @@ reports and traces from failed runs are retained for seven days. Native builds
 generate their own bindings and frontend assets. No generated files need to be
 committed.
 
+Playwright starts its Vite server with `--no-turbo-fast-api-calls` to avoid the
+[Node 26 fast API crash](https://github.com/nodejs/node/issues/66870) during long
+browser runs. This flag applies only to the test server; Node remains pinned to
+26.13.1 in CI. CI retries a failed browser test once in a fresh worker. A retry
+success is reported as flaky; a test that fails both attempts still fails the job.
+
 The **Build packages** workflow is manual: select it under **Actions**, choose
 **Run workflow**, and select the branch to build. GitHub needs the workflow
 on the default branch before it exposes manual dispatch. Once a run finishes,

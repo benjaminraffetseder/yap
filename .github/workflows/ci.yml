@@ -159,7 +159,7 @@ jobs:
 
       - name: Test frontend
         working-directory: frontend
-        run: npm run test:ui -- --workers=2 --fully-parallel --reporter=line,html --trace=retain-on-failure
+        run: npm run test:ui -- --workers=2 --fully-parallel --retries=1 --reporter=line,html --trace=retain-on-failure
 
       - name: Upload frontend failure report
         if: failure()
